@@ -42,7 +42,7 @@ test.describe("PR detail branch info", () => {
   });
 
   test("summarizes changed lines by category in the popover", async ({ page }) => {
-    await page.route("**/api/v1/repos/acme/widgets/pulls/1/files", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/1/files", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",

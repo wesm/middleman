@@ -45,7 +45,12 @@ describe("ReadyForReviewButton", () => {
       screen.getByRole("button", { name: /ready for review/i }),
     );
 
-    expect(mockLoadDetail).toHaveBeenCalledWith("wesm", "middleman", 141);
+    expect(mockLoadDetail).toHaveBeenCalledWith(
+      "wesm",
+      "middleman",
+      141,
+      { provider: undefined, platformHost: undefined, repoPath: undefined },
+    );
     expect(mockLoadPulls).toHaveBeenCalledTimes(1);
   });
 
@@ -65,7 +70,12 @@ describe("ReadyForReviewButton", () => {
       screen.getByRole("button", { name: /ready for review/i }),
     );
 
-    expect(mockLoadDetail).toHaveBeenCalledWith("wesm", "middleman", 141);
+    expect(mockLoadDetail).toHaveBeenCalledWith(
+      "wesm",
+      "middleman",
+      141,
+      { provider: undefined, platformHost: undefined, repoPath: undefined },
+    );
     expect(mockLoadPulls).toHaveBeenCalledTimes(1);
   });
 });

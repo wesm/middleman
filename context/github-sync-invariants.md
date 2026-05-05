@@ -2,6 +2,8 @@
 
 Use this document for changes in `internal/github/`, sync-triggering server
 handlers, fixture clients, and tests that rely on GitHub-derived freshness.
+For provider-neutral identity rules, start with
+[`context/platform-sync-invariants.md`](./platform-sync-invariants.md).
 
 ## Purpose
 
@@ -14,6 +16,8 @@ handlers, fixture clients, and tests that rely on GitHub-derived freshness.
 ## Identity Rules
 
 GitHub entities in middleman are not identified by owner/name/number alone.
+The provider-neutral identity is `(platform, platform_host, owner, name)`;
+this document focuses on the GitHub-specific default-host behavior.
 
 - Repository identity is `(platform_host, owner, name)`.
 - PR and issue identity is `(platform_host, owner, name, number)`.

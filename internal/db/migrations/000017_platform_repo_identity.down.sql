@@ -1,0 +1,224 @@
+DROP TRIGGER IF EXISTS middleman_workspaces_casefold_update;
+DROP TRIGGER IF EXISTS middleman_workspaces_key_fill_insert;
+DROP TRIGGER IF EXISTS middleman_workspaces_casefold_insert;
+DROP INDEX IF EXISTS idx_workspaces_provider_item_key;
+
+CREATE TABLE middleman_rate_limits_v16 (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    platform_host  TEXT NOT NULL,
+    api_type       TEXT NOT NULL DEFAULT 'rest',
+    requests_hour  INTEGER NOT NULL DEFAULT 0,
+    hour_start     DATETIME NOT NULL,
+    rate_remaining INTEGER NOT NULL DEFAULT -1,
+    rate_limit     INTEGER NOT NULL DEFAULT -1,
+    rate_reset_at  DATETIME,
+    updated_at     DATETIME NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(platform_host, api_type)
+);
+
+INSERT INTO middleman_rate_limits_v16
+    (id, platform_host, api_type, requests_hour, hour_start,
+     rate_remaining, rate_limit, rate_reset_at, updated_at)
+SELECT id, platform_host, api_type, requests_hour, hour_start,
+       rate_remaining, rate_limit, rate_reset_at, updated_at
+FROM middleman_rate_limits
+WHERE platform = 'github';
+
+DROP TABLE middleman_rate_limits;
+ALTER TABLE middleman_rate_limits_v16 RENAME TO middleman_rate_limits;
+
+DROP INDEX IF EXISTS idx_issue_events_platform_external_id;
+DROP INDEX IF EXISTS idx_mr_events_platform_external_id;
+DROP INDEX IF EXISTS idx_labels_repo_platform_external_id;
+DROP INDEX IF EXISTS idx_issues_repo_platform_external_id;
+DROP INDEX IF EXISTS idx_merge_requests_repo_platform_external_id;
+
+DROP INDEX IF EXISTS idx_issue_events_created;
+
+CREATE TABLE middleman_issue_events_v16 (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    issue_id      INTEGER NOT NULL REFERENCES middleman_issues(id) ON DELETE CASCADE,
+    platform_id   INTEGER,
+    event_type    TEXT NOT NULL,
+    author        TEXT NOT NULL DEFAULT '',
+    summary       TEXT NOT NULL DEFAULT '',
+    body          TEXT NOT NULL DEFAULT '',
+    metadata_json TEXT NOT NULL DEFAULT '',
+    created_at    DATETIME NOT NULL,
+    dedupe_key    TEXT NOT NULL,
+    UNIQUE(dedupe_key)
+);
+
+INSERT INTO middleman_issue_events_v16 (
+    id, issue_id, platform_id, event_type,
+    author, summary, body, metadata_json, created_at, dedupe_key
+)
+SELECT
+    id, issue_id, platform_id, event_type,
+    COALESCE(author, ''), COALESCE(summary, ''), COALESCE(body, ''),
+    COALESCE(metadata_json, ''), created_at, dedupe_key
+FROM middleman_issue_events
+WHERE id IN (
+    SELECT MIN(id)
+    FROM middleman_issue_events
+    GROUP BY dedupe_key
+);
+
+DROP TABLE middleman_issue_events;
+ALTER TABLE middleman_issue_events_v16 RENAME TO middleman_issue_events;
+
+CREATE INDEX IF NOT EXISTS idx_issue_events_created
+    ON middleman_issue_events(issue_id, created_at DESC);
+
+ALTER TABLE middleman_mr_events DROP COLUMN platform_external_id;
+ALTER TABLE middleman_labels DROP COLUMN platform_external_id;
+ALTER TABLE middleman_issues DROP COLUMN platform_external_id;
+ALTER TABLE middleman_merge_requests DROP COLUMN platform_external_id;
+
+DELETE FROM middleman_workspaces
+WHERE rowid NOT IN (
+    SELECT MIN(rowid)
+    FROM middleman_workspaces
+    GROUP BY platform_host, repo_owner, repo_name, item_type, item_number
+);
+
+CREATE TEMP TABLE middleman_workspace_setup_events_backup AS
+SELECT id, workspace_id, stage, outcome, message, created_at
+FROM middleman_workspace_setup_events;
+
+CREATE TEMP TABLE middleman_workspace_tmux_sessions_backup AS
+SELECT workspace_id, session_name, target_key, created_at
+FROM middleman_workspace_tmux_sessions;
+
+DROP INDEX IF EXISTS middleman_workspace_setup_events_workspace_id_idx;
+DROP TABLE IF EXISTS middleman_workspace_setup_events;
+DROP INDEX IF EXISTS middleman_workspace_tmux_sessions_workspace_id_idx;
+DROP TABLE IF EXISTS middleman_workspace_tmux_sessions;
+
+ALTER TABLE middleman_workspaces
+    RENAME TO middleman_workspaces_v17;
+
+CREATE TABLE middleman_workspaces (
+    id                   TEXT PRIMARY KEY,
+    platform_host        TEXT NOT NULL,
+    repo_owner           TEXT NOT NULL,
+    repo_name            TEXT NOT NULL,
+    item_type            TEXT NOT NULL DEFAULT 'pull_request',
+    item_number          INTEGER NOT NULL,
+    git_head_ref         TEXT NOT NULL,
+    mr_head_repo         TEXT,
+    worktree_path        TEXT NOT NULL,
+    tmux_session         TEXT NOT NULL,
+    status               TEXT NOT NULL DEFAULT 'creating',
+    error_message        TEXT,
+    created_at           DATETIME NOT NULL DEFAULT (datetime('now')),
+    workspace_branch     TEXT NOT NULL DEFAULT '__middleman_unknown__',
+    associated_pr_number INTEGER,
+    UNIQUE(platform_host, repo_owner, repo_name, item_type, item_number)
+);
+
+INSERT INTO middleman_workspaces (
+    id, platform_host, repo_owner, repo_name,
+    item_type, item_number, git_head_ref, mr_head_repo,
+    worktree_path, tmux_session, status, error_message, created_at,
+    workspace_branch, associated_pr_number
+)
+SELECT
+    id, platform_host, repo_owner, repo_name,
+    item_type, item_number, git_head_ref, mr_head_repo,
+    worktree_path, tmux_session, status, error_message, created_at,
+    workspace_branch, associated_pr_number
+FROM middleman_workspaces_v17;
+
+DROP TABLE middleman_workspaces_v17;
+
+CREATE TRIGGER middleman_workspaces_casefold_insert
+BEFORE INSERT ON middleman_workspaces
+WHEN NEW.platform_host <> lower(NEW.platform_host)
+  OR NEW.repo_owner <> lower(NEW.repo_owner)
+  OR NEW.repo_name <> lower(NEW.repo_name)
+BEGIN
+    SELECT RAISE(ABORT, 'workspace repo identifiers must be lowercase');
+END;
+
+CREATE TRIGGER middleman_workspaces_casefold_update
+BEFORE UPDATE OF platform_host, repo_owner, repo_name ON middleman_workspaces
+WHEN NEW.platform_host <> lower(NEW.platform_host)
+  OR NEW.repo_owner <> lower(NEW.repo_owner)
+  OR NEW.repo_name <> lower(NEW.repo_name)
+BEGIN
+    SELECT RAISE(ABORT, 'workspace repo identifiers must be lowercase');
+END;
+
+CREATE TABLE middleman_workspace_setup_events (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    workspace_id TEXT NOT NULL REFERENCES middleman_workspaces(id) ON DELETE CASCADE,
+    stage        TEXT NOT NULL,
+    outcome      TEXT NOT NULL,
+    message      TEXT NOT NULL,
+    created_at   DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+INSERT INTO middleman_workspace_setup_events (
+    id, workspace_id, stage, outcome, message, created_at
+)
+SELECT id, workspace_id, stage, outcome, message, created_at
+FROM middleman_workspace_setup_events_backup;
+
+DROP TABLE middleman_workspace_setup_events_backup;
+
+CREATE INDEX middleman_workspace_setup_events_workspace_id_idx
+    ON middleman_workspace_setup_events (workspace_id, id);
+
+CREATE TABLE middleman_workspace_tmux_sessions (
+    workspace_id TEXT NOT NULL REFERENCES middleman_workspaces(id) ON DELETE CASCADE,
+    session_name TEXT NOT NULL,
+    target_key   TEXT NOT NULL,
+    created_at   DATETIME NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (workspace_id, session_name),
+    UNIQUE (session_name)
+);
+
+INSERT INTO middleman_workspace_tmux_sessions (
+    workspace_id, session_name, target_key, created_at
+)
+SELECT workspace_id, session_name, target_key, created_at
+FROM middleman_workspace_tmux_sessions_backup;
+
+DROP TABLE middleman_workspace_tmux_sessions_backup;
+
+CREATE INDEX middleman_workspace_tmux_sessions_workspace_id_idx
+    ON middleman_workspace_tmux_sessions(workspace_id);
+
+DROP INDEX IF EXISTS idx_repos_provider_path_key;
+DROP INDEX IF EXISTS idx_repos_platform_repo_id;
+
+DROP TRIGGER IF EXISTS middleman_repos_casefold_insert;
+DROP TRIGGER IF EXISTS middleman_repos_casefold_update;
+
+ALTER TABLE middleman_repos DROP COLUMN default_branch;
+ALTER TABLE middleman_repos DROP COLUMN clone_url;
+ALTER TABLE middleman_repos DROP COLUMN web_url;
+ALTER TABLE middleman_repos DROP COLUMN repo_path_key;
+ALTER TABLE middleman_repos DROP COLUMN name_key;
+ALTER TABLE middleman_repos DROP COLUMN owner_key;
+ALTER TABLE middleman_repos DROP COLUMN repo_path;
+ALTER TABLE middleman_repos DROP COLUMN platform_repo_id;
+
+CREATE TRIGGER middleman_repos_casefold_insert
+BEFORE INSERT ON middleman_repos
+WHEN NEW.platform_host <> lower(NEW.platform_host)
+  OR NEW.owner <> lower(NEW.owner)
+  OR NEW.name <> lower(NEW.name)
+BEGIN
+    SELECT RAISE(ABORT, 'repo identifiers must be lowercase');
+END;
+
+CREATE TRIGGER middleman_repos_casefold_update
+BEFORE UPDATE OF platform_host, owner, name ON middleman_repos
+WHEN NEW.platform_host <> lower(NEW.platform_host)
+  OR NEW.owner <> lower(NEW.owner)
+  OR NEW.name <> lower(NEW.name)
+BEGIN
+    SELECT RAISE(ABORT, 'repo identifiers must be lowercase');
+END;

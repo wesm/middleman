@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import type { PullRequest, KanbanStatus } from "../../api/types.js";
+  import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
   import { getStores, getClient, getNavigate, getSidebar } from "../../context.js";
   import DetailDrawer from "../DetailDrawer.svelte";
   import KanbanColumn from "./KanbanColumn.svelte";
@@ -56,9 +57,10 @@
     number: number,
     status: KanbanStatus,
   ): Promise<void> {
+    const ref = { provider: "github", platformHost: "github.com", owner, name };
     try {
-      const { error } = await client.PUT("/repos/{owner}/{name}/pulls/{number}/state", {
-        params: { path: { owner, name, number } },
+      const { error } = await client.PUT(providerItemPath("pulls", ref, "/state"), {
+        params: { path: { ...providerRouteParams(ref), number } },
         body: { status },
       });
       if (error) {

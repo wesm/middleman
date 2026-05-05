@@ -5,6 +5,11 @@ import type {
   CommitInfo,
 } from "../api/types.js";
 import { createAPIClient } from "../api/generated/client.js";
+import {
+  providerItemPath,
+  providerRouteParams,
+  type ProviderRouteRef,
+} from "../api/provider-routes.js";
 import type { components } from "../api/generated/schema.js";
 import type { MiddlemanClient } from "../types.js";
 import {
@@ -165,10 +170,23 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   let currentWorkspaceID = $state("");
   let currentWorkspaceBase = $state<WorkspaceDiffBase>("head");
   let workspaceWhitespaceOnlyCount = $state(0);
+  let currentProvider = $state<string | undefined>(undefined);
+  let currentPlatformHost = $state<string | undefined>(undefined);
+  let currentRepoPath = $state<string | undefined>(undefined);
 
   function getCurrentPR(): { owner: string; name: string; number: number } | null {
     if (!currentOwner) return null;
     return { owner: currentOwner, name: currentName, number: currentNumber };
+  }
+
+  function currentRouteRef(): ProviderRouteRef {
+    return {
+      provider: currentProvider,
+      platformHost: currentPlatformHost,
+      owner: currentOwner,
+      name: currentName,
+      repoPath: currentRepoPath,
+    };
   }
 
   // --- reads ---
@@ -324,14 +342,14 @@ export function createDiffStore(opts?: DiffStoreOptions) {
 
     loading = true;
     storeError = null;
+    const ref = currentRouteRef();
     try {
       const { data, error, response } = await apiClient.GET(
-        "/repos/{owner}/{name}/pulls/{number}/diff",
+        providerItemPath("pulls", ref, "/diff"),
         {
           params: {
             path: {
-              owner: currentOwner,
-              name: currentName,
+              ...providerRouteParams(ref),
               number: currentNumber,
             },
             query: diffQuery(),
@@ -418,16 +436,17 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     number: number,
     path: string,
   ): Promise<FilePreview> {
-    const key = `${owner}/${name}#${number}:${scopeCacheKey()}:${path}`;
+    const ref = currentRouteRef();
+    const key = `${ref.provider ?? "github"}:${ref.platformHost ?? ""}:${owner}/${name}#${number}:${scopeCacheKey()}:${path}`;
     const cached = filePreviewCache.get(key);
     if (cached) return cached;
 
     const request = (async () => {
       const { data, error, response } = await apiClient.GET(
-        "/repos/{owner}/{name}/pulls/{number}/file-preview",
+        providerItemPath("pulls", ref, "/file-preview"),
         {
           params: {
-            path: { owner, name, number },
+            path: { ...providerRouteParams(ref), number },
             query: {
               path,
               ...(scope.kind === "commit" && { commit: scope.sha }),
@@ -577,6 +596,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     owner: string,
     name: string,
     number: number,
+    identity?: Partial<ProviderRouteRef>,
   ): Promise<void> {
     const prChanged =
       owner !== currentOwner ||
@@ -587,18 +607,22 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     currentNumber = number;
     clearFilePreviewCache();
     currentWorkspaceID = "";
+    currentProvider = identity?.provider;
+    currentPlatformHost = identity?.platformHost;
+    currentRepoPath = identity?.repoPath;
     if (prChanged) {
       resetDiffScopeState();
     }
 
     const { diffAc, filesAc } = startDiffLoad();
+    const ref = currentRouteRef();
 
     const filesPromise = (async () => {
       try {
         const { data } = await apiClient.GET(
-          "/repos/{owner}/{name}/pulls/{number}/files",
+          providerItemPath("pulls", ref, "/files"),
           {
-            params: { path: { owner, name, number } },
+            params: { path: { ...providerRouteParams(ref), number } },
             signal: filesAc.signal,
           },
         );
@@ -617,10 +641,10 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     const diffPromise = (async () => {
       try {
         const { data, error, response } = await apiClient.GET(
-          "/repos/{owner}/{name}/pulls/{number}/diff",
+          providerItemPath("pulls", ref, "/diff"),
           {
             params: {
-              path: { owner, name, number },
+              path: { ...providerRouteParams(ref), number },
               query: diffQuery(),
             },
             signal: diffAc.signal,
@@ -775,6 +799,9 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     currentWorkspaceID = "";
     currentWorkspaceBase = "head";
     workspaceWhitespaceOnlyCount = 0;
+    currentProvider = undefined;
+    currentPlatformHost = undefined;
+    currentRepoPath = undefined;
   }
 
   async function loadCommits(): Promise<void> {
@@ -786,11 +813,12 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     const owner = currentOwner;
     const name = currentName;
     const number = currentNumber;
+    const ref = currentRouteRef();
     try {
       const { data, error, response } = await apiClient.GET(
-        "/repos/{owner}/{name}/pulls/{number}/commits",
+        providerItemPath("pulls", ref, "/commits"),
         {
-          params: { path: { owner, name, number } },
+          params: { path: { ...providerRouteParams(ref), number } },
         },
       );
       if (currentOwner !== owner || currentName !== name || currentNumber !== number) return;
@@ -829,7 +857,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     scope = { kind: "commit", sha };
     clearFilePreviewCache();
     if (currentOwner && currentName && currentNumber) {
-      void loadDiff(currentOwner, currentName, currentNumber);
+      void loadDiff(currentOwner, currentName, currentNumber, currentRouteRef());
     }
   }
 
@@ -842,7 +870,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     scope = { kind: "range", fromSha: older, toSha: newer };
     clearFilePreviewCache();
     if (currentOwner && currentName && currentNumber) {
-      void loadDiff(currentOwner, currentName, currentNumber);
+      void loadDiff(currentOwner, currentName, currentNumber, currentRouteRef());
     }
   }
 
@@ -850,7 +878,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     scope = { kind: "head" };
     clearFilePreviewCache();
     if (currentOwner && currentName && currentNumber) {
-      void loadDiff(currentOwner, currentName, currentNumber);
+      void loadDiff(currentOwner, currentName, currentNumber, currentRouteRef());
     }
   }
 

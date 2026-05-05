@@ -1,6 +1,6 @@
 sync_interval = "5m"
-# Environment variable containing your GitHub personal access token
-# Required scopes: repo (private repos) or public_repo (public only)
+# Environment variable containing your GitHub personal access token.
+# Required scopes: repo (private repos) or public_repo (public only).
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 # Host treated as implicit in repository UI labels
 default_platform_host = "github.com"
@@ -11,6 +11,11 @@ port = 8091
 # Terminal renderer: "xterm" (default) or "ghostty-web"
 renderer = "xterm"
 
+[[platforms]]
+type = "gitlab"
+host = "gitlab.com"
+token_env = "MIDDLEMAN_GITLAB_TOKEN"
+
 [[repos]]
 owner = "apache"
 name = "arrow"
@@ -18,3 +23,12 @@ name = "arrow"
 [[repos]]
 owner = "ibis-project"
 name = "ibis"
+
+[[repos]]
+platform = "gitlab"
+platform_host = "gitlab.com"
+# GitLab owner can include nested namespaces. repo_path is optional when it is
+# exactly owner/name, but useful when preserving provider-canonical casing.
+owner = "my-group/subgroup"
+name = "my-project"
+repo_path = "my-group/subgroup/my-project"

@@ -123,6 +123,27 @@ func (s *Server) lookupRepoIDOnHost(
 
 // lookupMRID resolves the internal MR id from the common route tuple.
 func (s *Server) lookupMRID(ctx context.Context, ref repoNumberPathRef) (int64, error) {
+	if ref.platformHost != "" {
+		repoID, err := s.lookupRepoIDOnHost(
+			ctx, ref.owner, ref.name, ref.platformHost,
+		)
+		if err != nil {
+			return 0, err
+		}
+		mr, err := s.db.GetMergeRequestByRepoIDAndNumber(
+			ctx, repoID, ref.number,
+		)
+		if err != nil {
+			return 0, err
+		}
+		if mr == nil {
+			return 0, fmt.Errorf(
+				"pull request %s/%s#%d not found",
+				ref.owner, ref.name, ref.number,
+			)
+		}
+		return mr.ID, nil
+	}
 	return s.db.GetMRIDByRepoAndNumber(ctx, ref.owner, ref.name, ref.number)
 }
 
@@ -153,37 +174,6 @@ func (s *Server) lookupIssueID(ctx context.Context, ref repoNumberPathRef) (int6
 	return issue.ID, nil
 }
 
-func (s *Server) lookupIssue(
-	ctx context.Context,
-	ref repoNumberPathRef,
-) (*db.Repo, *db.Issue, error) {
-	repo, err := s.lookupRepo(
-		ctx, ref.owner, ref.name, ref.platformHost,
-	)
-	if err != nil {
-		return nil, nil, err
-	}
-	var issue *db.Issue
-	if ref.platformHost != "" {
-		issue, err = s.db.GetIssueByRepoIDAndNumber(
-			ctx, repo.ID, ref.number,
-		)
-	} else {
-		issue, err = s.db.GetIssue(
-			ctx, ref.owner, ref.name, ref.number,
-		)
-	}
-	if err != nil {
-		return nil, nil, err
-	}
-	if issue == nil {
-		return repo, nil, fmt.Errorf(
-			"issue %s/%s#%d not found", ref.owner, ref.name, ref.number,
-		)
-	}
-	return repo, issue, nil
-}
-
 // parseRepoFilter splits the repo query parameter when it is in owner/name or
 // platform_host/owner/name form and otherwise returns empty parts so callers
 // can ignore invalid input.
@@ -211,11 +201,12 @@ func formatUTCRFC3339(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
 }
 
-func toRepoSummaryResponse(
+func (s *Server) toRepoSummaryResponse(
 	summary db.RepoSummary,
 	defaultPlatformHost string,
 ) repoSummaryResponse {
 	resp := repoSummaryResponse{
+		Repo:                s.repoRefFromRepo(summary.Repo),
 		PlatformHost:        summary.Repo.PlatformHost,
 		DefaultPlatformHost: defaultPlatformHost,
 		Owner:               summary.Repo.Owner,

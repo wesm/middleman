@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	platformpkg "github.com/wesm/middleman/internal/platform"
 )
 
 const (
@@ -26,14 +27,23 @@ const (
 	defaultTimeRange         = "7d"
 	defaultBasePath          = "/"
 	defaultSyncBudgetPerHour = 500
-	defaultPlatformHost      = "github.com"
+	defaultPlatform          = "github"
+	defaultPlatformHost      = platformpkg.DefaultGitHubHost
 )
 
 type Repo struct {
 	Owner        string `toml:"owner" json:"owner"`
 	Name         string `toml:"name" json:"name"`
+	RepoPath     string `toml:"repo_path,omitempty" json:"repo_path,omitempty"`
+	Platform     string `toml:"platform,omitempty" json:"platform,omitempty"`
 	PlatformHost string `toml:"platform_host,omitempty" json:"platform_host,omitempty"`
 	TokenEnv     string `toml:"token_env,omitempty" json:"token_env,omitempty"`
+}
+
+type PlatformConfig struct {
+	Type     string `toml:"type" json:"type"`
+	Host     string `toml:"host" json:"host"`
+	TokenEnv string `toml:"token_env,omitempty" json:"token_env,omitempty"`
 }
 
 func (r Repo) FullName() string {
@@ -45,12 +55,22 @@ func (r Repo) HasNameGlob() bool {
 }
 
 // PlatformHostOrDefault returns the configured platform host,
-// defaulting to "github.com" when empty.
+// defaulting to the provider's public host when empty.
 func (r Repo) PlatformHostOrDefault() string {
 	if r.PlatformHost == "" {
-		return "github.com"
+		if host, ok := platformpkg.DefaultHost(platformpkg.Kind(r.PlatformOrDefault())); ok {
+			return host
+		}
+		return defaultPlatformHost
 	}
 	return r.PlatformHost
+}
+
+func (r Repo) PlatformOrDefault() string {
+	if r.Platform == "" {
+		return defaultPlatform
+	}
+	return r.Platform
 }
 
 // ResolveToken returns the token for this repo. When TokenEnv is
@@ -65,31 +85,78 @@ func (r Repo) ResolveToken(globalToken string) string {
 	return globalToken
 }
 
-// normalize cleans up a Repo entry, extracting owner/name from
-// GitHub URLs or SSH addresses if the user pasted one into either
-// field. It also strips a trailing .git suffix.
-func (r *Repo) normalize() error {
+// normalize cleans up a Repo entry, extracting platform, host,
+// owner, and name from provider URLs or SSH addresses if the user
+// pasted one into either field. It also strips a trailing .git suffix.
+func (r *Repo) normalize(defaultGitHubHost string) error {
+	hadPlatformHost := strings.TrimSpace(r.PlatformHost) != ""
+	platform, err := normalizePlatform(r.Platform)
+	if err != nil {
+		return err
+	}
+	r.Platform = platform
+
 	// Check if either field contains a full GitHub URL or SSH
 	// address. If so, extract owner/name from it.
 	for _, raw := range []string{r.Owner, r.Name} {
-		owner, name, err := parseGitHubRef(raw)
+		ref, err := parseRepoRef(raw, r.Platform)
 		if err != nil {
 			return err
 		}
-		if owner != "" {
-			r.Owner = owner
-			r.Name = name
+		if ref.owner != "" {
+			r.Platform = ref.platform
+			if !hadPlatformHost {
+				r.PlatformHost = ref.host
+				hadPlatformHost = true
+			}
+			r.Owner = ref.owner
+			r.Name = ref.name
+			r.RepoPath = ref.owner + "/" + ref.name
 			break
 		}
 	}
 
+	r.RepoPath = cleanPath(strings.TrimSpace(r.RepoPath))
+	if r.RepoPath != "" && (strings.TrimSpace(r.Owner) == "" || strings.TrimSpace(r.Name) == "") {
+		if platformpkg.AllowsNestedOwner(platformpkg.Kind(r.Platform)) {
+			owner, name, err := splitGitLabPath("repo_path", r.RepoPath)
+			if err != nil {
+				return err
+			}
+			r.Owner = owner
+			r.Name = name
+		} else {
+			owner, name, err := splitGitHubPath("repo_path", r.RepoPath)
+			if err != nil {
+				return err
+			}
+			r.Owner = owner
+			r.Name = name
+		}
+	}
 	r.Name = strings.TrimSuffix(r.Name, ".git")
 	if r.Owner == "" || r.Name == "" {
 		return errors.New("must have owner and name")
 	}
-	r.Owner = strings.ToLower(r.Owner)
-	r.Name = strings.ToLower(r.Name)
-	r.PlatformHost = strings.ToLower(r.PlatformHost)
+	if platformpkg.LowercaseRepoNames(platformpkg.Kind(r.Platform)) {
+		r.Owner = strings.ToLower(r.Owner)
+		r.Name = strings.ToLower(r.Name)
+		if r.RepoPath != "" {
+			r.RepoPath = strings.ToLower(r.RepoPath)
+		}
+	}
+	r.PlatformHost, err = normalizePlatformHost(r.Platform, r.PlatformHost)
+	if err != nil {
+		return err
+	}
+	if r.Platform == defaultPlatform && !hadPlatformHost {
+		r.PlatformHost = defaultGitHubHost
+	}
+	if r.Platform == defaultPlatform &&
+		r.PlatformHost == defaultPlatformHost &&
+		defaultGitHubHost == defaultPlatformHost {
+		r.PlatformHost = ""
+	}
 	return nil
 }
 
@@ -97,36 +164,89 @@ func (r Repo) ownerHasGlob() bool {
 	return strings.ContainsAny(r.Owner, "*?[")
 }
 
-// parseGitHubRef extracts owner and repo name from a GitHub URL or
-// SSH address. Returns ("", "", nil) when the input is not a GitHub
-// ref at all, or a non-nil error when it looks like a GitHub ref but
-// is malformed (e.g. missing the repo name).
-func parseGitHubRef(raw string) (owner, name string, err error) {
+type parsedRepoRef struct {
+	platform string
+	host     string
+	owner    string
+	name     string
+}
+
+func parseRepoRef(raw, configuredPlatform string) (parsedRepoRef, error) {
 	raw = strings.TrimSpace(raw)
-	var path string
+	if raw == "" {
+		return parsedRepoRef{}, nil
+	}
+
+	platform, err := normalizePlatform(configuredPlatform)
+	if err != nil {
+		return parsedRepoRef{}, err
+	}
+
+	var host, path string
 	switch {
 	case strings.HasPrefix(raw, "ssh://"):
-		// URI-style SSH: ssh://git@github.com[:port]/owner/repo
-		p, isGitHub, err := parseSSHURI(raw)
+		u, err := url.Parse(raw)
 		if err != nil {
-			return "", "", err
+			return parsedRepoRef{}, fmt.Errorf("invalid SSH URI %q: %w", raw, err)
 		}
-		if !isGitHub {
-			return "", "", nil
+		host = strings.ToLower(u.Hostname())
+		path = strings.TrimPrefix(u.Path, "/")
+	case strings.HasPrefix(raw, "http://") ||
+		strings.HasPrefix(raw, "https://"):
+		u, err := url.Parse(raw)
+		if err != nil {
+			return parsedRepoRef{}, fmt.Errorf("invalid repository URL %q: %w", raw, err)
 		}
-		path = p
+		host = strings.ToLower(u.Host)
+		path = strings.TrimPrefix(u.Path, "/")
 	default:
-		if m := ghSCPRe.FindStringSubmatch(raw); m != nil {
-			path = m[1]
-		} else if m := ghSchemeRe.FindStringSubmatch(raw); m != nil {
-			path = m[1]
-		} else if m := ghBareRe.FindStringSubmatch(raw); m != nil {
-			path = m[1]
+		if m := scpRepoRe.FindStringSubmatch(raw); m != nil {
+			host = strings.ToLower(m[1])
+			path = m[2]
+		} else if m := bareHostRepoRe.FindStringSubmatch(raw); m != nil {
+			host = strings.ToLower(m[1])
+			path = m[2]
 		} else {
-			return "", "", nil
+			return parsedRepoRef{}, nil
 		}
 	}
+
+	if host == "" {
+		return parsedRepoRef{}, nil
+	}
+	refPlatform, ok := platformForRepoRefHost(host, platform)
+	if !ok {
+		return parsedRepoRef{}, nil
+	}
+
 	path = cleanPath(path)
+	if platformpkg.AllowsNestedOwner(platformpkg.Kind(refPlatform)) {
+		owner, name, err := splitGitLabPath(raw, path)
+		if err != nil {
+			return parsedRepoRef{}, err
+		}
+		return parsedRepoRef{
+			platform: refPlatform,
+			host:     normalizePublicHost(host),
+			owner:    owner,
+			name:     name,
+		}, nil
+	}
+	{
+		owner, name, err := splitGitHubPath(raw, path)
+		if err != nil {
+			return parsedRepoRef{}, err
+		}
+		return parsedRepoRef{
+			platform: refPlatform,
+			host:     normalizePublicHost(host),
+			owner:    owner,
+			name:     name,
+		}, nil
+	}
+}
+
+func splitGitHubPath(raw, path string) (string, string, error) {
 	parts := strings.SplitN(path, "/", 3)
 	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
 		return "", "", fmt.Errorf(
@@ -136,17 +256,105 @@ func parseGitHubRef(raw string) (owner, name string, err error) {
 	return parts[0], parts[1], nil
 }
 
-// parseSSHURI parses ssh:// URIs. Returns (path, true, nil) when
-// the host is github.com, or ("", false, nil) when it is not.
-func parseSSHURI(raw string) (string, bool, error) {
-	u, err := url.Parse(raw)
+func splitGitLabPath(raw, path string) (string, string, error) {
+	parts := stripGitLabWebUISuffix(strings.Split(path, "/"))
+	if len(parts) < 2 || parts[0] == "" || parts[len(parts)-1] == "" {
+		return "", "", fmt.Errorf(
+			"incomplete GitLab reference %q: expected namespace/repo", raw,
+		)
+	}
+	return strings.Join(parts[:len(parts)-1], "/"), parts[len(parts)-1], nil
+}
+
+func stripGitLabWebUISuffix(parts []string) []string {
+	for i := 0; i+2 < len(parts); i++ {
+		if parts[i] != "-" {
+			continue
+		}
+		switch parts[i+1] {
+		case "merge_requests", "issues", "tree", "blob", "commit", "commits":
+			return parts[:i]
+		}
+	}
+	return parts
+}
+
+func platformForRepoRefHost(host, configuredPlatform string) (string, bool) {
+	host = normalizePublicHost(host)
+	matchHost := hostNameForMatch(host)
+	if configuredPlatform != defaultPlatform {
+		return configuredPlatform, true
+	}
+	if configuredPlatform == defaultPlatform {
+		if matchHost == defaultPlatformHost {
+			return defaultPlatform, true
+		}
+		return "", false
+	}
+	return "", false
+}
+
+func hostNameForMatch(host string) string {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		return h
+	}
+	return strings.Trim(host, "[]")
+}
+
+func normalizePublicHost(host string) string {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if before, ok := strings.CutSuffix(host, ":443"); ok {
+		return before
+	}
+	return host
+}
+
+func normalizePlatform(raw string) (string, error) {
+	kind, err := platformpkg.NormalizeKind(raw)
 	if err != nil {
-		return "", false, fmt.Errorf("invalid SSH URI %q: %w", raw, err)
+		return "", err
 	}
-	if u.Hostname() != "github.com" {
-		return "", false, nil
+	return string(kind), nil
+}
+
+func normalizePlatformHost(platform, raw string) (string, error) {
+	platform, err := normalizePlatform(platform)
+	if err != nil {
+		return "", err
 	}
-	return strings.TrimPrefix(u.Path, "/"), true, nil
+	host := strings.ToLower(strings.TrimSpace(raw))
+	if host == "" {
+		if defaultHost, ok := platformpkg.DefaultHost(platformpkg.Kind(platform)); ok {
+			return defaultHost, nil
+		}
+		return "", fmt.Errorf("platform_host is required for platform %q", platform)
+	}
+	if strings.HasPrefix(host, "http://") || strings.HasPrefix(host, "https://") {
+		u, err := url.Parse(host)
+		if err != nil {
+			return "", fmt.Errorf("invalid_repo_ref: invalid platform_host %q: %w", raw, err)
+		}
+		if u.Path != "" && u.Path != "/" {
+			return "", fmt.Errorf(
+				"invalid_repo_ref: platform_host %q must be a host; subpath installs are not supported",
+				raw,
+			)
+		}
+		host = u.Host
+	} else {
+		host = strings.TrimRight(host, "/")
+		if strings.Contains(host, "/") {
+			return "", fmt.Errorf(
+				"invalid_repo_ref: platform_host %q must be a host; subpath installs are not supported",
+				raw,
+			)
+		}
+	}
+	host = normalizePublicHost(host)
+	if host == "" {
+		return "", fmt.Errorf("invalid_repo_ref: platform_host %q is empty", raw)
+	}
+	return host, nil
 }
 
 // cleanPath strips query strings, fragments, trailing slashes,
@@ -198,20 +406,21 @@ type Tmux struct {
 }
 
 type Config struct {
-	SyncInterval        string   `toml:"sync_interval"`
-	GitHubTokenEnv      string   `toml:"github_token_env"`
-	DefaultPlatformHost string   `toml:"default_platform_host"`
-	Host                string   `toml:"host"`
-	Port                int      `toml:"port"`
-	BasePath            string   `toml:"base_path"`
-	DataDir             string   `toml:"data_dir"`
-	SyncBudgetPerHour   int      `toml:"sync_budget_per_hour"`
-	Repos               []Repo   `toml:"repos"`
-	Activity            Activity `toml:"activity"`
-	Terminal            Terminal `toml:"terminal"`
-	Agents              []Agent  `toml:"agents"`
-	Roborev             Roborev  `toml:"roborev"`
-	Tmux                Tmux     `toml:"tmux"`
+	SyncInterval        string           `toml:"sync_interval"`
+	GitHubTokenEnv      string           `toml:"github_token_env"`
+	DefaultPlatformHost string           `toml:"default_platform_host"`
+	Host                string           `toml:"host"`
+	Port                int              `toml:"port"`
+	BasePath            string           `toml:"base_path"`
+	DataDir             string           `toml:"data_dir"`
+	SyncBudgetPerHour   int              `toml:"sync_budget_per_hour"`
+	Repos               []Repo           `toml:"repos"`
+	Platforms           []PlatformConfig `toml:"platforms"`
+	Activity            Activity         `toml:"activity"`
+	Terminal            Terminal         `toml:"terminal"`
+	Agents              []Agent          `toml:"agents"`
+	Roborev             Roborev          `toml:"roborev"`
+	Tmux                Tmux             `toml:"tmux"`
 }
 
 func DefaultConfigPath() string {
@@ -267,6 +476,12 @@ github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 default_platform_host = "github.com"
 host = "127.0.0.1"
 port = 8091
+
+# Add additional provider hosts when needed.
+# [[platforms]]
+# type = "gitlab"
+# host = "gitlab.com"
+# token_env = "MIDDLEMAN_GITLAB_TOKEN"
 
 # Add repositories to monitor (or add them in the Settings UI).
 # [[repos]]
@@ -356,6 +571,9 @@ func Load(path string) (*Config, error) {
 	if cfg.Repos == nil {
 		cfg.Repos = []Repo{}
 	}
+	if cfg.Platforms == nil {
+		cfg.Platforms = []PlatformConfig{}
+	}
 	if cfg.Agents == nil {
 		cfg.Agents = []Agent{}
 	}
@@ -389,11 +607,31 @@ func Load(path string) (*Config, error) {
 }
 
 func (c *Config) Validate() error {
-	c.DefaultPlatformHost = strings.ToLower(
-		strings.TrimSpace(c.DefaultPlatformHost),
+	var err error
+	c.DefaultPlatformHost, err = normalizePlatformHost(
+		defaultPlatform, c.DefaultPlatformHost,
 	)
-	if c.DefaultPlatformHost == "" {
+	if err != nil {
+		return fmt.Errorf("config: default_platform_host: %w", err)
+	}
+	if c.DefaultPlatformHost == defaultPlatformHost {
 		c.DefaultPlatformHost = defaultPlatformHost
+	}
+
+	for i := range c.Platforms {
+		p := &c.Platforms[i]
+		p.Type, err = normalizePlatform(p.Type)
+		if err != nil {
+			return fmt.Errorf("config: platforms[%d]: %w", i, err)
+		}
+		p.Host, err = normalizePlatformHost(p.Type, p.Host)
+		if err != nil {
+			return fmt.Errorf("config: platforms[%d]: %w", i, err)
+		}
+		p.TokenEnv = strings.TrimSpace(p.TokenEnv)
+	}
+	if err := c.validatePlatforms(); err != nil {
+		return err
 	}
 
 	for i := range c.Repos {
@@ -402,42 +640,42 @@ func (c *Config) Validate() error {
 				"config: repos[%d]: glob syntax in owner is not supported", i,
 			)
 		}
-		if err := c.Repos[i].normalize(); err != nil {
+		if err := c.Repos[i].normalize(c.DefaultPlatformHost); err != nil {
 			return fmt.Errorf("config: repos[%d]: %w", i, err)
 		}
 	}
 
-	// Reject duplicate owner+name pairs.
-	seen := make(map[string]bool, len(c.Repos))
+	// Reject duplicate repository identities.
+	seen := make(map[string]string, len(c.Repos))
 	for _, r := range c.Repos {
-		key := r.Owner + "/" + r.Name
-		if seen[key] {
+		key := repoIdentityKey(r)
+		display := repoIdentityDisplay(r)
+		if prev, ok := seen[key]; ok {
 			return fmt.Errorf(
-				"config: duplicate repo %q", key,
+				"config: duplicate repo %q", prev,
 			)
 		}
-		seen[key] = true
+		seen[key] = display
 	}
 
 	// Reject conflicting token_env for the same host. Compare
-	// effective env name: empty TokenEnv means "use global
-	// github_token_env", so treat "" as equivalent to the global.
+	// effective env name: empty TokenEnv means "use platform token
+	// config", with github_token_env as the GitHub default.
 	hostToken := make(map[string]string, len(c.Repos))
 	for _, r := range c.Repos {
-		host := r.PlatformHostOrDefault()
-		effective := r.TokenEnv
-		if effective == "" {
-			effective = c.GitHubTokenEnv
-		}
-		if prev, ok := hostToken[host]; ok {
+		key := r.PlatformOrDefault() + "\x00" + r.PlatformHostOrDefault()
+		effective := c.effectiveTokenEnvForPlatformHost(
+			r.PlatformOrDefault(), r.PlatformHostOrDefault(), r.TokenEnv,
+		)
+		if prev, ok := hostToken[key]; ok {
 			if prev != effective {
 				return fmt.Errorf(
-					"config: conflicting token_env for host %q: %q vs %q",
-					host, prev, effective,
+					"config: conflicting token_env for %s host %q: %q vs %q",
+					r.PlatformOrDefault(), r.PlatformHostOrDefault(), prev, effective,
 				)
 			}
 		} else {
-			hostToken[host] = effective
+			hostToken[key] = effective
 		}
 	}
 
@@ -519,6 +757,25 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+func (c *Config) validatePlatforms() error {
+	seen := make(map[string]string, len(c.Platforms))
+	for _, p := range c.Platforms {
+		key := p.Type + "\x00" + p.Host
+		display := p.Type + "/" + p.Host
+		if prev, ok := seen[key]; ok {
+			if prev == p.TokenEnv {
+				return fmt.Errorf("config: duplicate platform %q", display)
+			}
+			return fmt.Errorf(
+				"config: conflicting token_env for platform %q: %q vs %q",
+				display, prev, p.TokenEnv,
+			)
+		}
+		seen[key] = p.TokenEnv
+	}
+	return nil
+}
+
 func (c *Config) validateAgents() error {
 	seen := make(map[string]struct{}, len(c.Agents))
 	for i := range c.Agents {
@@ -561,6 +818,30 @@ func (c *Config) validateAgents() error {
 	return nil
 }
 
+func repoIdentityKey(r Repo) string {
+	return strings.Join([]string{
+		r.PlatformOrDefault(),
+		r.PlatformHostOrDefault(),
+		strings.ToLower(repoPathOrFullName(r)),
+	}, "\x00")
+}
+
+func repoIdentityDisplay(r Repo) string {
+	platform := r.PlatformOrDefault()
+	host := r.PlatformHostOrDefault()
+	if platform == defaultPlatform && host == defaultPlatformHost {
+		return repoPathOrFullName(r)
+	}
+	return platform + "/" + host + "/" + repoPathOrFullName(r)
+}
+
+func repoPathOrFullName(r Repo) string {
+	if strings.TrimSpace(r.RepoPath) != "" {
+		return strings.TrimSpace(r.RepoPath)
+	}
+	return r.Owner + "/" + r.Name
+}
+
 var reservedSystemLaunchTargetKeys = map[string]bool{
 	"tmux":        true,
 	"plain_shell": true,
@@ -568,13 +849,11 @@ var reservedSystemLaunchTargetKeys = map[string]bool{
 
 var (
 	validBasePathRe = regexp.MustCompile(`^/([a-zA-Z0-9._~-]+/)*$`)
-	// With scheme: optional path so https://github.com is caught.
-	ghSchemeRe = regexp.MustCompile(`^https?://github\.com(?:/(.*))?$`)
 	// Without scheme: require / so bare "github.com" (a valid repo
 	// name) is not falsely matched.
-	ghBareRe = regexp.MustCompile(`^github\.com/(.*)$`)
-	// SCP-style only (git@github.com:path); ssh:// URIs use net/url.
-	ghSCPRe = regexp.MustCompile(`^[^@]+@github\.com:(.*)$`)
+	bareHostRepoRe = regexp.MustCompile(`^([A-Za-z0-9][A-Za-z0-9.-]*(?:\.[A-Za-z0-9.-]+|:[0-9]+))/(.*)$`)
+	// SCP-style only (git@host:path); ssh:// URIs use net/url.
+	scpRepoRe = regexp.MustCompile(`^[^@]+@([^:]+):(.*)$`)
 )
 
 func (c *Config) SyncDuration() time.Duration {
@@ -587,6 +866,60 @@ func (c *Config) GitHubToken() string {
 		return token
 	}
 	return ghAuthToken()
+}
+
+func (c *Config) TokenForPlatformHost(platform, host, repoTokenEnv string) string {
+	if c == nil {
+		return ""
+	}
+	if repoTokenEnv != "" {
+		if token := os.Getenv(repoTokenEnv); token != "" {
+			return token
+		}
+	}
+	p, err := normalizePlatform(platform)
+	if err != nil {
+		return ""
+	}
+	h, err := normalizePlatformHost(p, host)
+	if err != nil {
+		return ""
+	}
+	for _, pc := range c.Platforms {
+		if pc.Type == p && pc.Host == h && pc.TokenEnv != "" {
+			return os.Getenv(pc.TokenEnv)
+		}
+	}
+	if p == defaultPlatform {
+		return c.GitHubToken()
+	}
+	return ""
+}
+
+func (c *Config) ResolveRepoToken(r Repo) string {
+	if c == nil {
+		return r.ResolveToken("")
+	}
+	return c.TokenForPlatformHost(
+		r.PlatformOrDefault(), r.PlatformHostOrDefault(), r.TokenEnv,
+	)
+}
+
+func (c *Config) effectiveTokenEnvForPlatformHost(
+	platform, host, repoTokenEnv string,
+) string {
+	if repoTokenEnv != "" {
+		return repoTokenEnv
+	}
+	for _, pc := range c.Platforms {
+		if pc.Type == platform && pc.Host == host && pc.TokenEnv != "" {
+			return pc.TokenEnv
+		}
+	}
+	if platform == defaultPlatform {
+		return c.GitHubTokenEnv
+	}
+	return ""
 }
 
 // TokenEnvNames returns every env var name that may hold a GitHub
@@ -605,6 +938,11 @@ func (c *Config) TokenEnvNames() []string {
 	for _, r := range c.Repos {
 		if r.TokenEnv != "" {
 			names = append(names, r.TokenEnv)
+		}
+	}
+	for _, p := range c.Platforms {
+		if p.TokenEnv != "" {
+			names = append(names, p.TokenEnv)
 		}
 	}
 	return names
@@ -660,22 +998,41 @@ func (c *Config) TmuxAgentSessionsEnabled() bool {
 		*c.Tmux.AgentSessions
 }
 
+func reposForSave(repos []Repo) []Repo {
+	if repos == nil {
+		return nil
+	}
+	out := make([]Repo, len(repos))
+	copy(out, repos)
+	for i := range out {
+		if out[i].Platform == defaultPlatform {
+			out[i].Platform = ""
+		}
+		if out[i].PlatformOrDefault() == defaultPlatform &&
+			out[i].PlatformHost == defaultPlatformHost {
+			out[i].PlatformHost = ""
+		}
+	}
+	return out
+}
+
 // configFile is the subset of Config written to disk.
 type configFile struct {
-	SyncInterval        string   `toml:"sync_interval"`
-	GitHubTokenEnv      string   `toml:"github_token_env"`
-	DefaultPlatformHost string   `toml:"default_platform_host,omitempty"`
-	Host                string   `toml:"host"`
-	Port                int      `toml:"port"`
-	SyncBudgetPerHour   int      `toml:"sync_budget_per_hour,omitempty"`
-	BasePath            string   `toml:"base_path,omitempty"`
-	DataDir             string   `toml:"data_dir,omitempty"`
-	Repos               []Repo   `toml:"repos"`
-	Activity            Activity `toml:"activity"`
-	Terminal            Terminal `toml:"terminal,omitempty"`
-	Agents              []Agent  `toml:"agents,omitempty"`
-	Roborev             Roborev  `toml:"roborev,omitempty"`
-	Tmux                Tmux     `toml:"tmux,omitempty"`
+	SyncInterval        string           `toml:"sync_interval"`
+	GitHubTokenEnv      string           `toml:"github_token_env"`
+	DefaultPlatformHost string           `toml:"default_platform_host,omitempty"`
+	Host                string           `toml:"host"`
+	Port                int              `toml:"port"`
+	SyncBudgetPerHour   int              `toml:"sync_budget_per_hour,omitempty"`
+	BasePath            string           `toml:"base_path,omitempty"`
+	DataDir             string           `toml:"data_dir,omitempty"`
+	Repos               []Repo           `toml:"repos"`
+	Platforms           []PlatformConfig `toml:"platforms,omitempty"`
+	Activity            Activity         `toml:"activity"`
+	Terminal            Terminal         `toml:"terminal,omitempty"`
+	Agents              []Agent          `toml:"agents,omitempty"`
+	Roborev             Roborev          `toml:"roborev,omitempty"`
+	Tmux                Tmux             `toml:"tmux,omitempty"`
 }
 
 // Save writes the current config to the given path.
@@ -686,7 +1043,8 @@ func (c *Config) Save(path string) error {
 		DefaultPlatformHost: c.DefaultPlatformHost,
 		Host:                c.Host,
 		Port:                c.Port,
-		Repos:               c.Repos,
+		Repos:               reposForSave(c.Repos),
+		Platforms:           c.Platforms,
 		Activity:            c.Activity,
 		Terminal:            c.Terminal,
 		Agents:              c.Agents,

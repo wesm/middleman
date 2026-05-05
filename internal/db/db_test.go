@@ -298,9 +298,12 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 		CREATE TABLE middleman_issue_events (
 			id           INTEGER PRIMARY KEY AUTOINCREMENT,
 			issue_id     INTEGER NOT NULL REFERENCES middleman_issues(id) ON DELETE CASCADE,
+			platform_id  INTEGER,
 			event_type   TEXT NOT NULL,
 			author       TEXT NOT NULL,
+			summary      TEXT NOT NULL DEFAULT '',
 			body         TEXT,
+			metadata_json TEXT NOT NULL DEFAULT '',
 			created_at   TEXT NOT NULL,
 			dedupe_key   TEXT NOT NULL,
 			UNIQUE(issue_id, dedupe_key)
@@ -620,6 +623,7 @@ func TestOpenRepairsLegacyTimestampStorage(t *testing.T) {
 	)
 	require.NoError(err)
 	require.NoError(rewriteWorkspacesToVersion9ForTest(raw))
+	require.NoError(removeProviderIdentityColumnsForTest(raw))
 	_, err = raw.ExecContext(ctx,
 		`UPDATE schema_migrations SET version = ?, dirty = FALSE`,
 		9,
@@ -721,6 +725,7 @@ func TestOpenRepairsBrokenWorkspaceMigrationVersion11(t *testing.T) {
 	raw, err := sql.Open("sqlite", path)
 	require.NoError(err)
 	require.NoError(rewriteWorkspacesToVersion11ForTest(raw))
+	require.NoError(removeProviderIdentityColumnsForTest(raw))
 	_, err = raw.Exec(`UPDATE schema_migrations SET version = 11, dirty = FALSE`)
 	require.NoError(err)
 	require.NoError(raw.Close())
@@ -791,6 +796,7 @@ func TestOpenMigratesWorkspaceUniquenessAndPreservesSetupEvents(t *testing.T) {
 	raw, err := sql.Open("sqlite", path)
 	require.NoError(err)
 	require.NoError(rewriteWorkspacesToVersion11ForTest(raw))
+	require.NoError(removeProviderIdentityColumnsForTest(raw))
 	_, err = raw.Exec(`UPDATE schema_migrations SET version = 11, dirty = FALSE`)
 	require.NoError(err)
 	require.NoError(raw.Close())
@@ -1163,6 +1169,51 @@ func rewriteWorkspacesToVersion9ForTest(raw *sql.DB) error {
 		  OR NEW.repo_name <> lower(NEW.repo_name)
 		BEGIN
 		    SELECT RAISE(ABORT, 'workspace repo identifiers must be lowercase');
+		END;
+	`)
+	return err
+}
+
+func removeProviderIdentityColumnsForTest(raw *sql.DB) error {
+	_, err := raw.Exec(`
+		DROP TRIGGER IF EXISTS middleman_repos_casefold_update;
+		DROP TRIGGER IF EXISTS middleman_repos_casefold_insert;
+		DROP INDEX IF EXISTS idx_issue_events_platform_external_id;
+		DROP INDEX IF EXISTS idx_mr_events_platform_external_id;
+		DROP INDEX IF EXISTS idx_labels_repo_platform_external_id;
+		DROP INDEX IF EXISTS idx_issues_repo_platform_external_id;
+		DROP INDEX IF EXISTS idx_merge_requests_repo_platform_external_id;
+		DROP INDEX IF EXISTS idx_repos_provider_path_key;
+		DROP INDEX IF EXISTS idx_repos_platform_repo_id;
+		ALTER TABLE middleman_mr_events DROP COLUMN platform_external_id;
+		ALTER TABLE middleman_labels DROP COLUMN platform_external_id;
+		ALTER TABLE middleman_issues DROP COLUMN platform_external_id;
+		ALTER TABLE middleman_merge_requests DROP COLUMN platform_external_id;
+		ALTER TABLE middleman_repos DROP COLUMN default_branch;
+		ALTER TABLE middleman_repos DROP COLUMN clone_url;
+		ALTER TABLE middleman_repos DROP COLUMN web_url;
+		ALTER TABLE middleman_repos DROP COLUMN repo_path_key;
+		ALTER TABLE middleman_repos DROP COLUMN name_key;
+		ALTER TABLE middleman_repos DROP COLUMN owner_key;
+		ALTER TABLE middleman_repos DROP COLUMN repo_path;
+		ALTER TABLE middleman_repos DROP COLUMN platform_repo_id;
+
+		CREATE TRIGGER middleman_repos_casefold_insert
+		BEFORE INSERT ON middleman_repos
+		WHEN NEW.platform_host <> lower(NEW.platform_host)
+		  OR NEW.owner <> lower(NEW.owner)
+		  OR NEW.name <> lower(NEW.name)
+		BEGIN
+		    SELECT RAISE(ABORT, 'repo identifiers must be lowercase');
+		END;
+
+		CREATE TRIGGER middleman_repos_casefold_update
+		BEFORE UPDATE OF platform_host, owner, name ON middleman_repos
+		WHEN NEW.platform_host <> lower(NEW.platform_host)
+		  OR NEW.owner <> lower(NEW.owner)
+		  OR NEW.name <> lower(NEW.name)
+		BEGIN
+		    SELECT RAISE(ABORT, 'repo identifiers must be lowercase');
 		END;
 	`)
 	return err

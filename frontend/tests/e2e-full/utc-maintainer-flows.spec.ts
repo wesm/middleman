@@ -17,7 +17,7 @@ async function fetchPullDetail(
   pull: PullRef,
 ) {
   return page.evaluate(async ({ owner, repo, number }) => {
-    const response = await fetch(`/api/v1/repos/${owner}/${repo}/pulls/${number}`);
+    const response = await fetch(`/api/v1/pulls/github/${owner}/${repo}/${number}`);
     return response.json();
   }, pull);
 }
@@ -27,7 +27,7 @@ async function fetchIssueDetail(
   issue: IssueRef,
 ) {
   return page.evaluate(async ({ owner, repo, number }) => {
-    const response = await fetch(`/api/v1/repos/${owner}/${repo}/issues/${number}`);
+    const response = await fetch(`/api/v1/issues/github/${owner}/${repo}/${number}`);
     return response.json();
   }, issue);
 }

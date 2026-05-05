@@ -17,6 +17,7 @@ import (
 	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
 	ghclient "github.com/wesm/middleman/internal/github"
+	"github.com/wesm/middleman/internal/platform"
 	"github.com/wesm/middleman/internal/server"
 	"github.com/wesm/middleman/internal/testutil"
 )
@@ -44,7 +45,7 @@ func TestResolveStartupReposExpandsConfiguredGlobs(t *testing.T) {
 	repos := resolveStartupRepos(
 		t.Context(),
 		cfg,
-		map[string]ghclient.Client{"github.com": client},
+		mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}),
 		nil,
 	)
 
@@ -52,6 +53,7 @@ func TestResolveStartupReposExpandsConfiguredGlobs(t *testing.T) {
 		Owner:        "roborev-dev",
 		Name:         "middleman",
 		PlatformHost: "github.com",
+		RepoPath:     "roborev-dev/middleman",
 	}}, repos)
 }
 
@@ -64,7 +66,7 @@ func TestResolveStartupReposKeepsExactReposWhenResolutionFails(t *testing.T) {
 	repos := resolveStartupRepos(
 		t.Context(),
 		cfg,
-		map[string]ghclient.Client{},
+		mustProviderRegistry(t, nil),
 		nil,
 	)
 
@@ -72,6 +74,7 @@ func TestResolveStartupReposKeepsExactReposWhenResolutionFails(t *testing.T) {
 		Owner:        "roborev-dev",
 		Name:         "middleman",
 		PlatformHost: "github.com",
+		RepoPath:     "roborev-dev/middleman",
 	}}, repos)
 }
 
@@ -95,7 +98,7 @@ func TestResolveStartupReposFallsBackToDBForOfflineGlobs(t *testing.T) {
 	}
 
 	repos := resolveStartupRepos(
-		ctx, cfg, map[string]ghclient.Client{}, database,
+		ctx, cfg, mustProviderRegistry(t, nil), database,
 	)
 
 	assert.Len(repos, 2)
@@ -104,6 +107,77 @@ func TestResolveStartupReposFallsBackToDBForOfflineGlobs(t *testing.T) {
 		names[i] = r.Name
 	}
 	assert.ElementsMatch([]string{"widgets", "tools"}, names)
+}
+
+func TestResolveStartupReposUsesProviderRegistryForGitLab(t *testing.T) {
+	assert := Assert.New(t)
+	cfg := &config.Config{
+		Repos: []config.Repo{{
+			Platform:     "gitlab",
+			PlatformHost: "gitlab.com",
+			Owner:        "group/subgroup",
+			Name:         "project",
+		}},
+	}
+	registry := mustProviderRegistry(t, nil, mainTestRepositoryReader{
+		kind: platform.KindGitLab,
+		host: "gitlab.com",
+	})
+
+	repos := resolveStartupRepos(t.Context(), cfg, registry, nil)
+
+	assert.Equal([]ghclient.RepoRef{{
+		Platform:     platform.KindGitLab,
+		PlatformHost: "gitlab.com",
+		Owner:        "group/subgroup",
+		Name:         "project",
+		RepoPath:     "group/subgroup/project",
+	}}, repos)
+}
+
+func TestValidateProviderHostKeysAllowsMixedProvidersOnSameHost(t *testing.T) {
+	err := validateProviderHostKeys(map[string]string{
+		providerHostKey("github", "code.example.com"): "github-token",
+		providerHostKey("gitlab", "code.example.com"): "gitlab-token",
+	})
+
+	require.NoError(t, err)
+}
+
+func TestBuildProviderStartupUsesRegisteredFactoryForFutureProvider(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	database, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	called := false
+	startup, err := buildProviderStartup(
+		database,
+		&config.Config{},
+		map[string]string{providerHostKey("codeberg", "codeberg.org"): "codeberg-token"},
+		map[string]providerFactory{
+			"codeberg": func(input providerFactoryInput) (providerFactoryOutput, error) {
+				called = true
+				assert.Equal("codeberg.org", input.host)
+				assert.Equal("codeberg-token", input.token)
+				return providerFactoryOutput{
+					provider: mainTestRepositoryReader{
+						kind: platform.Kind("codeberg"),
+						host: input.host,
+					},
+				}, nil
+			},
+		},
+	)
+	require.NoError(err)
+	assert.True(called)
+	assert.Equal("codeberg-token", startup.cloneTokens["codeberg.org"])
+
+	reader, err := startup.registry.RepositoryReader(platform.Kind("codeberg"), "codeberg.org")
+	require.NoError(err)
+	assert.NotNil(reader)
 }
 
 func TestStartupFallbackKeepsPersistedGlobMatchesInAPIs(t *testing.T) {
@@ -151,7 +225,7 @@ func TestStartupFallbackKeepsPersistedGlobMatchesInAPIs(t *testing.T) {
 	repos := resolveStartupRepos(
 		t.Context(),
 		cfg,
-		map[string]ghclient.Client{"github.com": client},
+		mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}),
 		database,
 	)
 	syncer := ghclient.NewSyncer(
@@ -198,6 +272,57 @@ func TestStartupFallbackKeepsPersistedGlobMatchesInAPIs(t *testing.T) {
 	assert.Equal("roborev-dev", settings.Repos[0].Owner)
 	assert.Equal("*", settings.Repos[0].Name)
 	assert.Equal(2, settings.Repos[0].MatchedRepoCount)
+}
+
+func mustProviderRegistry(
+	t *testing.T,
+	clients map[string]ghclient.Client,
+	providers ...platform.Provider,
+) *platform.Registry {
+	t.Helper()
+	registry, err := ghclient.NewProviderRegistry(clients, providers...)
+	require.NoError(t, err)
+	return registry
+}
+
+type mainTestRepositoryReader struct {
+	kind platform.Kind
+	host string
+}
+
+func (r mainTestRepositoryReader) Platform() platform.Kind {
+	return r.kind
+}
+
+func (r mainTestRepositoryReader) Host() string {
+	return r.host
+}
+
+func (r mainTestRepositoryReader) Capabilities() platform.Capabilities {
+	return platform.Capabilities{ReadRepositories: true}
+}
+
+func (r mainTestRepositoryReader) GetRepository(
+	_ context.Context,
+	ref platform.RepoRef,
+) (platform.Repository, error) {
+	return platform.Repository{Ref: ref}, nil
+}
+
+func (r mainTestRepositoryReader) ListRepositories(
+	_ context.Context,
+	owner string,
+	_ platform.RepositoryListOptions,
+) ([]platform.Repository, error) {
+	return []platform.Repository{{
+		Ref: platform.RepoRef{
+			Platform: r.kind,
+			Host:     r.host,
+			Owner:    owner,
+			Name:     "project",
+			RepoPath: owner + "/project",
+		},
+	}}, nil
 }
 
 func TestRunCLIConfigReadPort(t *testing.T) {

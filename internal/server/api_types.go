@@ -14,9 +14,48 @@ type worktreeLinkResponse struct {
 	WorktreeBranch string `json:"worktree_branch,omitempty"`
 }
 
+type providerCapabilitiesResponse struct {
+	ReadRepositories  bool `json:"read_repositories"`
+	ReadMergeRequests bool `json:"read_merge_requests"`
+	ReadIssues        bool `json:"read_issues"`
+	ReadComments      bool `json:"read_comments"`
+	ReadReleases      bool `json:"read_releases"`
+	ReadCI            bool `json:"read_ci"`
+	CommentMutation   bool `json:"comment_mutation"`
+	StateMutation     bool `json:"state_mutation"`
+	MergeMutation     bool `json:"merge_mutation"`
+	ReviewMutation    bool `json:"review_mutation"`
+	WorkflowApproval  bool `json:"workflow_approval"`
+	ReadyForReview    bool `json:"ready_for_review"`
+	IssueMutation     bool `json:"issue_mutation"`
+}
+
+type repoResponse struct {
+	ID                       int64
+	Platform                 string
+	PlatformHost             string
+	Owner                    string
+	Name                     string
+	LastSyncStartedAt        *time.Time
+	LastSyncCompletedAt      *time.Time
+	LastSyncError            string
+	AllowSquashMerge         bool
+	AllowMergeCommit         bool
+	AllowRebaseMerge         bool
+	BackfillPRPage           int
+	BackfillPRComplete       bool
+	BackfillPRCompletedAt    *time.Time
+	BackfillIssuePage        int
+	BackfillIssueComplete    bool
+	BackfillIssueCompletedAt *time.Time
+	CreatedAt                time.Time
+	Capabilities             providerCapabilitiesResponse `json:"capabilities"`
+}
+
 // mergeRequestResponse extends db.MergeRequest with resolved repo owner/name fields.
 type mergeRequestResponse struct {
 	db.MergeRequest
+	Repo            repoRefResponse        `json:"repo"`
 	RepoOwner       string                 `json:"repo_owner"`
 	RepoName        string                 `json:"repo_name"`
 	PlatformHost    string                 `json:"platform_host"`
@@ -34,6 +73,7 @@ type workflowApprovalResponse struct {
 type mergeRequestDetailResponse struct {
 	MergeRequest     *db.MergeRequest         `json:"merge_request"`
 	Events           []db.MREvent             `json:"events"`
+	Repo             repoRefResponse          `json:"repo"`
 	RepoOwner        string                   `json:"repo_owner"`
 	RepoName         string                   `json:"repo_name"`
 	PlatformHost     string                   `json:"platform_host"`
@@ -58,16 +98,18 @@ var validKanbanStates = map[string]bool{
 
 type issueResponse struct {
 	db.Issue
-	PlatformHost    string `json:"platform_host"`
-	RepoOwner       string `json:"repo_owner"`
-	RepoName        string `json:"repo_name"`
-	DetailLoaded    bool   `json:"detail_loaded"`
-	DetailFetchedAt string `json:"detail_fetched_at,omitempty"`
+	Repo            repoRefResponse `json:"repo"`
+	PlatformHost    string          `json:"platform_host"`
+	RepoOwner       string          `json:"repo_owner"`
+	RepoName        string          `json:"repo_name"`
+	DetailLoaded    bool            `json:"detail_loaded"`
+	DetailFetchedAt string          `json:"detail_fetched_at,omitempty"`
 }
 
 type issueDetailResponse struct {
 	Issue           *db.Issue       `json:"issue"`
 	Events          []db.IssueEvent `json:"events"`
+	Repo            repoRefResponse `json:"repo"`
 	PlatformHost    string          `json:"platform_host"`
 	RepoOwner       string          `json:"repo_owner"`
 	RepoName        string          `json:"repo_name"`
@@ -106,6 +148,7 @@ type repoSummaryCommitPointResponse struct {
 }
 
 type repoSummaryResponse struct {
+	Repo                 repoRefResponse                  `json:"repo"`
 	PlatformHost         string                           `json:"platform_host"`
 	DefaultPlatformHost  string                           `json:"default_platform_host"`
 	Owner                string                           `json:"owner"`
@@ -170,6 +213,8 @@ type mrImportMetadataResponse struct {
 }
 
 type rateLimitHostStatus struct {
+	Provider           string `json:"provider"`
+	PlatformHost       string `json:"platform_host"`
 	RequestsHour       int    `json:"requests_hour"`
 	RateRemaining      int    `json:"rate_remaining"`
 	RateLimit          int    `json:"rate_limit"`
@@ -209,32 +254,33 @@ type commitsResponse struct {
 // the correct item-specific presentation around it. It represents middleman's
 // own persisted workspace model, not an arbitrary host worktree inventory.
 type workspaceResponse struct {
-	ID                 string  `json:"id"`
-	PlatformHost       string  `json:"platform_host"`
-	RepoOwner          string  `json:"repo_owner"`
-	RepoName           string  `json:"repo_name"`
-	ItemType           string  `json:"item_type"`
-	ItemNumber         int     `json:"item_number"`
-	GitHeadRef         string  `json:"git_head_ref"`
-	WorktreePath       string  `json:"worktree_path"`
-	TmuxSession        string  `json:"tmux_session"`
-	TmuxPaneTitle      *string `json:"tmux_pane_title,omitempty"`
-	TmuxWorking        bool    `json:"tmux_working"`
-	TmuxActivitySource string  `json:"tmux_activity_source"`
-	TmuxLastOutputAt   *string `json:"tmux_last_output_at"`
-	Status             string  `json:"status"`
-	ErrorMessage       *string `json:"error_message,omitempty"`
-	CreatedAt          string  `json:"created_at"`
-	MRTitle            *string `json:"mr_title,omitempty"`
-	MRState            *string `json:"mr_state,omitempty"`
-	MRIsDraft          *bool   `json:"mr_is_draft,omitempty"`
-	MRCIStatus         *string `json:"mr_ci_status,omitempty"`
-	MRReviewDecision   *string `json:"mr_review_decision,omitempty"`
-	MRAdditions        *int    `json:"mr_additions,omitempty"`
-	MRDeletions        *int    `json:"mr_deletions,omitempty"`
-	CommitsAhead       *int    `json:"commits_ahead,omitempty"`
-	CommitsBehind      *int    `json:"commits_behind,omitempty"`
-	AssociatedPRNumber *int    `json:"associated_pr_number,omitempty"`
+	ID                 string          `json:"id"`
+	Repo               repoRefResponse `json:"repo"`
+	PlatformHost       string          `json:"platform_host"`
+	RepoOwner          string          `json:"repo_owner"`
+	RepoName           string          `json:"repo_name"`
+	ItemType           string          `json:"item_type"`
+	ItemNumber         int             `json:"item_number"`
+	GitHeadRef         string          `json:"git_head_ref"`
+	WorktreePath       string          `json:"worktree_path"`
+	TmuxSession        string          `json:"tmux_session"`
+	TmuxPaneTitle      *string         `json:"tmux_pane_title,omitempty"`
+	TmuxWorking        bool            `json:"tmux_working"`
+	TmuxActivitySource string          `json:"tmux_activity_source"`
+	TmuxLastOutputAt   *string         `json:"tmux_last_output_at"`
+	Status             string          `json:"status"`
+	ErrorMessage       *string         `json:"error_message,omitempty"`
+	CreatedAt          string          `json:"created_at"`
+	MRTitle            *string         `json:"mr_title,omitempty"`
+	MRState            *string         `json:"mr_state,omitempty"`
+	MRIsDraft          *bool           `json:"mr_is_draft,omitempty"`
+	MRCIStatus         *string         `json:"mr_ci_status,omitempty"`
+	MRReviewDecision   *string         `json:"mr_review_decision,omitempty"`
+	MRAdditions        *int            `json:"mr_additions,omitempty"`
+	MRDeletions        *int            `json:"mr_deletions,omitempty"`
+	CommitsAhead       *int            `json:"commits_ahead,omitempty"`
+	CommitsBehind      *int            `json:"commits_behind,omitempty"`
+	AssociatedPRNumber *int            `json:"associated_pr_number,omitempty"`
 }
 
 type workspaceRuntimeResponse struct {
@@ -260,6 +306,7 @@ func toWorkspaceResponse(
 ) workspaceResponse {
 	return workspaceResponse{
 		ID:                 s.ID,
+		Repo:               repoRefFromParts(s.Platform, s.PlatformHost, s.RepoOwner, s.RepoName),
 		PlatformHost:       s.PlatformHost,
 		RepoOwner:          s.RepoOwner,
 		RepoName:           s.RepoName,
@@ -321,18 +368,19 @@ type stackContextResponse struct {
 }
 
 type activityItemResponse struct {
-	ID           string `json:"id"`
-	Cursor       string `json:"cursor"`
-	ActivityType string `json:"activity_type"`
-	PlatformHost string `json:"platform_host"`
-	RepoOwner    string `json:"repo_owner"`
-	RepoName     string `json:"repo_name"`
-	ItemType     string `json:"item_type"`
-	ItemNumber   int    `json:"item_number"`
-	ItemTitle    string `json:"item_title"`
-	ItemURL      string `json:"item_url"`
-	ItemState    string `json:"item_state"`
-	Author       string `json:"author"`
-	CreatedAt    string `json:"created_at"`
-	BodyPreview  string `json:"body_preview"`
+	ID           string          `json:"id"`
+	Cursor       string          `json:"cursor"`
+	ActivityType string          `json:"activity_type"`
+	Repo         repoRefResponse `json:"repo"`
+	PlatformHost string          `json:"platform_host"`
+	RepoOwner    string          `json:"repo_owner"`
+	RepoName     string          `json:"repo_name"`
+	ItemType     string          `json:"item_type"`
+	ItemNumber   int             `json:"item_number"`
+	ItemTitle    string          `json:"item_title"`
+	ItemURL      string          `json:"item_url"`
+	ItemState    string          `json:"item_state"`
+	Author       string          `json:"author"`
+	CreatedAt    string          `json:"created_at"`
+	BodyPreview  string          `json:"body_preview"`
 }

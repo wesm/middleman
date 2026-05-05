@@ -32,7 +32,7 @@ function mockAutocompleteClient(
 ) {
   return {
     GET: async (path: string) => {
-      if (path === "/repos/{owner}/{name}/comment-autocomplete") {
+      if (path === "/repo/{provider}/{owner}/{name}/comment-autocomplete") {
         return { data: response };
       }
       return { data: undefined, error: { title: "not mocked" } };
@@ -696,7 +696,9 @@ describe("comment draft persistence", () => {
       });
 
       expect(autocompleteQueries.at(-1)).toMatchObject({
-        platform_host: "ghe.example.com",
+        path: {
+          platform_host: "ghe.example.com",
+        },
       });
     },
   );

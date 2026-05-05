@@ -106,6 +106,45 @@ describe("router basic routes", () => {
     });
   });
 
+  it("parses provider pull routes with escaped nested repo paths", () => {
+    navigate(
+      "/pulls/detail?provider=gitlab&platform_host=gitlab.example.com%3A8443&repo_path=Group%2FSubGroup%2FSubGroup%202%2FMy_Project.v2&number=12",
+    );
+
+    expect(getRoute()).toEqual({
+      page: "pulls",
+      view: "list",
+      selected: {
+        owner: "Group/SubGroup/SubGroup 2",
+        name: "My_Project.v2",
+        provider: "gitlab",
+        platformHost: "gitlab.example.com:8443",
+        repoPath: "Group/SubGroup/SubGroup 2/My_Project.v2",
+        number: 12,
+      },
+    });
+  });
+
+  it("parses provider pull files routes with escaped nested repo paths", () => {
+    navigate(
+      "/pulls/detail/files?provider=gitlab&platform_host=gitlab.example.com%3A8443&repo_path=Group%2FSubGroup%2FSubGroup%202%2FMy_Project.v2&number=12",
+    );
+
+    expect(getRoute()).toEqual({
+      page: "pulls",
+      view: "list",
+      selected: {
+        owner: "Group/SubGroup/SubGroup 2",
+        name: "My_Project.v2",
+        provider: "gitlab",
+        platformHost: "gitlab.example.com:8443",
+        repoPath: "Group/SubGroup/SubGroup 2/My_Project.v2",
+        number: 12,
+      },
+      tab: "files",
+    });
+  });
+
   it("parses / as activity", () => {
     navigate("/");
     expect(getRoute()).toEqual({ page: "activity" });
@@ -138,6 +177,24 @@ describe("router basic routes", () => {
         name: "repo",
         number: 3,
         platformHost: "ghe.example.com",
+      },
+    });
+  });
+
+  it("parses provider issue routes with special characters in repo paths", () => {
+    navigate(
+      "/issues/detail?provider=gitlab&platform_host=gitlab.example.test%3A8443&repo_path=Team%20One%2FSub%20Team%2Fproject%2B%231&number=7",
+    );
+
+    expect(getRoute()).toEqual({
+      page: "issues",
+      selected: {
+        owner: "Team One/Sub Team",
+        name: "project+#1",
+        provider: "gitlab",
+        platformHost: "gitlab.example.test:8443",
+        repoPath: "Team One/Sub Team/project+#1",
+        number: 7,
       },
     });
   });

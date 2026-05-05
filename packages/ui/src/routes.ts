@@ -1,19 +1,24 @@
 export type RepositoryRouteRef = {
   owner: string;
   name: string;
+  provider?: string | undefined;
+  platformHost?: string | undefined;
+  repoPath?: string | undefined;
+};
+
+export type ProviderRouteRef = {
+  provider: string;
+  platformHost: string;
+  repoPath: string;
 };
 
 export type NumberedRouteItemRef = RepositoryRouteRef & {
   number: number;
 };
 
-export type PullRequestRouteRef = NumberedRouteItemRef & {
-  platformHost?: string | undefined;
-};
+export type PullRequestRouteRef = NumberedRouteItemRef;
 
-export type IssueRouteRef = NumberedRouteItemRef & {
-  platformHost?: string | undefined;
-};
+export type IssueRouteRef = NumberedRouteItemRef;
 
 export type RoutedItemRef =
   | (PullRequestRouteRef & { itemType: "pr" })
@@ -25,15 +30,29 @@ export type FocusListRouteRef = {
 };
 
 export function buildPullRequestRoute(ref: PullRequestRouteRef): string {
-  return `/pulls/${ref.owner}/${ref.name}/${ref.number}`;
+  return buildProviderPullRequestRoute(providerRouteRef(ref));
 }
 
 export function buildPullRequestFilesRoute(ref: PullRequestRouteRef): string {
-  return `${buildPullRequestRoute(ref)}/files`;
+  return buildProviderPullRequestFilesRoute(providerRouteRef(ref));
+}
+
+export function buildProviderPullRequestRoute(ref: ProviderRouteRef & { number: number }): string {
+  return `/pulls/detail${providerItemQuery(ref)}`;
+}
+
+export function buildProviderPullRequestFilesRoute(
+  ref: ProviderRouteRef & { number: number },
+): string {
+  return `/pulls/detail/files${providerItemQuery(ref)}`;
 }
 
 export function buildIssueRoute(ref: IssueRouteRef): string {
-  return `/issues/${ref.owner}/${ref.name}/${ref.number}${platformHostQuery(ref.platformHost)}`;
+  return buildProviderIssueRoute(providerRouteRef(ref));
+}
+
+export function buildProviderIssueRoute(ref: ProviderRouteRef & { number: number }): string {
+  return `/issues/detail${providerItemQuery(ref)}`;
 }
 
 export function buildFocusPullRequestRoute(ref: PullRequestRouteRef): string {
@@ -59,6 +78,25 @@ export function buildRoutedItemRoute(
   return options.focus ? buildFocusIssueRoute(ref) : buildIssueRoute(ref);
 }
 
+function providerItemQuery(ref: ProviderRouteRef & { number: number }): string {
+  const params: Array<[string, string]> = [
+    ["provider", ref.provider],
+    ["platform_host", ref.platformHost],
+    ["repo_path", ref.repoPath],
+    ["number", ref.number.toString()],
+  ];
+  return `?${params.map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join("&")}`;
+}
+
 function platformHostQuery(platformHost: string | undefined): string {
   return platformHost ? `?platform_host=${encodeURIComponent(platformHost)}` : "";
+}
+
+function providerRouteRef(ref: NumberedRouteItemRef): ProviderRouteRef & { number: number } {
+  return {
+    provider: ref.provider ?? "github",
+    platformHost: ref.platformHost ?? "github.com",
+    repoPath: ref.repoPath ?? `${ref.owner}/${ref.name}`,
+    number: ref.number,
+  };
 }

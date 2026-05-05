@@ -53,7 +53,7 @@ test("workflow status dropdown persists through API and database", async ({
     await expect(trigger).toHaveText("New");
 
     await trigger.click();
-    const statePath = `/api/v1/repos/${target.owner}/${target.repo}/pulls/${target.number}/state`;
+    const statePath = `/api/v1/pulls/github/${target.owner}/${target.repo}/${target.number}/state`;
     const updateResponse = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return url.pathname === statePath && response.request().method() === "PUT";
@@ -66,7 +66,7 @@ test("workflow status dropdown persists through API and database", async ({
       const response = await fetch(path);
       const body = await response.json();
       return body.merge_request.KanbanStatus;
-    }, `/api/v1/repos/${target.owner}/${target.repo}/pulls/${target.number}`);
+    }, `/api/v1/pulls/github/${target.owner}/${target.repo}/${target.number}`);
     expect(storedStatus).toBe(target.status);
 
     await page.reload();

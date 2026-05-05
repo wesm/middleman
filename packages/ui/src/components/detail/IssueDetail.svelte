@@ -1,5 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
+  import type { ProviderCapabilities } from "../../api/types.js";
   import {
     getStores, getClient, getActions,
     getUIConfig, getNavigate,
@@ -25,11 +27,34 @@
   const uiConfig = getUIConfig();
   const navigate = getNavigate();
 
+  const defaultProviderCapabilities: ProviderCapabilities = {
+    read_repositories: true,
+    read_merge_requests: true,
+    read_issues: true,
+    read_comments: true,
+    read_releases: true,
+    read_ci: true,
+    comment_mutation: true,
+    state_mutation: true,
+    merge_mutation: true,
+    review_mutation: true,
+    workflow_approval: true,
+    ready_for_review: true,
+    issue_mutation: true,
+  };
+
+  function currentCapabilities(): ProviderCapabilities {
+    return issues.getIssueDetail()?.repo?.capabilities
+      ?? defaultProviderCapabilities;
+  }
+
   interface Props {
     owner: string;
     name: string;
     number: number;
+    provider?: string | undefined;
     platformHost?: string | undefined;
+    repoPath?: string | undefined;
     autoSync?: IssueDetailSyncMode;
   }
 
@@ -37,9 +62,19 @@
     owner,
     name,
     number,
+    provider,
     platformHost,
+    repoPath,
     autoSync = "background",
   }: Props = $props();
+
+  const routeRef = $derived({
+    provider,
+    platformHost,
+    owner,
+    name,
+    repoPath,
+  });
 
   // See PullDetail.svelte: while a route change is in flight, the
   // displayed issue may briefly belong to the previous route. Mutating
@@ -78,21 +113,31 @@
     const requestOwner = owner;
     const requestName = name;
     const requestNumber = number;
+    const requestProvider = provider;
     const requestPlatformHost = platformHost;
+    const requestRepoPath = repoPath;
     const requestAutoSync = autoSync;
     untrack(() => {
       void issues.loadIssueDetail(
         requestOwner,
         requestName,
         requestNumber,
-        requestPlatformHost,
-        { sync: requestAutoSync },
+        {
+          sync: requestAutoSync,
+          ...(requestProvider && { provider: requestProvider }),
+          ...(requestPlatformHost && { platformHost: requestPlatformHost }),
+          ...(requestRepoPath && { repoPath: requestRepoPath }),
+        },
       );
       issues.startIssueDetailPolling(
         requestOwner,
         requestName,
         requestNumber,
-        requestPlatformHost,
+        {
+          ...(requestProvider && { provider: requestProvider }),
+          ...(requestPlatformHost && { platformHost: requestPlatformHost }),
+          ...(requestRepoPath && { repoPath: requestRepoPath }),
+        },
       );
     });
     return () => issues.stopIssueDetailPolling();
@@ -144,20 +189,15 @@
     newState: "open" | "closed",
   ): Promise<void> {
     if (staleIssue) return;
+    if (!currentCapabilities().state_mutation) return;
     stateSubmitting = true;
     stateError = null;
     try {
-      const detail = issues.getIssueDetail();
       const { error: requestError } = await client.POST(
-        "/repos/{owner}/{name}/issues/{number}/github-state",
+        providerItemPath("issues", routeRef, "/github-state"),
         {
-          params: { path: { owner, name, number } },
-          body: {
-            state: newState,
-            ...(detail && {
-              platform_host: detail.platform_host,
-            }),
-          },
+          params: { path: { ...providerRouteParams(routeRef), number } },
+          body: { state: newState },
         },
       );
       if (requestError) {
@@ -171,7 +211,7 @@
         owner,
         name,
         number,
-        detail?.platform_host ?? platformHost,
+        { provider, platformHost, repoPath },
       );
       await issues.loadIssues();
       await activity.loadActivity();
@@ -299,17 +339,15 @@
     }
     try {
       const { data, error: requestError } = await client.POST(
-        "/repos/{owner}/{name}/issues/{number}/workspace",
+        providerItemPath("issues", routeRef, "/workspace"),
         {
           params: {
             path: {
-              owner,
-              name,
+              ...providerRouteParams(routeRef),
               number,
             },
           },
           body: {
-            platform_host: detail.platform_host,
             ...(options.gitHeadRef
               ? {
                   git_head_ref:
@@ -371,6 +409,7 @@
   {#if detail !== null && !staleIssue}
     {@const issue = detail.issue}
     {@const labels = issue.labels ?? []}
+    {@const capabilities = detail.repo?.capabilities ?? defaultProviderCapabilities}
     <div class="issue-detail">
       <div class="issue-detail-content">
       {#if staleIssue && issues.getIssueDetailError() !== null}
@@ -500,7 +539,7 @@
             <PackagePlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
           </ActionButton>
         {/if}
-        {#if issue.State === "open"}
+        {#if issue.State === "open" && capabilities.state_mutation}
           <ActionButton
             class="btn--close"
             disabled={stateSubmitting || staleIssue}
@@ -513,7 +552,7 @@
           >
             <XIcon size="14" strokeWidth="2.2" aria-hidden="true" />
           </ActionButton>
-        {:else}
+        {:else if capabilities.state_mutation}
           <ActionButton
             class="btn--reopen"
             disabled={stateSubmitting || staleIssue}
@@ -558,8 +597,10 @@
           {owner}
           {name}
           {number}
+          provider={detail.repo.provider}
           platformHost={detail.platform_host}
-          disabled={staleIssue}
+          repoPath={detail.repo.repo_path}
+          disabled={staleIssue || !capabilities.comment_mutation}
         />
       </div>
 
@@ -571,7 +612,9 @@
             events={detail.events ?? []}
             repoOwner={owner}
             repoName={name}
-            onEditComment={editTimelineComment}
+            onEditComment={capabilities.comment_mutation
+              ? editTimelineComment
+              : undefined}
           />
         {:else if issues.isIssueDetailSyncing()}
           <div class="loading-placeholder">

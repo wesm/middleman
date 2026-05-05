@@ -52,6 +52,29 @@ function currentLocationPath(): string {
   return window.location.pathname + window.location.search;
 }
 
+function parseProviderNumberedRef(search: string): NumberedItemRef | undefined {
+  const sp = new URLSearchParams(search);
+  const repoPath = sp.get("repo_path")?.replace(/^\/+|\/+$/g, "");
+  const numberText = sp.get("number");
+  if (!repoPath || !numberText) return undefined;
+
+  const number = parseInt(numberText, 10);
+  const pathParts = repoPath.split("/").filter(Boolean);
+  if (!Number.isFinite(number) || number <= 0 || pathParts.length < 2) return undefined;
+
+  const provider = sp.get("provider") ?? undefined;
+  const platformHost = sp.get("platform_host") ?? undefined;
+  const ref: NumberedItemRef = {
+    owner: pathParts.slice(0, -1).join("/"),
+    name: pathParts[pathParts.length - 1]!,
+    number,
+    repoPath,
+    ...(provider && { provider }),
+    ...(platformHost && { platformHost }),
+  };
+  return ref;
+}
+
 function parseRoute(fullPath: string): Route {
   const qIdx = fullPath.indexOf("?");
   const pathname = qIdx >= 0 ? fullPath.slice(0, qIdx) : fullPath;
@@ -105,6 +128,17 @@ function parseRoute(fullPath: string): Route {
   }
   if (path.startsWith("/pulls")) {
     const rest = path.slice("/pulls".length);
+    if (rest === "/detail" || rest === "/detail/files") {
+      const selected = parseProviderNumberedRef(search);
+      if (selected) {
+        return {
+          page: "pulls",
+          view: "list",
+          selected,
+          ...(rest === "/detail/files" && { tab: "files" as const }),
+        };
+      }
+    }
     if (rest === "/board") return { page: "pulls", view: "board" };
     const filesMatch = rest.match(/^\/([^/]+)\/([^/]+)\/(\d+)\/files$/);
     if (filesMatch) {
@@ -134,6 +168,15 @@ function parseRoute(fullPath: string): Route {
   }
   if (path === "/settings" && !isEmbedded()) return { page: "settings" };
   if (path.startsWith("/issues")) {
+    if (path === "/issues/detail") {
+      const selected = parseProviderNumberedRef(search);
+      if (selected) {
+        return {
+          page: "issues",
+          selected,
+        };
+      }
+    }
     const match = path.slice("/issues".length).match(/^\/([^/]+)\/([^/]+)\/(\d+)$/);
     if (match) {
       const sp = new URLSearchParams(search);

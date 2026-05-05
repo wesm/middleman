@@ -1,6 +1,6 @@
 import type { components, operations } from "./generated/schema.js";
 
-export type Repo = components["schemas"]["Repo"];
+export type Repo = components["schemas"]["RepoResponse"];
 export type RepoSummary =
   components["schemas"]["RepoSummaryResponse"];
 export type RepoSummaryAuthor =
@@ -13,6 +13,8 @@ export type RepoSummaryReleaseResponse =
   components["schemas"]["RepoSummaryReleaseResponse"];
 export type PullRequest =
   components["schemas"]["MergeRequestResponse"];
+export type ProviderCapabilities =
+  components["schemas"]["ProviderCapabilitiesResponse"];
 export type Issue =
   components["schemas"]["IssueResponse"];
 export type IssueEvent = components["schemas"]["IssueEvent"];
@@ -77,8 +79,11 @@ export interface AgentSettings {
 }
 
 export interface ConfigRepo {
+  provider: string;
+  platform_host: string;
   owner: string;
   name: string;
+  repo_path: string;
   is_glob: boolean;
   matched_repo_count: number;
 }

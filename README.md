@@ -61,7 +61,7 @@ Expandable check run section on each PR shows pass/fail/pending status with colo
 ### Other
 
 - **Dark mode** -- auto-detects system preference, with a manual toggle
-- **GitHub Enterprise** -- set `platform_host` per repo to connect to GHE instances
+- **GitHub Enterprise and GitLab** -- set `platform`/`platform_host` per repo to connect to other provider hosts
 - **Copy to clipboard** -- one-click copy of PR/issue bodies and comments
 - **Settings UI** -- add/remove repos and configure activity feed defaults from the browser
 - **Reverse proxy support** -- deploy behind a proxy with the `base_path` config
@@ -73,7 +73,7 @@ Expandable check run section on each PR shows pass/fail/pending status with colo
 
 - Go 1.26+
 - [Bun](https://bun.sh/) (or install via [mise](https://mise.jdx.dev/))
-- A GitHub token (classic or fine-grained with repo read access)
+- A GitHub token (classic or fine-grained with repo read access), or a configured GitLab token for GitLab-only configs
 
 ### Build and run
 
@@ -116,8 +116,8 @@ All fields are optional. Repos can be added in the config file or through the Se
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `sync_interval` | `"5m"` | How often to pull from GitHub |
-| `github_token_env` | `"MIDDLEMAN_GITHUB_TOKEN"` | Env var holding your token |
+| `sync_interval` | `"5m"` | How often to pull from configured providers |
+| `github_token_env` | `"MIDDLEMAN_GITHUB_TOKEN"` | Env var holding the default GitHub token |
 | `default_platform_host` | `"github.com"` | Host treated as implicit in repository UI labels |
 | `host` | `"127.0.0.1"` | Listen address |
 | `port` | `8091` | Listen port |
@@ -128,9 +128,10 @@ All fields are optional. Repos can be added in the config file or through the Se
 | `activity.hide_closed` | `false` | Hide closed/merged items in the feed |
 | `activity.hide_bots` | `false` | Hide bot activity |
 
-### GitHub Enterprise
+### Provider Hosts
 
-Add `platform_host` and optionally `token_env` to repos hosted on a GHE instance:
+Add `platform_host` and optionally `token_env` to repos hosted on a GitHub
+Enterprise instance:
 
 ```toml
 [[repos]]
@@ -141,6 +142,27 @@ token_env = "GHE_TOKEN"
 ```
 
 Each distinct host can use a separate token env var. Repos without `platform_host` default to `github.com`. Set `default_platform_host` when you want another host to be hidden as the implied repository host in the UI.
+
+GitLab hosts are configured through `[[platforms]]`, then referenced by repos:
+
+```toml
+[[platforms]]
+type = "gitlab"
+host = "gitlab.com"
+token_env = "MIDDLEMAN_GITLAB_TOKEN"
+
+[[repos]]
+platform = "gitlab"
+platform_host = "gitlab.com"
+owner = "my-group/subgroup"
+name = "my-project"
+repo_path = "my-group/subgroup/my-project"
+```
+
+GitLab nested namespaces are preserved in `owner` and `repo_path`. Mutating
+actions are exposed only when the provider reports support for that capability;
+unsupported provider actions return a typed capability error instead of trying a
+GitHub-only route.
 
 ## Embedding
 
@@ -176,7 +198,7 @@ Middleman is a single Go binary with the Svelte frontend embedded at build time.
 ```
 middleman binary
   |- Config loader (TOML)
-  |- Sync engine -> GitHub API (go-github)
+  |- Sync engine -> provider registry (GitHub/GitLab readers)
   |- SQLite database (WAL mode, pure Go driver)
   +- HTTP server (Huma) -> REST API + embedded SPA
 ```

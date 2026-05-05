@@ -48,6 +48,10 @@
     return new Date(value).toLocaleString();
   }
 
+  function repoLabel(row: RepoImportRow): string {
+    return row.repo_path || `${row.owner}/${row.name}`;
+  }
+
   function ariaSort(field: SortState["field"]): "ascending" | "descending" | "none" {
     if (sort.field !== field) return "none";
     return sort.direction === "asc" ? "ascending" : "descending";
@@ -112,13 +116,13 @@
           <td>
             <input
               type="checkbox"
-              aria-label={`Select ${row.owner}/${row.name}`}
+              aria-label={`Select ${repoLabel(row)}`}
               checked={selected.has(key)}
               disabled={row.already_configured}
               onclick={(event) => onToggle(row, event.currentTarget.checked, event.shiftKey)}
             />
           </td>
-          <td class="repo-name">{row.owner}/{row.name}</td>
+          <td class="repo-name">{repoLabel(row)}</td>
           <td class="description">{row.description ?? ""}</td>
           <td>{formatPushedAt(row.pushed_at)}</td>
           <td>

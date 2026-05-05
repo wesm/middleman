@@ -12,6 +12,9 @@
     loadOnMount?: boolean;
     keyboardActive?: boolean;
     richPreviewEnabled?: boolean;
+    provider?: string | undefined;
+    platformHost?: string | undefined;
+    repoPath?: string | undefined;
   }
 
   const {
@@ -21,6 +24,9 @@
     loadOnMount = true,
     keyboardActive = true,
     richPreviewEnabled = true,
+    provider,
+    platformHost,
+    repoPath,
   }: Props = $props();
 
   let diffArea: HTMLDivElement | undefined = $state();
@@ -28,7 +34,7 @@
 
   onMount(() => {
     if (loadOnMount) {
-      void diffStore.loadDiff(owner, name, number);
+      void diffStore.loadDiff(owner, name, number, { provider, platformHost, repoPath });
     }
 
     return () => {

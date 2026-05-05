@@ -87,7 +87,7 @@ test.describe("detail action buttons", () => {
       const createResponsePromise = page.waitForResponse((response) => {
         const url = response.url();
         return response.request().method() === "POST"
-          && url === `${server.info.base_url}/api/v1/repos/acme/widgets/issues/10/workspace`;
+          && url === `${server.info.base_url}/api/v1/issues/github/acme/widgets/10/workspace`;
       });
 
       await page.locator(".btn--workspace").click();
@@ -137,7 +137,7 @@ test.describe("detail action buttons", () => {
     };
     let createCalls = 0;
     await page.route(
-      "**/api/v1/repos/acme/widgets/issues/10/workspace",
+      "**/api/v1/issues/github/acme/widgets/10/workspace",
       async (route) => {
         createCalls += 1;
         await route.fulfill({
@@ -185,12 +185,12 @@ test.describe("detail action buttons", () => {
     const syncResponsePromise = page.waitForResponse((response) => {
       const url = response.url();
       return response.request().method() === "POST"
-        && url.endsWith("/api/v1/repos/acme/widgets/issues/10/sync/async");
+        && url.endsWith("/api/v1/issues/github/acme/widgets/10/sync/async");
     });
     const createResponsePromise = page.waitForResponse((response) => {
       const url = response.url();
       return response.request().method() === "POST"
-        && url.endsWith("/api/v1/repos/acme/widgets/issues/10/workspace");
+        && url.endsWith("/api/v1/issues/github/acme/widgets/10/workspace");
     });
 
     await page.goto("/issues/acme/widgets/10");
@@ -247,7 +247,7 @@ test.describe("detail action buttons", () => {
 
     const payloads: Record<string, unknown>[] = [];
     await page.route(
-      "**/api/v1/repos/acme/widgets/issues/10/workspace",
+      "**/api/v1/issues/github/acme/widgets/10/workspace",
       async (route) => {
         payloads.push(JSON.parse(
           route.request().postData() ?? "{}",
@@ -317,11 +317,8 @@ test.describe("detail action buttons", () => {
     await dialog.getByRole("button", { name: "Use Existing Branch" }).click();
 
     await expect.poll(() => payloads).toEqual([
+      {},
       {
-        platform_host: "github.com",
-      },
-      {
-        platform_host: "github.com",
         git_head_ref: "middleman/issue-10",
         reuse_existing_branch: true,
       },
@@ -366,7 +363,7 @@ test.describe("detail action buttons", () => {
 
     const payloads: Record<string, unknown>[] = [];
     await page.route(
-      "**/api/v1/repos/acme/widgets/issues/10/workspace",
+      "**/api/v1/issues/github/acme/widgets/10/workspace",
       async (route) => {
         payloads.push(JSON.parse(
           route.request().postData() ?? "{}",
@@ -431,11 +428,8 @@ test.describe("detail action buttons", () => {
     await dialog.getByRole("button", { name: "Create New Branch" }).click();
 
     await expect.poll(() => payloads).toEqual([
+      {},
       {
-        platform_host: "github.com",
-      },
-      {
-        platform_host: "github.com",
         git_head_ref: "middleman/issue-10-2",
       },
     ]);
@@ -502,7 +496,7 @@ test.describe("detail action buttons", () => {
 
   test("narrow actions menu shows state change failures after closing", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 720 });
-    await page.route("**/api/v1/repos/acme/widgets/pulls/1/github-state", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/1/github-state", async (route) => {
       await route.fulfill({
         status: 500,
         contentType: "application/json",
@@ -554,7 +548,7 @@ test.describe("detail action buttons", () => {
 
       const readyResponse = page.waitForResponse((response) => {
         return response.request().method() === "POST"
-          && response.url() === `${baseURL}/api/v1/repos/acme/widgets/pulls/6/ready-for-review`;
+          && response.url() === `${baseURL}/api/v1/pulls/github/acme/widgets/6/ready-for-review`;
       });
       await page.locator(".actions-menu-popover .btn--ready").click();
       expect((await readyResponse).status()).toBe(200);
@@ -626,7 +620,7 @@ test.describe("detail action buttons", () => {
       const readyResponsePromise = page.waitForResponse((response) => {
         const url = response.url();
         return response.request().method() === "POST"
-          && url === `${server.info.base_url}/api/v1/repos/acme/widgets/pulls/6/ready-for-review`;
+          && url === `${server.info.base_url}/api/v1/pulls/github/acme/widgets/6/ready-for-review`;
       });
 
       await page.locator(".btn--ready").click();
@@ -639,7 +633,7 @@ test.describe("detail action buttons", () => {
       await expect(page.locator(".btn--approve")).toBeVisible();
 
       await expect.poll(async () => {
-        const response = await apiContext.get("/api/v1/repos/acme/widgets/pulls/6");
+        const response = await apiContext.get("/api/v1/pulls/github/acme/widgets/6");
         const detail = await response.json();
         return detail.merge_request.IsDraft;
       }).toBe(false);

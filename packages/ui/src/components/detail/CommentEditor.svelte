@@ -18,13 +18,16 @@
   } from "@tiptap/suggestion";
   import { Editor, EditorContent } from "svelte-tiptap";
 
+  import { providerRepoPath, providerRouteParams } from "../../api/provider-routes.js";
   import { getClient } from "../../context.js";
   import { computeCommentEditorMenuPosition } from "./commentEditorMenuPosition";
 
   interface Props {
     owner: string;
     name: string;
+    provider?: string | undefined;
     platformHost?: string | undefined;
+    repoPath?: string | undefined;
     value: string;
     disabled?: boolean;
     placeholder?: string;
@@ -58,7 +61,9 @@
   let {
     owner,
     name,
+    provider,
     platformHost,
+    repoPath,
     value,
     disabled = false,
     placeholder = "Write a comment... (Cmd+Enter to submit)",
@@ -120,18 +125,18 @@
     const abortController = new AbortController();
     suggestionAbortController = abortController;
     const requestSequence = ++suggestionRequestSequence;
+    const ref = { provider, platformHost, owner, name, repoPath };
 
     const { data, error } = await client.GET(
-      "/repos/{owner}/{name}/comment-autocomplete",
+      providerRepoPath(ref, "/comment-autocomplete"),
       {
         signal: abortController.signal,
         params: {
-          path: { owner, name },
+          path: providerRouteParams(ref),
           query: {
             trigger,
             q: query,
             limit: 8,
-            ...(platformHost ? { platform_host: platformHost } : {}),
           },
         },
       },

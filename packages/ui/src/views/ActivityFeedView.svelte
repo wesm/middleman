@@ -10,7 +10,9 @@
 
   type DrawerItem = {
     itemType: "pr" | "issue";
+    provider?: string | undefined;
     platformHost?: string | undefined;
+    repoPath?: string | undefined;
     owner: string;
     name: string;
     number: number;
@@ -71,7 +73,9 @@
       item.item_type === "issue" ? "issue" : "pr";
     const entry: DrawerItem = {
       itemType,
-      platformHost: item.platform_host,
+      provider: item.repo?.provider,
+      platformHost: item.repo?.platform_host ?? item.platform_host,
+      repoPath: item.repo?.repo_path,
       owner: item.repo_owner,
       name: item.repo_name,
       number: item.item_number,
@@ -240,6 +244,9 @@
             owner: activeDrawer.owner,
             name: activeDrawer.name,
             number: activeDrawer.number,
+            provider: activeDrawer.provider,
+            platformHost: activeDrawer.platformHost,
+            repoPath: activeDrawer.repoPath,
           }}
           detailTab={effectiveDetailTab}
           isSidebarCollapsed={true}
@@ -254,7 +261,9 @@
             owner: activeDrawer.owner,
             name: activeDrawer.name,
             number: activeDrawer.number,
+            provider: activeDrawer.provider,
             platformHost: activeDrawer.platformHost,
+            repoPath: activeDrawer.repoPath,
           }}
           isSidebarCollapsed={true}
           hideSidebar={true}

@@ -117,8 +117,8 @@ func TestSeedFixtures_FixtureClient(t *testing.T) {
 
 	// 4 open PRs in widgets: #1, #2, #6, #7
 	assert.Len(widgetsPRs, 4, "expected 4 open PRs in acme/widgets")
-	// 1 open PR in tools: #1
-	assert.Len(toolsPRs, 1, "expected 1 open PR in acme/tools")
+	// 4 open PRs in tools: #1 plus the #10/#11/#12 stack
+	assert.Len(toolsPRs, 4, "expected 4 open PRs in acme/tools")
 	// 3 open issues in widgets: #10, #11, #13
 	assert.Len(widgetsIssues, 3, "expected 3 open issues in acme/widgets")
 	// 1 open issue in tools: #5
@@ -134,8 +134,15 @@ func TestSeedFixtures_FixtureClient(t *testing.T) {
 	assert.Contains(widgetsPRNums, 6)
 	assert.Contains(widgetsPRNums, 7)
 
-	// Verify tools PR
-	assert.Equal(1, toolsPRs[0].GetNumber())
+	// Verify tools PRs
+	toolsPRNums := make([]int, len(toolsPRs))
+	for i, pr := range toolsPRs {
+		toolsPRNums[i] = pr.GetNumber()
+	}
+	assert.Contains(toolsPRNums, 1)
+	assert.Contains(toolsPRNums, 10)
+	assert.Contains(toolsPRNums, 11)
+	assert.Contains(toolsPRNums, 12)
 
 	// Verify specific issue numbers in widgets
 	widgetsIssueNums := make([]int, len(widgetsIssues))

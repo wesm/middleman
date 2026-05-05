@@ -2,9 +2,29 @@ import type {
   KanbanStatus,
   PullDetail,
 } from "../api/types.js";
+import {
+  providerItemPath,
+  providerRouteParams,
+} from "../api/provider-routes.js";
 import type { MiddlemanClient } from "../types.js";
 
 export type DetailSyncMode = boolean | "background";
+
+export interface DetailRequestOptions {
+  sync?: DetailSyncMode;
+  provider?: string | undefined;
+  platformHost?: string | undefined;
+  repoPath?: string | undefined;
+}
+
+type DetailRequestRef = {
+  owner: string;
+  name: string;
+  number: number;
+  provider: string;
+  platformHost: string;
+  repoPath: string;
+};
 
 export interface DetailStoreOptions {
   client: MiddlemanClient;
@@ -127,8 +147,28 @@ export function createDetailStore(
     owner: string,
     name: string,
     number: number,
+    identity?: Partial<DetailRequestRef>,
   ): string {
-    return `${owner}/${name}/${number}`;
+    const provider = identity?.provider ?? "github";
+    const platformHost = identity?.platformHost ?? "github.com";
+    const repoPath = identity?.repoPath ?? `${owner}/${name}`;
+    return `${provider}:${platformHost}:${repoPath}/${number}`;
+  }
+
+  function detailRequestRef(
+    owner: string,
+    name: string,
+    number: number,
+    options?: DetailRequestOptions | Partial<DetailRequestRef>,
+  ): DetailRequestRef {
+    return {
+      owner,
+      name,
+      number,
+      provider: options?.provider ?? "github",
+      platformHost: options?.platformHost ?? "github.com",
+      repoPath: options?.repoPath ?? `${owner}/${name}`,
+    };
   }
 
   function isDetailShowing(
@@ -144,6 +184,18 @@ export function createDetailStore(
     );
   }
 
+  function currentDetailRef(
+    owner: string,
+    name: string,
+    number: number,
+  ): DetailRequestRef {
+    return detailRequestRef(owner, name, number, {
+      provider: detail?.repo?.provider,
+      platformHost: detail?.repo?.platform_host,
+      repoPath: detail?.repo?.repo_path,
+    });
+  }
+
   async function refreshPullsIfActive(): Promise<void> {
     if (getPage() === "pulls" && pullsDep) {
       await pullsDep.loadPulls();
@@ -155,11 +207,17 @@ export function createDetailStore(
     name: string,
     number: number,
     expectedGen: number = syncGeneration,
+    identity?: Partial<DetailRequestRef>,
   ): Promise<void> {
+    const ref = detailRequestRef(owner, name, number, identity);
     try {
       const { data } = await apiClient.GET(
-        "/repos/{owner}/{name}/pulls/{number}",
-        { params: { path: { owner, name, number } } },
+        providerItemPath("pulls", ref, ""),
+        {
+          params: {
+            path: { ...providerRouteParams(ref), number: ref.number },
+          },
+        },
       );
       // Re-check the generation after the awaited request: if the
       // selected PR changed mid-flight, dropping the assignment keeps
@@ -182,13 +240,19 @@ export function createDetailStore(
     name: string,
     number: number,
     gen: number,
+    identity?: Partial<DetailRequestRef>,
   ): Promise<void> {
+    const ref = detailRequestRef(owner, name, number, identity);
     syncing = true;
     try {
       const { data, error: requestError } =
         await apiClient.POST(
-          "/repos/{owner}/{name}/pulls/{number}/sync",
-          { params: { path: { owner, name, number } } },
+          providerItemPath("pulls", ref, "/sync"),
+          {
+            params: {
+              path: { ...providerRouteParams(ref), number: ref.number },
+            },
+          },
         );
       if (gen !== syncGeneration) return;
       if (requestError) {
@@ -234,13 +298,14 @@ export function createDetailStore(
     owner: string,
     name: string,
     number: number,
-    options?: { sync?: DetailSyncMode },
+    options?: DetailRequestOptions,
   ): Promise<void> {
     const syncMode = options?.sync ?? true;
+    const requestRef = detailRequestRef(owner, name, number, options);
     // Dedup by item identity only. A second caller with a different
     // sync mode joins the in-flight load and may promote the sync
     // intent if its requested mode is stronger.
-    const key = prKey(owner, name, number);
+    const key = prKey(owner, name, number, requestRef);
     if (
       loading &&
       activeLoad?.key === key &&
@@ -276,8 +341,15 @@ export function createDetailStore(
       try {
         const { data, error: requestError } =
           await apiClient.GET(
-            "/repos/{owner}/{name}/pulls/{number}",
-            { params: { path: { owner, name, number } } },
+            providerItemPath("pulls", requestRef, ""),
+            {
+              params: {
+                path: {
+                  ...providerRouteParams(requestRef),
+                  number: requestRef.number,
+                },
+              },
+            },
           );
         if (gen !== syncGeneration) return;
         if (requestError) {
@@ -307,7 +379,7 @@ export function createDetailStore(
       // request isn't lost when it joined an in-flight load.
       const finalSyncMode = currentLoad.syncMode;
       if (gen === syncGeneration && finalSyncMode === true) {
-        void syncDetail(owner, name, number, gen);
+        void syncDetail(owner, name, number, gen, requestRef);
       } else if (gen === syncGeneration && finalSyncMode === "background") {
         void enqueueBackgroundDetailSync(
           owner,
@@ -315,6 +387,7 @@ export function createDetailStore(
           number,
           gen,
           detail?.detail_fetched_at,
+          requestRef,
         );
       }
     })();
@@ -328,12 +401,18 @@ export function createDetailStore(
     number: number,
     gen: number,
     previousFetchedAt?: string,
+    identity?: Partial<DetailRequestRef>,
   ): Promise<void> {
+    const ref = detailRequestRef(owner, name, number, identity);
     syncing = true;
     try {
       const { error: requestError } = await apiClient.POST(
-        "/repos/{owner}/{name}/pulls/{number}/sync/async",
-        { params: { path: { owner, name, number } } },
+        providerItemPath("pulls", ref, "/sync/async"),
+        {
+          params: {
+            path: { ...providerRouteParams(ref), number: ref.number },
+          },
+        },
       );
       if (requestError) return;
       await refreshAfterBackgroundDetailSync(
@@ -342,6 +421,7 @@ export function createDetailStore(
         number,
         gen,
         previousFetchedAt,
+        identity,
       );
     } finally {
       if (gen === syncGeneration) syncing = false;
@@ -355,11 +435,12 @@ export function createDetailStore(
     number: number,
     gen: number,
     previousFetchedAt?: string,
+    identity?: Partial<DetailRequestRef>,
   ): Promise<void> {
     for (const ms of [300, 700, 1_500, 3_000, 5_000]) {
       await delay(ms);
       if (gen !== syncGeneration) return;
-      await refreshDetail(owner, name, number, gen);
+      await refreshDetail(owner, name, number, gen, identity);
       if (gen !== syncGeneration) return;
       const fetchedAt = detail?.detail_fetched_at;
       if (fetchedAt && fetchedAt !== previousFetchedAt) {
@@ -372,8 +453,9 @@ export function createDetailStore(
     owner: string,
     name: string,
     number: number,
+    identity?: Partial<DetailRequestRef>,
   ): Promise<void> {
-    await refreshDetail(owner, name, number);
+    await refreshDetail(owner, name, number, syncGeneration, identity);
   }
 
   async function updateKanbanState(
@@ -382,7 +464,8 @@ export function createDetailStore(
     number: number,
     status: KanbanStatus,
   ): Promise<void> {
-    const key = prKey(owner, name, number);
+    const ref = currentDetailRef(owner, name, number);
+    const key = prKey(owner, name, number, ref);
     const seq = (kanbanSeqByPR.get(key) ?? 0) + 1;
     kanbanSeqByPR.set(key, seq);
 
@@ -420,9 +503,11 @@ export function createDetailStore(
     try {
       const { error: requestError } =
         await apiClient.PUT(
-          "/repos/{owner}/{name}/pulls/{number}/state",
+          providerItemPath("pulls", ref, "/state"),
           {
-            params: { path: { owner, name, number } },
+            params: {
+              path: { ...providerRouteParams(ref), number },
+            },
             body: { status },
           },
         );
@@ -495,6 +580,7 @@ export function createDetailStore(
   ): Promise<void> {
     if (!detail || !isDetailShowing(owner, name, number))
       return;
+    const ref = currentDetailRef(owner, name, number);
 
     const prevTitle = detail.merge_request.Title;
     const prevBody = detail.merge_request.Body;
@@ -516,9 +602,11 @@ export function createDetailStore(
     try {
       const { data, error: requestError } =
         await apiClient.PATCH(
-          "/repos/{owner}/{name}/pulls/{number}",
+          providerItemPath("pulls", ref, ""),
           {
-            params: { path: { owner, name, number } },
+            params: {
+              path: { ...providerRouteParams(ref), number },
+            },
             body: fields,
           },
         );
@@ -562,10 +650,11 @@ export function createDetailStore(
     owner: string,
     name: string,
     number: number,
+    identity?: Partial<DetailRequestRef>,
   ): void {
     stopDetailPolling();
     detailPollHandle = setInterval(() => {
-      void refreshDetail(owner, name, number);
+      void refreshDetail(owner, name, number, syncGeneration, identity);
     }, 60_000);
     if (syncDep) {
       unsubSyncComplete =
@@ -660,13 +749,16 @@ export function createDetailStore(
     number: number,
     body: string,
   ): Promise<void> {
+    const ref = currentDetailRef(owner, name, number);
     storeError = null;
     try {
       const { error: requestError } =
         await apiClient.POST(
-          "/repos/{owner}/{name}/pulls/{number}/comments",
+          providerItemPath("pulls", ref, "/comments"),
           {
-            params: { path: { owner, name, number } },
+            params: {
+              path: { ...providerRouteParams(ref), number },
+            },
             body: { body },
           },
         );
@@ -704,15 +796,15 @@ export function createDetailStore(
     commentID: number,
     body: string,
   ): Promise<boolean> {
+    const ref = currentDetailRef(owner, name, number);
     storeError = null;
     try {
       const { error: requestError } = await apiClient.PATCH(
-        "/repos/{owner}/{name}/pulls/{number}/comments/{comment_id}",
+        providerItemPath("pulls", ref, "/comments/{comment_id}"),
         {
           params: {
             path: {
-              owner,
-              name,
+              ...providerRouteParams(ref),
               number,
               comment_id: commentID,
             },

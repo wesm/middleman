@@ -23,7 +23,7 @@ describe("settings api", () => {
     const request = vi.mocked(fetch).mock.calls[0]?.[0];
     expect(request).toBeInstanceOf(Request);
     expect(new URL((request as Request).url).pathname).toBe(
-      "/api/v1/repos/acme/widgets-%3F",
+      "/api/v1/repo/github/acme/widgets-%3F",
     );
     expect((request as Request).method).toBe("DELETE");
   });
@@ -38,8 +38,26 @@ describe("settings api", () => {
     );
     expect((request as Request).method).toBe("POST");
     await expect((request as Request).clone().json()).resolves.toEqual({
+      provider: "github",
+      host: "github.com",
       owner: "acme",
       pattern: "widget-*",
+    });
+  });
+
+  it("posts provider-aware preview requests", async () => {
+    await previewRepos("group/subgroup", "Project*", {
+      provider: "gitlab",
+      host: "gitlab.example.com",
+    });
+
+    const request = vi.mocked(fetch).mock.calls[0]?.[0];
+    expect(request).toBeInstanceOf(Request);
+    await expect((request as Request).clone().json()).resolves.toEqual({
+      provider: "gitlab",
+      host: "gitlab.example.com",
+      owner: "group/subgroup",
+      pattern: "Project*",
     });
   });
 
@@ -53,7 +71,29 @@ describe("settings api", () => {
     );
     expect((request as Request).method).toBe("POST");
     await expect((request as Request).clone().json()).resolves.toEqual({
-      repos: [{ owner: "acme", name: "api" }],
+      repos: [{ provider: "github", host: "github.com", owner: "acme", name: "api" }],
+    });
+  });
+
+  it("posts provider-aware bulk add requests", async () => {
+    await bulkAddRepos([
+      {
+        provider: "gitlab",
+        host: "gitlab.example.com",
+        repo_path: "group/subgroup/project",
+      },
+    ]);
+
+    const request = vi.mocked(fetch).mock.calls[0]?.[0];
+    expect(request).toBeInstanceOf(Request);
+    await expect((request as Request).clone().json()).resolves.toEqual({
+      repos: [
+        {
+          provider: "gitlab",
+          host: "gitlab.example.com",
+          repo_path: "group/subgroup/project",
+        },
+      ],
     });
   });
 

@@ -1,6 +1,10 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import type { DiffFile, KanbanStatus } from "../../api/types.js";
+  import type {
+    DiffFile,
+    KanbanStatus,
+    ProviderCapabilities,
+  } from "../../api/types.js";
   import type { DetailSyncMode } from "../../stores/detail.svelte.js";
   import {
     getStores, getClient, getActions,
@@ -33,6 +37,11 @@
   import DiffSummaryChip from "./DiffSummaryChip.svelte";
   import CopyItemNumber from "./CopyItemNumber.svelte";
   import { DiffSummaryFilesResult } from "./diff-summary.js";
+  import {
+    providerItemPath,
+    providerRepoPath,
+    providerRouteParams,
+  } from "../../api/provider-routes.js";
   import { buildDiffSummaryKey } from "./diff-summary-key.js";
   import {
     activePRTimelineFilterCount,
@@ -48,10 +57,34 @@
   const uiConfig = getUIConfig();
   const navigate = getNavigate();
 
+  const defaultProviderCapabilities: ProviderCapabilities = {
+    read_repositories: true,
+    read_merge_requests: true,
+    read_issues: true,
+    read_comments: true,
+    read_releases: true,
+    read_ci: true,
+    comment_mutation: true,
+    state_mutation: true,
+    merge_mutation: true,
+    review_mutation: true,
+    workflow_approval: true,
+    ready_for_review: true,
+    issue_mutation: true,
+  };
+
+  function currentCapabilities(): ProviderCapabilities {
+    return detailStore.getDetail()?.repo?.capabilities
+      ?? defaultProviderCapabilities;
+  }
+
   interface Props {
     owner: string;
     name: string;
     number: number;
+    provider?: string | undefined;
+    platformHost?: string | undefined;
+    repoPath?: string | undefined;
     onPullsRefresh?: () => Promise<void>;
     hideTabs?: boolean;
     hideWorkspaceAction?: boolean;
@@ -62,11 +95,22 @@
     owner,
     name,
     number,
+    provider,
+    platformHost,
+    repoPath,
     onPullsRefresh,
     hideTabs = false,
     hideWorkspaceAction = false,
     autoSync = "background",
   }: Props = $props();
+
+  const routeRef = $derived({
+    provider,
+    platformHost,
+    owner,
+    name,
+    repoPath,
+  });
 
   let activeTab = $state<"conversation" | "files">("conversation");
   let ciExpanded = $state(false);
@@ -106,7 +150,8 @@
     return (
       d.repo_owner !== owner ||
       d.repo_name !== name ||
-      (d.merge_request?.Number ?? -1) !== number
+      (d.merge_request?.Number ?? -1) !== number ||
+      (d.platform_host || "github.com") !== (platformHost ?? "github.com")
     );
   });
 
@@ -114,15 +159,32 @@
     const requestOwner = owner;
     const requestName = name;
     const requestNumber = number;
+    const requestProvider = provider;
+    const requestPlatformHost = platformHost;
+    const requestRepoPath = repoPath;
     const requestAutoSync = autoSync;
     untrack(() => {
       void detailStore.loadDetail(
         requestOwner,
         requestName,
         requestNumber,
-        { sync: requestAutoSync },
+        {
+          sync: requestAutoSync,
+          ...(requestProvider && { provider: requestProvider }),
+          ...(requestPlatformHost && { platformHost: requestPlatformHost }),
+          ...(requestRepoPath && { repoPath: requestRepoPath }),
+        },
       );
-      detailStore.startDetailPolling(requestOwner, requestName, requestNumber);
+      detailStore.startDetailPolling(
+        requestOwner,
+        requestName,
+        requestNumber,
+        {
+          ...(requestProvider && { provider: requestProvider }),
+          ...(requestPlatformHost && { platformHost: requestPlatformHost }),
+          ...(requestRepoPath && { repoPath: requestRepoPath }),
+        },
+      );
     });
     return () => detailStore.stopDetailPolling();
   });
@@ -194,6 +256,7 @@
   }
 
   function startEditTitle(): void {
+    if (!currentCapabilities().state_mutation) return;
     const mr = currentPR();
     if (!mr) return;
     titleDraft = mr.Title;
@@ -207,6 +270,7 @@
 
   async function saveTitle(): Promise<void> {
     if (stalePR) return;
+    if (!currentCapabilities().state_mutation) return;
     const mr = currentPR();
     const trimmed = titleDraft.trim();
     if (!trimmed || trimmed === mr?.Title) {
@@ -242,6 +306,7 @@
   let savingBody = $state(false);
 
   function startEditBody(): void {
+    if (!currentCapabilities().state_mutation) return;
     const mr = currentPR();
     if (!mr) return;
     bodyDraft = mr.Body;
@@ -255,6 +320,7 @@
 
   async function saveBody(): Promise<void> {
     if (stalePR) return;
+    if (!currentCapabilities().state_mutation) return;
     const mr = currentPR();
     if (bodyDraft === mr?.Body) {
       cancelEditBody();
@@ -284,13 +350,14 @@
     newState: "open" | "closed",
   ): Promise<void> {
     if (stalePR) return;
+    if (!currentCapabilities().state_mutation) return;
     stateSubmitting = true;
     stateError = null;
     try {
       const { error: requestError } = await client.POST(
-        "/repos/{owner}/{name}/pulls/{number}/github-state",
+        providerItemPath("pulls", routeRef, "/github-state"),
         {
-          params: { path: { owner, name, number } },
+          params: { path: { ...providerRouteParams(routeRef), number } },
           body: { state: newState },
         },
       );
@@ -301,7 +368,11 @@
             ?? "failed to change PR state",
         );
       }
-      await detailStore.loadDetail(owner, name, number);
+      await detailStore.loadDetail(owner, name, number, {
+        ...(provider && { provider }),
+        ...(platformHost && { platformHost }),
+        ...(repoPath && { repoPath }),
+      });
       await refreshPulls();
       await activity.loadActivity();
     } catch (err) {
@@ -325,8 +396,8 @@
   $effect(() => {
     const requestID = ++repoSettingsRequestID;
     repoSettings = null;
-    client.GET("/repos/{owner}/{name}", {
-      params: { path: { owner, name } },
+    client.GET(providerRepoPath(routeRef), {
+      params: { path: providerRouteParams(routeRef) },
     }).then(({ data, error }) => {
       if (requestID !== repoSettingsRequestID) return;
       if (error || !data) return;
@@ -482,9 +553,9 @@
 
   async function loadDiffSummaryFiles(): Promise<DiffSummaryFilesResult> {
     const { data, error } = await client.GET(
-      "/repos/{owner}/{name}/pulls/{number}/files",
+      providerItemPath("pulls", routeRef, "/files"),
       {
-        params: { path: { owner, name, number } },
+        params: { path: { ...providerRouteParams(routeRef), number } },
       },
     );
     if (error) {
@@ -510,6 +581,7 @@
   {@const detail = detailStore.getDetail()}
   {#if detail !== null && !stalePR}
     {@const pr = detail.merge_request}
+    {@const capabilities = detail.repo?.capabilities ?? defaultProviderCapabilities}
     <div class="pull-detail-wrap">
       {#if stalePR && detailStore.getDetailError() !== null}
         <div class="detail-load-error" data-testid="detail-load-error">
@@ -591,7 +663,7 @@
               Cancel
             </button>
           </div>
-        {:else}
+        {:else if capabilities.state_mutation}
           <div class="title-line">
             <h2 class="detail-title">{pr.Title}</h2>
             <button class="edit-title-btn" onclick={startEditTitle}>Edit</button>
@@ -762,35 +834,46 @@
 
       {#snippet primaryActionButtons()}
         {#if pr.State === "open"}
-          {#if pr.IsDraft}
+          {#if pr.IsDraft && capabilities.ready_for_review}
             <ReadyForReviewButton
               {owner}
               {name}
               {number}
+              {provider}
+              {platformHost}
+              {repoPath}
               size="sm"
               disabled={stalePR}
               oncompleted={closeActionMenu}
             />
           {/if}
-          <ApproveButton
-            {owner}
-            {name}
-            {number}
-            size="sm"
-            disabled={stalePR}
-          />
-          {#if workflowApproval?.checked && workflowApproval.required}
+          {#if capabilities.review_mutation}
+            <ApproveButton
+              {owner}
+              {name}
+              {number}
+              {provider}
+              {platformHost}
+              {repoPath}
+              size="sm"
+              disabled={stalePR}
+            />
+          {/if}
+          {#if capabilities.workflow_approval && workflowApproval?.checked && workflowApproval.required}
             <ApproveWorkflowsButton
               {owner}
               {name}
               {number}
+              {provider}
+              {platformHost}
+              {repoPath}
               count={workflowApproval.count ?? 0}
               size="sm"
               disabled={stalePR}
               oncompleted={closeActionMenu}
             />
           {/if}
-          {#if repoSettings}
+          {#if repoSettings && capabilities.merge_mutation}
             {@const mergeSettings = repoSettings}
             {@const mergeDisabledByConflicts = hasMergeConflicts(pr)}
             <ActionButton
@@ -818,39 +901,43 @@
               {/snippet}
             </ActionButton>
           {/if}
-          <ActionButton
-            class="btn--close"
-            disabled={stateSubmitting || stalePR}
-            onclick={() => {
-              if (stalePR) return;
-              closeActionMenu();
-              handleStateChange("closed");
-            }}
-            tone="danger"
-            surface="outline"
-            size="sm"
-            label={stateSubmitting ? "Closing..." : "Close"}
-            shortLabel={stateSubmitting ? "Closing..." : "Close"}
-          >
-            <XIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-          </ActionButton>
+          {#if capabilities.state_mutation}
+            <ActionButton
+              class="btn--close"
+              disabled={stateSubmitting || stalePR}
+              onclick={() => {
+                if (stalePR) return;
+                closeActionMenu();
+                handleStateChange("closed");
+              }}
+              tone="danger"
+              surface="outline"
+              size="sm"
+              label={stateSubmitting ? "Closing..." : "Close"}
+              shortLabel={stateSubmitting ? "Closing..." : "Close"}
+            >
+              <XIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+            </ActionButton>
+          {/if}
         {:else if pr.State === "closed"}
-          <ActionButton
-            class="btn--reopen"
-            disabled={stateSubmitting || stalePR}
-            onclick={() => {
-              if (stalePR) return;
-              closeActionMenu();
-              handleStateChange("open");
-            }}
-            tone="success"
-            surface="solid"
-            size="sm"
-            label={stateSubmitting ? "Reopening..." : "Reopen"}
-            shortLabel={stateSubmitting ? "Reopening..." : "Reopen"}
-          >
-            <RefreshCwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-          </ActionButton>
+          {#if capabilities.state_mutation}
+            <ActionButton
+              class="btn--reopen"
+              disabled={stateSubmitting || stalePR}
+              onclick={() => {
+                if (stalePR) return;
+                closeActionMenu();
+                handleStateChange("open");
+              }}
+              tone="success"
+              surface="solid"
+              size="sm"
+              label={stateSubmitting ? "Reopening..." : "Reopen"}
+              shortLabel={stateSubmitting ? "Reopening..." : "Reopen"}
+            >
+              <RefreshCwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+            </ActionButton>
+          {/if}
         {/if}
       {/snippet}
 
@@ -981,13 +1068,16 @@
         </div>
       {/if}
 
-      {#if showMergeModal && repoSettings && !stalePR && !hasMergeConflicts(pr)}
+      {#if showMergeModal && repoSettings && capabilities.merge_mutation && !stalePR && !hasMergeConflicts(pr)}
         {@const d = detailStore.getDetail()!}
         {@const p = d.merge_request}
         <MergeModal
           {owner}
           {name}
           {number}
+          {provider}
+          {platformHost}
+          {repoPath}
           prTitle={p.Title}
           prBody={p.Body}
           prAuthor={p.Author}
@@ -998,7 +1088,11 @@
           onclose={() => { showMergeModal = false; }}
           onmerged={() => {
             showMergeModal = false;
-            void detailStore.loadDetail(owner, name, number);
+            void detailStore.loadDetail(owner, name, number, {
+              ...(provider && { provider }),
+              ...(platformHost && { platformHost }),
+              ...(repoPath && { repoPath }),
+            });
             void pulls.loadPulls();
             void activity.loadActivity();
           }}
@@ -1009,7 +1103,7 @@
       <div class="section body-section">
         <div class="section-header">
           <span class="section-title-inline">Description</span>
-          {#if !editingBody}
+          {#if !editingBody && capabilities.state_mutation}
             <button
               class="edit-body-btn"
               onclick={startEditBody}
@@ -1066,7 +1160,7 @@
             </button>
             <div class="inset-box markdown-body">{@html renderMarkdown(pr.Body, { owner, name })}</div>
           </div>
-        {:else}
+        {:else if capabilities.state_mutation}
           <button class="add-description-btn" onclick={startEditBody}>
             Add a description
           </button>
@@ -1079,8 +1173,10 @@
           {owner}
           {name}
           {number}
+          provider={detail.repo.provider}
           platformHost={detail.platform_host}
-          disabled={stalePR}
+          repoPath={detail.repo.repo_path}
+          disabled={stalePR || !capabilities.comment_mutation}
         />
       </div>
 
@@ -1100,7 +1196,9 @@
             repoName={name}
             filtered={hasActiveTimelineFilters}
             showCommitDetails={timelineFilter.showCommitDetails}
-            onEditComment={editTimelineComment}
+            onEditComment={capabilities.comment_mutation
+              ? editTimelineComment
+              : undefined}
           />
         {:else if detailStore.isDetailSyncing()}
           <div class="loading-placeholder">

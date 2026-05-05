@@ -27,6 +27,14 @@
   let refreshingByKey = $state<Record<string, boolean>>({});
   let refreshErrors = $state<Record<string, string>>({});
 
+  function repoKey(repo: ConfigRepo): string {
+    return `${repo.provider}/${repo.platform_host}/${repo.repo_path || `${repo.owner}/${repo.name}`}`.toLowerCase();
+  }
+
+  function repoLabel(repo: ConfigRepo): string {
+    return repo.repo_path || `${repo.owner}/${repo.name}`;
+  }
+
   async function handleAdd(): Promise<void> {
     if (embedded) return;
     const trimmed = inputValue.trim();
@@ -50,14 +58,14 @@
     }
   }
 
-  async function handleRemove(
-    owner: string,
-    name: string,
-  ): Promise<void> {
+  async function handleRemove(repo: ConfigRepo): Promise<void> {
     if (embedded) return;
     removeError = null;
     try {
-      await removeRepo(owner, name);
+      await removeRepo(repo.owner, repo.name, {
+        provider: repo.provider,
+        host: repo.platform_host,
+      });
       confirmingRemove = null;
       const settings = await getSettings();
       onUpdate(settings.repos);
@@ -67,12 +75,9 @@
     }
   }
 
-  async function handleRefresh(
-    owner: string,
-    name: string,
-  ): Promise<void> {
+  async function handleRefresh(repo: ConfigRepo): Promise<void> {
     if (embedded) return;
-    const key = `${owner}/${name}`;
+    const key = repoKey(repo);
     refreshingByKey = { ...refreshingByKey, [key]: true };
     if (refreshErrors[key]) {
       const nextErrors = { ...refreshErrors };
@@ -80,7 +85,10 @@
       refreshErrors = nextErrors;
     }
     try {
-      const settings = await refreshRepo(owner, name);
+      const settings = await refreshRepo(repo.owner, repo.name, {
+        provider: repo.provider,
+        host: repo.platform_host,
+      });
       onUpdate(settings.repos);
       void sync.refreshSyncStatus();
     } catch (err) {
@@ -124,12 +132,13 @@
 />
 
 <div class="repo-list">
-  {#each repos as repo (`${repo.owner}/${repo.name}`)}
-    {@const key = `${repo.owner}/${repo.name}`}
+  {#each repos as repo (repoKey(repo))}
+    {@const key = repoKey(repo)}
+    {@const label = repoLabel(repo)}
     <div class="repo-row">
       <div class="repo-main">
         <span class="repo-name">
-          {repo.owner}/{repo.name}
+          {label}
           {#if repo.is_glob}
             <span class="repo-count">({repo.matched_repo_count})</span>
           {/if}
@@ -141,7 +150,7 @@
       {#if confirmingRemove === key}
         <span class="confirm-prompt">
           Remove?
-          <button class="confirm-btn confirm-yes" onclick={() => void handleRemove(repo.owner, repo.name)}>Yes</button>
+          <button class="confirm-btn confirm-yes" onclick={() => void handleRemove(repo)}>Yes</button>
           <button class="confirm-btn confirm-no" onclick={() => { confirmingRemove = null; removeError = null; }}>No</button>
         </span>
       {:else}
@@ -149,7 +158,7 @@
           {#if repo.is_glob}
             <button
               class="refresh-btn"
-              onclick={() => void handleRefresh(repo.owner, repo.name)}
+              onclick={() => void handleRefresh(repo)}
               disabled={Boolean(refreshingByKey[key])}
             >
               {refreshingByKey[key] ? "Refreshing..." : "Refresh"}

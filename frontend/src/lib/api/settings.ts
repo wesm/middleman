@@ -1,5 +1,9 @@
 import type { Settings } from "@middleman/ui/api/types";
 import type { components } from "@middleman/ui/api/schema";
+import {
+  providerRepoPath,
+  providerRouteParams,
+} from "@middleman/ui/api/provider-routes";
 
 import { apiErrorMessage, client } from "./runtime.js";
 
@@ -24,8 +28,11 @@ function normalizeSettings(data: SettingsResponse): Settings {
 }
 
 export interface RepoPreviewRow {
+  provider: string;
+  platform_host: string;
   owner: string;
   name: string;
+  repo_path: string;
   description: string | null;
   private: boolean;
   fork: boolean;
@@ -34,14 +41,22 @@ export interface RepoPreviewRow {
 }
 
 export interface RepoPreviewResponse {
+  provider: string;
+  platform_host: string;
   owner: string;
   pattern: string;
   repos: RepoPreviewRow[];
 }
 
-interface RepoInput {
-  owner: string;
-  name: string;
+export interface RepoRequestOptions {
+  provider?: string;
+  host?: string;
+}
+
+export interface RepoInput extends RepoRequestOptions {
+  owner?: string;
+  name?: string;
+  repo_path?: string;
 }
 
 function normalizePreviewResponse(
@@ -113,9 +128,10 @@ export async function updateSettings(
 export async function addRepo(
   owner: string,
   name: string,
+  options: RepoRequestOptions = { provider: "github", host: "github.com" },
 ): Promise<Settings> {
   const { data, error, response } = await client.POST("/repos", {
-    body: { owner, name },
+    body: { ...options, owner, name },
   });
   if (!data) {
     throw new Error(
@@ -128,11 +144,18 @@ export async function addRepo(
 export async function removeRepo(
   owner: string,
   name: string,
+  options: RepoRequestOptions = { provider: "github", host: "github.com" },
 ): Promise<void> {
+  const ref = {
+    provider: options.provider,
+    platformHost: options.host,
+    owner,
+    name,
+  };
   const { error, response } = await client.DELETE(
-    "/repos/{owner}/{name}",
+    providerRepoPath(ref),
     {
-      params: { path: { owner, name } },
+      params: { path: providerRouteParams(ref) },
     },
   );
   if (!response.ok) {
@@ -148,11 +171,18 @@ export async function removeRepo(
 export async function refreshRepo(
   owner: string,
   name: string,
+  options: RepoRequestOptions = { provider: "github", host: "github.com" },
 ): Promise<Settings> {
+  const ref = {
+    provider: options.provider,
+    platformHost: options.host,
+    owner,
+    name,
+  };
   const { data, error, response } = await client.POST(
-    "/repos/{owner}/{name}/refresh",
+    providerRepoPath(ref, "/refresh"),
     {
-      params: { path: { owner, name } },
+      params: { path: providerRouteParams(ref) },
     },
   );
   if (!data) {
@@ -169,9 +199,10 @@ export async function refreshRepo(
 export async function previewRepos(
   owner: string,
   pattern: string,
+  options: RepoRequestOptions = { provider: "github", host: "github.com" },
 ): Promise<RepoPreviewResponse> {
   const { data, error, response } = await client.POST("/repos/preview", {
-    body: { owner, pattern },
+    body: { ...options, owner, pattern },
   });
   if (!data) {
     throw new Error(
@@ -183,7 +214,13 @@ export async function previewRepos(
 
 export async function bulkAddRepos(repos: RepoInput[]): Promise<Settings> {
   const { data, error, response } = await client.POST("/repos/bulk", {
-    body: { repos },
+    body: {
+      repos: repos.map((repo) => ({
+        provider: "github",
+        host: "github.com",
+        ...repo,
+      })),
+    },
   });
   if (!data) {
     throw new Error(

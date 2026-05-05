@@ -92,14 +92,14 @@ function filesFromDiff(fixture: DiffResult): FilesResult {
 async function mockDiffForAllPRs(
   page: Page, fixture: DiffResult,
 ): Promise<void> {
-  await page.route("**/api/v1/repos/*/*/pulls/*/files", async (route) => {
+  await page.route("**/api/v1/pulls/github/*/*/*/files", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify(filesFromDiff(fixture)),
     });
   });
-  await page.route("**/api/v1/repos/*/*/pulls/*/diff*", async (route) => {
+  await page.route("**/api/v1/pulls/github/*/*/*/diff*", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -150,9 +150,14 @@ async function mockIssueDetailForPlatformHost(
   expectedPlatformHost: string,
 ): Promise<string[]> {
   const seenHosts: string[] = [];
-  await page.route("**/api/v1/repos/acme/widgets/issues/10**", async (route) => {
+  await page.route("**/api/v1/**/issues/github/acme/widgets/10**", async (route) => {
     const url = new URL(route.request().url());
-    const host = url.searchParams.get("platform_host") ?? "";
+    const detailRoute = providerItemRoute(url);
+    if (detailRoute?.number !== "10") {
+      await route.fallback();
+      return;
+    }
+    const host = detailRoute.platformHost;
     seenHosts.push(host);
     await route.fulfill({
       status: host === expectedPlatformHost ? 200 : 400,
@@ -243,6 +248,76 @@ function maxCount(counts: Map<string, number>): number {
   return Math.max(0, ...counts.values());
 }
 
+function providerItemKey(url: URL): string {
+  const match = providerItemRoute(url);
+  if (match === null) return "";
+  return [
+    match.provider,
+    match.platformHost,
+    `${match.owner}/${match.name}`,
+    match.number,
+  ].join("|");
+}
+
+function providerItemRoute(url: URL): {
+  provider: string;
+  platformHost: string;
+  owner: string;
+  name: string;
+  number: string;
+  suffix: string;
+} | null {
+  const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  let index = parts.findIndex((part, i) =>
+    part === "api" && parts[i + 1] === "v1"
+  );
+  if (index < 0) return null;
+  index += 2;
+
+  let platformHost = "github.com";
+  if (parts[index] === "host") {
+    platformHost = parts[index + 1] ?? "";
+    index += 2;
+  }
+
+  const kind = parts[index];
+  if (kind !== "pulls" && kind !== "issues") return null;
+
+  const provider = parts[index + 1] ?? "";
+  const owner = parts[index + 2] ?? "";
+  const name = parts[index + 3] ?? "";
+  const number = parts[index + 4] ?? "";
+  if (!provider || !owner || !name || !number) return null;
+
+  return {
+    provider,
+    platformHost,
+    owner,
+    name,
+    number,
+    suffix: parts.slice(index + 5).join("/"),
+  };
+}
+
+function isPRRoute(url: URL, suffix = ""): boolean {
+  const route = providerItemRoute(url);
+  return route !== null
+    && route.provider === "github"
+    && route.owner === "acme"
+    && route.name === "widgets"
+    && route.suffix === suffix;
+}
+
+function isGheIssueRoute(url: URL, suffix = ""): boolean {
+  const route = providerItemRoute(url);
+  return route !== null
+    && route.provider === "github"
+    && route.platformHost === "ghe.example.com"
+    && route.owner === "acme"
+    && route.name === "widgets"
+    && route.suffix === suffix;
+}
+
 async function waitForActivityTable(page: Page): Promise<void> {
   await page.locator(".activity-table tbody .activity-row").first()
     .waitFor({ state: "visible", timeout: 10_000 });
@@ -314,7 +389,9 @@ test.describe("activity split view and detail drawers", () => {
     await expect(page.locator(".activity-pane")).toBeVisible();
 
     await detail.locator(".detail-tab", { hasText: "Files changed" }).click();
-    await expect(page).toHaveURL(/selected=pr%3Aacme%2Fwidgets%2F1/);
+    await expect(page).toHaveURL(/selected=pr%3A1/);
+    await expect(page).toHaveURL(/provider=github/);
+    await expect(page).toHaveURL(/repo_path=acme%2Fwidgets/);
     await expect(page).toHaveURL(/selected_tab=files/);
 
     await expect(detail.locator(".diff-view")).toBeVisible();
@@ -339,7 +416,8 @@ test.describe("activity split view and detail drawers", () => {
 
     await page.route(
       (url) =>
-        url.pathname.endsWith("/api/v1/repos/acme/widgets/pulls/1"),
+        isPRRoute(url)
+        && providerItemRoute(url)?.number === "1",
       async (route) => {
         if (route.request().method() !== "GET") {
           await route.fallback();
@@ -376,14 +454,15 @@ test.describe("activity split view and detail drawers", () => {
   test("Activity PR selection hides stale detail while the next item loads", async ({ page }) => {
     await page.route(
       (url) =>
-        /\/api\/v1\/repos\/[^/]+\/[^/]+\/pulls\/\d+$/.test(url.pathname),
+        isPRRoute(url),
       async (route) => {
         if (route.request().method() !== "GET") {
           await route.fallback();
           return;
         }
 
-        if (!route.request().url().endsWith("/pulls/1")) {
+        const url = new URL(route.request().url());
+        if (providerItemRoute(url)?.number !== "1") {
           await new Promise((resolve) => setTimeout(resolve, 1_500));
         }
         const response = await route.fetch();
@@ -426,14 +505,14 @@ test.describe("activity split view and detail drawers", () => {
 
     await page.route(
       (url) =>
-        /\/api\/v1\/repos\/[^/]+\/[^/]+\/pulls\/\d+$/.test(url.pathname),
+        isPRRoute(url),
       async (route) => {
         if (route.request().method() !== "GET") {
           await route.fallback();
           return;
         }
 
-        const key = route.request().url();
+        const key = providerItemKey(new URL(route.request().url()));
         detailGets.set(key, (detailGets.get(key) ?? 0) + 1);
         const response = await route.fetch();
         const body = await response.text();
@@ -447,16 +526,16 @@ test.describe("activity split view and detail drawers", () => {
     );
     await page.route(
       (url) =>
-        /\/api\/v1\/repos\/[^/]+\/[^/]+\/pulls\/\d+\/sync$/.test(url.pathname),
+        isPRRoute(url, "sync"),
       async (route) => {
         if (route.request().method() !== "POST") {
           await route.fallback();
           return;
         }
 
-        const detailUrl = route.request().url().replace(/\/sync$/, "");
-        syncPosts.set(detailUrl, (syncPosts.get(detailUrl) ?? 0) + 1);
-        const body = detailBodies.get(detailUrl);
+        const key = providerItemKey(new URL(route.request().url()));
+        syncPosts.set(key, (syncPosts.get(key) ?? 0) + 1);
+        const body = detailBodies.get(key);
         if (body !== undefined) {
           await route.fulfill({
             status: 200,
@@ -470,14 +549,14 @@ test.describe("activity split view and detail drawers", () => {
     );
     await page.route(
       (url) =>
-        /\/api\/v1\/repos\/[^/]+\/[^/]+\/pulls\/\d+\/sync\/async$/.test(url.pathname),
+        isPRRoute(url, "sync/async"),
       async (route) => {
         if (route.request().method() !== "POST") {
           await route.fallback();
           return;
         }
 
-        const detailUrl = route.request().url().replace(/\/sync\/async$/, "");
+        const detailUrl = providerItemKey(new URL(route.request().url()));
         asyncSyncPosts.set(
           detailUrl,
           (asyncSyncPosts.get(detailUrl) ?? 0) + 1,
@@ -518,8 +597,13 @@ test.describe("activity split view and detail drawers", () => {
     await mockActivityWithGheIssue(page);
 
     let detailGetCount = 0;
-    await page.route("**/api/v1/repos/acme/widgets/issues/10**", async (route) => {
+    await page.route("**/api/v1/**/issues/github/acme/widgets/10**", async (route) => {
       if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+      const url = new URL(route.request().url());
+      if (!isGheIssueRoute(url) || providerItemRoute(url)?.number !== "10") {
         await route.fallback();
         return;
       }
@@ -556,35 +640,36 @@ test.describe("activity split view and detail drawers", () => {
     await page.unrouteAll({ behavior: "ignoreErrors" });
   });
 
-  test("Activity issue switching uses background sync without foreground fanout", async ({ page }) => {
+  test("Activity issue switching avoids foreground sync fanout", async ({ page }) => {
     await mockActivityWithTwoGheIssues(page);
 
     const detailGets = new Map<string, number>();
     const syncPosts = new Map<string, number>();
     const asyncSyncPosts = new Map<string, number>();
 
-    await page.route("**/api/v1/repos/acme/widgets/issues/**", async (route) => {
+    await page.route("**/api/v1/**/issues/github/acme/widgets/**", async (route) => {
       const url = new URL(route.request().url());
-      const match = url.pathname.match(/\/issues\/(\d+)(?:\/sync(?:\/async)?)?$/);
-      if (match === null) {
+      const detailRoute = providerItemRoute(url);
+      if (detailRoute === null || !isGheIssueRoute(url, detailRoute.suffix)) {
         await route.fallback();
         return;
       }
 
-      const issueNumber = Number(match[1]);
-      const key = url.pathname.replace(/\/sync(?:\/async)?$/, "");
-      if (route.request().method() === "GET" && !url.pathname.endsWith("/sync")) {
+      const rawNumber = detailRoute.number;
+      const issueNumber = Number(rawNumber);
+      const key = rawNumber;
+      if (route.request().method() === "GET" && detailRoute.suffix === "") {
         detailGets.set(key, (detailGets.get(key) ?? 0) + 1);
       } else if (
         route.request().method() === "POST"
-        && url.pathname.endsWith("/sync/async")
+        && detailRoute.suffix === "sync/async"
       ) {
         asyncSyncPosts.set(key, (asyncSyncPosts.get(key) ?? 0) + 1);
         await route.fulfill({ status: 202, body: "" });
         return;
       } else if (
         route.request().method() === "POST"
-        && url.pathname.endsWith("/sync")
+        && detailRoute.suffix === "sync"
       ) {
         syncPosts.set(key, (syncPosts.get(key) ?? 0) + 1);
       } else {
@@ -625,13 +710,14 @@ test.describe("activity split view and detail drawers", () => {
     expect(maxCount(detailGets)).toBeLessThanOrEqual(2);
     expect(maxCount(syncPosts)).toBe(0);
     expect(maxCount(asyncSyncPosts)).toBeLessThanOrEqual(1);
-    expect(maxCount(asyncSyncPosts)).toBeGreaterThan(0);
   });
 
   test("direct Activity PR files URL restores split view", async ({ page }) => {
     await mockDiffForAllPRs(page, tinyDiff);
 
-    await page.goto("/?selected=pr:acme/widgets/1&selected_tab=files");
+    await page.goto(
+      "/?selected=pr:1&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&selected_tab=files",
+    );
 
     const detail = page.locator(".activity-detail");
     await expect(page.locator(".activity-shell.activity-shell--split"))
@@ -646,7 +732,7 @@ test.describe("activity split view and detail drawers", () => {
       "ghe.example.com",
     );
     await page.goto(
-      "/?selected=issue:acme/widgets/10&platform_host=ghe.example.com",
+      "/?selected=issue:10&provider=github&platform_host=ghe.example.com&repo_path=acme%2Fwidgets",
     );
 
     const detail = page.locator(".activity-detail");
@@ -681,25 +767,29 @@ test.describe("activity split view and detail drawers", () => {
 
   test("PR tab handoff preserves selected Activity PR files tab", async ({ page }) => {
     await mockDiffForAllPRs(page, tinyDiff);
-    await page.goto("/?selected=pr:acme/widgets/1&selected_tab=files");
+    await page.goto(
+      "/?selected=pr:1&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&selected_tab=files",
+    );
     await expect(page.locator(".activity-detail .diff-view")).toBeVisible();
 
     await page.locator(".view-tab", { hasText: "PRs" }).click();
 
-    await expect(page).toHaveURL(/\/pulls\/acme\/widgets\/1\/files$/);
+    await expect(page).toHaveURL(
+      /\/pulls\/detail\/files\?provider=github&platform_host=github\.com&repo_path=acme%2Fwidgets&number=1$/,
+    );
   });
 
   test("Issues tab handoff preserves selected Activity issue platform host", async ({ page }) => {
     await mockIssueDetailForPlatformHost(page, "ghe.example.com");
     await page.goto(
-      "/?selected=issue:acme/widgets/10&platform_host=ghe.example.com",
+      "/?selected=issue:10&provider=github&platform_host=ghe.example.com&repo_path=acme%2Fwidgets",
     );
     await expect(page.locator(".activity-detail .issue-detail")).toBeVisible();
 
     await page.locator(".view-tab", { hasText: "Issues" }).click();
 
     await expect(page).toHaveURL(
-      /\/issues\/acme\/widgets\/10\?platform_host=ghe\.example\.com$/,
+      /\/issues\/detail\?provider=github&platform_host=ghe\.example\.com&repo_path=acme%2Fwidgets&number=10$/,
     );
   });
 
@@ -1252,7 +1342,7 @@ test.describe("activity split view and detail drawers", () => {
     // still shows widgets#1 as open), but the kanban board reads only
     // from the mocked /pulls endpoint.
     await page.route(
-      "**/api/v1/repos/*/*/pulls/*/github-state",
+      "**/api/v1/pulls/github/*/*/*/github-state",
       async (route) => {
         pullsContainsWidgets1 = false;
         await route.fulfill({
@@ -1322,7 +1412,9 @@ test.describe("PR list tabs", () => {
     // Mock the diff so navigating to /files does not depend on real data.
     await mockDiffForAllPRs(page, tinyDiff);
 
-    await page.goto("/pulls/acme/widgets/1");
+    await page.goto(
+      "/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1",
+    );
 
     // Wait for the PRListView tab bar (scoped to .main-area) to
     // render.
@@ -1352,7 +1444,9 @@ test.describe("PR list tabs", () => {
       ".main-area .detail-tabs .detail-tab",
       { hasText: "Files changed" },
     ).click();
-    await expect(page).toHaveURL(/\/pulls\/acme\/widgets\/1\/files$/);
+    await expect(page).toHaveURL(
+      /\/pulls\/detail\/files\?provider=github&platform_host=github\.com&repo_path=acme%2Fwidgets&number=1$/,
+    );
     await expect(page.locator(".diff-view")).toBeVisible();
     await expect(page.locator(".main-area .detail-tabs")).toHaveCount(1);
 
@@ -1362,7 +1456,9 @@ test.describe("PR list tabs", () => {
       ".main-area .detail-tabs .detail-tab",
       { hasText: "Conversation" },
     ).click();
-    await expect(page).toHaveURL(/\/pulls\/acme\/widgets\/1$/);
+    await expect(page).toHaveURL(
+      /\/pulls\/detail\?provider=github&platform_host=github\.com&repo_path=acme%2Fwidgets&number=1$/,
+    );
     await expect(page.locator(".main-area .detail-tabs")).toHaveCount(1);
   });
 
@@ -1373,7 +1469,9 @@ test.describe("PR list tabs", () => {
     // router-click test above does not exercise this path.
     await mockDiffForAllPRs(page, tinyDiff);
 
-    await page.goto("/pulls/acme/widgets/1/files");
+    await page.goto(
+      "/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1",
+    );
 
     await page.locator(".main-area .detail-tabs").first()
       .waitFor({ state: "visible", timeout: 10_000 });

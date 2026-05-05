@@ -132,7 +132,7 @@ name = "*"
 
 	status, body = postJSON(
 		t, client,
-		baseURL+"/api/v1/repos/roborev-dev/%2A/refresh",
+		baseURL+"/api/v1/repo/gh/roborev-dev/%2A/refresh",
 		nil,
 	)
 	require.Equal(http.StatusOK, status, body)

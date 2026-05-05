@@ -139,14 +139,14 @@ func TestRepoConfigAPIE2EAddDeleteAndErrors(t *testing.T) {
 
 	missingDeleteResp := doServerJSON(
 		t, ts.Client(), http.MethodDelete,
-		ts.URL+"/api/v1/repos/nope/missing", nil,
+		ts.URL+"/api/v1/repo/gh/nope/missing", nil,
 	)
 	defer missingDeleteResp.Body.Close()
 	require.Equal(http.StatusNotFound, missingDeleteResp.StatusCode)
 
 	deleteResp := doServerJSON(
 		t, ts.Client(), http.MethodDelete,
-		ts.URL+"/api/v1/repos/acme/widget", nil,
+		ts.URL+"/api/v1/repo/gh/acme/widget", nil,
 	)
 	defer deleteResp.Body.Close()
 	require.Equal(http.StatusNoContent, deleteResp.StatusCode)
@@ -188,7 +188,7 @@ name = "widget-*"
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	refreshPath := "/api/v1/repos/acme/" +
+	refreshPath := "/api/v1/repo/gh/acme/" +
 		url.PathEscape("widget-*") + "/refresh"
 	refreshResp := doServerJSON(
 		t, ts.Client(), http.MethodPost,
@@ -204,7 +204,7 @@ name = "widget-*"
 	defer nonGlobTS.Close()
 	nonGlobResp := doServerJSON(
 		t, nonGlobTS.Client(), http.MethodPost,
-		nonGlobTS.URL+"/api/v1/repos/acme/widget/refresh", nil,
+		nonGlobTS.URL+"/api/v1/repo/gh/acme/widget/refresh", nil,
 	)
 	defer nonGlobResp.Body.Close()
 	require.Equal(t, http.StatusBadRequest, nonGlobResp.StatusCode)
