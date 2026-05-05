@@ -150,9 +150,14 @@ async function mockIssueDetailForPlatformHost(
   expectedPlatformHost: string,
 ): Promise<string[]> {
   const seenHosts: string[] = [];
-  await page.route("**/api/v1/repos/acme/widgets/issues/10**", async (route) => {
+  await page.route("**/api/v1/items/issue**", async (route) => {
     const url = new URL(route.request().url());
     const host = url.searchParams.get("platform_host") ?? "";
+    const number = url.searchParams.get("number");
+    if (number !== "10") {
+      await route.fallback();
+      return;
+    }
     seenHosts.push(host);
     await route.fulfill({
       status: host === expectedPlatformHost ? 200 : 400,
@@ -518,8 +523,13 @@ test.describe("activity split view and detail drawers", () => {
     await mockActivityWithGheIssue(page);
 
     let detailGetCount = 0;
-    await page.route("**/api/v1/repos/acme/widgets/issues/10**", async (route) => {
+    await page.route("**/api/v1/items/issue**", async (route) => {
       if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+      const url = new URL(route.request().url());
+      if (url.searchParams.get("number") !== "10") {
         await route.fallback();
         return;
       }
@@ -563,16 +573,16 @@ test.describe("activity split view and detail drawers", () => {
     const syncPosts = new Map<string, number>();
     const asyncSyncPosts = new Map<string, number>();
 
-    await page.route("**/api/v1/repos/acme/widgets/issues/**", async (route) => {
+    await page.route("**/api/v1/items/issue**", async (route) => {
       const url = new URL(route.request().url());
-      const match = url.pathname.match(/\/issues\/(\d+)(?:\/sync(?:\/async)?)?$/);
-      if (match === null) {
+      const rawNumber = url.searchParams.get("number");
+      if (rawNumber === null) {
         await route.fallback();
         return;
       }
 
-      const issueNumber = Number(match[1]);
-      const key = url.pathname.replace(/\/sync(?:\/async)?$/, "");
+      const issueNumber = Number(rawNumber);
+      const key = rawNumber;
       if (route.request().method() === "GET" && !url.pathname.endsWith("/sync")) {
         detailGets.set(key, (detailGets.get(key) ?? 0) + 1);
       } else if (
@@ -686,7 +696,9 @@ test.describe("activity split view and detail drawers", () => {
 
     await page.locator(".view-tab", { hasText: "PRs" }).click();
 
-    await expect(page).toHaveURL(/\/pulls\/acme\/widgets\/1\/files$/);
+    await expect(page).toHaveURL(
+      /\/pulls\/detail\/files\?provider=github&platform_host=github\.com&repo_path=acme%2Fwidgets&number=1$/,
+    );
   });
 
   test("Issues tab handoff preserves selected Activity issue platform host", async ({ page }) => {
@@ -699,7 +711,7 @@ test.describe("activity split view and detail drawers", () => {
     await page.locator(".view-tab", { hasText: "Issues" }).click();
 
     await expect(page).toHaveURL(
-      /\/issues\/acme\/widgets\/10\?platform_host=ghe\.example\.com$/,
+      /\/issues\/detail\?provider=github&platform_host=ghe\.example\.com&repo_path=acme%2Fwidgets&number=10$/,
     );
   });
 

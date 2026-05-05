@@ -28,7 +28,9 @@
     owner: string;
     name: string;
     number: number;
+    provider?: string | undefined;
     platformHost?: string | undefined;
+    repoPath?: string | undefined;
   };
 
   let {
@@ -44,8 +46,10 @@
     itemTitle: string;
     itemUrl: string;
     itemState: string;
+    provider: string;
     repoOwner: string;
     repoName: string;
+    repoPath: string;
     platformHost: string;
     latestTime: string;
     events: ActivityItem[];
@@ -95,8 +99,10 @@
         itemTitle: first.item_title,
         itemUrl: first.item_url,
         itemState: first.item_state,
+        provider: first.repo?.provider ?? "github",
         repoOwner: first.repo_owner,
         repoName: first.repo_name,
+        repoPath: first.repo?.repo_path ?? `${first.repo_owner}/${first.repo_name}`,
         platformHost: first.platform_host ?? "",
         latestTime: first.created_at,
         events,
@@ -196,6 +202,10 @@
       && selectedItem.owner === group.repoOwner
       && selectedItem.name === group.repoName
       && selectedItem.number === group.itemNumber
+      && (!selectedItem.provider
+        || selectedItem.provider === group.provider)
+      && (!selectedItem.repoPath
+        || selectedItem.repoPath === group.repoPath)
       && (!selectedItem.platformHost
         || group.platformHost === selectedItem.platformHost);
   }

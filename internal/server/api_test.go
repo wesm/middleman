@@ -2665,6 +2665,256 @@ func TestGitLabSyncCoversRepositoryItemsEventsOverviewAndCI(t *testing.T) {
 	)
 }
 
+func TestProviderRefSyncEndpointsUseGitLabNestedRepoPath(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(database.Close()) })
+
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.example.com:8443",
+		Owner:              "Group/SubGroup",
+		Name:               "Project.Special",
+		RepoPath:           "Group/SubGroup/Project.Special",
+		PlatformID:         4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		WebURL:             "https://gitlab.example.com:8443/Group/SubGroup/Project.Special",
+		CloneURL:           "https://gitlab.example.com:8443/Group/SubGroup/Project.Special.git",
+		DefaultBranch:      "main",
+	}
+	provider := &apiTestGitLabProvider{
+		ref: ref,
+		mergeRequests: []platform.MergeRequest{
+			{
+				Repo:               ref,
+				PlatformID:         7001,
+				PlatformExternalID: "gid://gitlab/MergeRequest/7001",
+				Number:             7,
+				URL:                ref.WebURL + "/-/merge_requests/7",
+				Title:              "Sync direct provider MR",
+				Author:             "ada",
+				State:              "open",
+				Body:               "MR body",
+				HeadBranch:         "feature/direct",
+				BaseBranch:         "main",
+				HeadSHA:            "abc123",
+				BaseSHA:            "def456",
+				CreatedAt:          now,
+				UpdatedAt:          now,
+				LastActivityAt:     now,
+			},
+			{
+				Repo:               ref,
+				PlatformID:         7002,
+				PlatformExternalID: "gid://gitlab/MergeRequest/7002",
+				Number:             8,
+				URL:                ref.WebURL + "/-/merge_requests/8",
+				Title:              "Sync async provider MR",
+				Author:             "ada",
+				State:              "open",
+				Body:               "MR body",
+				HeadBranch:         "feature/async",
+				BaseBranch:         "main",
+				HeadSHA:            "abc124",
+				BaseSHA:            "def457",
+				CreatedAt:          now,
+				UpdatedAt:          now,
+				LastActivityAt:     now,
+			},
+		},
+		mergeRequestEvents: map[int][]platform.MergeRequestEvent{
+			7: {{
+				Repo:               ref,
+				PlatformID:         9101,
+				PlatformExternalID: "gid://gitlab/Note/9101",
+				MergeRequestNumber: 7,
+				EventType:          "issue_comment",
+				Author:             "ada",
+				Body:               "Direct MR event",
+				CreatedAt:          now.Add(time.Minute),
+				DedupeKey:          "gitlab:mr-note:9101",
+			}},
+			8: {{
+				Repo:               ref,
+				PlatformID:         9102,
+				PlatformExternalID: "gid://gitlab/Note/9102",
+				MergeRequestNumber: 8,
+				EventType:          "issue_comment",
+				Author:             "ada",
+				Body:               "Async MR event",
+				CreatedAt:          now.Add(2 * time.Minute),
+				DedupeKey:          "gitlab:mr-note:9102",
+			}},
+		},
+		issues: []platform.Issue{
+			{
+				Repo:               ref,
+				PlatformID:         8001,
+				PlatformExternalID: "gid://gitlab/Issue/8001",
+				Number:             11,
+				URL:                ref.WebURL + "/-/issues/11",
+				Title:              "Sync direct provider issue",
+				Author:             "grace",
+				State:              "open",
+				Body:               "Issue body",
+				CreatedAt:          now,
+				UpdatedAt:          now,
+				LastActivityAt:     now,
+			},
+			{
+				Repo:               ref,
+				PlatformID:         8002,
+				PlatformExternalID: "gid://gitlab/Issue/8002",
+				Number:             12,
+				URL:                ref.WebURL + "/-/issues/12",
+				Title:              "Sync async provider issue",
+				Author:             "grace",
+				State:              "open",
+				Body:               "Issue body",
+				CreatedAt:          now,
+				UpdatedAt:          now,
+				LastActivityAt:     now,
+			},
+		},
+		issueEvents: map[int][]platform.IssueEvent{
+			11: {{
+				Repo:               ref,
+				PlatformID:         9201,
+				PlatformExternalID: "gid://gitlab/Note/9201",
+				IssueNumber:        11,
+				EventType:          "issue_comment",
+				Author:             "grace",
+				Body:               "Direct issue event",
+				CreatedAt:          now.Add(time.Minute),
+				DedupeKey:          "gitlab:issue-note:9201",
+			}},
+			12: {{
+				Repo:               ref,
+				PlatformID:         9202,
+				PlatformExternalID: "gid://gitlab/Note/9202",
+				IssueNumber:        12,
+				EventType:          "issue_comment",
+				Author:             "grace",
+				Body:               "Async issue event",
+				CreatedAt:          now.Add(2 * time.Minute),
+				DedupeKey:          "gitlab:issue-note:9202",
+			}},
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+
+	repo := ghclient.RepoRef{
+		Platform:           platform.KindGitLab,
+		Owner:              ref.Owner,
+		Name:               ref.Name,
+		PlatformHost:       ref.Host,
+		RepoPath:           ref.RepoPath,
+		PlatformRepoID:     ref.PlatformID,
+		PlatformExternalID: ref.PlatformExternalID,
+		WebURL:             ref.WebURL,
+		CloneURL:           ref.CloneURL,
+		DefaultBranch:      ref.DefaultBranch,
+	}
+	_, err = database.UpsertRepo(ctx, platform.DBRepoIdentity(ref))
+	require.NoError(err)
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	providerName := "gitlab"
+	providerHost := "gitlab.example.com:8443"
+	repoPath := "Group/SubGroup/Project.Special"
+	mrDirect := int64(7)
+	mrAsync := int64(8)
+	issueDirect := int64(11)
+	issueAsync := int64(12)
+
+	prResp, err := client.HTTP.SyncPullRequestByRepoRefWithResponse(
+		ctx,
+		&generated.SyncPullRequestByRepoRefParams{
+			Provider:     &providerName,
+			PlatformHost: &providerHost,
+			RepoPath:     &repoPath,
+			Number:       &mrDirect,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, prResp.StatusCode(), string(prResp.Body))
+	require.NotNil(prResp.JSON200)
+	assert.Equal("gitlab", prResp.JSON200.Repo.Provider)
+	assert.Equal(repoPath, prResp.JSON200.Repo.RepoPath)
+	assert.Equal("Sync direct provider MR", prResp.JSON200.MergeRequest.Title)
+	assert.Len(*prResp.JSON200.Events, 1)
+
+	issueResp, err := client.HTTP.SyncIssueByRepoRefWithResponse(
+		ctx,
+		&generated.SyncIssueByRepoRefParams{
+			Provider:     &providerName,
+			PlatformHost: &providerHost,
+			RepoPath:     &repoPath,
+			Number:       &issueDirect,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, issueResp.StatusCode(), string(issueResp.Body))
+	require.NotNil(issueResp.JSON200)
+	assert.Equal("gitlab", issueResp.JSON200.Repo.Provider)
+	assert.Equal(repoPath, issueResp.JSON200.Repo.RepoPath)
+	assert.Equal("Sync direct provider issue", issueResp.JSON200.Issue.Title)
+	assert.Len(*issueResp.JSON200.Events, 1)
+
+	asyncPRResp, err := client.HTTP.EnqueuePullRequestSyncByRepoRefWithResponse(
+		ctx,
+		&generated.EnqueuePullRequestSyncByRepoRefParams{
+			Provider:     &providerName,
+			PlatformHost: &providerHost,
+			RepoPath:     &repoPath,
+			Number:       &mrAsync,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, asyncPRResp.StatusCode(), string(asyncPRResp.Body))
+	require.Eventually(func() bool {
+		repoRow, rowErr := database.GetRepoByIdentity(ctx, platform.DBRepoIdentity(ref))
+		if rowErr != nil || repoRow == nil {
+			return false
+		}
+		mr, rowErr := database.GetMergeRequestByRepoIDAndNumber(ctx, repoRow.ID, 8)
+		return rowErr == nil && mr != nil && mr.Title == "Sync async provider MR"
+	}, 2*time.Second, 20*time.Millisecond)
+
+	asyncIssueResp, err := client.HTTP.EnqueueIssueSyncByRepoRefWithResponse(
+		ctx,
+		&generated.EnqueueIssueSyncByRepoRefParams{
+			Provider:     &providerName,
+			PlatformHost: &providerHost,
+			RepoPath:     &repoPath,
+			Number:       &issueAsync,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, asyncIssueResp.StatusCode(), string(asyncIssueResp.Body))
+	require.Eventually(func() bool {
+		repoRow, rowErr := database.GetRepoByIdentity(ctx, platform.DBRepoIdentity(ref))
+		if rowErr != nil || repoRow == nil {
+			return false
+		}
+		issue, rowErr := database.GetIssueByRepoIDAndNumber(ctx, repoRow.ID, 12)
+		return rowErr == nil && issue != nil && issue.Title == "Sync async provider issue"
+	}, 2*time.Second, 20*time.Millisecond)
+}
+
 func TestGitLabSyncUsesTagsForRepoOverviewWhenReleasesAreAbsent(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()

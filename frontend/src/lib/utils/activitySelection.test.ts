@@ -58,6 +58,23 @@ describe("activity selection URL state", () => {
     });
   });
 
+  it("parses provider selection with nested repo path", () => {
+    expect(
+      parseActivitySelection(
+        "?selected=issue:11&provider=gitlab&platform_host=gitlab.example.com:8443&repo_path=Group%2FSubGroup%2FProject.Special",
+      ),
+    ).toEqual({
+      itemType: "issue",
+      owner: "Group/SubGroup",
+      name: "Project.Special",
+      number: 11,
+      provider: "gitlab",
+      platformHost: "gitlab.example.com:8443",
+      repoPath: "Group/SubGroup/Project.Special",
+      detailTab: "conversation",
+    });
+  });
+
   it("preserves existing Activity filters when writing selection", () => {
     const next = buildActivitySelectionSearch("?range=30d&view=threaded", {
       itemType: "pr",
@@ -79,6 +96,26 @@ describe("activity selection URL state", () => {
     );
 
     expect(next.toString()).toBe("range=30d");
+  });
+
+  it("writes provider selection with repo path outside the legacy selected value", () => {
+    const next = buildActivitySelectionSearch("?range=30d", {
+      itemType: "pr",
+      owner: "Group/SubGroup",
+      name: "Project.Special",
+      number: 7,
+      provider: "gitlab",
+      platformHost: "gitlab.example.com:8443",
+      repoPath: "Group/SubGroup/Project.Special",
+      detailTab: "files",
+    });
+
+    expect(next.get("selected")).toBe("pr:7");
+    expect(next.get("provider")).toBe("gitlab");
+    expect(next.get("platform_host")).toBe("gitlab.example.com:8443");
+    expect(next.get("repo_path")).toBe("Group/SubGroup/Project.Special");
+    expect(next.get("selected_tab")).toBe("files");
+    expect(next.get("range")).toBe("30d");
   });
 
   it("overwrites one PR selection with another and drops a stale files tab", () => {
@@ -144,6 +181,23 @@ describe("activity selection URL state", () => {
       "/issues/detail?provider=github&platform_host=ghe.example.com&repo_path=acme%2Fwidgets&number=10",
     );
     expect(activitySelectionToRoute(issue, "pulls")).toBeNull();
+  });
+
+  it("builds provider destination routes from Activity selections", () => {
+    const pr: ActivitySelection = {
+      itemType: "pr",
+      owner: "Group/SubGroup",
+      name: "Project.Special",
+      number: 7,
+      provider: "gitlab",
+      platformHost: "gitlab.example.com:8443",
+      repoPath: "Group/SubGroup/Project.Special",
+      detailTab: "conversation",
+    };
+
+    expect(activitySelectionToRoute(pr, "pulls")).toBe(
+      "/pulls/detail?provider=gitlab&platform_host=gitlab.example.com%3A8443&repo_path=Group%2FSubGroup%2FProject.Special&number=7",
+    );
   });
 
   it.each([

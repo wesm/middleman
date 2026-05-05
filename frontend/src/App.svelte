@@ -222,7 +222,9 @@
     if (left === right) return true;
     if (left === null || right === null) return false;
     return left.itemType === right.itemType
+      && left.provider === right.provider
       && left.platformHost === right.platformHost
+      && left.repoPath === right.repoPath
       && left.owner === right.owner
       && left.name === right.name
       && left.number === right.number
@@ -248,7 +250,9 @@
       item.item_type === "issue" ? "issue" : "pr";
     drawerItem = {
       itemType,
-      platformHost: item.platform_host,
+      provider: item.repo?.provider,
+      platformHost: item.repo?.platform_host ?? item.platform_host,
+      repoPath: item.repo?.repo_path,
       owner: item.repo_owner,
       name: item.repo_name,
       number: item.item_number,
@@ -486,6 +490,9 @@
               owner: r.owner,
               name: r.name,
               number: r.number,
+              provider: r.provider,
+              platformHost: r.platformHost,
+              repoPath: r.repoPath,
             }}
             detailTab="conversation"
             isSidebarCollapsed={true}
@@ -497,7 +504,9 @@
               owner: r.owner,
               name: r.name,
               number: r.number,
+              provider: r.provider,
               platformHost: r.platformHost,
+              repoPath: r.repoPath,
             }}
             isSidebarCollapsed={true}
             hideSidebar={true}
