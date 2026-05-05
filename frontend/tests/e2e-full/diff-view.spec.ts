@@ -221,7 +221,7 @@ async function mockDiffApi(page: Page, fixture: typeof smallDiff): Promise<void>
 }
 
 async function mockFilePreviewApi(page: Page): Promise<void> {
-  await page.route("**/api/v1/repos/acme/widgets/pulls/1/file-preview**", async (route) => {
+  await page.route("**/api/v1/pulls/github/acme/widgets/1/file-preview**", async (route) => {
     const url = new URL(route.request().url());
     const path = url.searchParams.get("path");
     if (path === "docs/preview.md") {
@@ -512,14 +512,14 @@ test.describe("diff view", () => {
     let diffFetchCount = 0;
     let previewFetchCount = 0;
 
-    await page.route("**/api/v1/repos/acme/widgets/pulls/1/files", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/1/files", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(filesFromDiff(smallDiff)),
       });
     });
-    await page.route("**/api/v1/repos/acme/widgets/pulls/1/diff*", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/1/diff*", async (route) => {
       diffFetchCount++;
       await route.fulfill({
         status: 200,
@@ -527,7 +527,7 @@ test.describe("diff view", () => {
         body: JSON.stringify(smallDiff),
       });
     });
-    await page.route("**/api/v1/repos/acme/widgets/pulls/1/file-preview**", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/1/file-preview**", async (route) => {
       const content = logoResponses[Math.min(previewFetchCount, logoResponses.length - 1)]!;
       previewFetchCount++;
       await route.fulfill({
@@ -1159,7 +1159,7 @@ test.describe("diff view (git-backed)", () => {
         .toContainText("Verify changed-file summaries refresh");
 
       const previewResponse = await page.request.get(
-        `${server.info.base_url}/api/v1/repos/acme/widgets/pulls/1/file-preview?path=internal/cache.go`,
+        `${server.info.base_url}/api/v1/pulls/github/acme/widgets/1/file-preview?path=internal/cache.go`,
       );
       expect(previewResponse.ok()).toBe(true);
       const previewBody = await previewResponse.json();
