@@ -28,12 +28,13 @@ describe("provider-aware detail API routes", () => {
       repoPath: "Group/SubGroup/Project",
     } as never);
 
-    expect(client.GET).toHaveBeenCalledWith("/items/pull-request", {
+    expect(client.GET).toHaveBeenCalledWith("/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}", {
       params: {
-        query: {
+        path: {
           provider: "gitlab",
           platform_host: "gitlab.example.com:8443",
-          repo_path: "Group/SubGroup/Project",
+          owner: "Group/SubGroup",
+          name: "Project",
           number: 12,
         },
       },
@@ -63,12 +64,13 @@ describe("provider-aware detail API routes", () => {
       repoPath: "Group/SubGroup/Project",
     } as never);
 
-    expect(client.GET).toHaveBeenCalledWith("/items/issue", {
+    expect(client.GET).toHaveBeenCalledWith("/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}", {
       params: {
-        query: {
+        path: {
           provider: "gitlab",
           platform_host: "gitlab.example.com:8443",
-          repo_path: "Group/SubGroup/Project",
+          owner: "Group/SubGroup",
+          name: "Project",
           number: 7,
         },
       },

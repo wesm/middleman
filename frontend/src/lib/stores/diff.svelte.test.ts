@@ -116,19 +116,19 @@ describe("createDiffStore loadDiff", () => {
               : input.url;
 
         // PR A fetches resolve immediately.
-        if (url.includes("pulls/1/files")) {
+        if (url.includes("/1/files")) {
           return Response.json(filesA);
         }
-        if (url.includes("pulls/1/diff")) {
+        if (url.includes("/1/diff")) {
           return Response.json(diffA);
         }
         // PR B: both deferred so we control timing explicitly.
-        if (url.includes("pulls/2/files")) {
+        if (url.includes("/2/files")) {
           return new Promise((resolve) => {
             resolveFilesB = () => resolve(Response.json(filesB));
           });
         }
-        if (url.includes("pulls/2/diff")) {
+        if (url.includes("/2/diff")) {
           return new Promise((resolve) => {
             resolveDiffB = () => resolve(Response.json(diffB));
           });
@@ -185,7 +185,7 @@ describe("createDiffStore loadDiff", () => {
             : input.url;
         const signal = input instanceof Request ? input.signal : init?.signal;
 
-        if (url.includes("pulls/1/files")) {
+        if (url.includes("/1/files")) {
           return new Promise((_resolve, reject) => {
             signal?.addEventListener("abort", () => {
               filesAAborted = true;
@@ -193,7 +193,7 @@ describe("createDiffStore loadDiff", () => {
             });
           });
         }
-        if (url.includes("pulls/1/diff")) {
+        if (url.includes("/1/diff")) {
           return new Promise((_resolve, reject) => {
             signal?.addEventListener("abort", () => {
               diffAAborted = true;
@@ -201,10 +201,10 @@ describe("createDiffStore loadDiff", () => {
             });
           });
         }
-        if (url.includes("pulls/2/files")) {
+        if (url.includes("/2/files")) {
           return Response.json(filesB);
         }
-        if (url.includes("pulls/2/diff")) {
+        if (url.includes("/2/diff")) {
           return Response.json(diffB);
         }
         return Response.json({}, { status: 404 });

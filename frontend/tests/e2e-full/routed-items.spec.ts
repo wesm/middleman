@@ -6,15 +6,10 @@ const issueTitle = "Widget rendering broken on Safari";
 function detailResponse(
   page: Page,
   path: string,
-  item: { provider: string; platformHost: string; repoPath: string; number: string },
 ): Promise<Response> {
   return page.waitForResponse((response) => {
     const url = new URL(response.url());
     return url.pathname === path
-      && url.searchParams.get("provider") === item.provider
-      && url.searchParams.get("platform_host") === item.platformHost
-      && url.searchParams.get("repo_path") === item.repoPath
-      && url.searchParams.get("number") === item.number
       && response.request().method() === "GET";
   });
 }
@@ -22,15 +17,10 @@ function detailResponse(
 function issueDetailResponse(
   page: Page,
   path: string,
-  platformHost: string,
 ): Promise<Response> {
   return page.waitForResponse((response) => {
     const url = new URL(response.url());
     return url.pathname === path
-      && url.searchParams.get("provider") === "github"
-      && url.searchParams.get("platform_host") === platformHost
-      && url.searchParams.get("repo_path") === "acme/widgets"
-      && url.searchParams.get("number") === "10"
       && response.request().method() === "GET";
   });
 }
@@ -43,8 +33,7 @@ test.describe("routed item builders through the UI", () => {
 
     const detailLoaded = detailResponse(
       page,
-      "/api/v1/items/pull-request",
-      { provider: "github", platformHost: "github.com", repoPath: "acme/widgets", number: "1" },
+      "/api/v1/pulls/github/acme/widgets/1",
     );
     await page.locator(".pull-item").filter({ hasText: prTitle }).first().click();
 
@@ -62,8 +51,7 @@ test.describe("routed item builders through the UI", () => {
 
     const detailLoaded = issueDetailResponse(
       page,
-      "/api/v1/items/issue",
-      "github.com",
+      "/api/v1/issues/github/acme/widgets/10",
     );
     await page.locator(".issue-item").filter({ hasText: issueTitle }).first().click();
 
@@ -81,8 +69,7 @@ test.describe("routed item builders through the UI", () => {
 
     const detailLoaded = detailResponse(
       page,
-      "/api/v1/items/pull-request",
-      { provider: "github", platformHost: "github.com", repoPath: "acme/widgets", number: "1" },
+      "/api/v1/pulls/github/acme/widgets/1",
     );
     await page.locator(".focus-list .pull-item").filter({ hasText: prTitle }).first().click();
 
@@ -100,8 +87,7 @@ test.describe("routed item builders through the UI", () => {
 
     const detailLoaded = issueDetailResponse(
       page,
-      "/api/v1/items/issue",
-      "github.com",
+      "/api/v1/issues/github/acme/widgets/10",
     );
     await page.locator(".focus-list .issue-item").filter({ hasText: issueTitle }).first().click();
 

@@ -545,15 +545,14 @@ describe("RepoSummaryPage", () => {
 
     await waitFor(() => {
       expect(mockPost).toHaveBeenCalledWith(
-        "/repos/{owner}/{name}/issues",
+        "/issues/{provider}/{owner}/{name}",
         expect.objectContaining({
           params: {
-            path: { owner: "acme", name: "widgets" },
+            path: { provider: "github", owner: "acme", name: "widgets" },
           },
           body: {
             title: "Ship repo summaries",
             body: "Need a compact repo dashboard.",
-            platform_host: "github.com",
           },
         }),
       );
@@ -714,14 +713,18 @@ describe("RepoSummaryPage", () => {
 
     await waitFor(() => {
       expect(mockPost).toHaveBeenCalledWith(
-        "/repos/{owner}/{name}/issues",
+        "/host/{platform_host}/issues/{provider}/{owner}/{name}",
         expect.objectContaining({
           params: {
-            path: { owner: "acme", name: "widgets" },
+            path: {
+              provider: "github",
+              platform_host: "ghe.example.com",
+              owner: "acme",
+              name: "widgets",
+            },
           },
           body: expect.objectContaining({
             title: "Enterprise draft",
-            platform_host: "ghe.example.com",
           }),
         }),
       );

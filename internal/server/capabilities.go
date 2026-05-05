@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"errors"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -83,16 +82,15 @@ func capabilityEnabled(
 	}
 }
 
-func (s *Server) requireRepoCapability(
+func (s *Server) requireRepoRouteCapability(
 	ctx context.Context,
-	owner, name, platformHost, capability string,
+	provider, platformHost, owner, name, capability string,
 ) (*db.Repo, error) {
-	repo, err := s.lookupRepo(ctx, owner, name, platformHost)
+	repo, err := s.lookupRepoByProviderRoute(
+		ctx, provider, platformHost, owner, name,
+	)
 	if err != nil {
-		if errors.Is(err, errRepoNotFound) {
-			return nil, huma.Error404NotFound(err.Error())
-		}
-		return nil, huma.Error500InternalServerError("repo lookup failed")
+		return nil, providerRouteLookupError(err)
 	}
 	if !capabilityEnabled(s.capabilitiesForRepo(*repo), capability) {
 		return nil, unsupportedCapabilityProblem(*repo, capability)

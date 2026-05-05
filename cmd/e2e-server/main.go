@@ -543,7 +543,8 @@ func run(
 			return
 		}
 		if r.Method == http.MethodPost &&
-			strings.Contains(r.URL.Path, "/api/v1/repos/roborev-dev/") &&
+			strings.Contains(r.URL.Path, "/api/v1/repo/") &&
+			strings.Contains(r.URL.Path, "/roborev-dev/") &&
 			strings.HasSuffix(r.URL.Path, "/refresh") {
 			r = r.WithContext(
 				context.WithValue(r.Context(), globRefreshContextKey{}, true),

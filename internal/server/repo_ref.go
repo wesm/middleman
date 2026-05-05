@@ -63,6 +63,22 @@ func (s *Server) lookupRepoByRefInput(
 	return repo, nil
 }
 
+func (s *Server) lookupRepoByProviderRoute(
+	ctx context.Context,
+	provider, platformHost, owner, name string,
+) (*db.Repo, error) {
+	owner = strings.Trim(owner, "/ ")
+	name = strings.Trim(name, "/ ")
+	if owner == "" || name == "" {
+		return nil, errRepoPathRequired
+	}
+	return s.lookupRepoByRefInput(ctx, repoRefInput{
+		Provider:     provider,
+		PlatformHost: platformHost,
+		RepoPath:     owner + "/" + name,
+	})
+}
+
 func repoRefFromRepo(repo db.Repo) repoRefResponse {
 	provider := strings.TrimSpace(repo.Platform)
 	if provider == "" {

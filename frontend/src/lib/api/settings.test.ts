@@ -23,7 +23,7 @@ describe("settings api", () => {
     const request = vi.mocked(fetch).mock.calls[0]?.[0];
     expect(request).toBeInstanceOf(Request);
     expect(new URL((request as Request).url).pathname).toBe(
-      "/api/v1/repos/acme/widgets-%3F",
+      "/api/v1/repo/github/acme/widgets-%3F",
     );
     expect((request as Request).method).toBe("DELETE");
   });

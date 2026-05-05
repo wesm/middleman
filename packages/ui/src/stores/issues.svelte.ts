@@ -1,4 +1,8 @@
 import type { Issue, IssueDetail, IssuesParams } from "../api/types.js";
+import {
+  providerItemPath,
+  providerRouteParams,
+} from "../api/provider-routes.js";
 import type { MiddlemanClient } from "../types.js";
 
 export type IssueDetailSyncMode = boolean | "background";
@@ -267,6 +271,19 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     return undefined;
   }
 
+  function currentIssueDetailRef(
+    owner: string,
+    name: string,
+    number: number,
+  ): IssueDetailRequestRef {
+    return issueDetailRequestRef(owner, name, number, {
+      provider: issueDetail?.repo?.provider ?? selectedIssue?.provider,
+      platformHost:
+        issueDetail?.repo?.platform_host ?? selectedIssue?.platformHost,
+      repoPath: issueDetail?.repo?.repo_path ?? selectedIssue?.repoPath,
+    });
+  }
+
   function issueDetailRequestRef(
     owner: string,
     name: string,
@@ -280,20 +297,6 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       provider: options?.provider ?? "github",
       platformHost: options?.platformHost ?? "github.com",
       repoPath: options?.repoPath ?? `${owner}/${name}`,
-    };
-  }
-
-  function issueDetailQuery(ref: IssueDetailRequestRef): {
-    provider: string;
-    platform_host: string;
-    repo_path: string;
-    number: number;
-  } {
-    return {
-      provider: ref.provider,
-      platform_host: ref.platformHost,
-      repo_path: ref.repoPath,
-      number: ref.number,
     };
   }
 
@@ -337,10 +340,13 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     const promise = (async () => {
       try {
         const { data, error: requestError } = await apiClient.GET(
-          "/items/issue",
+          providerItemPath("issues", requestRef, ""),
           {
             params: {
-              query: issueDetailQuery(requestRef),
+              path: {
+                ...providerRouteParams(requestRef),
+                number: requestRef.number,
+              },
             },
           },
         );
@@ -398,10 +404,13 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     detailSyncing = true;
     try {
       const { error: requestError } = await apiClient.POST(
-        "/items/issue/sync/async",
+        providerItemPath("issues", requestRef, "/sync/async"),
         {
           params: {
-            query: issueDetailQuery(requestRef),
+            path: {
+              ...providerRouteParams(requestRef),
+              number: requestRef.number,
+            },
           },
         },
       );
@@ -454,10 +463,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     detailSyncing = true;
     try {
       const { data, error: requestError } = await apiClient.POST(
-        "/items/issue/sync",
+        providerItemPath("issues", ref, "/sync"),
         {
           params: {
-            query: issueDetailQuery(ref),
+            path: { ...providerRouteParams(ref), number: ref.number },
           },
         },
       );
@@ -499,10 +508,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     const ref = issueDetailRequestRef(owner, name, number, options);
     try {
       const { data } = await apiClient.GET(
-        "/items/issue",
+        providerItemPath("issues", ref, ""),
         {
           params: {
-            query: issueDetailQuery(ref),
+            path: { ...providerRouteParams(ref), number: ref.number },
           },
         },
       );
@@ -559,20 +568,17 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     number: number,
     body: string,
   ): Promise<void> {
-    const platformHost = currentIssuePlatformHost(owner, name, number);
+    const ref = currentIssueDetailRef(owner, name, number);
 
     detailError = null;
     try {
       const { error: requestError } = await apiClient.POST(
-        "/repos/{owner}/{name}/issues/{number}/comments",
+        providerItemPath("issues", ref, "/comments"),
         {
-          params: { path: { owner, name, number } },
-          body: {
-            body,
-            ...(platformHost && {
-              platform_host: platformHost,
-            }),
+          params: {
+            path: { ...providerRouteParams(ref), number },
           },
+          body: { body },
         },
       );
       if (requestError) {
@@ -590,11 +596,11 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     detailSyncing = false;
     // Silent refresh: avoid flipping loading flag, which would
     // unmount the detail tree and reset scroll position.
-    await refreshIssueDetail(owner, name, number, platformHost);
+    await refreshIssueDetail(owner, name, number, ref);
     // Pull authoritative state from GitHub so issue row metadata
     // catches up. Skip if the user navigated away mid-refresh.
     if (gen === issueSyncGeneration) {
-      void syncIssueDetail(owner, name, number, gen, platformHost);
+      void syncIssueDetail(owner, name, number, gen, ref);
     }
   }
 
@@ -605,27 +611,21 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     commentID: number,
     body: string,
   ): Promise<boolean> {
-    const platformHost = currentIssuePlatformHost(owner, name, number);
+    const ref = currentIssueDetailRef(owner, name, number);
 
     detailError = null;
     try {
       const { error: requestError } = await apiClient.PATCH(
-        "/repos/{owner}/{name}/issues/{number}/comments/{comment_id}",
+        providerItemPath("issues", ref, "/comments/{comment_id}"),
         {
           params: {
             path: {
-              owner,
-              name,
+              ...providerRouteParams(ref),
               number,
               comment_id: commentID,
             },
           },
-          body: {
-            body,
-            ...(platformHost && {
-              platform_host: platformHost,
-            }),
-          },
+          body: { body },
         },
       );
       if (requestError) {
@@ -637,7 +637,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       detailError = err instanceof Error ? err.message : String(err);
       return false;
     }
-    await refreshIssueDetail(owner, name, number, platformHost);
+    await refreshIssueDetail(owner, name, number, ref);
     return true;
   }
 

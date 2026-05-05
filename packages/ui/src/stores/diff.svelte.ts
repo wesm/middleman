@@ -4,6 +4,11 @@ import type {
   CommitInfo,
 } from "../api/types.js";
 import { createAPIClient } from "../api/generated/client.js";
+import {
+  providerItemPath,
+  providerRouteParams,
+  type ProviderRouteRef,
+} from "../api/provider-routes.js";
 import type { components } from "../api/generated/schema.js";
 import type { MiddlemanClient } from "../types.js";
 import {
@@ -154,10 +159,23 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   let currentOwner = $state("");
   let currentName = $state("");
   let currentNumber = $state(0);
+  let currentProvider = $state<string | undefined>(undefined);
+  let currentPlatformHost = $state<string | undefined>(undefined);
+  let currentRepoPath = $state<string | undefined>(undefined);
 
   function getCurrentPR(): { owner: string; name: string; number: number } | null {
     if (!currentOwner) return null;
     return { owner: currentOwner, name: currentName, number: currentNumber };
+  }
+
+  function currentRouteRef(): ProviderRouteRef {
+    return {
+      provider: currentProvider,
+      platformHost: currentPlatformHost,
+      owner: currentOwner,
+      name: currentName,
+      repoPath: currentRepoPath,
+    };
   }
 
   // --- reads ---
@@ -289,14 +307,14 @@ export function createDiffStore(opts?: DiffStoreOptions) {
 
     loading = true;
     storeError = null;
+    const ref = currentRouteRef();
     try {
       const { data, error, response } = await apiClient.GET(
-        "/repos/{owner}/{name}/pulls/{number}/diff",
+        providerItemPath("pulls", ref, "/diff"),
         {
           params: {
             path: {
-              owner: currentOwner,
-              name: currentName,
+              ...providerRouteParams(ref),
               number: currentNumber,
             },
             query: diffQuery(),
@@ -376,6 +394,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     owner: string,
     name: string,
     number: number,
+    identity?: Partial<ProviderRouteRef>,
   ): Promise<void> {
     const prChanged =
       owner !== currentOwner ||
@@ -384,6 +403,9 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     currentOwner = owner;
     currentName = name;
     currentNumber = number;
+    currentProvider = identity?.provider;
+    currentPlatformHost = identity?.platformHost;
+    currentRepoPath = identity?.repoPath;
     if (prChanged) {
       scope = { kind: "head" };
       fileCategoryFilter = "all";
@@ -404,13 +426,14 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     loading = true;
     fileListLoading = true;
     storeError = null;
+    const ref = currentRouteRef();
 
     const filesPromise = (async () => {
       try {
         const { data } = await apiClient.GET(
-          "/repos/{owner}/{name}/pulls/{number}/files",
+          providerItemPath("pulls", ref, "/files"),
           {
-            params: { path: { owner, name, number } },
+            params: { path: { ...providerRouteParams(ref), number } },
             signal: filesAc.signal,
           },
         );
@@ -436,10 +459,10 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     const diffPromise = (async () => {
       try {
         const { data, error, response } = await apiClient.GET(
-          "/repos/{owner}/{name}/pulls/{number}/diff",
+          providerItemPath("pulls", ref, "/diff"),
           {
             params: {
-              path: { owner, name, number },
+              path: { ...providerRouteParams(ref), number },
               query: diffQuery(),
             },
             signal: diffAc.signal,
@@ -497,6 +520,9 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     currentOwner = "";
     currentName = "";
     currentNumber = 0;
+    currentProvider = undefined;
+    currentPlatformHost = undefined;
+    currentRepoPath = undefined;
   }
 
   async function loadCommits(): Promise<void> {
@@ -508,11 +534,12 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     const owner = currentOwner;
     const name = currentName;
     const number = currentNumber;
+    const ref = currentRouteRef();
     try {
       const { data, error, response } = await apiClient.GET(
-        "/repos/{owner}/{name}/pulls/{number}/commits",
+        providerItemPath("pulls", ref, "/commits"),
         {
-          params: { path: { owner, name, number } },
+          params: { path: { ...providerRouteParams(ref), number } },
         },
       );
       if (currentOwner !== owner || currentName !== name || currentNumber !== number) return;
@@ -550,7 +577,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   function selectCommit(sha: string): void {
     scope = { kind: "commit", sha };
     if (currentOwner && currentName && currentNumber) {
-      void loadDiff(currentOwner, currentName, currentNumber);
+      void loadDiff(currentOwner, currentName, currentNumber, currentRouteRef());
     }
   }
 
@@ -562,14 +589,14 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     const [older, newer] = fromIdx > toIdx ? [fromSha, toSha] : [toSha, fromSha];
     scope = { kind: "range", fromSha: older, toSha: newer };
     if (currentOwner && currentName && currentNumber) {
-      void loadDiff(currentOwner, currentName, currentNumber);
+      void loadDiff(currentOwner, currentName, currentNumber, currentRouteRef());
     }
   }
 
   function resetToHead(): void {
     scope = { kind: "head" };
     if (currentOwner && currentName && currentNumber) {
-      void loadDiff(currentOwner, currentName, currentNumber);
+      void loadDiff(currentOwner, currentName, currentNumber, currentRouteRef());
     }
   }
 

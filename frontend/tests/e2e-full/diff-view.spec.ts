@@ -171,14 +171,14 @@ function filesFromDiff(fixture: DiffResult): FilesResult {
 }
 
 async function mockDiffApi(page: Page, fixture: typeof smallDiff): Promise<void> {
-  await page.route("**/api/v1/repos/acme/widgets/pulls/1/files", async (route) => {
+  await page.route("**/api/v1/pulls/github/acme/widgets/1/files", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify(filesFromDiff(fixture)),
     });
   });
-  await page.route("**/api/v1/repos/acme/widgets/pulls/1/diff*", async (route) => {
+  await page.route("**/api/v1/pulls/github/acme/widgets/1/diff*", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -188,14 +188,14 @@ async function mockDiffApi(page: Page, fixture: typeof smallDiff): Promise<void>
 }
 
 async function mockDiffApiError(page: Page, status: number, detail: string): Promise<void> {
-  await page.route("**/api/v1/repos/acme/widgets/pulls/1/files", async (route) => {
+  await page.route("**/api/v1/pulls/github/acme/widgets/1/files", async (route) => {
     await route.fulfill({
       status,
       contentType: "application/json",
       body: JSON.stringify({ detail }),
     });
   });
-  await page.route("**/api/v1/repos/acme/widgets/pulls/1/diff*", async (route) => {
+  await page.route("**/api/v1/pulls/github/acme/widgets/1/diff*", async (route) => {
     await route.fulfill({
       status,
       contentType: "application/json",
@@ -319,7 +319,9 @@ test.describe("diff view", () => {
     await page.locator(".detail-tab", {
       hasText: "Conversation",
     }).click();
-    await expect(page).toHaveURL(/\/pulls\/acme\/widgets\/1$/);
+    await expect(page).toHaveURL(
+      /\/pulls\/detail\?provider=github&platform_host=github\.com&repo_path=acme%2Fwidgets&number=1$/,
+    );
   });
 
   test("clicking a file header collapses and expands its content", async ({ page }) => {
@@ -416,14 +418,14 @@ test.describe("diff view", () => {
 
   test("hide whitespace toggle triggers re-fetch", async ({ page }) => {
     let fetchCount = 0;
-    await page.route("**/api/v1/repos/acme/widgets/pulls/1/files", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/1/files", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(filesFromDiff(smallDiff)),
       });
     });
-    await page.route("**/api/v1/repos/acme/widgets/pulls/1/diff*", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/1/diff*", async (route) => {
       fetchCount++;
       const url = new URL(route.request().url());
       const fixture = url.searchParams.get("whitespace") === "hide"
@@ -603,14 +605,14 @@ test.describe("diff view", () => {
     // PR 1: large diff with filter shown.
     await mockDiffApi(page, largeDiff);
     // PR 2: also large so filter UI stays visible after switch.
-    await page.route("**/api/v1/repos/acme/widgets/pulls/2/files", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/2/files", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(filesFromDiff(largeDiff)),
       });
     });
-    await page.route("**/api/v1/repos/acme/widgets/pulls/2/diff*", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/2/diff*", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -641,14 +643,14 @@ test.describe("diff view", () => {
     // PR 1: large diff with filter shown.
     await mockDiffApi(page, largeDiff);
     // PR 2: small diff (filter input hidden).
-    await page.route("**/api/v1/repos/acme/widgets/pulls/2/files", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/2/files", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(filesFromDiff(smallDiff)),
       });
     });
-    await page.route("**/api/v1/repos/acme/widgets/pulls/2/diff*", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/2/diff*", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -700,21 +702,21 @@ test.describe("diff view", () => {
   test("commit list resets expand state when switching PRs", async ({ page }) => {
     // Mock diff for PR 1 and PR 2 (same fixture is fine — we care about expand state).
     await mockDiffApi(page, smallDiff);
-    await page.route("**/api/v1/repos/acme/widgets/pulls/2/files", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/2/files", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(filesFromDiff(smallDiff)),
       });
     });
-    await page.route("**/api/v1/repos/acme/widgets/pulls/2/diff*", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/2/diff*", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(smallDiff),
       });
     });
-    await page.route("**/api/v1/repos/acme/widgets/pulls/*/commits", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/*/commits", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -791,14 +793,14 @@ test.describe("diff view performance", () => {
     // Return fewer files when whitespace=hide so we can distinguish
     // the post-toggle render from the initial one.
     const hiddenDiff = { ...largeDiff, files: largeDiff.files.slice(0, 45) };
-    await page.route("**/api/v1/repos/acme/widgets/pulls/1/files", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/1/files", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(filesFromDiff(largeDiff)),
       });
     });
-    await page.route("**/api/v1/repos/acme/widgets/pulls/1/diff*", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/1/diff*", async (route) => {
       const url = new URL(route.request().url());
       const fixture = url.searchParams.get("whitespace") === "hide"
         ? hiddenDiff
@@ -1066,7 +1068,7 @@ test.describe("diff view (git-backed)", () => {
       .waitFor({ state: "visible", timeout: 10_000 });
 
     const payload = await page.evaluate(async () => {
-      const response = await fetch("/api/v1/repos/acme/widgets/pulls/1/commits");
+      const response = await fetch("/api/v1/pulls/github/acme/widgets/1/commits");
       return response.json();
     });
 

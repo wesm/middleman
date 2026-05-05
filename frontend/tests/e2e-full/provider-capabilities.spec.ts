@@ -22,7 +22,7 @@ test.describe("provider capabilities", () => {
     ).toBeVisible();
 
     const response = await page.request.get(
-      "/api/v1/items/issue?provider=gitlab&platform_host=gitlab.example.com&repo_path=group%2Fproject&number=11",
+      "/api/v1/host/gitlab.example.com/issues/gl/group/project/11",
     );
     expect(response.ok()).toBeTruthy();
     const body = await response.json();

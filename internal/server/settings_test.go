@@ -527,7 +527,7 @@ func TestHandleDeleteRepo(t *testing.T) {
 
 	rr := doJSON(
 		t, srv, http.MethodDelete,
-		"/api/v1/repos/acme/widget", nil,
+		"/api/v1/repo/gh/acme/widget", nil,
 	)
 	require.Equal(http.StatusNoContent, rr.Code, rr.Body.String())
 
@@ -585,7 +585,7 @@ func TestGetSettingsWithoutPersistence(t *testing.T) {
 	assert.Equal(http.StatusNotFound, addRR.Code)
 
 	delRR := doJSON(t, srv, http.MethodDelete,
-		"/api/v1/repos/acme/widget", nil)
+		"/api/v1/repo/gh/acme/widget", nil)
 	assert.Equal(http.StatusNotFound, delRR.Code)
 }
 
@@ -594,7 +594,7 @@ func TestHandleDeleteLastRepo(t *testing.T) {
 
 	rr := doJSON(
 		t, srv, http.MethodDelete,
-		"/api/v1/repos/acme/widget", nil,
+		"/api/v1/repo/gh/acme/widget", nil,
 	)
 	require.Equal(t, http.StatusNoContent, rr.Code, rr.Body.String())
 
@@ -691,7 +691,7 @@ name = "*"
 
 	rr := doJSON(
 		t, srv, http.MethodPost,
-		"/api/v1/repos/roborev-dev/*/refresh", nil,
+		"/api/v1/repo/gh/roborev-dev/*/refresh", nil,
 	)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
@@ -748,7 +748,7 @@ name = "*"
 
 	rr := doJSON(
 		t, srv, http.MethodPost,
-		"/api/v1/repos/roborev-dev/*/refresh", nil,
+		"/api/v1/repo/gh/roborev-dev/*/refresh", nil,
 	)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
@@ -805,7 +805,7 @@ name = "worker"
 
 	rr := doJSON(
 		t, srv, http.MethodPost,
-		"/api/v1/repos/roborev-dev/*/refresh", nil,
+		"/api/v1/repo/gh/roborev-dev/*/refresh", nil,
 	)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
@@ -856,7 +856,7 @@ name = "tools"
 
 	rr := doJSON(
 		t, srv, http.MethodDelete,
-		"/api/v1/repos/roborev-dev/*", nil,
+		"/api/v1/repo/gh/roborev-dev/*", nil,
 	)
 	require.Equal(t, http.StatusNoContent, rr.Code, rr.Body.String())
 	Assert.True(t, srv.syncer.IsTrackedRepo("roborev-dev", "tools"))
@@ -884,7 +884,7 @@ name = "widget"
 
 	rr := doJSON(
 		t, srv, http.MethodDelete,
-		"/api/v1/repos/acme/widget?provider=gitlab&platform_host=gitlab.com", nil,
+		"/api/v1/host/gitlab.com/repo/gl/acme/widget", nil,
 	)
 	require.Equal(http.StatusNoContent, rr.Code, rr.Body.String())
 
@@ -935,7 +935,7 @@ name = "*"
 
 	rr := doJSON(
 		t, srv, http.MethodPost,
-		"/api/v1/repos/roborev-dev/*/refresh", nil,
+		"/api/v1/repo/gh/roborev-dev/*/refresh", nil,
 	)
 	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
 	assert.True(srv.syncer.IsTrackedRepo("roborev-dev", "middleman"))
@@ -1030,7 +1030,7 @@ name = "Widget-*"
 
 	rr := doJSON(
 		t, srv, http.MethodPost,
-		"/api/v1/repos/acme/Widget-*/refresh", nil,
+		"/api/v1/repo/gh/acme/Widget-*/refresh", nil,
 	)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	assert.True(srv.syncer.IsTrackedRepo("acme", "Widget-API"))
@@ -1121,7 +1121,7 @@ name = "*"
 		// linter does not flag assertions inside the goroutine.
 		req := httptest.NewRequest(
 			http.MethodPost,
-			"/api/v1/repos/roborev-dev/*/refresh", nil,
+			"/api/v1/repo/gh/roborev-dev/*/refresh", nil,
 		)
 		req.Header.Set("Content-Type", "application/json")
 		rr := httptest.NewRecorder()
@@ -1137,7 +1137,7 @@ name = "*"
 
 	delRR := doJSON(
 		t, srv, http.MethodDelete,
-		"/api/v1/repos/roborev-dev/*", nil,
+		"/api/v1/repo/gh/roborev-dev/*", nil,
 	)
 	require.Equal(http.StatusNoContent, delRR.Code, delRR.Body.String())
 	require.False(srv.syncer.IsTrackedRepo("roborev-dev", "middleman"))

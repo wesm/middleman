@@ -1,5 +1,9 @@
 import type { Settings } from "@middleman/ui/api/types";
 import type { components } from "@middleman/ui/api/schema";
+import {
+  providerRepoPath,
+  providerRouteParams,
+} from "@middleman/ui/api/provider-routes";
 
 import { apiErrorMessage, client } from "./runtime.js";
 
@@ -53,13 +57,6 @@ export interface RepoInput extends RepoRequestOptions {
   owner?: string;
   name?: string;
   repo_path?: string;
-}
-
-function repoQueryOptions(options: RepoRequestOptions): { provider?: string; platform_host?: string } {
-  const query: { provider?: string; platform_host?: string } = {};
-  if (options.provider) query.provider = options.provider;
-  if (options.host) query.platform_host = options.host;
-  return query;
 }
 
 function normalizePreviewResponse(
@@ -149,10 +146,16 @@ export async function removeRepo(
   name: string,
   options: RepoRequestOptions = { provider: "github", host: "github.com" },
 ): Promise<void> {
+  const ref = {
+    provider: options.provider,
+    platformHost: options.host,
+    owner,
+    name,
+  };
   const { error, response } = await client.DELETE(
-    "/repos/{owner}/{name}",
+    providerRepoPath(ref),
     {
-      params: { path: { owner, name }, query: repoQueryOptions(options) },
+      params: { path: providerRouteParams(ref) },
     },
   );
   if (!response.ok) {
@@ -170,10 +173,16 @@ export async function refreshRepo(
   name: string,
   options: RepoRequestOptions = { provider: "github", host: "github.com" },
 ): Promise<Settings> {
+  const ref = {
+    provider: options.provider,
+    platformHost: options.host,
+    owner,
+    name,
+  };
   const { data, error, response } = await client.POST(
-    "/repos/{owner}/{name}/refresh",
+    providerRepoPath(ref, "/refresh"),
     {
-      params: { path: { owner, name }, query: repoQueryOptions(options) },
+      params: { path: providerRouteParams(ref) },
     },
   );
   if (!data) {

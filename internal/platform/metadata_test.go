@@ -35,3 +35,16 @@ func TestNormalizeKindAllowsFutureProviderKinds(t *testing.T) {
 	_, ok := DefaultHost(kind)
 	assert.False(ok)
 }
+
+func TestNormalizeKindCanonicalizesBuiltInShorthands(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	gh, err := NormalizeKind("GH")
+	require.NoError(err)
+	assert.Equal(KindGitHub, gh)
+
+	gl, err := NormalizeKind(" gl ")
+	require.NoError(err)
+	assert.Equal(KindGitLab, gl)
+}

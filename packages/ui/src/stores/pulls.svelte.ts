@@ -1,4 +1,8 @@
 import type { KanbanStatus, PullRequest } from "../api/types.js";
+import {
+  providerItemPath,
+  providerRouteParams,
+} from "../api/provider-routes.js";
 import type { MiddlemanClient } from "../types.js";
 
 export type FetchPullResult =
@@ -304,17 +308,13 @@ export function createPullsStore(opts: PullsStoreOptions) {
     name: string,
     number: number,
   ): Promise<FetchPullResult> {
+    const ref = { provider: "github", platformHost: "github.com", owner, name };
     try {
       const { data, error, response } = await apiClient.GET(
-        "/items/pull-request",
+        providerItemPath("pulls", ref, ""),
         {
           params: {
-            query: {
-              provider: "github",
-              platform_host: "github.com",
-              repo_path: `${owner}/${name}`,
-              number,
-            },
+            path: { ...providerRouteParams(ref), number },
           },
         },
       );

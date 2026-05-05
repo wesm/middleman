@@ -37,6 +37,12 @@ func NormalizeKind(raw string) (Kind, error) {
 	if kind == "" {
 		return KindGitHub, nil
 	}
+	switch kind {
+	case "gh":
+		return KindGitHub, nil
+	case "gl":
+		return KindGitLab, nil
+	}
 	if !validKindRe.MatchString(string(kind)) {
 		return "", fmt.Errorf("unsupported platform %q", raw)
 	}

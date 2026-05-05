@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
   import type { ProviderCapabilities } from "../../api/types.js";
   import {
     getStores, getClient, getActions,
@@ -66,6 +67,14 @@
     repoPath,
     autoSync = "background",
   }: Props = $props();
+
+  const routeRef = $derived({
+    provider,
+    platformHost,
+    owner,
+    name,
+    repoPath,
+  });
 
   // See PullDetail.svelte: while a route change is in flight, the
   // displayed issue may briefly belong to the previous route. Mutating
@@ -184,17 +193,11 @@
     stateSubmitting = true;
     stateError = null;
     try {
-      const detail = issues.getIssueDetail();
       const { error: requestError } = await client.POST(
-        "/repos/{owner}/{name}/issues/{number}/github-state",
+        providerItemPath("issues", routeRef, "/github-state"),
         {
-          params: { path: { owner, name, number } },
-          body: {
-            state: newState,
-            ...(detail && {
-              platform_host: detail.platform_host,
-            }),
-          },
+          params: { path: { ...providerRouteParams(routeRef), number } },
+          body: { state: newState },
         },
       );
       if (requestError) {
@@ -208,7 +211,7 @@
         owner,
         name,
         number,
-        detail?.platform_host ?? platformHost,
+        { provider, platformHost, repoPath },
       );
       await issues.loadIssues();
       await activity.loadActivity();
@@ -336,17 +339,15 @@
     }
     try {
       const { data, error: requestError } = await client.POST(
-        "/repos/{owner}/{name}/issues/{number}/workspace",
+        providerItemPath("issues", routeRef, "/workspace"),
         {
           params: {
             path: {
-              owner,
-              name,
+              ...providerRouteParams(routeRef),
               number,
             },
           },
           body: {
-            platform_host: detail.platform_host,
             ...(options.gitHeadRef
               ? {
                   git_head_ref:
@@ -596,7 +597,9 @@
           {owner}
           {name}
           {number}
+          provider={detail.repo.provider}
           platformHost={detail.platform_host}
+          repoPath={detail.repo.repo_path}
           disabled={staleIssue || !capabilities.comment_mutation}
         />
       </div>

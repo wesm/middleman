@@ -227,6 +227,24 @@ func (d *DB) DeleteStaleStacks(ctx context.Context, repoID int64, activeStackIDs
 // GetStackForPR returns the stack and members for a specific PR, or nil if not in a stack.
 func (d *DB) GetStackForPR(ctx context.Context, owner, name string, number int) (*Stack, []StackMemberWithPR, error) {
 	_, owner, name = canonicalRepoLookupIdentifier("", owner, name)
+	return d.getStackForPRWhere(
+		ctx,
+		`WHERE r.owner_key = ? AND r.name_key = ? AND p.number = ?`,
+		owner, name, number,
+	)
+}
+
+// GetStackForPRByRepoID returns the stack and members for a specific PR within
+// one repository, or nil if the PR is not in a stack.
+func (d *DB) GetStackForPRByRepoID(ctx context.Context, repoID int64, number int) (*Stack, []StackMemberWithPR, error) {
+	return d.getStackForPRWhere(
+		ctx,
+		`WHERE p.repo_id = ? AND p.number = ?`,
+		repoID, number,
+	)
+}
+
+func (d *DB) getStackForPRWhere(ctx context.Context, where string, args ...any) (*Stack, []StackMemberWithPR, error) {
 	var stack Stack
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT s.id, s.repo_id, s.base_number, s.name, s.created_at, s.updated_at
@@ -234,8 +252,8 @@ func (d *DB) GetStackForPR(ctx context.Context, owner, name string, number int) 
 		JOIN middleman_stack_members sm ON sm.stack_id = s.id
 		JOIN middleman_merge_requests p ON p.id = sm.merge_request_id
 		JOIN middleman_repos r ON r.id = p.repo_id
-		WHERE r.owner_key = ? AND r.name_key = ? AND p.number = ?`,
-		owner, name, number,
+		`+where,
+		args...,
 	).Scan(&stack.ID, &stack.RepoID, &stack.BaseNumber, &stack.Name, &stack.CreatedAt, &stack.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil, nil

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
+  import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
   import { getClient, getNavigate, getStores } from "../../context.js";
   import {
     buildPullRequestRoute,
@@ -12,7 +13,7 @@
 
   type Props = PullRequestRouteRef;
 
-  const { owner, name, number }: Props = $props();
+  const { owner, name, number, provider, platformHost, repoPath }: Props = $props();
 
   interface StackMember {
     number: number;
@@ -40,9 +41,10 @@
   let requestSeq = 0;
 
   function fetchStack(o: string, n: string, num: number): void {
+    const ref = { provider, platformHost, owner: o, name: n, repoPath };
     const seq = ++requestSeq;
-    client.GET("/repos/{owner}/{name}/pulls/{number}/stack", {
-      params: { path: { owner: o, name: n, number: num } },
+    client.GET(providerItemPath("pulls", ref, "/stack"), {
+      params: { path: { ...providerRouteParams(ref), number: num } },
     }).then(({ data: resp, error }) => {
       if (seq !== requestSeq) return;
       if (error || !resp) {

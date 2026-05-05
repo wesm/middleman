@@ -105,6 +105,9 @@
                 owner={selectedPR.owner}
                 name={selectedPR.name}
                 number={selectedPR.number}
+                provider={selectedPR.provider}
+                platformHost={selectedPR.platformHost}
+                repoPath={selectedPR.repoPath}
               />
             </div>
           </div>
@@ -137,6 +140,9 @@
         owner={selectedPR.owner}
         name={selectedPR.name}
         number={selectedPR.number}
+        provider={selectedPR.provider}
+        platformHost={selectedPR.platformHost}
+        repoPath={selectedPR.repoPath}
       />
     {/if}
   {/snippet}

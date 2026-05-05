@@ -58,10 +58,19 @@ describe("ApproveWorkflowsButton", () => {
     );
 
     expect(mockPost).toHaveBeenCalledWith(
-      "/repos/{owner}/{name}/pulls/{number}/approve-workflows",
-      { params: { path: { owner: "acme", name: "widget", number: 7 } } },
+      "/pulls/{provider}/{owner}/{name}/{number}/approve-workflows",
+      {
+        params: {
+          path: {
+            provider: "github",
+            owner: "acme",
+            name: "widget",
+            number: 7,
+          },
+        },
+      },
     );
-    expect(mockRefreshDetailOnly).toHaveBeenCalledWith("acme", "widget", 7);
+    expect(mockRefreshDetailOnly).toHaveBeenCalledWith("acme", "widget", 7, {});
     expect(mockLoadPulls).toHaveBeenCalledTimes(1);
   });
 

@@ -1,3 +1,7 @@
+import {
+  providerRepoPath,
+  providerRouteParams,
+} from "@middleman/ui/api/provider-routes";
 import { client } from "../api/runtime.js";
 import { navigate, buildItemRoute } from "../stores/router.svelte.js";
 import { showFlash } from "../stores/flash.svelte.js";
@@ -22,9 +26,10 @@ async function resolveAndNavigate(
   thisRequestId: number,
 ): Promise<void> {
   try {
+    const ref = { provider: "github", platformHost: "github.com", owner, name };
     const { data, error, response } = await client.POST(
-      "/repos/{owner}/{name}/items/{number}/resolve",
-      { params: { path: { owner, name, number } } },
+      providerRepoPath(ref, "/resolve/{number}"),
+      { params: { path: { ...providerRouteParams(ref), number } } },
     );
 
     // A newer click superseded this one — discard the result.

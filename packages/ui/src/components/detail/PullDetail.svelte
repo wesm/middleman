@@ -37,6 +37,11 @@
   import DiffSummaryChip from "./DiffSummaryChip.svelte";
   import CopyItemNumber from "./CopyItemNumber.svelte";
   import { DiffSummaryFilesResult } from "./diff-summary.js";
+  import {
+    providerItemPath,
+    providerRepoPath,
+    providerRouteParams,
+  } from "../../api/provider-routes.js";
   import { buildDiffSummaryKey } from "./diff-summary-key.js";
   import {
     activePRTimelineFilterCount,
@@ -98,6 +103,14 @@
     hideWorkspaceAction = false,
     autoSync = "background",
   }: Props = $props();
+
+  const routeRef = $derived({
+    provider,
+    platformHost,
+    owner,
+    name,
+    repoPath,
+  });
 
   let activeTab = $state<"conversation" | "files">("conversation");
   let ciExpanded = $state(false);
@@ -342,9 +355,9 @@
     stateError = null;
     try {
       const { error: requestError } = await client.POST(
-        "/repos/{owner}/{name}/pulls/{number}/github-state",
+        providerItemPath("pulls", routeRef, "/github-state"),
         {
-          params: { path: { owner, name, number } },
+          params: { path: { ...providerRouteParams(routeRef), number } },
           body: { state: newState },
         },
       );
@@ -383,8 +396,8 @@
   $effect(() => {
     const requestID = ++repoSettingsRequestID;
     repoSettings = null;
-    client.GET("/repos/{owner}/{name}", {
-      params: { path: { owner, name } },
+    client.GET(providerRepoPath(routeRef), {
+      params: { path: providerRouteParams(routeRef) },
     }).then(({ data, error }) => {
       if (requestID !== repoSettingsRequestID) return;
       if (error || !data) return;
@@ -540,9 +553,9 @@
 
   async function loadDiffSummaryFiles(): Promise<DiffSummaryFilesResult> {
     const { data, error } = await client.GET(
-      "/repos/{owner}/{name}/pulls/{number}/files",
+      providerItemPath("pulls", routeRef, "/files"),
       {
-        params: { path: { owner, name, number } },
+        params: { path: { ...providerRouteParams(routeRef), number } },
       },
     );
     if (error) {
@@ -826,6 +839,9 @@
               {owner}
               {name}
               {number}
+              {provider}
+              {platformHost}
+              {repoPath}
               size="sm"
               disabled={stalePR}
               oncompleted={closeActionMenu}
@@ -836,6 +852,9 @@
               {owner}
               {name}
               {number}
+              {provider}
+              {platformHost}
+              {repoPath}
               size="sm"
               disabled={stalePR}
             />
@@ -845,6 +864,9 @@
               {owner}
               {name}
               {number}
+              {provider}
+              {platformHost}
+              {repoPath}
               count={workflowApproval.count ?? 0}
               size="sm"
               disabled={stalePR}
@@ -1053,6 +1075,9 @@
           {owner}
           {name}
           {number}
+          {provider}
+          {platformHost}
+          {repoPath}
           prTitle={p.Title}
           prBody={p.Body}
           prAuthor={p.Author}
@@ -1148,7 +1173,9 @@
           {owner}
           {name}
           {number}
+          provider={detail.repo.provider}
           platformHost={detail.platform_host}
+          repoPath={detail.repo.repo_path}
           disabled={stalePR || !capabilities.comment_mutation}
         />
       </div>

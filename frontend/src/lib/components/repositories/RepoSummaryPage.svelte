@@ -1,6 +1,10 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { FilterDropdown, getStores } from "@middleman/ui";
+  import {
+    providerCollectionPath,
+    providerRouteParams,
+  } from "@middleman/ui/api/provider-routes";
   import type { RepoSummary } from "@middleman/ui/api/types";
   import { buildIssueRoute } from "@middleman/ui/routes";
 
@@ -253,19 +257,21 @@
     issueSubmittingByRepo[key] = true;
     issueErrorByRepo[key] = null;
 
+    const ref = {
+      provider: summary.repo.provider,
+      platformHost: summary.platform_host,
+      owner: summary.owner,
+      name: summary.name,
+    };
     const { data, error } = await client.POST(
-      "/repos/{owner}/{name}/issues",
+      providerCollectionPath("issues", ref),
       {
         params: {
-          path: {
-            owner: summary.owner,
-            name: summary.name,
-          },
+          path: providerRouteParams(ref),
         },
         body: {
           title,
           body: issueBodyByRepo[key] ?? "",
-          platform_host: summary.platform_host,
         },
       },
     );

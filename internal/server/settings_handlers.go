@@ -13,6 +13,7 @@ import (
 	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
 	ghclient "github.com/wesm/middleman/internal/github"
+	"github.com/wesm/middleman/internal/platform"
 	"github.com/wesm/middleman/internal/workspace/localruntime"
 )
 
@@ -401,8 +402,12 @@ func (s *Server) addConfiguredRepo(
 		return nil, huma.Error400BadRequest("owner and name are required")
 	}
 
+	provider, err := normalizeRouteProvider(input.Body.Provider)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
 	newRepo := config.Repo{
-		Platform:     input.Body.Provider,
+		Platform:     provider,
 		PlatformHost: importRequestHost(input.Body.Host, input.Body.PlatformHost),
 		Owner:        input.Body.Owner,
 		Name:         input.Body.Name,
@@ -468,8 +473,12 @@ func (s *Server) refreshConfiguredRepo(
 
 	owner := input.Owner
 	name := input.Name
+	provider, err := normalizeRouteProvider(input.Provider)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
 	targetRef := config.Repo{
-		Platform:     input.Provider,
+		Platform:     provider,
 		PlatformHost: input.PlatformHost,
 		Owner:        owner,
 		Name:         name,
@@ -540,6 +549,17 @@ func (s *Server) refreshConfiguredRepo(
 	return &settingsOutput{Body: s.buildLocalSettingsResponse()}, nil
 }
 
+func (s *Server) refreshConfiguredRepoOnHost(
+	ctx context.Context, input *repoConfigHostInput,
+) (*settingsOutput, error) {
+	return s.refreshConfiguredRepo(ctx, &repoConfigInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        input.Owner,
+		Name:         input.Name,
+	})
+}
+
 func (s *Server) deleteConfiguredRepo(
 	_ context.Context, input *repoConfigInput,
 ) (*struct{}, error) {
@@ -549,8 +569,12 @@ func (s *Server) deleteConfiguredRepo(
 
 	owner := input.Owner
 	name := input.Name
+	provider, err := normalizeRouteProvider(input.Provider)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
 	targetRef := config.Repo{
-		Platform:     input.Provider,
+		Platform:     provider,
 		PlatformHost: input.PlatformHost,
 		Owner:        owner,
 		Name:         name,
@@ -587,4 +611,23 @@ func (s *Server) deleteConfiguredRepo(
 	s.cfgMu.Unlock()
 
 	return nil, nil
+}
+
+func normalizeRouteProvider(raw string) (string, error) {
+	kind, err := platform.NormalizeKind(raw)
+	if err != nil {
+		return "", err
+	}
+	return string(kind), nil
+}
+
+func (s *Server) deleteConfiguredRepoOnHost(
+	ctx context.Context, input *repoConfigHostInput,
+) (*struct{}, error) {
+	return s.deleteConfiguredRepo(ctx, &repoConfigInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        input.Owner,
+		Name:         input.Name,
+	})
 }
