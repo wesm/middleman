@@ -4041,12 +4041,12 @@ paths:
           required: true
           schema:
             type: string
-        - description: "Diff base: head or origin"
+        - description: "Diff base: head, pushed, or merge-target"
           explode: false
           in: query
           name: base
           schema:
-            description: "Diff base: head or origin"
+            description: "Diff base: head, pushed, or merge-target"
             type: string
         - description: Set to hide to ignore whitespace-only changes
           explode: false
@@ -4078,12 +4078,12 @@ paths:
           required: true
           schema:
             type: string
-        - description: "Diff base: head or origin"
+        - description: "Diff base: head, pushed, or merge-target"
           explode: false
           in: query
           name: base
           schema:
-            description: "Diff base: head or origin"
+            description: "Diff base: head, pushed, or merge-target"
             type: string
         - description: Set to hide to ignore whitespace-only changes
           explode: false

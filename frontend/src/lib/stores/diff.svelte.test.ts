@@ -130,10 +130,10 @@ describe("createDiffStore loadDiff", () => {
 
     const store = createDiffStore({ client: testClient() });
 
-    await store.loadWorkspaceDiff("ws-1", "origin");
+    await store.loadWorkspaceDiff("ws-1", "pushed");
 
-    expect(calls).toContain("/api/v1/workspaces/ws-1/files?base=origin");
-    expect(calls).toContain("/api/v1/workspaces/ws-1/diff?base=origin");
+    expect(calls).toContain("/api/v1/workspaces/ws-1/files?base=pushed");
+    expect(calls).toContain("/api/v1/workspaces/ws-1/diff?base=pushed");
     expect(store.getFileCategoryCounts()).toEqual({
       all: 3,
       plansDocs: 1,
@@ -141,6 +141,42 @@ describe("createDiffStore loadDiff", () => {
       tests: 1,
       other: 0,
     });
+  });
+
+  it("loads workspace diffs against the merge target", async () => {
+    const calls: string[] = [];
+    const files = makeFilesResult(["src/app.go"]);
+    const diff = makeDiffResult(["src/app.go"]);
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        calls.push(url);
+        if (url.includes("/workspaces/ws-1/files")) {
+          return Response.json(files);
+        }
+        if (url.includes("/workspaces/ws-1/diff")) {
+          return Response.json(diff);
+        }
+        return Response.json({}, { status: 404 });
+      },
+    );
+
+    const store = createDiffStore({ client: testClient() });
+
+    await store.loadWorkspaceDiff("ws-1", "merge-target");
+
+    expect(calls).toContain(
+      "/api/v1/workspaces/ws-1/files?base=merge-target",
+    );
+    expect(calls).toContain(
+      "/api/v1/workspaces/ws-1/diff?base=merge-target",
+    );
   });
 
   it("refetches workspace files when toggling whitespace hiding", async () => {

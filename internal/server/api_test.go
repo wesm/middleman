@@ -10364,7 +10364,7 @@ func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
 	assert.Equal(int64(0), *found.CommitsBehind)
 }
 
-func TestWorkspaceDiffEndpointsReportHeadAndUpstreamE2E(t *testing.T) {
+func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -10427,14 +10427,81 @@ func TestWorkspaceDiffEndpointsReportHeadAndUpstreamE2E(t *testing.T) {
 		[]string{"dirty.go", "z-empty.txt"},
 	)
 
-	originDiff := requestWorkspaceDiff(t, srv, ws.Id, "origin")
-	require.NotNil(originDiff.Files)
+	pushedDiff := requestWorkspaceDiff(t, srv, ws.Id, "pushed")
+	require.NotNil(pushedDiff.Files)
 	assertWorkspaceDiffPaths(
 		t,
-		*originDiff.Files,
+		*pushedDiff.Files,
 		[]string{"base.txt", "committed.go", "dirty.go", "z-blank.txt", "z-empty.txt"},
 	)
-	assert.Equal(int64(1), originDiff.WhitespaceOnlyCount)
+	assert.Equal(int64(1), pushedDiff.WhitespaceOnlyCount)
+}
+
+func TestWorkspaceDiffEndpointReportsMergeTargetE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	client, _, _, remote, srv := setupTestServerWithWorkspacesServer(t, nil)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	targetWork := filepath.Join(t.TempDir(), "target")
+	runGit(t, filepath.Dir(targetWork), "clone", remote, targetWork)
+	runGit(t, targetWork, "config", "user.email", "test@test.com")
+	runGit(t, targetWork, "config", "user.name", "Test")
+	require.NoError(os.WriteFile(
+		filepath.Join(targetWork, "target-only.txt"),
+		[]byte("target\n"), 0o644,
+	))
+	runGit(t, targetWork, "add", ".")
+	runGit(t, targetWork, "commit", "-m", "advance main")
+	runGit(t, targetWork, "push", "origin", "main")
+	runGit(t, ws.WorktreePath, "fetch", "origin", "main")
+
+	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
+	runGit(t, ws.WorktreePath, "config", "user.name", "Test")
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "committed.go"),
+		[]byte("package committed\n"), 0o644,
+	))
+	runGit(t, ws.WorktreePath, "add", ".")
+	runGit(t, ws.WorktreePath, "commit", "-m", "local workspace commit")
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "dirty.go"),
+		[]byte("package dirty\n"), 0o644,
+	))
+
+	mergeTargetDiff := requestWorkspaceDiff(t, srv, ws.Id, "merge-target")
+	require.NotNil(mergeTargetDiff.Files)
+	paths := workspaceDiffPaths(*mergeTargetDiff.Files)
+	assert.Contains(paths, "new.txt")
+	assert.Contains(paths, "committed.go")
+	assert.Contains(paths, "dirty.go")
+	assert.NotContains(paths, "target-only.txt")
+}
+
+func TestWorkspaceDiffEndpointRejectsOriginBaseE2E(t *testing.T) {
+	require := require.New(t)
+
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/workspaces/"+ws.Id+"/diff?base=origin",
+		nil,
+	)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	resp := rr.Result()
+	defer resp.Body.Close()
+
+	require.Equal(http.StatusBadRequest, resp.StatusCode)
+
+	var body rawProblemDetail
+	require.NoError(json.NewDecoder(resp.Body).Decode(&body))
+	require.Contains(body.Detail, "base must be head, pushed, or merge-target")
 }
 
 func TestWorkspaceDiffEndpointHandlesUntrackedSymlinkAndLargeFileE2E(t *testing.T) {
@@ -10562,11 +10629,15 @@ func assertWorkspaceDiffPaths(
 ) {
 	t.Helper()
 
+	Assert.Equal(t, want, workspaceDiffPaths(files))
+}
+
+func workspaceDiffPaths(files []generated.DiffFile) []string {
 	paths := make([]string, 0, len(files))
 	for _, file := range files {
 		paths = append(paths, file.Path)
 	}
-	Assert.Equal(t, want, paths)
+	return paths
 }
 
 func TestWorkspaceListPrunesMissingTmuxSessionsE2E(t *testing.T) {

@@ -995,7 +995,7 @@ type DeleteWorkspaceParams struct {
 
 // GetWorkspacesByIdDiffParams defines parameters for GetWorkspacesByIdDiff.
 type GetWorkspacesByIdDiffParams struct {
-	// Base Diff base: head or origin
+	// Base Diff base: head, pushed, or merge-target
 	Base *string `form:"base,omitempty" json:"base,omitempty"`
 
 	// Whitespace Set to hide to ignore whitespace-only changes
@@ -1004,7 +1004,7 @@ type GetWorkspacesByIdDiffParams struct {
 
 // GetWorkspacesByIdFilesParams defines parameters for GetWorkspacesByIdFiles.
 type GetWorkspacesByIdFilesParams struct {
-	// Base Diff base: head or origin
+	// Base Diff base: head, pushed, or merge-target
 	Base *string `form:"base,omitempty" json:"base,omitempty"`
 
 	// Whitespace Set to hide to ignore whitespace-only changes
