@@ -1,9 +1,11 @@
 # GitHub Sync Invariants
 
-Use this document for changes in `internal/github/`, sync-triggering server
-handlers, fixture clients, and tests that rely on GitHub-derived freshness.
-For provider-neutral identity rules, start with
-[`context/platform-sync-invariants.md`](./platform-sync-invariants.md).
+Use this document for changes in `internal/github/`, GitHub adapter code,
+sync-triggering server handlers, fixture clients, and tests that rely on
+GitHub-derived freshness. For provider-neutral identity rules, package layout,
+and provider capability rules, start with
+[`context/platform-sync-invariants.md`](./platform-sync-invariants.md) and
+[`context/provider-architecture.md`](./provider-architecture.md).
 
 ## Purpose
 
@@ -17,12 +19,15 @@ For provider-neutral identity rules, start with
 
 GitHub entities in middleman are not identified by owner/name/number alone.
 The provider-neutral identity is `(platform, platform_host, owner, name)`;
-this document focuses on the GitHub-specific default-host behavior.
+this document focuses on GitHub-specific default-host behavior and GitHub-only
+sync optimizations.
 
-- Repository identity is `(platform_host, owner, name)`.
-- PR and issue identity is `(platform_host, owner, name, number)`.
-- Workspace association repair and list filtering must preserve that host-aware
-  identity.
+- Repository identity is `(github, platform_host, owner, name)`.
+- PR and issue identity is `(github, platform_host, owner, name, number)`.
+- Workspace association repair and list filtering must preserve that
+  provider/host-aware identity.
+- GitHub owner/name are case-folded lookup keys; do not apply that rule to
+  providers whose metadata preserves nested or mixed-case paths.
 
 Rules:
 
@@ -31,6 +36,9 @@ Rules:
   through query, sync, and response shaping.
 - Only fall back to the default host when the request truly omits host and the
   route semantics allow an implied GitHub host.
+- New repo-scoped API work should use provider-aware routes and generated
+  clients, not new `/repos/{owner}/{name}/pulls/{number}/...` GitHub-only
+  compatibility paths.
 - Do not constrain repo-scoped listing queries to one host unless the caller
   asked for that host.
 
@@ -82,7 +90,8 @@ Some PR-derived state is only valid for one head commit.
 
 ## Fallback Data Rules
 
-GitHub data sources are intentionally layered.
+GitHub data sources are intentionally layered and may remain GitHub-specific
+behind the provider split.
 
 - Repos without usable releases may fall back to tags for version-like timeline
   context.
@@ -91,16 +100,19 @@ GitHub data sources are intentionally layered.
 - Fallbacks must preserve the same response shape and user-visible semantics as
   the primary path whenever possible.
 
-Use fallback paths to keep user-visible features working, not to silently change
-what a field means.
+Use fallback paths to keep user-visible GitHub features working, not to silently
+change what a field means. Provider-neutral persistence should receive the same
+semantic shape regardless of whether data came from GraphQL, REST, tags, or
+fallback repository listing.
 
 ## Testing Expectations
 
 Changes in this area should usually add or update tests at the boundary where
 the regression would show up.
 
-- `internal/github/*_test.go` for GraphQL parsing, normalization, optional
-  failure handling, and sync sequencing.
+- `internal/github/*_test.go` and `internal/platform/github/*_test.go` for
+  GraphQL parsing, normalization, adapter compatibility, optional failure
+  handling, and sync sequencing.
 - `internal/server/api_test.go` when the bug would surface through HTTP payloads
   or sync-triggering handlers.
 - Fixture-client coverage when a fake GitHub path needs to model private repos,

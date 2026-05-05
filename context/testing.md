@@ -14,8 +14,28 @@ When changing structs, fields, aliases, fragments, pagination arguments, or nest
 
 CI runs the live GraphQL validation as a separate Go test step using the workflow `GITHUB_TOKEN` only in trusted contexts, such as pushes to `main`, manual `workflow_dispatch` runs, and same-repository pull requests. The general pull request Go test step does not receive a GitHub token.
 
+## Provider work
+
+When adding or changing a provider, pick tests at the boundary where users would
+notice the regression:
+
+- provider package tests for API normalization, pagination, auth/header shape,
+  typed platform errors, and capability flags;
+- config tests for provider defaults, host normalization, nested paths,
+  duplicate detection, and token selection;
+- DB/query tests for provider-aware identity and provider ID reconciliation;
+- server e2e tests with real SQLite for route payloads, settings/import flows,
+  and capability-gated actions;
+- frontend store/component tests for provider refs and generated route helpers;
+- optional live/container tests when fakes cannot validate provider API drift.
+
+Regenerate OpenAPI and generated clients with `make api-generate` after Huma
+route or API type changes.
+
 ## Related context
 
+- [`context/provider-architecture.md`](./provider-architecture.md) documents the
+  provider package split and checklist for adding providers.
 - [`context/platform-sync-invariants.md`](./platform-sync-invariants.md)
   documents provider identity and capability rules for GitHub, GitLab, and
   future providers.
