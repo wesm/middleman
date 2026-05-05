@@ -1823,9 +1823,9 @@ func TestRunOnceCancelDuringBackoffDoesNotReportSuccess(t *testing.T) {
 	// calling the client.
 	rt := NewRateTracker(d, "github.com", "rest")
 	resetAt := time.Now().Add(time.Hour)
-	rt.UpdateFromRate(gh.Rate{
+	rt.UpdateFromRate(Rate{
 		Remaining: 0,
-		Reset:     gh.Timestamp{Time: resetAt},
+		Reset:     resetAt,
 	})
 
 	mc := &mockClient{}
@@ -3785,9 +3785,9 @@ func TestWatchedMRsSkipRateLimitedHost(t *testing.T) {
 	rt := NewRateTracker(d, "github.com", "rest")
 	// Exhaust the rate limit with a future reset.
 	futureReset := time.Now().Add(30 * time.Minute)
-	rt.UpdateFromRate(gh.Rate{
+	rt.UpdateFromRate(Rate{
 		Remaining: 0,
-		Reset:     gh.Timestamp{Time: futureReset},
+		Reset:     futureReset,
 	})
 
 	syncer := NewSyncer(
@@ -3945,10 +3945,10 @@ func TestRunOnceSkipsThrottledHosts(t *testing.T) {
 
 	// Set up GHE tracker with remaining below reserve buffer.
 	gheTracker := NewRateTracker(d, "ghe.corp.com", "rest")
-	gheTracker.UpdateFromRate(gh.Rate{
+	gheTracker.UpdateFromRate(Rate{
 		Limit:     5000,
 		Remaining: 100, // below RateReserveBuffer (200)
-		Reset:     gh.Timestamp{Time: time.Now().Add(30 * time.Minute)},
+		Reset:     time.Now().Add(30 * time.Minute),
 	})
 
 	clients := map[string]Client{
@@ -4520,10 +4520,10 @@ func TestBudgetResetOnRateWindowReset(t *testing.T) {
 	assert.Equal(50, budget.Spent())
 
 	// First rate update sets remaining to 4999.
-	rt.UpdateFromRate(gh.Rate{
+	rt.UpdateFromRate(Rate{
 		Remaining: 4999,
 		Limit:     5000,
-		Reset:     gh.Timestamp{Time: time.Now().Add(time.Hour)},
+		Reset:     time.Now().Add(time.Hour),
 	})
 
 	// No window reset yet (first contact).
@@ -4531,25 +4531,23 @@ func TestBudgetResetOnRateWindowReset(t *testing.T) {
 		"budget should not reset on first contact")
 
 	// Simulate rate decrease (normal usage).
-	rt.UpdateFromRate(gh.Rate{
+	rt.UpdateFromRate(Rate{
 		Remaining: 4990,
 		Limit:     5000,
-		Reset:     gh.Timestamp{Time: time.Now().Add(time.Hour)},
+		Reset:     time.Now().Add(time.Hour),
 	})
 	assert.Equal(50, budget.Spent(),
 		"budget should not reset on normal decrease")
 
 	// Simulate window expiry: move resetAt to the past.
-	rt.mu.Lock()
 	pastReset := time.Now().Add(-1 * time.Second)
-	rt.resetAt = &pastReset
-	rt.mu.Unlock()
+	rt.SetResetAtForTesting(pastReset)
 
 	// Simulate window reset (remaining jumps up + old resetAt passed).
-	rt.UpdateFromRate(gh.Rate{
+	rt.UpdateFromRate(Rate{
 		Remaining: 5000,
 		Limit:     5000,
-		Reset:     gh.Timestamp{Time: time.Now().Add(2 * time.Hour)},
+		Reset:     time.Now().Add(2 * time.Hour),
 	})
 	assert.Equal(0, budget.Spent(),
 		"budget should reset when rate window resets")

@@ -397,7 +397,7 @@ func (c *liveClient) trackRate(resp *gh.Response) {
 		return
 	}
 	c.rateTracker.RecordRequest()
-	c.rateTracker.UpdateFromRate(resp.Rate)
+	c.rateTracker.UpdateFromRate(rateFromGitHub(resp.Rate))
 }
 
 func (c *liveClient) trackRateHeaders(resp *http.Response) {
@@ -413,10 +413,9 @@ func (c *liveClient) trackRateHeaders(resp *http.Response) {
 	if err != nil {
 		return
 	}
-	c.rateTracker.UpdateFromRate(gh.Rate{
-		Remaining: remaining,
-		Reset:     gh.Timestamp{Time: time.Unix(resetUnix, 0).UTC()},
-	})
+	c.rateTracker.UpdateFromRate(rateFromGitHubHeaders(
+		0, remaining, time.Unix(resetUnix, 0).UTC(),
+	))
 }
 
 func (c *liveClient) ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error) {

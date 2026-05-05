@@ -541,8 +541,8 @@ func (t *graphqlRateTransport) RoundTrip(
 	return resp, err
 }
 
-func parseRateLimitHeaders(resp *http.Response) gh.Rate {
-	var rate gh.Rate
+func parseRateLimitHeaders(resp *http.Response) Rate {
+	var rate Rate
 	if v := resp.Header.Get("X-RateLimit-Remaining"); v != "" {
 		rate.Remaining, _ = strconv.Atoi(v)
 	}
@@ -551,7 +551,7 @@ func parseRateLimitHeaders(resp *http.Response) gh.Rate {
 	}
 	if v := resp.Header.Get("X-RateLimit-Reset"); v != "" {
 		epoch, _ := strconv.ParseInt(v, 10, 64)
-		rate.Reset = gh.Timestamp{Time: time.Unix(epoch, 0)}
+		rate.Reset = time.Unix(epoch, 0)
 	}
 	return rate
 }

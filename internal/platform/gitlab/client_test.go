@@ -15,8 +15,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wesm/middleman/internal/db"
-	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/platform"
+	"github.com/wesm/middleman/internal/ratelimit"
 )
 
 func TestClientLooksUpProjectByRawPathAndUsesNumericIDAfterLookup(t *testing.T) {
@@ -88,7 +88,7 @@ func TestClientRecordsRateLimitRequests(t *testing.T) {
 	}))
 	defer server.Close()
 
-	rt := ghclient.NewPlatformRateTracker(database, "gitlab", "gitlab.example.com", "rest")
+	rt := ratelimit.NewPlatformRateTracker(database, "gitlab", "gitlab.example.com", "rest")
 	client := newTestClient(t, server.URL, WithRateTracker(rt))
 	_, err = client.GetRepository(context.Background(), platform.RepoRef{
 		Platform: platform.KindGitLab,

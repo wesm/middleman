@@ -9,9 +9,8 @@ import (
 	"strings"
 	"time"
 
-	gh "github.com/google/go-github/v84/github"
-	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/platform"
+	"github.com/wesm/middleman/internal/ratelimit"
 	gitlab "gitlab.com/gitlab-org/api/client-go"
 )
 
@@ -26,7 +25,7 @@ type ClientOption func(*clientOptions)
 type clientOptions struct {
 	baseURL           string
 	foregroundTimeout time.Duration
-	rateTracker       *ghclient.RateTracker
+	rateTracker       *ratelimit.RateTracker
 }
 
 type Client struct {
@@ -67,7 +66,7 @@ func WithForegroundTimeoutForTesting(timeout time.Duration) ClientOption {
 	}
 }
 
-func WithRateTracker(rateTracker *ghclient.RateTracker) ClientOption {
+func WithRateTracker(rateTracker *ratelimit.RateTracker) ClientOption {
 	return func(opts *clientOptions) {
 		opts.rateTracker = rateTracker
 	}
@@ -106,7 +105,7 @@ func NewClient(host, token string, options ...ClientOption) (*Client, error) {
 
 type rateTrackingTransport struct {
 	base        http.RoundTripper
-	rateTracker *ghclient.RateTracker
+	rateTracker *ratelimit.RateTracker
 }
 
 func (t *rateTrackingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -125,20 +124,20 @@ func (t *rateTrackingTransport) RoundTrip(req *http.Request) (*http.Response, er
 	return resp, err
 }
 
-func parseRateLimitHeaders(resp *http.Response) (gh.Rate, bool) {
+func parseRateLimitHeaders(resp *http.Response) (ratelimit.Rate, bool) {
 	remaining, remainingOK := parseHeaderInt(resp, "RateLimit-Remaining", "X-RateLimit-Remaining")
 	if !remainingOK {
-		return gh.Rate{}, false
+		return ratelimit.Rate{}, false
 	}
 	limit, _ := parseHeaderInt(resp, "RateLimit-Limit", "X-RateLimit-Limit")
 	resetAt := time.Now().UTC().Add(time.Minute)
 	if resetUnix, ok := parseHeaderInt64(resp, "RateLimit-Reset", "X-RateLimit-Reset"); ok {
 		resetAt = time.Unix(resetUnix, 0).UTC()
 	}
-	return gh.Rate{
+	return ratelimit.Rate{
 		Limit:     limit,
 		Remaining: remaining,
-		Reset:     gh.Timestamp{Time: resetAt},
+		Reset:     resetAt,
 	}, true
 }
 

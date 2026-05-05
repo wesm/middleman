@@ -8545,10 +8545,10 @@ func TestAPIRateLimitsWithGQL(t *testing.T) {
 	})
 
 	// Simulate GraphQL rate data.
-	gqlRT.UpdateFromRate(gh.Rate{
+	gqlRT.UpdateFromRate(ghclient.Rate{
 		Limit:     5000,
 		Remaining: 4800,
-		Reset:     gh.Timestamp{Time: time.Now().Add(30 * time.Minute)},
+		Reset:     time.Now().Add(30 * time.Minute),
 	})
 
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
@@ -8628,10 +8628,10 @@ func TestAPIRateLimitsMultiHostMixed(t *testing.T) {
 	ghRT := ghclient.NewRateTracker(database, "github.com", "rest")
 	gheRT := ghclient.NewRateTracker(database, "ghe.example.com", "rest")
 	gqlRT := ghclient.NewRateTracker(database, "github.com", "graphql")
-	gqlRT.UpdateFromRate(gh.Rate{
+	gqlRT.UpdateFromRate(ghclient.Rate{
 		Limit:     5000,
 		Remaining: 4500,
-		Reset:     gh.Timestamp{Time: time.Now().Add(30 * time.Minute)},
+		Reset:     time.Now().Add(30 * time.Minute),
 	})
 
 	syncer := ghclient.NewSyncer(

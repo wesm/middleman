@@ -426,17 +426,17 @@ func run(
 
 	rt := ghclient.NewRateTracker(database, "github.com", "rest")
 	// Seed with known values so the budget bars render.
-	rt.UpdateFromRate(gh.Rate{
+	rt.UpdateFromRate(ghclient.Rate{
 		Limit:     5000,
 		Remaining: 4200,
-		Reset:     gh.Timestamp{Time: time.Now().Add(45 * time.Minute)},
+		Reset:     time.Now().Add(45 * time.Minute),
 	})
 
 	gqlRT := ghclient.NewRateTracker(database, "github.com", "graphql")
-	gqlRT.UpdateFromRate(gh.Rate{
+	gqlRT.UpdateFromRate(ghclient.Rate{
 		Limit:     5000,
 		Remaining: 4800,
-		Reset:     gh.Timestamp{Time: time.Now().Add(40 * time.Minute)},
+		Reset:     time.Now().Add(40 * time.Minute),
 	})
 
 	budget := ghclient.NewSyncBudget(500)
