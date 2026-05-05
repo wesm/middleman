@@ -226,6 +226,19 @@ describe("GhosttyTerminalPane", () => {
     );
   });
 
+  it("filters tiny tmux mouse drags before sending terminal input", async () => {
+    await renderStarted({ workspaceId: "ws-123" });
+    const dataHandler = mockOnData.mock.calls[0]?.[0] as
+      | ((data: string) => void)
+      | undefined;
+    expect(dataHandler).toBeDefined();
+
+    socketAt(0).sent = [];
+    dataHandler?.("\x1b[<0;10;5M\x1b[<32;12;5M\x1b[<0;12;5m");
+
+    expect(sentText(socketAt(0), 0)).toBe("\x1b[<0;10;5M\x1b[<0;12;5m");
+  });
+
   it("sends terminal byte payloads as raw WebSocket bytes", async () => {
     await renderStarted({ workspaceId: "ws-123" });
     const dataHandler = mockOnData.mock.calls[0]?.[0] as
@@ -304,3 +317,12 @@ describe("GhosttyTerminalPane", () => {
     vi.useRealTimers();
   });
 });
+
+function sentText(socket: MockWebSocket, index: number): string {
+  const value = socket.sent[index];
+  if (typeof value === "string") return value;
+  if (value instanceof ArrayBuffer) {
+    return new TextDecoder().decode(value);
+  }
+  return new TextDecoder().decode(value as ArrayBufferView);
+}
