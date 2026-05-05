@@ -58,6 +58,11 @@ describe("DiffToolbar", () => {
 
   it("toggles the word wrap preference", async () => {
     const { diff } = renderToolbar();
+    expect(screen.queryByRole("switch", { name: "Word wrap" })).toBeNull();
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: "More diff filters" }),
+    );
     const wordWrap = screen.getByRole("switch", { name: "Word wrap" });
 
     expect(diff.getWordWrap()).toBe(false);
