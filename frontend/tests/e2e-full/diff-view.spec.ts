@@ -289,6 +289,10 @@ async function waitForSidebarFilesLoaded(page: Page): Promise<void> {
     .waitFor({ state: "visible", timeout: 10_000 });
 }
 
+async function openDiffFilterMenu(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "More diff filters" }).click();
+}
+
 // --- Functional tests ---
 
 test.describe("diff view", () => {
@@ -415,19 +419,31 @@ test.describe("diff view", () => {
     await expect(content).toBeVisible();
   });
 
-  test("toolbar tab width buttons change active state", async ({ page }) => {
+  test("toolbar keeps file filters inline and moves display settings into the menu", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
 
+    await expect(page.getByRole("group", { name: "Filter changed files" }))
+      .toBeVisible();
+    await expect(page.getByRole("button", { name: "More diff filters" }))
+      .toBeVisible();
+    await expect(page.getByRole("switch", { name: "Word wrap" }))
+      .toHaveCount(0);
+
+    await openDiffFilterMenu(page);
+
     // Default tab width is 4.
-    const segments = page.locator(".diff-toolbar .segment");
-    await expect(segments.nth(2)).toHaveClass(/segment--active/);
+    const tabWidth = page.getByRole("group", { name: "Tab width" });
+    await expect(tabWidth.getByRole("button", { name: "4" }))
+      .toHaveAttribute("aria-pressed", "true");
 
     // Click tab width 2.
-    await segments.nth(1).click();
-    await expect(segments.nth(1)).toHaveClass(/segment--active/);
-    await expect(segments.nth(2)).not.toHaveClass(/segment--active/);
+    await tabWidth.getByRole("button", { name: "2" }).click();
+    await expect(tabWidth.getByRole("button", { name: "2" }))
+      .toHaveAttribute("aria-pressed", "true");
+    await expect(tabWidth.getByRole("button", { name: "4" }))
+      .toHaveAttribute("aria-pressed", "false");
   });
 
   test("word wrap toggle changes diff line wrapping", async ({ page }) => {
@@ -435,8 +451,10 @@ test.describe("diff view", () => {
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
 
-    const wrapToggle = page.getByRole("switch", { name: "Word wrap" });
     const firstCodeLine = page.locator(".diff-line .code").first();
+
+    await openDiffFilterMenu(page);
+    const wrapToggle = page.getByRole("switch", { name: "Word wrap" });
 
     await expect(wrapToggle).toHaveAttribute("aria-checked", "false");
     await expect(firstCodeLine).toHaveCSS("white-space", "pre");
@@ -453,6 +471,7 @@ test.describe("diff view", () => {
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
 
+    await openDiffFilterMenu(page);
     const previewToggle = page.getByRole("switch", { name: "Rich preview" });
     await expect(previewToggle).toHaveAttribute("aria-checked", "false");
 
@@ -525,6 +544,7 @@ test.describe("diff view", () => {
     await waitForDiffLoaded(page);
     await waitForSidebarFilesLoaded(page);
 
+    await openDiffFilterMenu(page);
     await page.getByRole("switch", { name: "Rich preview" }).click();
     await page.locator(".diff-file-row", { hasText: "logo.png" }).click();
 
@@ -533,6 +553,7 @@ test.describe("diff view", () => {
     expect(previewFetchCount).toBe(1);
 
     const initialDiffFetchCount = diffFetchCount;
+    await openDiffFilterMenu(page);
     await page.getByRole("switch", { name: "Hide whitespace changes" }).click();
     await expect.poll(() => diffFetchCount).toBeGreaterThan(initialDiffFetchCount);
     await page.locator(".diff-file-row", { hasText: "logo.png" }).click();
@@ -607,6 +628,7 @@ test.describe("diff view", () => {
     const initialCount = fetchCount;
 
     // Toggle hide whitespace on.
+    await openDiffFilterMenu(page);
     await page.getByRole("switch", { name: "Hide whitespace changes" }).click();
 
     // Wait for the re-fetch to land and assert it actually happened.
@@ -984,6 +1006,7 @@ test.describe("diff view performance", () => {
 
     // Toggle whitespace -- triggers a re-fetch with ?whitespace=hide
     // which returns fewer files.
+    await openDiffFilterMenu(page);
     await page.getByRole("switch", { name: "Hide whitespace changes" }).click();
 
     // Count should drop to 45, proving the re-fetch and re-render completed.
@@ -1113,6 +1136,7 @@ test.describe("diff view (git-backed)", () => {
       await waitForDiffLoaded(page);
       await waitForSidebarFilesLoaded(page);
 
+      await openDiffFilterMenu(page);
       await page.getByRole("switch", { name: "Rich preview" }).click();
 
       const handlerFile = page.locator('[data-file-path="internal/handler.go"]');
@@ -1242,6 +1266,7 @@ test.describe("diff view (git-backed)", () => {
     await expect(page.locator(".diff-file")).toHaveCount(4);
 
     // Toggle hide whitespace.
+    await openDiffFilterMenu(page);
     await page.getByRole("switch", { name: "Hide whitespace changes" }).click();
 
     // README.md is whitespace-only and should be hidden.

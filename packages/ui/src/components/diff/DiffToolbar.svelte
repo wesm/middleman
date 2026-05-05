@@ -44,6 +44,97 @@
   }
 </script>
 
+{#snippet menuContent(showFileFilters: boolean)}
+  {#if showFileFilters}
+    <div class="compact-menu-section">
+      <div class="compact-menu-title">Files</div>
+      <div class="compact-menu-grid" role="group" aria-label="Filter changed files">
+        {#each diffFileCategoryOptions as option (option.value)}
+          <button
+            class="compact-menu-item"
+            class:compact-menu-item--active={activeCategory === option.value}
+            aria-pressed={activeCategory === option.value}
+            type="button"
+            onclick={() => setFileCategoryFilter(option.value)}
+          >
+            <span>{option.label}</span>
+            <span class="category-count">({categoryCounts[option.value]})</span>
+          </button>
+        {/each}
+      </div>
+    </div>
+  {/if}
+  <div class="compact-menu-section">
+    <div class="compact-menu-title">Tab width</div>
+    <div class="compact-menu-grid" role="group" aria-label="Tab width">
+      {#each tabOptions as opt (opt)}
+        <button
+          class="compact-menu-item"
+          class:compact-menu-item--active={diff.getTabWidth() === opt}
+          aria-pressed={diff.getTabWidth() === opt}
+          type="button"
+          onclick={() => diff.setTabWidth(opt)}
+        >
+          {opt}
+        </button>
+      {/each}
+    </div>
+  </div>
+  <div class="compact-menu-section">
+    <button
+      class="compact-switch-row"
+      type="button"
+      role="switch"
+      aria-label="Hide whitespace changes"
+      aria-checked={diff.getHideWhitespace()}
+      onclick={() => diff.setHideWhitespace(!diff.getHideWhitespace())}
+    >
+      <span>Hide whitespace</span>
+      <span
+        class="toggle-switch"
+        class:toggle-switch--on={diff.getHideWhitespace()}
+        aria-hidden="true"
+      >
+        <span class="toggle-knob"></span>
+      </span>
+    </button>
+    <button
+      class="compact-switch-row"
+      type="button"
+      role="switch"
+      aria-checked={diff.getWordWrap()}
+      onclick={() => diff.setWordWrap(!diff.getWordWrap())}
+    >
+      <span>Word wrap</span>
+      <span
+        class="toggle-switch"
+        class:toggle-switch--on={diff.getWordWrap()}
+        aria-hidden="true"
+      >
+        <span class="toggle-knob"></span>
+      </span>
+    </button>
+    {#if showRichPreview}
+      <button
+        class="compact-switch-row"
+        type="button"
+        role="switch"
+        aria-checked={diff.getRichPreview()}
+        onclick={() => diff.setRichPreview(!diff.getRichPreview())}
+      >
+        <span>Rich preview</span>
+        <span
+          class="toggle-switch"
+          class:toggle-switch--on={diff.getRichPreview()}
+          aria-hidden="true"
+        >
+          <span class="toggle-knob"></span>
+        </span>
+      </button>
+    {/if}
+  </div>
+{/snippet}
+
 <svelte:document onclick={handleDocumentClick} onkeydown={handleDocumentKeydown} />
 
 <div class={["diff-toolbar", compact && "diff-toolbar--compact"]}>
@@ -55,110 +146,6 @@
         <span class="category-count">({categoryCounts[activeCategory]})</span>
       </span>
       <span class="compact-summary-detail">Tab {diff.getTabWidth()}</span>
-    </div>
-    <div class="compact-menu-wrap" bind:this={compactMenuRef}>
-      <button
-        class="compact-more-btn"
-        class:compact-more-btn--active={menuOpen}
-        type="button"
-        aria-label="More diff filters"
-        aria-expanded={menuOpen}
-        title="More diff filters"
-        onclick={() => {
-          menuOpen = !menuOpen;
-        }}
-      >
-        <MoreHorizontalIcon size={16} strokeWidth={2} aria-hidden="true" />
-      </button>
-      {#if menuOpen}
-        <div class="compact-menu">
-          <div class="compact-menu-section">
-            <div class="compact-menu-title">Files</div>
-            <div class="compact-menu-grid" role="group" aria-label="Filter changed files">
-              {#each diffFileCategoryOptions as option (option.value)}
-                <button
-                  class="compact-menu-item"
-                  class:compact-menu-item--active={activeCategory === option.value}
-                  aria-pressed={activeCategory === option.value}
-                  type="button"
-                  onclick={() => setFileCategoryFilter(option.value)}
-                >
-                  <span>{option.label}</span>
-                  <span class="category-count">({categoryCounts[option.value]})</span>
-                </button>
-              {/each}
-            </div>
-          </div>
-          <div class="compact-menu-section">
-            <div class="compact-menu-title">Tab width</div>
-            <div class="compact-menu-grid" role="group" aria-label="Tab width">
-              {#each tabOptions as opt (opt)}
-                <button
-                  class="compact-menu-item"
-                  class:compact-menu-item--active={diff.getTabWidth() === opt}
-                  aria-pressed={diff.getTabWidth() === opt}
-                  type="button"
-                  onclick={() => diff.setTabWidth(opt)}
-                >
-                  {opt}
-                </button>
-              {/each}
-            </div>
-          </div>
-          <div class="compact-menu-section">
-            <button
-              class="compact-switch-row"
-              type="button"
-              role="switch"
-              aria-checked={diff.getHideWhitespace()}
-              onclick={() => diff.setHideWhitespace(!diff.getHideWhitespace())}
-            >
-              <span>Hide whitespace</span>
-              <span
-                class="toggle-switch"
-                class:toggle-switch--on={diff.getHideWhitespace()}
-                aria-hidden="true"
-              >
-                <span class="toggle-knob"></span>
-              </span>
-            </button>
-            <button
-              class="compact-switch-row"
-              type="button"
-              role="switch"
-              aria-checked={diff.getWordWrap()}
-              onclick={() => diff.setWordWrap(!diff.getWordWrap())}
-            >
-              <span>Word wrap</span>
-              <span
-                class="toggle-switch"
-                class:toggle-switch--on={diff.getWordWrap()}
-                aria-hidden="true"
-              >
-                <span class="toggle-knob"></span>
-              </span>
-            </button>
-            {#if showRichPreview}
-              <button
-                class="compact-switch-row"
-                type="button"
-                role="switch"
-                aria-checked={diff.getRichPreview()}
-                onclick={() => diff.setRichPreview(!diff.getRichPreview())}
-              >
-                <span>Rich preview</span>
-                <span
-                  class="toggle-switch"
-                  class:toggle-switch--on={diff.getRichPreview()}
-                  aria-hidden="true"
-                >
-                  <span class="toggle-knob"></span>
-                </span>
-              </button>
-            {/if}
-          </div>
-        </div>
-      {/if}
     </div>
   {:else}
     <div class="toolbar-group toolbar-group--category">
@@ -176,66 +163,27 @@
         {/each}
       </div>
     </div>
-    <div class="toolbar-settings">
-      <div class="toolbar-group">
-        <span class="toolbar-label">Tab width</span>
-        <div class="segmented-control">
-          {#each tabOptions as opt (opt)}
-            <button
-              class="segment"
-              class:segment--active={diff.getTabWidth() === opt}
-              onclick={() => diff.setTabWidth(opt)}
-            >
-              {opt}
-            </button>
-          {/each}
-        </div>
-      </div>
-      <div class="toolbar-group">
-        <span class="toolbar-label">Hide whitespace</span>
-        <button
-          class="toggle-switch"
-          class:toggle-switch--on={diff.getHideWhitespace()}
-          role="switch"
-          aria-checked={diff.getHideWhitespace()}
-          title={diff.getHideWhitespace() ? "Show whitespace changes" : "Hide whitespace changes"}
-          onclick={() => diff.setHideWhitespace(!diff.getHideWhitespace())}
-        >
-          <span class="toggle-knob"></span>
-        </button>
-      </div>
-      <div class="toolbar-group">
-        <span class="toolbar-label">Word wrap</span>
-        <button
-          class="toggle-switch"
-          class:toggle-switch--on={diff.getWordWrap()}
-          role="switch"
-          aria-label="Word wrap"
-          aria-checked={diff.getWordWrap()}
-          title={diff.getWordWrap() ? "Disable word wrap" : "Enable word wrap"}
-          onclick={() => diff.setWordWrap(!diff.getWordWrap())}
-        >
-          <span class="toggle-knob"></span>
-        </button>
-      </div>
-      {#if showRichPreview}
-        <div class="toolbar-group">
-          <span class="toolbar-label">Rich preview</span>
-          <button
-            class="toggle-switch"
-            class:toggle-switch--on={diff.getRichPreview()}
-            role="switch"
-            aria-label="Rich preview"
-            aria-checked={diff.getRichPreview()}
-            title={diff.getRichPreview() ? "Show unified diff" : "Show rich file previews"}
-            onclick={() => diff.setRichPreview(!diff.getRichPreview())}
-          >
-            <span class="toggle-knob"></span>
-          </button>
-        </div>
-      {/if}
-    </div>
   {/if}
+  <div class="compact-menu-wrap" bind:this={compactMenuRef}>
+    <button
+      class="compact-more-btn"
+      class:compact-more-btn--active={menuOpen}
+      type="button"
+      aria-label="More diff filters"
+      aria-expanded={menuOpen}
+      title="More diff filters"
+      onclick={() => {
+        menuOpen = !menuOpen;
+      }}
+    >
+      <MoreHorizontalIcon size={16} strokeWidth={2} aria-hidden="true" />
+    </button>
+    {#if menuOpen}
+      <div class="compact-menu">
+        {@render menuContent(compact)}
+      </div>
+    {/if}
+  </div>
 </div>
 
 <style>
@@ -263,15 +211,8 @@
   }
 
   .toolbar-group--category {
+    flex: 1 1 auto;
     min-width: 0;
-  }
-
-  .toolbar-settings {
-    display: flex;
-    align-items: center;
-    gap: 20px;
-    margin-left: auto;
-    flex-shrink: 0;
   }
 
   .toolbar-label {
@@ -302,6 +243,7 @@
 
   .compact-menu-wrap {
     position: relative;
+    margin-left: auto;
     flex-shrink: 0;
   }
 
@@ -394,41 +336,6 @@
   .compact-switch-row {
     justify-content: space-between;
   }
-
-  .segmented-control {
-    display: flex;
-    border: 1px solid var(--diff-border);
-    border-radius: var(--radius-sm);
-    overflow: hidden;
-  }
-
-  .segment {
-    font-size: 11px;
-    font-family: var(--font-mono);
-    padding: 2px 8px;
-    color: var(--text-secondary);
-    background: var(--diff-bg);
-    border-right: 1px solid var(--diff-border);
-    line-height: 18px;
-  }
-
-  .segment:last-child {
-    border-right: none;
-  }
-
-  .segment:hover {
-    background: var(--bg-surface-hover);
-  }
-
-  .segment--active {
-    background: var(--accent-blue);
-    color: #ffffff;
-  }
-
-  .segment--active:hover {
-    background: var(--accent-blue);
-  }
-
   .category-toggle {
     display: flex;
     gap: 2px;
@@ -502,9 +409,8 @@
       flex-direction: column;
     }
 
-    .toolbar-settings {
+    .compact-menu-wrap {
       margin-left: 0;
-      flex-wrap: wrap;
     }
   }
 </style>
