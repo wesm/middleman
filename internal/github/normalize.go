@@ -37,6 +37,9 @@ var (
 // If the PR is merged, State is set to "merged". LastActivityAt is
 // initialized to UpdatedAt.
 func NormalizePR(repoID int64, ghPR *gh.PullRequest) (*db.MergeRequest, error) {
+	if ghPR == nil {
+		return nil, ErrNilPullRequest
+	}
 	platformMR, err := platformgithub.NormalizePullRequest(platform.RepoRef{}, ghPR)
 	if err != nil {
 		return nil, err
