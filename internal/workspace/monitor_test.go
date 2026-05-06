@@ -93,7 +93,7 @@ func TestPRMonitorRunOnceUsesUpstreamBranchMatch(t *testing.T) {
 
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedIssue(t, d, repoID, 7, "Track workspace association")
-	seedMRWithFork(
+	seedMRWithHeadRepo(
 		t, d, repoID, 42,
 		"feature/issue-7", "https://github.com/acme/widget.git",
 	)
@@ -243,11 +243,11 @@ func TestPRMonitorRunOnceUsesUpstreamRemoteIdentity(t *testing.T) {
 
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedIssue(t, d, repoID, 7, "Track workspace association")
-	seedMRWithFork(
+	seedMRWithHeadRepo(
 		t, d, repoID, 41,
 		"shared-branch", "https://github.com/Fork-One/Widget.git",
 	)
-	seedMRWithFork(
+	seedMRWithHeadRepo(
 		t, d, repoID, 42,
 		"shared-branch", "https://github.com/fork-two/widget.git",
 	)

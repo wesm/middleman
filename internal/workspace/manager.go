@@ -319,6 +319,9 @@ func workspaceHeadRepo(platformHost, owner, name, cloneURL string) *string {
 	if cloneURL == "" {
 		return nil
 	}
+	// MRHeadRepo means "this PR head must be resolved through fork-safe refs"
+	// in setup. GitHub also fills head.repo.clone_url for same-repo PRs, so
+	// compare clone identities before treating a non-empty URL as fork metadata.
 	headRepo := normalizeCloneRepoIdentity(cloneURL)
 	baseRepo := strings.ToLower(strings.Join([]string{
 		strings.TrimSpace(platformHost),

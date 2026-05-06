@@ -63,7 +63,7 @@ func seedMR(
 	require.NoError(t, err)
 }
 
-func seedMRWithFork(
+func seedMRWithHeadRepo(
 	t *testing.T, d *db.DB,
 	repoID int64, number int,
 	headBranch, cloneURL string,
@@ -74,7 +74,7 @@ func seedMRWithFork(
 		RepoID:           repoID,
 		PlatformID:       repoID*10000 + int64(number),
 		Number:           number,
-		Title:            "Fork PR",
+		Title:            "PR with head repo",
 		Author:           "contributor",
 		State:            "open",
 		HeadBranch:       headBranch,
@@ -137,7 +137,7 @@ func TestCreateForkPR(t *testing.T) {
 	repoID := seedRepo(
 		t, d, "github.com", "acme", "widget",
 	)
-	seedMRWithFork(
+	seedMRWithHeadRepo(
 		t, d, repoID, 99, "fix/typo",
 		"https://github.com/contributor/widget.git",
 	)
@@ -165,7 +165,7 @@ func TestCreateSameRepoPRWithPopulatedHeadRepoIsNotFork(t *testing.T) {
 	repoID := seedRepo(
 		t, d, "github.com", "acme", "widget",
 	)
-	seedMRWithFork(
+	seedMRWithHeadRepo(
 		t, d, repoID, 244, "feature/thing",
 		"git@GitHub.com:Acme/Widget.git",
 	)
@@ -178,6 +178,9 @@ func TestCreateSameRepoPRWithPopulatedHeadRepoIsNotFork(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, ws)
 
+	// Same-repo PRs still have head repo clone URLs in GitHub payloads. Keeping
+	// MRHeadRepo nil is what sends workspace setup down the origin/<branch> path
+	// instead of the refs/pull/<number>/head path reserved for forks.
 	assert.Nil(ws.MRHeadRepo)
 }
 
@@ -388,11 +391,15 @@ func TestAddPreferredWorktreeSameRepoHeadRepoTracksRemoteBranch(t *testing.T) {
 	require := require.New(t)
 
 	cloneDir := setupBareCloneForWorkspaceGitTest(t)
+	// Reproduce the dangerous repo state from issue #256: the real branch and
+	// GitHub's synthetic pull ref both exist and point at the same commit.
+	// Starting a branch from refs/pull/<number>/head lets Git auto-configure
+	// that synthetic ref as the upstream, which breaks tools that inspect @{u}.
 	configureSameRepoPRRefs(t, cloneDir, "feature/thing", 244)
 
 	d := openTestDB(t)
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
-	seedMRWithFork(
+	seedMRWithHeadRepo(
 		t, d, repoID, 244, "feature/thing",
 		"https://github.com/acme/widget.git",
 	)
