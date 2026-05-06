@@ -103,12 +103,12 @@
 
   function routeRefForIssue(issue: Issue): IssueRouteRef {
     return {
-      owner: issue.repo_owner ?? "",
-      name: issue.repo_name ?? "",
+      provider: issue.repo.provider,
+      platformHost: issue.repo.platform_host,
+      owner: issue.repo.owner,
+      name: issue.repo.name,
+      repoPath: issue.repo.repo_path,
       number: issue.Number,
-      provider: issue.repo?.provider,
-      platformHost: issue.platform_host,
-      repoPath: issue.repo?.repo_path,
     };
   }
 
@@ -117,8 +117,8 @@
       ref.owner,
       ref.name,
       ref.number,
-      ref.platformHost,
       ref.provider,
+      ref.platformHost,
       ref.repoPath,
     );
     navigate(buildIssueRoute(ref));

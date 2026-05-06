@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+const diffRef = { provider: "github", platformHost: "github.com", owner: "o", name: "n", repoPath: "o/n" };
 const storage = new Map<string, string>();
 vi.stubGlobal("localStorage", {
   getItem: (k: string) => storage.get(k) ?? null,
@@ -96,7 +97,7 @@ describe("diff store scope", () => {
   it("loadCommits fetches and stores commits", async () => {
     installClient();
 
-    await store.loadDiff("o", "n", 1);
+    await store.loadDiff("o", "n", 1, diffRef);
     await store.loadCommits();
 
     expect(store.getCommits()).toHaveLength(3);
@@ -106,7 +107,7 @@ describe("diff store scope", () => {
   it("loadCommits is a no-op if already loaded", async () => {
     installClient();
 
-    await store.loadDiff("o", "n", 1);
+    await store.loadDiff("o", "n", 1, diffRef);
     await store.loadCommits();
     await store.loadCommits();
 
@@ -116,7 +117,7 @@ describe("diff store scope", () => {
   it("selectCommit sets scope and refetches diff", async () => {
     installClient();
 
-    await store.loadDiff("o", "n", 1);
+    await store.loadDiff("o", "n", 1, diffRef);
     await store.loadCommits();
     store.selectCommit("sha2");
 
@@ -126,7 +127,7 @@ describe("diff store scope", () => {
   it("selectRange orders SHAs by commit index", async () => {
     installClient();
 
-    await store.loadDiff("o", "n", 1);
+    await store.loadDiff("o", "n", 1, diffRef);
     await store.loadCommits();
     store.selectRange("sha3", "sha1");
 
@@ -139,7 +140,7 @@ describe("diff store scope", () => {
   it("resetToHead returns to HEAD and refetches", async () => {
     installClient();
 
-    await store.loadDiff("o", "n", 1);
+    await store.loadDiff("o", "n", 1, diffRef);
     await store.loadCommits();
     store.selectCommit("sha2");
     store.resetToHead();
@@ -150,7 +151,7 @@ describe("diff store scope", () => {
   it("stepPrev from HEAD goes to newest commit", async () => {
     installClient();
 
-    await store.loadDiff("o", "n", 1);
+    await store.loadDiff("o", "n", 1, diffRef);
     await store.loadCommits();
     store.stepPrev();
 
@@ -160,7 +161,7 @@ describe("diff store scope", () => {
   it("stepNext from HEAD is a no-op", async () => {
     installClient();
 
-    await store.loadDiff("o", "n", 1);
+    await store.loadDiff("o", "n", 1, diffRef);
     await store.loadCommits();
     store.stepNext();
 
@@ -170,7 +171,7 @@ describe("diff store scope", () => {
   it("stepNext from newest commit returns to HEAD", async () => {
     installClient();
 
-    await store.loadDiff("o", "n", 1);
+    await store.loadDiff("o", "n", 1, diffRef);
     await store.loadCommits();
     store.selectCommit("sha3");
     store.stepNext();
@@ -181,7 +182,7 @@ describe("diff store scope", () => {
   it("stepPrev from oldest commit is a no-op", async () => {
     installClient();
 
-    await store.loadDiff("o", "n", 1);
+    await store.loadDiff("o", "n", 1, diffRef);
     await store.loadCommits();
     store.selectCommit("sha1");
     store.stepPrev();
@@ -192,7 +193,7 @@ describe("diff store scope", () => {
   it("stepPrev from range collapses to fromSha", async () => {
     installClient();
 
-    await store.loadDiff("o", "n", 1);
+    await store.loadDiff("o", "n", 1, diffRef);
     await store.loadCommits();
     store.selectRange("sha1", "sha3");
     store.stepPrev();
@@ -203,7 +204,7 @@ describe("diff store scope", () => {
   it("stepNext from range collapses to toSha", async () => {
     installClient();
 
-    await store.loadDiff("o", "n", 1);
+    await store.loadDiff("o", "n", 1, diffRef);
     await store.loadCommits();
     store.selectRange("sha1", "sha3");
     store.stepNext();
@@ -214,7 +215,7 @@ describe("diff store scope", () => {
   it("diff fetch includes commit param when scope is single commit", async () => {
     installClient();
 
-    await store.loadDiff("o", "n", 1);
+    await store.loadDiff("o", "n", 1, diffRef);
     await store.loadCommits();
     store.selectCommit("sha2");
 
@@ -226,7 +227,7 @@ describe("diff store scope", () => {
   it("diff fetch includes from+to params when scope is range", async () => {
     installClient();
 
-    await store.loadDiff("o", "n", 1);
+    await store.loadDiff("o", "n", 1, diffRef);
     await store.loadCommits();
     store.selectRange("sha1", "sha3");
 
@@ -240,7 +241,7 @@ describe("diff store scope", () => {
   it("clearDiff resets scope and commits", async () => {
     installClient();
 
-    await store.loadDiff("o", "n", 1);
+    await store.loadDiff("o", "n", 1, diffRef);
     await store.loadCommits();
     store.selectCommit("sha2");
     store.clearDiff();

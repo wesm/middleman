@@ -26,13 +26,10 @@ export interface RepoVisibilityFilters {
 }
 
 export function rowKey(
-  row: Pick<RepoImportRow, "owner" | "name"> &
-    Partial<Pick<RepoImportRow, "provider" | "platform_host" | "repo_path">>,
+  row: Pick<RepoImportRow, "provider" | "platform_host" | "repo_path"> &
+    Partial<Pick<RepoImportRow, "owner" | "name">>,
 ): string {
-  const provider = row.provider ?? "github";
-  const host = row.platform_host ?? "github.com";
-  const repoPath = row.repo_path ?? `${row.owner}/${row.name}`;
-  return `${provider.toLowerCase()}/${host.toLowerCase()}/${repoPath.toLowerCase()}`;
+  return `${row.provider.toLowerCase()}/${row.platform_host.toLowerCase()}/${row.repo_path.toLowerCase()}`;
 }
 
 export function parseImportPattern(input: string, allowNestedOwner = false): { owner: string; pattern: string } {

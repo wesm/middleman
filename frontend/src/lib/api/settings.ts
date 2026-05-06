@@ -49,7 +49,7 @@ export interface RepoPreviewResponse {
 }
 
 export interface RepoRequestOptions {
-  provider?: string;
+  provider: string;
   host?: string;
 }
 
@@ -128,7 +128,7 @@ export async function updateSettings(
 export async function addRepo(
   owner: string,
   name: string,
-  options: RepoRequestOptions = { provider: "github", host: "github.com" },
+  options: RepoRequestOptions,
 ): Promise<Settings> {
   const { data, error, response } = await client.POST("/repos", {
     body: { ...options, owner, name },
@@ -144,13 +144,14 @@ export async function addRepo(
 export async function removeRepo(
   owner: string,
   name: string,
-  options: RepoRequestOptions = { provider: "github", host: "github.com" },
+  options: RepoRequestOptions,
 ): Promise<void> {
   const ref = {
     provider: options.provider,
     platformHost: options.host,
     owner,
     name,
+    repoPath: `${owner}/${name}`,
   };
   const { error, response } = await client.DELETE(
     providerRepoPath(ref),
@@ -171,13 +172,14 @@ export async function removeRepo(
 export async function refreshRepo(
   owner: string,
   name: string,
-  options: RepoRequestOptions = { provider: "github", host: "github.com" },
+  options: RepoRequestOptions,
 ): Promise<Settings> {
   const ref = {
     provider: options.provider,
     platformHost: options.host,
     owner,
     name,
+    repoPath: `${owner}/${name}`,
   };
   const { data, error, response } = await client.POST(
     providerRepoPath(ref, "/refresh"),
@@ -199,7 +201,7 @@ export async function refreshRepo(
 export async function previewRepos(
   owner: string,
   pattern: string,
-  options: RepoRequestOptions = { provider: "github", host: "github.com" },
+  options: RepoRequestOptions,
 ): Promise<RepoPreviewResponse> {
   const { data, error, response } = await client.POST("/repos/preview", {
     body: { ...options, owner, pattern },
@@ -215,11 +217,7 @@ export async function previewRepos(
 export async function bulkAddRepos(repos: RepoInput[]): Promise<Settings> {
   const { data, error, response } = await client.POST("/repos/bulk", {
     body: {
-      repos: repos.map((repo) => ({
-        provider: "github",
-        host: "github.com",
-        ...repo,
-      })),
+      repos,
     },
   });
   if (!data) {

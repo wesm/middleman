@@ -4,11 +4,11 @@
 
   interface Props {
     itemType: "pr" | "issue";
-    provider?: string | undefined;
+    provider: string;
     platformHost?: string | undefined;
     owner: string;
     name: string;
-    repoPath?: string | undefined;
+    repoPath: string;
     number: number;
     onClose: () => void;
     onPullsRefresh?: () => Promise<void>;
@@ -60,7 +60,7 @@
             {...(onPullsRefresh ? { onPullsRefresh } : {})}
           />
         {:else}
-          <IssueDetail {owner} {name} {number} {platformHost} />
+          <IssueDetail {provider} {platformHost} {owner} {name} {repoPath} {number} />
         {/if}
       {/key}
     </div>

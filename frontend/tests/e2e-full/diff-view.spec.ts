@@ -276,7 +276,7 @@ async function mockDiffApiError(page: Page, status: number, detail: string): Pro
 }
 
 async function navigateToDiff(page: Page): Promise<void> {
-  await page.goto("/pulls/acme/widgets/1/files");
+  await page.goto("/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1");
 }
 
 async function waitForDiffLoaded(page: Page): Promise<void> {
@@ -818,7 +818,7 @@ test.describe("diff view", () => {
     await expect(page.locator(".diff-file-row")).toHaveCount(11);
 
     // Switch to PR 2.
-    await page.goto("/pulls/acme/widgets/2/files");
+    await page.goto("/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=2");
     await waitForSidebarFilesLoaded(page);
 
     // Filter input is empty and full list shows.
@@ -855,7 +855,7 @@ test.describe("diff view", () => {
     await expect(page.locator(".diff-file-row")).toHaveCount(0);
 
     // Switch to PR 2 (small diff — filter input hidden).
-    await page.goto("/pulls/acme/widgets/2/files");
+    await page.goto("/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=2");
     await waitForSidebarFilesLoaded(page);
 
     // Filter input is hidden and all 4 files show (stale query doesn't apply).
@@ -927,7 +927,7 @@ test.describe("diff view", () => {
     await expect(page.locator(".commit-item").first()).toBeVisible();
 
     // Switch to PR 2.
-    await page.goto("/pulls/acme/widgets/2/files");
+    await page.goto("/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=2");
     await waitForSidebarFilesLoaded(page);
 
     // Commit section should be collapsed on new PR (body hidden).
@@ -1048,7 +1048,7 @@ test.describe("diff view (git-backed)", () => {
   });
 
   test("diff is not marked as stale", async ({ page }) => {
-    await page.goto("/pulls/acme/widgets/1/files");
+    await page.goto("/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1");
     await page.locator(".diff-file").first()
       .waitFor({ state: "visible", timeout: 10_000 });
 
@@ -1056,7 +1056,7 @@ test.describe("diff view (git-backed)", () => {
   });
 
   test("real diff loads and renders all changed files", async ({ page }) => {
-    await page.goto("/pulls/acme/widgets/1/files");
+    await page.goto("/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1");
     await page.locator(".diff-file").first()
       .waitFor({ state: "visible", timeout: 10_000 });
     await page.locator(".diff-file-row").first()
@@ -1075,7 +1075,7 @@ test.describe("diff view (git-backed)", () => {
       );
       expect(response.ok()).toBe(true);
 
-      await page.goto(`${server.info.base_url}/pulls/acme/widgets/1/files`);
+      await page.goto(`${server.info.base_url}/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1`);
       await waitForDiffLoaded(page);
       await waitForSidebarFilesLoaded(page);
 
@@ -1134,7 +1134,7 @@ test.describe("diff view (git-backed)", () => {
       );
       expect(advanceResponse.ok()).toBe(true);
 
-      await page.goto(`${server.info.base_url}/pulls/acme/widgets/1/files`);
+      await page.goto(`${server.info.base_url}/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1`);
       await waitForDiffLoaded(page);
       await waitForSidebarFilesLoaded(page);
 
@@ -1171,7 +1171,7 @@ test.describe("diff view (git-backed)", () => {
   });
 
   test("modified file has multiple hunks with correct content", async ({ page }) => {
-    await page.goto("/pulls/acme/widgets/1/files");
+    await page.goto("/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1");
     await page.locator(".diff-file").first()
       .waitFor({ state: "visible", timeout: 10_000 });
 
@@ -1201,7 +1201,7 @@ test.describe("diff view (git-backed)", () => {
   });
 
   test("added file shows A status in sidebar and only addition lines", async ({ page }) => {
-    await page.goto("/pulls/acme/widgets/1/files");
+    await page.goto("/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1");
     await page.locator(".diff-file").first()
       .waitFor({ state: "visible", timeout: 10_000 });
     await page.locator(".diff-file-row").first()
@@ -1231,7 +1231,7 @@ test.describe("diff view (git-backed)", () => {
   });
 
   test("deleted file shows D status in sidebar and only deletion lines", async ({ page }) => {
-    await page.goto("/pulls/acme/widgets/1/files");
+    await page.goto("/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1");
     await page.locator(".diff-file").first()
       .waitFor({ state: "visible", timeout: 10_000 });
     await page.locator(".diff-file-row").first()
@@ -1260,7 +1260,7 @@ test.describe("diff view (git-backed)", () => {
   });
 
   test("hide whitespace toggle filters whitespace-only files", async ({ page }) => {
-    await page.goto("/pulls/acme/widgets/1/files");
+    await page.goto("/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1");
     await page.locator(".diff-file").first()
       .waitFor({ state: "visible", timeout: 10_000 });
 
@@ -1276,7 +1276,7 @@ test.describe("diff view (git-backed)", () => {
   });
 
   test("collapsed region appears between hunks in modified file", async ({ page }) => {
-    await page.goto("/pulls/acme/widgets/1/files");
+    await page.goto("/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1");
     await page.locator(".diff-file").first()
       .waitFor({ state: "visible", timeout: 10_000 });
 
@@ -1297,7 +1297,7 @@ test.describe("diff view (git-backed)", () => {
       Date.now = () => originalNow() + offsetMs;
     }, 20 * 24 * 60 * 60 * 1000);
 
-    await page.goto("/pulls/acme/widgets/1/files");
+    await page.goto("/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1");
     await page.locator(".commit-section__toggle").click();
     await page.locator(".commit-item").first()
       .waitFor({ state: "visible", timeout: 10_000 });

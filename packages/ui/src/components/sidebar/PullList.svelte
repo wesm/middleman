@@ -133,12 +133,12 @@
 
   function routeRefForPull(pr: PullRequest): PullRequestRouteRef {
     return {
-      owner: pr.repo_owner ?? "",
-      name: pr.repo_name ?? "",
+      provider: pr.repo.provider,
+      platformHost: pr.repo.platform_host,
+      owner: pr.repo.owner,
+      name: pr.repo.name,
+      repoPath: pr.repo.repo_path,
       number: pr.Number,
-      provider: pr.repo?.provider,
-      platformHost: pr.repo?.platform_host ?? pr.platform_host,
-      repoPath: pr.repo?.repo_path,
     };
   }
 

@@ -93,17 +93,20 @@
         parseAPITimestamp(b.created_at).getTime() - parseAPITimestamp(a.created_at).getTime());
 
       const first = events[0]!;
+      if (!first.repo) {
+        throw new Error("activity group missing provider repo identity");
+      }
       allItemGroups.push({
         itemType: first.item_type,
         itemNumber: first.item_number,
         itemTitle: first.item_title,
         itemUrl: first.item_url,
         itemState: first.item_state,
-        provider: first.repo?.provider ?? "github",
-        repoOwner: first.repo_owner,
-        repoName: first.repo_name,
-        repoPath: first.repo?.repo_path ?? `${first.repo_owner}/${first.repo_name}`,
-        platformHost: first.platform_host ?? "",
+        provider: first.repo.provider,
+        repoOwner: first.repo.owner,
+        repoName: first.repo.name,
+        repoPath: first.repo.repo_path,
+        platformHost: first.repo.platform_host,
         latestTime: first.created_at,
         events,
         displayEvents: collapseActivityCommitRuns(events),

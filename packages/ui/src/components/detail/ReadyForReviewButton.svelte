@@ -11,9 +11,9 @@
     owner: string;
     name: string;
     number: number;
-    provider?: string | undefined;
+    provider: string;
     platformHost?: string | undefined;
-    repoPath?: string | undefined;
+    repoPath: string;
     size?: "sm" | "md";
     disabled?: boolean;
     oncompleted?: () => void;

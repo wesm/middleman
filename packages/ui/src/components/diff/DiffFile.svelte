@@ -11,16 +11,22 @@
 
   interface Props {
     file: DiffFileType;
+    provider: string;
+    platformHost?: string | undefined;
     owner: string;
     name: string;
+    repoPath: string;
     number: number;
     richPreviewEnabled?: boolean;
   }
 
   const {
     file,
+    provider,
+    platformHost,
     owner,
     name,
+    repoPath,
     number,
     richPreviewEnabled = true,
   }: Props = $props();
@@ -226,8 +232,11 @@
         {#key richPreviewKey}
           <DiffRichPreview
             {file}
+            {provider}
+            {platformHost}
             {owner}
             {name}
+            {repoPath}
             {number}
             active={inViewport}
           />

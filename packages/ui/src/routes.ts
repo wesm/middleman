@@ -1,14 +1,14 @@
 export type RepositoryRouteRef = {
+  provider: string;
+  platformHost?: string | undefined;
   owner: string;
   name: string;
-  provider?: string | undefined;
-  platformHost?: string | undefined;
-  repoPath?: string | undefined;
+  repoPath: string;
 };
 
 export type ProviderRouteRef = {
   provider: string;
-  platformHost: string;
+  platformHost?: string | undefined;
   repoPath: string;
 };
 
@@ -56,11 +56,11 @@ export function buildProviderIssueRoute(ref: ProviderRouteRef & { number: number
 }
 
 export function buildFocusPullRequestRoute(ref: PullRequestRouteRef): string {
-  return `/focus/pr/${ref.owner}/${ref.name}/${ref.number}`;
+  return `/focus/pr${providerItemQuery(providerRouteRef(ref))}`;
 }
 
 export function buildFocusIssueRoute(ref: IssueRouteRef): string {
-  return `/focus/issue/${ref.owner}/${ref.name}/${ref.number}${platformHostQuery(ref.platformHost)}`;
+  return `/focus/issue${providerItemQuery(providerRouteRef(ref))}`;
 }
 
 export function buildFocusListRoute(ref: FocusListRouteRef): string {
@@ -78,25 +78,30 @@ export function buildRoutedItemRoute(
   return options.focus ? buildFocusIssueRoute(ref) : buildIssueRoute(ref);
 }
 
-function providerItemQuery(ref: ProviderRouteRef & { number: number }): string {
-  const params: Array<[string, string]> = [
-    ["provider", ref.provider],
-    ["platform_host", ref.platformHost],
-    ["repo_path", ref.repoPath],
-    ["number", ref.number.toString()],
-  ];
-  return `?${params.map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join("&")}`;
+function requireRouteText(value: string, field: string): string {
+  if (!value) {
+    throw new Error(`missing route ${field}`);
+  }
+  return value;
 }
 
-function platformHostQuery(platformHost: string | undefined): string {
-  return platformHost ? `?platform_host=${encodeURIComponent(platformHost)}` : "";
+function providerItemQuery(ref: ProviderRouteRef & { number: number }): string {
+  const params: Array<[string, string]> = [
+    ["provider", requireRouteText(ref.provider, "provider")],
+    ["repo_path", requireRouteText(ref.repoPath, "repoPath")],
+    ["number", ref.number.toString()],
+  ];
+  if (ref.platformHost) {
+    params.splice(1, 0, ["platform_host", ref.platformHost]);
+  }
+  return `?${params.map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join("&")}`;
 }
 
 function providerRouteRef(ref: NumberedRouteItemRef): ProviderRouteRef & { number: number } {
   return {
-    provider: ref.provider ?? "github",
-    platformHost: ref.platformHost ?? "github.com",
-    repoPath: ref.repoPath ?? `${ref.owner}/${ref.name}`,
+    provider: ref.provider,
+    platformHost: ref.platformHost,
+    repoPath: ref.repoPath,
     number: ref.number,
   };
 }

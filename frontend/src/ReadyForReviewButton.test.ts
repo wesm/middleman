@@ -38,7 +38,7 @@ describe("ReadyForReviewButton", () => {
     mockPost.mockResolvedValue({ data: { status: "ready_for_review" } });
 
     render(ReadyForReviewButton, {
-      props: { owner: "wesm", name: "middleman", number: 141, size: "sm" },
+      props: { provider: "github", platformHost: "github.com", owner: "wesm", name: "middleman", repoPath: "wesm/middleman", number: 141, size: "sm" },
     });
 
     await fireEvent.click(
@@ -49,7 +49,11 @@ describe("ReadyForReviewButton", () => {
       "wesm",
       "middleman",
       141,
-      { provider: undefined, platformHost: undefined, repoPath: undefined },
+      {
+        provider: "github",
+        platformHost: "github.com",
+        repoPath: "wesm/middleman",
+      },
     );
     expect(mockLoadPulls).toHaveBeenCalledTimes(1);
   });
@@ -63,7 +67,7 @@ describe("ReadyForReviewButton", () => {
     });
 
     render(ReadyForReviewButton, {
-      props: { owner: "wesm", name: "middleman", number: 141, size: "sm" },
+      props: { provider: "github", platformHost: "github.com", owner: "wesm", name: "middleman", repoPath: "wesm/middleman", number: 141, size: "sm" },
     });
 
     await fireEvent.click(
@@ -74,7 +78,11 @@ describe("ReadyForReviewButton", () => {
       "wesm",
       "middleman",
       141,
-      { provider: undefined, platformHost: undefined, repoPath: undefined },
+      {
+        provider: "github",
+        platformHost: "github.com",
+        repoPath: "wesm/middleman",
+      },
     );
     expect(mockLoadPulls).toHaveBeenCalledTimes(1);
   });

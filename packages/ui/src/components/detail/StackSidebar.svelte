@@ -153,7 +153,14 @@
             {/if}
             <button
               class="member-link"
-              onclick={() => navigate(buildPullRequestRoute({ owner, name, number: member.number }))}
+              onclick={() => navigate(buildPullRequestRoute({
+                provider,
+                platformHost,
+                owner,
+                name,
+                repoPath,
+                number: member.number,
+              }))}
             >
               #{member.number} {member.title}
             </button>

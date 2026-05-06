@@ -22,7 +22,9 @@
   export let owner = "octo";
   export let name = "repo";
   export let number = 1;
-  export let platformHost: string | undefined = undefined;
+  export let provider = "github";
+  export let platformHost: string | undefined = "github.com";
+  export let repoPath = `${owner}/${name}`;
   export let submitComment: (
     owner: string,
     name: string,
@@ -69,7 +71,7 @@
 </script>
 
 {#if kind === "pull"}
-  <CommentBox {owner} {name} {number} {platformHost} />
+  <CommentBox {provider} {platformHost} {owner} {name} {repoPath} {number} />
 {:else}
-  <IssueCommentBox {owner} {name} {number} {platformHost} />
+  <IssueCommentBox {provider} {platformHost} {owner} {name} {repoPath} {number} />
 {/if}

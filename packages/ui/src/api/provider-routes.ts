@@ -1,9 +1,9 @@
 export type ProviderRouteRef = {
-  provider?: string | undefined;
+  provider: string;
   platformHost?: string | undefined;
   owner: string;
   name: string;
-  repoPath?: string | undefined;
+  repoPath: string;
 };
 
 type RouteKind = "pulls" | "issues" | "repo";
@@ -15,8 +15,8 @@ const defaultHosts: Record<string, string> = {
   gl: "gitlab.com",
 };
 
-export function canonicalProvider(provider?: string): string {
-  const normalized = (provider ?? "github").toLowerCase();
+export function canonicalProvider(provider: string): string {
+  const normalized = provider.toLowerCase();
   if (normalized === "gh") return "github";
   if (normalized === "gl") return "gitlab";
   return normalized;

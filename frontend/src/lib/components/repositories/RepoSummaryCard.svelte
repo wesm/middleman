@@ -42,7 +42,7 @@
   const key = $derived(repoKey(summary));
   const stateKey = $derived(repoStateKey(summary));
   const repoURL = $derived(
-    `https://${summary.platform_host || "github.com"}/${summary.owner}/${summary.name}`,
+    `https://${summary.platform_host}/${summary.owner}/${summary.name}`,
   );
   const showPlatformHost = $derived(shouldShowPlatformHost(summary));
   const syncTime = $derived(
@@ -155,7 +155,7 @@
   function avatarURL(author: string): string {
     const login = encodeURIComponent(author.trim());
     if (login === "") return "";
-    const host = summary.platform_host || "github.com";
+    const host = summary.platform_host;
     return `https://${host}/${login}.png?size=40`;
   }
 
@@ -195,8 +195,8 @@
           href={repoURL}
           target="_blank"
           rel="noopener noreferrer"
-          title={`Open on ${summary.platform_host || "github.com"}`}
-          aria-label={`Open ${summary.owner}/${summary.name} on ${summary.platform_host || "github.com"}`}
+          title={`Open on ${summary.platform_host}`}
+          aria-label={`Open ${summary.owner}/${summary.name} on ${summary.platform_host}`}
         >
           <ExternalLinkIcon
             size="14"

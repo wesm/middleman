@@ -40,14 +40,16 @@
     const trimmed = inputValue.trim();
     if (!trimmed) return;
     const parts = trimmed.split("/");
-    if (parts.length !== 2 || !parts[0] || !parts[1]) {
-      addError = "Format: owner/name";
+    if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) {
+      addError = "Format: provider/owner/name";
       return;
     }
     adding = true;
     addError = null;
     try {
-      const settings = await addRepo(parts[0], parts[1]);
+      const settings = await addRepo(parts[1], parts[2], {
+        provider: parts[0],
+      });
       inputValue = "";
       onUpdate(settings.repos);
       void sync.refreshSyncStatus();

@@ -12,9 +12,9 @@ export type DetailSyncMode = boolean | "background";
 
 export interface DetailRequestOptions {
   sync?: DetailSyncMode;
-  provider?: string | undefined;
+  provider: string;
   platformHost?: string | undefined;
-  repoPath?: string | undefined;
+  repoPath: string;
 }
 
 type DetailRequestRef = {
@@ -22,7 +22,7 @@ type DetailRequestRef = {
   name: string;
   number: number;
   provider: string;
-  platformHost: string;
+  platformHost?: string | undefined;
   repoPath: string;
 };
 
@@ -143,31 +143,23 @@ export function createDetailStore(
 
   // --- internal helpers ---
 
-  function prKey(
-    owner: string,
-    name: string,
-    number: number,
-    identity?: Partial<DetailRequestRef>,
-  ): string {
-    const provider = identity?.provider ?? "github";
-    const platformHost = identity?.platformHost ?? "github.com";
-    const repoPath = identity?.repoPath ?? `${owner}/${name}`;
-    return `${provider}:${platformHost}:${repoPath}/${number}`;
+  function prKey(ref: DetailRequestRef): string {
+    return `${ref.provider}:${ref.platformHost ?? ""}:${ref.repoPath}/${ref.number}`;
   }
 
   function detailRequestRef(
     owner: string,
     name: string,
     number: number,
-    options?: DetailRequestOptions | Partial<DetailRequestRef>,
+    options: DetailRequestOptions | DetailRequestRef,
   ): DetailRequestRef {
     return {
       owner,
       name,
       number,
-      provider: options?.provider ?? "github",
-      platformHost: options?.platformHost ?? "github.com",
-      repoPath: options?.repoPath ?? `${owner}/${name}`,
+      provider: options.provider,
+      platformHost: options.platformHost,
+      repoPath: options.repoPath,
     };
   }
 
@@ -189,10 +181,13 @@ export function createDetailStore(
     name: string,
     number: number,
   ): DetailRequestRef {
+    if (!detail?.repo?.provider || !detail.repo.repo_path) {
+      throw new Error("pull detail missing provider repo identity");
+    }
     return detailRequestRef(owner, name, number, {
-      provider: detail?.repo?.provider,
-      platformHost: detail?.repo?.platform_host,
-      repoPath: detail?.repo?.repo_path,
+      provider: detail.repo.provider,
+      platformHost: detail.repo.platform_host,
+      repoPath: detail.repo.repo_path,
     });
   }
 
@@ -207,7 +202,7 @@ export function createDetailStore(
     name: string,
     number: number,
     expectedGen: number = syncGeneration,
-    identity?: Partial<DetailRequestRef>,
+    identity: DetailRequestRef,
   ): Promise<void> {
     const ref = detailRequestRef(owner, name, number, identity);
     try {
@@ -240,7 +235,7 @@ export function createDetailStore(
     name: string,
     number: number,
     gen: number,
-    identity?: Partial<DetailRequestRef>,
+    identity: DetailRequestRef,
   ): Promise<void> {
     const ref = detailRequestRef(owner, name, number, identity);
     syncing = true;
@@ -298,14 +293,14 @@ export function createDetailStore(
     owner: string,
     name: string,
     number: number,
-    options?: DetailRequestOptions,
+    options: DetailRequestOptions,
   ): Promise<void> {
-    const syncMode = options?.sync ?? true;
+    const syncMode = options.sync ?? true;
     const requestRef = detailRequestRef(owner, name, number, options);
     // Dedup by item identity only. A second caller with a different
     // sync mode joins the in-flight load and may promote the sync
     // intent if its requested mode is stronger.
-    const key = prKey(owner, name, number, requestRef);
+    const key = prKey(requestRef);
     if (
       loading &&
       activeLoad?.key === key &&
@@ -400,8 +395,8 @@ export function createDetailStore(
     name: string,
     number: number,
     gen: number,
-    previousFetchedAt?: string,
-    identity?: Partial<DetailRequestRef>,
+    previousFetchedAt: string | undefined,
+    identity: DetailRequestRef,
   ): Promise<void> {
     const ref = detailRequestRef(owner, name, number, identity);
     syncing = true;
@@ -434,8 +429,8 @@ export function createDetailStore(
     name: string,
     number: number,
     gen: number,
-    previousFetchedAt?: string,
-    identity?: Partial<DetailRequestRef>,
+    previousFetchedAt: string | undefined,
+    identity: DetailRequestRef,
   ): Promise<void> {
     for (const ms of [300, 700, 1_500, 3_000, 5_000]) {
       await delay(ms);
@@ -453,9 +448,10 @@ export function createDetailStore(
     owner: string,
     name: string,
     number: number,
-    identity?: Partial<DetailRequestRef>,
+    identity: DetailRequestOptions,
   ): Promise<void> {
-    await refreshDetail(owner, name, number, syncGeneration, identity);
+    const ref = detailRequestRef(owner, name, number, identity);
+    await refreshDetail(owner, name, number, syncGeneration, ref);
   }
 
   async function updateKanbanState(
@@ -465,7 +461,7 @@ export function createDetailStore(
     status: KanbanStatus,
   ): Promise<void> {
     const ref = currentDetailRef(owner, name, number);
-    const key = prKey(owner, name, number, ref);
+    const key = prKey(ref);
     const seq = (kanbanSeqByPR.get(key) ?? 0) + 1;
     kanbanSeqByPR.set(key, seq);
 
@@ -548,7 +544,7 @@ export function createDetailStore(
         if (pullsDep) reloads.push(pullsDep.loadPulls());
         if (isDetailShowing(owner, name, number)) {
           reloads.push(
-            loadDetail(owner, name, number),
+            loadDetail(owner, name, number, ref),
           );
         }
         await Promise.all(reloads);
@@ -565,7 +561,7 @@ export function createDetailStore(
       ];
       if (isDetailShowing(owner, name, number)) {
         refreshes.push(
-          loadDetail(owner, name, number),
+          loadDetail(owner, name, number, ref),
         );
       }
       await Promise.all(refreshes);
@@ -650,16 +646,17 @@ export function createDetailStore(
     owner: string,
     name: string,
     number: number,
-    identity?: Partial<DetailRequestRef>,
+    identity: DetailRequestOptions,
   ): void {
+    const ref = detailRequestRef(owner, name, number, identity);
     stopDetailPolling();
     detailPollHandle = setInterval(() => {
-      void refreshDetail(owner, name, number, syncGeneration, identity);
+      void refreshDetail(owner, name, number, syncGeneration, ref);
     }, 60_000);
     if (syncDep) {
       unsubSyncComplete =
         syncDep.subscribeSyncComplete(() => {
-          void refreshDetail(owner, name, number);
+          void refreshDetail(owner, name, number, syncGeneration, ref);
         });
     }
   }
@@ -780,12 +777,12 @@ export function createDetailStore(
     syncing = false;
     // Silent refresh: avoid flipping loading flag, which would
     // unmount the detail tree and reset scroll position.
-    await refreshDetail(owner, name, number);
+    await refreshDetail(owner, name, number, syncGeneration, currentDetailRef(owner, name, number));
     // Pull authoritative state from GitHub so PR row metadata
     // (last_activity_at, comment_count) and the pulls list catch
     // up. Skip if the user navigated away mid-refresh.
     if (gen === syncGeneration) {
-      void syncDetail(owner, name, number, gen);
+      void syncDetail(owner, name, number, gen, currentDetailRef(owner, name, number));
     }
   }
 
@@ -823,7 +820,7 @@ export function createDetailStore(
       storeError = err instanceof Error ? err.message : String(err);
       return false;
     }
-    await refreshDetail(owner, name, number);
+    await refreshDetail(owner, name, number, syncGeneration, currentDetailRef(owner, name, number));
     return true;
   }
 

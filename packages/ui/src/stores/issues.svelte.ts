@@ -8,19 +8,19 @@ import type { MiddlemanClient } from "../types.js";
 export type IssueDetailSyncMode = boolean | "background";
 
 export interface IssueSelection {
+  provider: string;
+  platformHost?: string | undefined;
   owner: string;
   name: string;
+  repoPath: string;
   number: number;
-  provider?: string | undefined;
-  platformHost?: string | undefined;
-  repoPath?: string | undefined;
 }
 
 export interface IssueDetailRequestOptions {
   sync?: IssueDetailSyncMode;
-  provider?: string | undefined;
+  provider: string;
   platformHost?: string | undefined;
-  repoPath?: string | undefined;
+  repoPath: string;
 }
 
 type IssueDetailRequestRef = {
@@ -28,7 +28,7 @@ type IssueDetailRequestRef = {
   name: string;
   number: number;
   provider: string;
-  platformHost: string;
+  platformHost?: string | undefined;
   repoPath: string;
 };
 
@@ -64,19 +64,6 @@ function strongerSyncMode(
   b: IssueDetailSyncMode,
 ): IssueDetailSyncMode {
   return syncIntentRank(b) > syncIntentRank(a) ? b : a;
-}
-
-function issueDetailOptions(
-  platformHostOrOptions?: string | IssueDetailRequestOptions,
-  options?: { sync?: IssueDetailSyncMode },
-): IssueDetailRequestOptions {
-  if (typeof platformHostOrOptions === "string") {
-    return {
-      ...options,
-      ...(platformHostOrOptions && { platformHost: platformHostOrOptions }),
-    };
-  }
-  return platformHostOrOptions ?? options ?? {};
 }
 
 export function createIssuesStore(opts: IssuesStoreOptions) {
@@ -197,17 +184,17 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     owner: string,
     name: string,
     number: number,
-    platformHost?: string,
-    provider?: string,
-    repoPath?: string,
+    provider: string,
+    platformHost: string | undefined,
+    repoPath: string,
   ): void {
     selectedIssue = {
+      provider,
+      ...(platformHost && { platformHost }),
       owner,
       name,
+      repoPath,
       number,
-      ...(provider && { provider }),
-      ...(platformHost && { platformHost }),
-      ...(repoPath && { repoPath }),
     };
   }
   function clearIssueSelection(): void {
@@ -276,11 +263,16 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     name: string,
     number: number,
   ): IssueDetailRequestRef {
+    const provider = issueDetail?.repo?.provider ?? selectedIssue?.provider;
+    const repoPath = issueDetail?.repo?.repo_path ?? selectedIssue?.repoPath;
+    if (!provider || !repoPath) {
+      throw new Error("issue detail missing provider repo identity");
+    }
     return issueDetailRequestRef(owner, name, number, {
-      provider: issueDetail?.repo?.provider ?? selectedIssue?.provider,
+      provider,
       platformHost:
         issueDetail?.repo?.platform_host ?? selectedIssue?.platformHost,
-      repoPath: issueDetail?.repo?.repo_path ?? selectedIssue?.repoPath,
+      repoPath,
     });
   }
 
@@ -288,15 +280,15 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     owner: string,
     name: string,
     number: number,
-    options?: IssueDetailRequestOptions,
+    options: IssueDetailRequestOptions,
   ): IssueDetailRequestRef {
     return {
       owner,
       name,
       number,
-      provider: options?.provider ?? "github",
-      platformHost: options?.platformHost ?? "github.com",
-      repoPath: options?.repoPath ?? `${owner}/${name}`,
+      provider: options.provider,
+      platformHost: options.platformHost,
+      repoPath: options.repoPath,
     };
   }
 
@@ -304,12 +296,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     owner: string,
     name: string,
     number: number,
-    platformHostOrOptions?: string | IssueDetailRequestOptions,
-    options?: { sync?: IssueDetailSyncMode },
+    options: IssueDetailRequestOptions,
   ): Promise<void> {
-    const requestOptions = issueDetailOptions(platformHostOrOptions, options);
-    const requestRef = issueDetailRequestRef(owner, name, number, requestOptions);
-    const syncMode = requestOptions.sync ?? true;
+    const requestRef = issueDetailRequestRef(owner, name, number, options);
+    const syncMode = options.sync ?? true;
     // Dedup by item identity only. A second caller with a different
     // sync mode joins the in-flight load and may promote the sync
     // intent if its requested mode is stronger.
@@ -394,13 +384,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     name: string,
     number: number,
     gen: number,
-    previousFetchedAt?: string,
-    identityOrPlatformHost?: IssueDetailRequestRef | string,
+    previousFetchedAt: string | undefined,
+    requestRef: IssueDetailRequestRef,
   ): Promise<void> {
-    const requestOptions = typeof identityOrPlatformHost === "string"
-      ? { platformHost: identityOrPlatformHost }
-      : identityOrPlatformHost;
-    const requestRef = issueDetailRequestRef(owner, name, number, requestOptions);
     detailSyncing = true;
     try {
       const { error: requestError } = await apiClient.POST(
@@ -421,7 +407,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         number,
         gen,
         previousFetchedAt,
-        identityOrPlatformHost,
+        requestRef,
       );
     } finally {
       if (gen === issueSyncGeneration) detailSyncing = false;
@@ -434,13 +420,13 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     name: string,
     number: number,
     gen: number,
-    previousFetchedAt?: string,
-    identityOrPlatformHost?: IssueDetailRequestRef | string,
+    previousFetchedAt: string | undefined,
+    requestRef: IssueDetailRequestRef,
   ): Promise<void> {
     for (const ms of [300, 700, 1_500, 3_000, 5_000]) {
       await delay(ms);
       if (gen !== issueSyncGeneration) return;
-      await refreshIssueDetail(owner, name, number, identityOrPlatformHost, gen);
+      await refreshIssueDetail(owner, name, number, requestRef, gen);
       if (gen !== issueSyncGeneration) return;
       const fetchedAt = issueDetail?.detail_fetched_at;
       if (fetchedAt && fetchedAt !== previousFetchedAt) {
@@ -454,12 +440,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     name: string,
     number: number,
     gen: number,
-    identityOrPlatformHost?: IssueDetailRequestRef | string,
+    ref: IssueDetailRequestRef,
   ): Promise<void> {
-    const options = typeof identityOrPlatformHost === "string"
-      ? { platformHost: identityOrPlatformHost }
-      : identityOrPlatformHost;
-    const ref = issueDetailRequestRef(owner, name, number, options);
     detailSyncing = true;
     try {
       const { data, error: requestError } = await apiClient.POST(
@@ -499,13 +481,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     owner: string,
     name: string,
     number: number,
-    identityOrPlatformHost?: IssueDetailRequestRef | string,
+    ref: IssueDetailRequestRef,
     expectedGen: number = issueSyncGeneration,
   ): Promise<void> {
-    const options = typeof identityOrPlatformHost === "string"
-      ? { platformHost: identityOrPlatformHost }
-      : identityOrPlatformHost;
-    const ref = issueDetailRequestRef(owner, name, number, options);
     try {
       const { data } = await apiClient.GET(
         providerItemPath("issues", ref, ""),
@@ -535,10 +513,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     owner: string,
     name: string,
     number: number,
-    platformHostOrOptions?: string | IssueDetailRequestOptions,
+    options: IssueDetailRequestOptions,
   ): void {
-    const requestOptions = issueDetailOptions(platformHostOrOptions);
-    const requestRef = issueDetailRequestRef(owner, name, number, requestOptions);
+    const requestRef = issueDetailRequestRef(owner, name, number, options);
     stopIssueDetailPolling();
     detailPollHandle = setInterval(() => {
       void refreshIssueDetail(owner, name, number, requestRef);
@@ -696,7 +673,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       issueDetail.repo_name === name &&
       issueDetail.issue.Number === number
     ) {
-      await loadIssueDetail(owner, name, number, platformHost);
+      await loadIssueDetail(owner, name, number, currentIssueDetailRef(owner, name, number));
     }
   }
 

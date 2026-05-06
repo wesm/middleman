@@ -52,9 +52,9 @@
     owner: string;
     name: string;
     number: number;
-    provider?: string | undefined;
+    provider: string;
     platformHost?: string | undefined;
-    repoPath?: string | undefined;
+    repoPath: string;
     autoSync?: IssueDetailSyncMode;
   }
 
@@ -91,14 +91,9 @@
     ) {
       return true;
     }
-    // The API treats an absent platform_host as github.com, so the
-    // comparison must normalize both sides to the same default.
-    // Otherwise, navigating from a non-default host to the same
-    // owner/repo/number without a platformHost would render the
-    // previous host's detail as current.
-    const expectedHost = platformHost ?? "github.com";
-    const actualHost = d.platform_host || "github.com";
-    return actualHost !== expectedHost;
+    return d.repo?.provider !== provider
+      || d.repo?.repo_path !== repoPath
+      || d.repo?.platform_host !== platformHost;
   });
 
   async function editTimelineComment(
@@ -124,9 +119,9 @@
         requestNumber,
         {
           sync: requestAutoSync,
-          ...(requestProvider && { provider: requestProvider }),
-          ...(requestPlatformHost && { platformHost: requestPlatformHost }),
-          ...(requestRepoPath && { repoPath: requestRepoPath }),
+          provider: requestProvider,
+          platformHost: requestPlatformHost,
+          repoPath: requestRepoPath,
         },
       );
       issues.startIssueDetailPolling(
@@ -134,9 +129,9 @@
         requestName,
         requestNumber,
         {
-          ...(requestProvider && { provider: requestProvider }),
-          ...(requestPlatformHost && { platformHost: requestPlatformHost }),
-          ...(requestRepoPath && { repoPath: requestRepoPath }),
+          provider: requestProvider,
+          platformHost: requestPlatformHost,
+          repoPath: requestRepoPath,
         },
       );
     });
@@ -506,7 +501,7 @@
                 </svg>
               {/if}
             </button>
-            <div class="inset-box markdown-body">{@html renderMarkdown(issue.Body, { owner, name })}</div>
+            <div class="inset-box markdown-body">{@html renderMarkdown(issue.Body, { provider, platformHost, owner, name, repoPath })}</div>
           </div>
         </div>
       {/if}
@@ -610,8 +605,11 @@
         {#if issues.getIssueDetailLoaded()}
           <EventTimeline
             events={detail.events ?? []}
+            {provider}
+            {platformHost}
             repoOwner={owner}
             repoName={name}
+            {repoPath}
             onEditComment={capabilities.comment_mutation
               ? editTimelineComment
               : undefined}

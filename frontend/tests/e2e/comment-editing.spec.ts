@@ -139,14 +139,14 @@ test("edits a pull request timeline comment", async ({ page }) => {
       await fulfillJson(route, prDetail(commentBody, event));
     },
   );
-  await page.route("**/api/v1/repos/acme/widgets/pulls/42/comments/9101", async (route) => {
+  await page.route("**/api/v1/repos/acme/widgets/pulls/detail?provider=github&platform_host=github.com&repo_path=42%2Fcomments&number=9101", async (route) => {
     const reqBody = JSON.parse(route.request().postData() ?? "{}") as { body?: string };
     patchedBody = reqBody.body ?? "";
     commentBody = patchedBody;
     await fulfillJson(route, { ...event, Body: patchedBody });
   });
 
-  await page.goto("/pulls/acme/widgets/42");
+  await page.goto("/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42");
   await expect(page.getByText("Original PR comment")).toBeVisible();
 
   await editVisibleTimelineComment(page, "Edited PR comment");
@@ -181,14 +181,14 @@ test("edits an issue timeline comment", async ({ page }) => {
       await fulfillJson(route, issueDetail(commentBody, event));
     },
   );
-  await page.route("**/api/v1/repos/acme/widgets/issues/7/comments/9202", async (route) => {
+  await page.route("**/api/v1/repos/acme/widgets/issues/detail?provider=github&platform_host=github.com&repo_path=7%2Fcomments&number=9202", async (route) => {
     const reqBody = JSON.parse(route.request().postData() ?? "{}") as { body?: string };
     patchedBody = reqBody.body ?? "";
     commentBody = patchedBody;
     await fulfillJson(route, { ...event, Body: patchedBody });
   });
 
-  await page.goto("/focus/issue/acme/widgets/7?platform_host=github.com");
+  await page.goto("/focus/issue?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=7");
   await expect(page.getByText("Original issue comment")).toBeVisible();
 
   await editVisibleTimelineComment(page, "Edited issue comment");

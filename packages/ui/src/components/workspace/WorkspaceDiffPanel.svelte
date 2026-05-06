@@ -7,16 +7,22 @@
 
   interface Props {
     workspaceID: string;
+    provider: string;
+    platformHost?: string | undefined;
     repoOwner: string;
     repoName: string;
+    repoPath: string;
     itemNumber: number;
     active?: boolean;
   }
 
   const {
     workspaceID,
+    provider,
+    platformHost,
     repoOwner,
     repoName,
+    repoPath,
     itemNumber,
     active = false,
   }: Props = $props();
@@ -76,8 +82,11 @@
     </aside>
     <div class="workspace-diff-main">
       <DiffView
+        {provider}
+        {platformHost}
         owner={repoOwner}
         name={repoName}
+        {repoPath}
         number={itemNumber}
         loadOnMount={false}
         keyboardActive={false}

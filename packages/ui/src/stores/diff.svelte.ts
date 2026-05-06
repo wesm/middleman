@@ -170,9 +170,9 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   let currentWorkspaceID = $state("");
   let currentWorkspaceBase = $state<WorkspaceDiffBase>("head");
   let workspaceWhitespaceOnlyCount = $state(0);
-  let currentProvider = $state<string | undefined>(undefined);
+  let currentProvider = $state("");
   let currentPlatformHost = $state<string | undefined>(undefined);
-  let currentRepoPath = $state<string | undefined>(undefined);
+  let currentRepoPath = $state("");
 
   function getCurrentPR(): { owner: string; name: string; number: number } | null {
     if (!currentOwner) return null;
@@ -437,7 +437,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     path: string,
   ): Promise<FilePreview> {
     const ref = currentRouteRef();
-    const key = `${ref.provider ?? "github"}:${ref.platformHost ?? ""}:${owner}/${name}#${number}:${scopeCacheKey()}:${path}`;
+    const key = `${ref.provider}:${ref.platformHost ?? ""}:${ref.repoPath}#${number}:${scopeCacheKey()}:${path}`;
     const cached = filePreviewCache.get(key);
     if (cached) return cached;
 
@@ -596,7 +596,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     owner: string,
     name: string,
     number: number,
-    identity?: Partial<ProviderRouteRef>,
+    identity: ProviderRouteRef,
   ): Promise<void> {
     const prChanged =
       owner !== currentOwner ||
@@ -607,9 +607,9 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     currentNumber = number;
     clearFilePreviewCache();
     currentWorkspaceID = "";
-    currentProvider = identity?.provider;
-    currentPlatformHost = identity?.platformHost;
-    currentRepoPath = identity?.repoPath;
+    currentProvider = identity.provider;
+    currentPlatformHost = identity.platformHost;
+    currentRepoPath = identity.repoPath;
     if (prChanged) {
       resetDiffScopeState();
     }
@@ -799,9 +799,9 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     currentWorkspaceID = "";
     currentWorkspaceBase = "head";
     workspaceWhitespaceOnlyCount = 0;
-    currentProvider = undefined;
+    currentProvider = "";
     currentPlatformHost = undefined;
-    currentRepoPath = undefined;
+    currentRepoPath = "";
   }
 
   async function loadCommits(): Promise<void> {

@@ -23,30 +23,20 @@ export function parseActivitySelection(search: string): ActivitySelection | null
   const selected = sp.get("selected");
   if (!selected) return null;
 
-  let itemType: ActivitySelectionItemType;
-  let owner: string;
-  let name: string;
-  let number: number;
-  const provider = sp.get("provider") ?? undefined;
+  const provider = sp.get("provider")?.trim();
   const platformHost = sp.get("platform_host") ?? undefined;
-  const repoPath = sp.get("repo_path")?.replace(/^\/+|\/+$/g, "") || undefined;
+  const repoPath = sp.get("repo_path")?.replace(/^\/+|\/+$/g, "");
+  if (!provider || !repoPath) return null;
 
   const providerMatch = selected.match(/^(pr|issue):(\d+)$/);
-  if (providerMatch && repoPath) {
-    const pathParts = repoPath.split("/").filter(Boolean);
-    if (pathParts.length < 2) return null;
-    itemType = providerMatch[1] as ActivitySelectionItemType;
-    number = parseInt(providerMatch[2]!, 10);
-    name = pathParts[pathParts.length - 1]!;
-    owner = pathParts.slice(0, -1).join("/");
-  } else {
-    const match = selected.match(/^(pr|issue):([^/]+)\/([^/]+)\/(\d+)$/);
-    if (!match) return null;
-    itemType = match[1] as ActivitySelectionItemType;
-    owner = match[2]!;
-    name = match[3]!;
-    number = parseInt(match[4]!, 10);
-  }
+  if (!providerMatch) return null;
+
+  const pathParts = repoPath.split("/").filter(Boolean);
+  if (pathParts.length < 2) return null;
+  const itemType = providerMatch[1] as ActivitySelectionItemType;
+  const number = parseInt(providerMatch[2]!, 10);
+  const name = pathParts[pathParts.length - 1]!;
+  const owner = pathParts.slice(0, -1).join("/");
 
   const detailTab: ActivityDetailTab =
     itemType === "pr" && sp.get("selected_tab") === "files"
@@ -59,9 +49,9 @@ export function parseActivitySelection(search: string): ActivitySelection | null
     name,
     number,
     detailTab,
-    ...(provider && { provider }),
+    provider,
     ...(platformHost && { platformHost }),
-    ...(repoPath && { repoPath }),
+    repoPath,
   };
 }
 
@@ -78,18 +68,10 @@ export function buildActivitySelectionSearch(
 
   if (!selection) return sp;
 
-  if (selection.repoPath) {
-    sp.set("selected", `${selection.itemType}:${selection.number}`);
-    if (selection.provider) sp.set("provider", selection.provider);
-    if (selection.platformHost) sp.set("platform_host", selection.platformHost);
-    if (selection.repoPath) sp.set("repo_path", selection.repoPath);
-  } else {
-    sp.set(
-      "selected",
-      `${selection.itemType}:${selection.owner}/${selection.name}/${selection.number}`,
-    );
-    if (selection.platformHost) sp.set("platform_host", selection.platformHost);
-  }
+  sp.set("selected", `${selection.itemType}:${selection.number}`);
+  sp.set("provider", selection.provider);
+  if (selection.platformHost) sp.set("platform_host", selection.platformHost);
+  sp.set("repo_path", selection.repoPath);
   if (selection.itemType === "pr" && selection.detailTab === "files") {
     sp.set("selected_tab", "files");
   }

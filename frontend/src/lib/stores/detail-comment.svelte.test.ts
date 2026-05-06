@@ -3,9 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import { createDetailStore } from "@middleman/ui/stores/detail";
 import type { MiddlemanClient } from "@middleman/ui";
 
+const pullRef = { provider: "github", platformHost: "github.com", repoPath: "octo/repo" };
+
 interface MockDetail {
   repo_owner: string;
   repo_name: string;
+  repo: { provider: string; platform_host: string; owner: string; name: string; repo_path: string };
   merge_request: { Number: number };
   events: unknown[];
 }
@@ -17,6 +20,13 @@ function makeDetail(
   return {
     repo_owner: "octo",
     repo_name: "repo",
+    repo: {
+      provider: pullRef.provider,
+      platform_host: pullRef.platformHost,
+      owner: "octo",
+      name: "repo",
+      repo_path: pullRef.repoPath,
+    },
     merge_request: { Number: number },
     events,
   };
@@ -54,7 +64,7 @@ describe("createDetailStore submitComment", () => {
 
     holder.store = createDetailStore({ client });
 
-    await holder.store.loadDetail("octo", "repo", 1);
+    await holder.store.loadDetail("octo", "repo", 1, pullRef);
     // Allow background syncDetail microtasks to settle.
     await Promise.resolve();
     await Promise.resolve();
@@ -95,7 +105,7 @@ describe("createDetailStore submitComment", () => {
 
     const store = createDetailStore({ client });
 
-    await store.loadDetail("octo", "repo", 1);
+    await store.loadDetail("octo", "repo", 1, pullRef);
 
     // Fire submitComment without awaiting; refresh GET will block on refreshPromise.
     const submitPromise = store.submitComment("octo", "repo", 1, "hi");
@@ -104,7 +114,7 @@ describe("createDetailStore submitComment", () => {
     await Promise.resolve();
 
     // User navigates to a different PR before the refresh resolves.
-    await store.loadDetail("octo", "repo", 2);
+    await store.loadDetail("octo", "repo", 2, pullRef);
     expect(store.getDetail()?.merge_request.Number).toBe(2);
 
     // Now release the in-flight refresh — it must be discarded.
@@ -139,7 +149,7 @@ describe("createDetailStore submitComment", () => {
       pulls: { loadPulls },
     });
 
-    await store.loadDetail("octo", "repo", 1);
+    await store.loadDetail("octo", "repo", 1, pullRef);
     // Drain the background syncDetail from the initial load.
     await Promise.resolve();
     await Promise.resolve();
@@ -198,7 +208,7 @@ describe("createDetailStore submitComment", () => {
 
     // loadDetail resolves after the initial GET, but fires a background
     // syncDetail that is still blocked on syncPromise.
-    await store.loadDetail("octo", "repo", 1);
+    await store.loadDetail("octo", "repo", 1, pullRef);
 
     // submitComment refreshes silently and should pick up the new event.
     await store.submitComment("octo", "repo", 1, "hello");

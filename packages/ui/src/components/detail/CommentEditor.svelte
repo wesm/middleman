@@ -25,9 +25,9 @@
   interface Props {
     owner: string;
     name: string;
-    provider?: string | undefined;
+    provider: string;
     platformHost?: string | undefined;
-    repoPath?: string | undefined;
+    repoPath: string;
     value: string;
     disabled?: boolean;
     placeholder?: string;

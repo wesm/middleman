@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 test.describe("focus mode", () => {
   test("PR focus route renders detail without shell chrome", async ({ page }) => {
-    await page.goto("/focus/pr/acme/widgets/1");
+    await page.goto("/focus/pr?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1");
     await page.locator(".focus-layout").waitFor({ state: "visible", timeout: 10_000 });
 
     await expect(page.locator(".pull-detail")).toBeVisible();
@@ -12,7 +12,7 @@ test.describe("focus mode", () => {
   });
 
   test("issue focus route renders detail without shell chrome", async ({ page }) => {
-    await page.goto("/focus/issue/acme/widgets/10");
+    await page.goto("/focus/issue?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=10");
     await page.locator(".focus-layout").waitFor({ state: "visible", timeout: 10_000 });
 
     await expect(page.locator(".issue-detail")).toBeVisible();
@@ -22,11 +22,11 @@ test.describe("focus mode", () => {
   });
 
   test("browser back/forward works between focus routes", async ({ page }) => {
-    await page.goto("/focus/pr/acme/widgets/1");
+    await page.goto("/focus/pr?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1");
     await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
 
     // Navigate forward to an issue focus route.
-    await page.goto("/focus/issue/acme/widgets/10");
+    await page.goto("/focus/issue?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=10");
     await page.locator(".issue-detail").waitFor({ state: "visible", timeout: 10_000 });
     await expect(page).toHaveURL(/\/focus\/issue\/acme\/widgets\/10/);
 

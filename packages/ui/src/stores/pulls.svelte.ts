@@ -2,6 +2,7 @@ import type { KanbanStatus, PullRequest } from "../api/types.js";
 import {
   providerItemPath,
   providerRouteParams,
+  type ProviderRouteRef,
 } from "../api/provider-routes.js";
 import type { MiddlemanClient } from "../types.js";
 
@@ -11,12 +12,12 @@ export type FetchPullResult =
   | { status: "error"; message: string };
 
 export interface PullSelection {
+  provider: string;
+  platformHost?: string | undefined;
   owner: string;
   name: string;
+  repoPath: string;
   number: number;
-  provider?: string | undefined;
-  platformHost?: string | undefined;
-  repoPath?: string | undefined;
 }
 
 type PullsParams = {
@@ -199,28 +200,28 @@ export function createPullsStore(opts: PullsStoreOptions) {
     owner: string,
     name: string,
     number: number,
-    provider?: string,
-    platformHost?: string,
-    repoPath?: string,
+    provider: string,
+    platformHost: string | undefined,
+    repoPath: string,
   ): void {
     selectedPR = {
+      provider,
+      ...(platformHost && { platformHost }),
       owner,
       name,
+      repoPath,
       number,
-      ...(provider && { provider }),
-      ...(platformHost && { platformHost }),
-      ...(repoPath && { repoPath }),
     };
   }
 
   function selectPRFromPull(pr: PullRequest): void {
     selectPR(
-      pr.repo_owner ?? "",
-      pr.repo_name ?? "",
+      pr.repo.owner,
+      pr.repo.name,
       pr.Number,
-      pr.repo?.provider,
-      pr.repo?.platform_host ?? pr.platform_host,
-      pr.repo?.repo_path,
+      pr.repo.provider,
+      pr.repo.platform_host,
+      pr.repo.repo_path,
     );
   }
 
@@ -307,8 +308,9 @@ export function createPullsStore(opts: PullsStoreOptions) {
     owner: string,
     name: string,
     number: number,
+    identity: ProviderRouteRef,
   ): Promise<FetchPullResult> {
-    const ref = { provider: "github", platformHost: "github.com", owner, name };
+    const ref = identity;
     try {
       const { data, error, response } = await apiClient.GET(
         providerItemPath("pulls", ref, ""),

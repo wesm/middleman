@@ -3,6 +3,8 @@ import { createDiffStore } from "@middleman/ui/stores/diff";
 import type { DiffStoreOptions } from "@middleman/ui/stores/diff";
 import type { DiffResult, FilesResult } from "@middleman/ui/api/types";
 
+const ownerRepoRef = { provider: "github", platformHost: "github.com", owner: "owner", name: "repo", repoPath: "owner/repo" };
+
 type TestClient = NonNullable<DiffStoreOptions["client"]>;
 
 interface TestGetOptions {
@@ -390,12 +392,12 @@ describe("createDiffStore loadDiff", () => {
     const store = createDiffStore({ client: testClient() });
 
     // Load PR A fully.
-    await store.loadDiff("owner", "repo", 1);
+    await store.loadDiff("owner", "repo", 1, ownerRepoRef);
     expect(store.getDiff()?.files[0]?.path).toBe("a.ts");
     expect(store.getFileList()?.files[0]?.path).toBe("a.ts");
 
     // Start loading PR B — don't await yet.
-    const loadB = store.loadDiff("owner", "repo", 2);
+    const loadB = store.loadDiff("owner", "repo", 2, ownerRepoRef);
 
     // Both stale PR A values must be null immediately.
     expect(store.getDiff()).toBeNull();
@@ -464,10 +466,10 @@ describe("createDiffStore loadDiff", () => {
     const store = createDiffStore({ client: testClient() });
 
     // Start loading PR A (will hang).
-    void store.loadDiff("owner", "repo", 1);
+    void store.loadDiff("owner", "repo", 1, ownerRepoRef);
 
     // Switch to PR B — should abort PR A.
-    await store.loadDiff("owner", "repo", 2);
+    await store.loadDiff("owner", "repo", 2, ownerRepoRef);
 
     expect(diffAAborted).toBe(true);
     expect(filesAAborted).toBe(true);
@@ -500,7 +502,7 @@ describe("createDiffStore loadDiff", () => {
     );
 
     const store = createDiffStore({ client: testClient() });
-    const loadP = store.loadDiff("owner", "repo", 1);
+    const loadP = store.loadDiff("owner", "repo", 1, ownerRepoRef);
 
     // Wait for /files to fail.
     await vi.waitFor(() => {
@@ -555,7 +557,7 @@ describe("createDiffStore loadDiff", () => {
     // Enable whitespace hiding before loading.
     localStorage.setItem("diff-hide-whitespace", "true");
     const store = createDiffStore({ client: testClient() });
-    const loadP = store.loadDiff("owner", "repo", 1);
+    const loadP = store.loadDiff("owner", "repo", 1, ownerRepoRef);
 
     // Verify /diff request includes whitespace=hide query param.
     expect(fetchedUrls.some((u) => u.includes("diff?whitespace=hide"))).toBe(
@@ -607,7 +609,7 @@ describe("createDiffStore loadDiff", () => {
     );
 
     const store = createDiffStore({ client: testClient() });
-    await store.loadDiff("owner", "repo", 1);
+    await store.loadDiff("owner", "repo", 1, ownerRepoRef);
     expect(store.getFileList()?.files).toHaveLength(2);
 
     // Toggle whitespace — /diff reload will fail.
@@ -644,7 +646,7 @@ describe("createDiffStore loadDiff", () => {
     );
 
     const store = createDiffStore({ client: testClient() });
-    await store.loadDiff("owner", "repo", 1);
+    await store.loadDiff("owner", "repo", 1, ownerRepoRef);
 
     // /diff failed — sidebar must not show stale /files data.
     expect(store.getDiffError()).toBeTruthy();
@@ -678,7 +680,7 @@ describe("createDiffStore loadDiff", () => {
     );
 
     const store = createDiffStore({ client: testClient() });
-    const loadP = store.loadDiff("owner", "repo", 1);
+    const loadP = store.loadDiff("owner", "repo", 1, ownerRepoRef);
 
     // /diff fails fast, /files still pending — release it.
     resolveFiles();
@@ -715,7 +717,7 @@ describe("createDiffStore loadDiff", () => {
     );
 
     const store = createDiffStore({ client: testClient() });
-    await store.loadDiff("owner", "repo", 1);
+    await store.loadDiff("owner", "repo", 1, ownerRepoRef);
 
     // getFileList must return [] not null, even when API sends null.
     const result = store.getFileList();
@@ -791,7 +793,7 @@ describe("createDiffStore loadDiff", () => {
     );
 
     const store = createDiffStore({ client: testClient() });
-    await store.loadDiff("owner", "repo", 1);
+    await store.loadDiff("owner", "repo", 1, ownerRepoRef);
 
     expect(store.getFileCategoryFilter()).toBe("all");
     expect(store.getVisibleDiffFiles().map((file) => file.path)).toEqual([

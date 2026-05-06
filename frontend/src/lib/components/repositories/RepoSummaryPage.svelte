@@ -259,9 +259,10 @@
 
     const ref = {
       provider: summary.repo.provider,
-      platformHost: summary.platform_host,
-      owner: summary.owner,
-      name: summary.name,
+      platformHost: summary.repo.platform_host,
+      owner: summary.repo.owner,
+      name: summary.repo.name,
+      repoPath: summary.repo.repo_path,
     };
     const { data, error } = await client.POST(
       providerCollectionPath("issues", ref),
@@ -291,10 +292,12 @@
     setGlobalRepo(repoStateKey(summary));
     navigate(
       buildIssueRoute({
-        owner: summary.owner,
-        name: summary.name,
+        provider: summary.repo.provider,
+        platformHost: summary.repo.platform_host,
+        owner: summary.repo.owner,
+        name: summary.repo.name,
+        repoPath: summary.repo.repo_path,
         number: data.Number,
-        platformHost: summary.platform_host,
       }),
     );
   }
@@ -455,10 +458,12 @@
             filterAndNavigate(
               summary,
               buildIssueRoute({
-                owner: summary.owner,
-                name: summary.name,
+                provider: summary.repo.provider,
+                platformHost: summary.repo.platform_host,
+                owner: summary.repo.owner,
+                name: summary.repo.name,
+                repoPath: summary.repo.repo_path,
                 number,
-                platformHost: summary.platform_host,
               }),
             )}
         />

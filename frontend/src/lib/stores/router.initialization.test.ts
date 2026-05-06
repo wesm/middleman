@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const issueRoute =
+  "/issues/detail?provider=github&platform_host=ghe.example.com&repo_path=acme%2Fwidget&number=7";
+
 async function importRouterAt(path: string) {
   vi.resetModules();
   window.history.replaceState(null, "", path);
@@ -12,37 +15,35 @@ describe("router initialization", () => {
     vi.resetModules();
   });
 
-  it("preserves issue platform_host query state on initial load", async () => {
-    const { getRoute } = await importRouterAt(
-      "/issues/acme/widget/7?platform_host=ghe.example.com",
-    );
+  it("preserves provider issue query state on initial load", async () => {
+    const { getRoute } = await importRouterAt(issueRoute);
 
     expect(getRoute()).toEqual({
       page: "issues",
       selected: {
+        provider: "github",
         owner: "acme",
         name: "widget",
+        repoPath: "acme/widget",
         number: 7,
         platformHost: "ghe.example.com",
       },
     });
   });
 
-  it("preserves issue platform_host query state on popstate", async () => {
-    const { getRoute } = await importRouterAt("/issues/acme/widget/7");
+  it("preserves provider issue query state on popstate", async () => {
+    const { getRoute } = await importRouterAt("/issues");
 
-    window.history.pushState(
-      null,
-      "",
-      "/issues/acme/widget/7?platform_host=ghe.example.com",
-    );
+    window.history.pushState(null, "", issueRoute);
     window.dispatchEvent(new PopStateEvent("popstate"));
 
     expect(getRoute()).toEqual({
       page: "issues",
       selected: {
+        provider: "github",
         owner: "acme",
         name: "widget",
+        repoPath: "acme/widget",
         number: 7,
         platformHost: "ghe.example.com",
       },

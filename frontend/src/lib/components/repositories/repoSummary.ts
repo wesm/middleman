@@ -75,9 +75,9 @@ export function shouldShowPlatformHost(summary: {
   platform_host: string;
   default_platform_host?: string | undefined;
 }): boolean {
-  const host = (summary.platform_host || "github.com").toLowerCase();
-  const defaultHost = (summary.default_platform_host || "github.com")
-    .toLowerCase();
+  const host = summary.platform_host.toLowerCase();
+  const defaultHost = summary.default_platform_host?.toLowerCase();
+  if (!defaultHost) return true;
   return host !== defaultHost;
 }
 
@@ -109,20 +109,18 @@ export function isStaleRelease(summary: RepoSummaryCard): boolean {
 export function normalizeSummaries(
   data: RepoSummary[] | null | undefined,
 ): RepoSummaryCard[] {
-  return (data ?? []).map((summary) => ({
-    ...summary,
-    repo: {
-      provider: summary.repo?.provider ?? "github",
-      platform_host: summary.repo?.platform_host ?? summary.platform_host,
-      repo_path: summary.repo?.repo_path ?? `${summary.owner}/${summary.name}`,
-      owner: summary.repo?.owner ?? summary.owner,
-      name: summary.repo?.name ?? summary.name,
-      capabilities: summary.repo?.capabilities ?? defaultProviderCapabilities,
-    },
-    default_platform_host: summary.default_platform_host || "github.com",
-    active_authors: summary.active_authors ?? [],
-    recent_issues: summary.recent_issues ?? [],
-    commit_timeline: summary.commit_timeline ?? [],
-    releases: summary.releases ?? [],
-  }));
+  return (data ?? []).map((summary) => {
+    if (!summary.repo) {
+      throw new Error("repo summary missing provider repo identity");
+    }
+    return {
+      ...summary,
+      repo: summary.repo,
+      default_platform_host: summary.default_platform_host,
+      active_authors: summary.active_authors ?? [],
+      recent_issues: summary.recent_issues ?? [],
+      commit_timeline: summary.commit_timeline ?? [],
+      releases: summary.releases ?? [],
+    };
+  });
 }

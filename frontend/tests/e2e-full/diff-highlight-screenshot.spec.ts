@@ -75,7 +75,7 @@ test.describe("diff highlight backgrounds on horizontal scroll", () => {
       });
     });
 
-    await page.goto("/pulls/acme/widgets/1/files");
+    await page.goto("/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1");
     await page.locator(".diff-file").first()
       .waitFor({ state: "visible", timeout: 10_000 });
 

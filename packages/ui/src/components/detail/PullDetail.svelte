@@ -82,9 +82,9 @@
     owner: string;
     name: string;
     number: number;
-    provider?: string | undefined;
+    provider: string;
     platformHost?: string | undefined;
-    repoPath?: string | undefined;
+    repoPath: string;
     onPullsRefresh?: () => Promise<void>;
     hideTabs?: boolean;
     hideWorkspaceAction?: boolean;
@@ -151,7 +151,9 @@
       d.repo_owner !== owner ||
       d.repo_name !== name ||
       (d.merge_request?.Number ?? -1) !== number ||
-      (d.platform_host || "github.com") !== (platformHost ?? "github.com")
+      d.repo?.provider !== provider ||
+      d.repo?.platform_host !== platformHost ||
+      d.repo?.repo_path !== repoPath
     );
   });
 
@@ -170,9 +172,9 @@
         requestNumber,
         {
           sync: requestAutoSync,
-          ...(requestProvider && { provider: requestProvider }),
-          ...(requestPlatformHost && { platformHost: requestPlatformHost }),
-          ...(requestRepoPath && { repoPath: requestRepoPath }),
+          provider: requestProvider,
+          platformHost: requestPlatformHost,
+          repoPath: requestRepoPath,
         },
       );
       detailStore.startDetailPolling(
@@ -180,9 +182,9 @@
         requestName,
         requestNumber,
         {
-          ...(requestProvider && { provider: requestProvider }),
-          ...(requestPlatformHost && { platformHost: requestPlatformHost }),
-          ...(requestRepoPath && { repoPath: requestRepoPath }),
+          provider: requestProvider,
+          platformHost: requestPlatformHost,
+          repoPath: requestRepoPath,
         },
       );
     });
@@ -369,9 +371,9 @@
         );
       }
       await detailStore.loadDetail(owner, name, number, {
-        ...(provider && { provider }),
-        ...(platformHost && { platformHost }),
-        ...(repoPath && { repoPath }),
+        provider,
+        platformHost,
+        repoPath,
       });
       await refreshPulls();
       await activity.loadActivity();
@@ -622,7 +624,7 @@
               <DiffSidebar />
             </aside>
             <div class="files-main">
-              <DiffView {owner} {name} {number} />
+              <DiffView {provider} {platformHost} {owner} {name} {repoPath} {number} />
             </div>
           </div>
         </div>
@@ -1089,9 +1091,9 @@
           onmerged={() => {
             showMergeModal = false;
             void detailStore.loadDetail(owner, name, number, {
-              ...(provider && { provider }),
-              ...(platformHost && { platformHost }),
-              ...(repoPath && { repoPath }),
+              provider,
+              platformHost,
+              repoPath,
             });
             void pulls.loadPulls();
             void activity.loadActivity();
@@ -1158,7 +1160,7 @@
                 </svg>
               {/if}
             </button>
-            <div class="inset-box markdown-body">{@html renderMarkdown(pr.Body, { owner, name })}</div>
+            <div class="inset-box markdown-body">{@html renderMarkdown(pr.Body, { provider, platformHost, owner, name, repoPath })}</div>
           </div>
         {:else if capabilities.state_mutation}
           <button class="add-description-btn" onclick={startEditBody}>
@@ -1192,8 +1194,11 @@
         {#if detailStore.getDetailLoaded()}
           <EventTimeline
             events={filteredTimelineEvents}
+            {provider}
+            {platformHost}
             repoOwner={owner}
             repoName={name}
+            {repoPath}
             filtered={hasActiveTimelineFilters}
             showCommitDetails={timelineFilter.showCommitDetails}
             onEditComment={capabilities.comment_mutation

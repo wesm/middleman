@@ -12,8 +12,11 @@
 
   interface Props {
     events: Array<PREvent | IssueEvent>;
+    provider?: string | undefined;
+    platformHost?: string | undefined;
     repoOwner?: string;
     repoName?: string;
+    repoPath?: string | undefined;
     filtered?: boolean;
     showCommitDetails?: boolean;
     onEditComment?: ((event: PREvent | IssueEvent, body: string) => Promise<boolean>) | undefined;
@@ -21,8 +24,11 @@
 
   const {
     events,
+    provider,
+    platformHost,
     repoOwner,
     repoName,
+    repoPath,
     filtered = false,
     showCommitDetails = true,
     onEditComment,
@@ -276,11 +282,14 @@
                     {/if}
                   </button>
                 </div>
-                {#if editingId === event.ID && repoOwner && repoName}
+                {#if editingId === event.ID && provider && repoOwner && repoName && repoPath}
                   <div class="edit-panel">
                     <CommentEditor
+                      {provider}
+                      {platformHost}
                       owner={repoOwner}
                       name={repoName}
+                      {repoPath}
                       value={editDraft}
                       disabled={savingEditId === event.ID}
                       oninput={(nextBody) => {
@@ -315,7 +324,7 @@
                 {:else}
                   <div class="event-body {shouldRenderMarkdown(event.EventType) ? 'markdown-body' : ''}">
                     {#if shouldRenderMarkdown(event.EventType)}
-                      {@html renderMarkdown(event.Body, repoOwner && repoName ? { owner: repoOwner, name: repoName } : undefined)}
+                      {@html renderMarkdown(event.Body, provider && repoOwner && repoName && repoPath ? { provider, platformHost, owner: repoOwner, name: repoName, repoPath } : undefined)}
                     {:else}
                       {event.Body}
                     {/if}
@@ -324,11 +333,14 @@
               </div>
             {:else if canEditComment(event)}
               <div class="event-body-wrap">
-                {#if editingId === event.ID && repoOwner && repoName}
+                {#if editingId === event.ID && provider && repoOwner && repoName && repoPath}
                   <div class="edit-panel">
                     <CommentEditor
+                      {provider}
+                      {platformHost}
                       owner={repoOwner}
                       name={repoName}
+                      {repoPath}
                       value={editDraft}
                       disabled={savingEditId === event.ID}
                       oninput={(nextBody) => {

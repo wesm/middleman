@@ -12,9 +12,9 @@
     loadOnMount?: boolean;
     keyboardActive?: boolean;
     richPreviewEnabled?: boolean;
-    provider?: string | undefined;
+    provider: string;
     platformHost?: string | undefined;
-    repoPath?: string | undefined;
+    repoPath: string;
   }
 
   const {
@@ -34,7 +34,13 @@
 
   onMount(() => {
     if (loadOnMount) {
-      void diffStore.loadDiff(owner, name, number, { provider, platformHost, repoPath });
+      void diffStore.loadDiff(owner, name, number, {
+        provider,
+        platformHost,
+        owner,
+        name,
+        repoPath,
+      });
     }
 
     return () => {
@@ -177,8 +183,11 @@
           {#each visibleFiles as file (file.path)}
             <DiffFileComponent
               {file}
+              {provider}
+              {platformHost}
               {owner}
               {name}
+              {repoPath}
               {number}
               {richPreviewEnabled}
             />

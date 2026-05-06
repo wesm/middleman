@@ -18,7 +18,7 @@ describe("settings api", () => {
   });
 
   it("encodes repo names for delete requests", async () => {
-    await removeRepo("acme", "widgets-?");
+    await removeRepo("acme", "widgets-?", { provider: "github", host: "github.com" });
 
     const request = vi.mocked(fetch).mock.calls[0]?.[0];
     expect(request).toBeInstanceOf(Request);
@@ -29,7 +29,7 @@ describe("settings api", () => {
   });
 
   it("posts preview requests", async () => {
-    await previewRepos("acme", "widget-*");
+    await previewRepos("acme", "widget-*", { provider: "github", host: "github.com" });
 
     const request = vi.mocked(fetch).mock.calls[0]?.[0];
     expect(request).toBeInstanceOf(Request);
@@ -62,7 +62,7 @@ describe("settings api", () => {
   });
 
   it("posts bulk add requests", async () => {
-    await bulkAddRepos([{ owner: "acme", name: "api" }]);
+    await bulkAddRepos([{ provider: "github", host: "github.com", owner: "acme", name: "api" }]);
 
     const request = vi.mocked(fetch).mock.calls[0]?.[0];
     expect(request).toBeInstanceOf(Request);
@@ -141,6 +141,6 @@ describe("settings api", () => {
       ),
     );
 
-    await expect(previewRepos("acme", "[")).rejects.toThrow("invalid glob pattern");
+    await expect(previewRepos("acme", "[", { provider: "github", host: "github.com" })).rejects.toThrow("invalid glob pattern");
   });
 });

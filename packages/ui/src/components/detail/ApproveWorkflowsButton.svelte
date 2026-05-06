@@ -11,9 +11,9 @@
     owner: string;
     name: string;
     number: number;
-    provider?: string | undefined;
+    provider: string;
     platformHost?: string | undefined;
-    repoPath?: string | undefined;
+    repoPath: string;
     count: number;
     size?: "sm" | "md";
     disabled?: boolean;
@@ -65,9 +65,9 @@
         );
       }
       await detail.refreshDetailOnly(owner, name, number, {
-        ...(provider && { provider }),
-        ...(platformHost && { platformHost }),
-        ...(repoPath && { repoPath }),
+        provider,
+        platformHost,
+        repoPath,
       });
       await pulls.loadPulls();
       oncompleted?.();

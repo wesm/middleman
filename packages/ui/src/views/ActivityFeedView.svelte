@@ -10,9 +10,9 @@
 
   type DrawerItem = {
     itemType: "pr" | "issue";
-    provider?: string | undefined;
+    provider: string;
     platformHost?: string | undefined;
-    repoPath?: string | undefined;
+    repoPath: string;
     owner: string;
     name: string;
     number: number;
@@ -69,15 +69,18 @@
   }
 
   function handleSelect(item: ActivityItem): void {
+    if (!item.repo) {
+      throw new Error("activity item missing provider repo identity");
+    }
     const itemType =
       item.item_type === "issue" ? "issue" : "pr";
     const entry: DrawerItem = {
       itemType,
-      provider: item.repo?.provider,
-      platformHost: item.repo?.platform_host ?? item.platform_host,
-      repoPath: item.repo?.repo_path,
-      owner: item.repo_owner,
-      name: item.repo_name,
+      provider: item.repo.provider,
+      platformHost: item.repo.platform_host,
+      repoPath: item.repo.repo_path,
+      owner: item.repo.owner,
+      name: item.repo.name,
       number: item.item_number,
       detailTab: "conversation",
     };

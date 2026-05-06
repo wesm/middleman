@@ -3,9 +3,22 @@ import { describe, expect, it, vi } from "vitest";
 import { createIssuesStore } from "@middleman/ui/stores/issues";
 import type { MiddlemanClient } from "@middleman/ui";
 
+const issueRef = {
+  provider: "github",
+  platformHost: "github.com",
+  repoPath: "octo/repo",
+};
+
 interface MockIssueDetail {
   repo_owner: string;
   repo_name: string;
+  repo: {
+    provider: string;
+    platform_host: string;
+    owner: string;
+    name: string;
+    repo_path: string;
+  };
   issue: { Number: number };
   events: unknown[];
 }
@@ -17,6 +30,13 @@ function makeDetail(
   return {
     repo_owner: "octo",
     repo_name: "repo",
+    repo: {
+      provider: issueRef.provider,
+      platform_host: issueRef.platformHost,
+      owner: "octo",
+      name: "repo",
+      repo_path: issueRef.repoPath,
+    },
     issue: { Number: number },
     events,
   };
@@ -46,7 +66,7 @@ describe("createIssuesStore submitIssueComment", () => {
       getPage: () => "issues",
     });
 
-    await store.loadIssueDetail("octo", "repo", 1);
+    await store.loadIssueDetail("octo", "repo", 1, issueRef);
     // Drain the background syncIssueDetail fired by loadIssueDetail.
     await Promise.resolve();
     await Promise.resolve();
@@ -91,7 +111,7 @@ describe("createIssuesStore submitIssueComment", () => {
       getPage: () => "pulls",
     });
 
-    await store.loadIssueDetail("octo", "repo", 1);
+    await store.loadIssueDetail("octo", "repo", 1, issueRef);
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
@@ -131,7 +151,7 @@ describe("createIssuesStore submitIssueComment", () => {
 
     const store = createIssuesStore({ client });
 
-    await store.loadIssueDetail("octo", "repo", 1);
+    await store.loadIssueDetail("octo", "repo", 1, issueRef);
 
     // Fire submitIssueComment without awaiting; refresh GET will block on refreshPromise.
     const submitPromise = store.submitIssueComment(
@@ -145,7 +165,7 @@ describe("createIssuesStore submitIssueComment", () => {
     await Promise.resolve();
 
     // User navigates to a different issue before the refresh resolves.
-    await store.loadIssueDetail("octo", "repo", 2);
+    await store.loadIssueDetail("octo", "repo", 2, issueRef);
     expect(
       (store.getIssueDetail() as unknown as MockIssueDetail)
         ?.issue.Number,
@@ -203,7 +223,7 @@ describe("createIssuesStore submitIssueComment", () => {
 
     // loadIssueDetail resolves after the initial GET, but fires a
     // background syncIssueDetail that is still blocked on syncPromise.
-    await store.loadIssueDetail("octo", "repo", 1);
+    await store.loadIssueDetail("octo", "repo", 1, issueRef);
 
     // submitIssueComment refreshes silently and should pick up the new event.
     await store.submitIssueComment("octo", "repo", 1, "hello");
