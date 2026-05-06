@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
+  import SplitResizeHandle from "../shared/SplitResizeHandle.svelte";
+  import type { SplitResizeEvent } from "../shared/split-resize.js";
   import DiffSidebar from "./DiffSidebar.svelte";
   import DiffToolbar from "./DiffToolbar.svelte";
   import DiffView from "./DiffView.svelte";
@@ -26,7 +28,7 @@
   const defaultFileTreeWidth = 280;
   const minFileTreeWidth = 200;
   const maxFileTreeWidth = 520;
-  let resizeCleanup: (() => void) | null = null;
+  let fileTreeResizeStartWidth = 0;
 
   function safeGetItem(key: string): string | null {
     try {
@@ -63,38 +65,26 @@
     safeSetItem(storageKey, String(width));
   }
 
-  function stopFileTreeResize(): void {
-    resizeCleanup?.();
-    resizeCleanup = null;
+  function handleFileTreeResizeStart(): void {
+    fileTreeResizeStartWidth = fileTreeWidth;
   }
 
-  function startFileTreeResize(event: MouseEvent): void {
-    event.preventDefault();
-    stopFileTreeResize();
-    const startX = event.clientX;
-    const startWidth = fileTreeWidth;
+  function handleFileTreeResize(event: SplitResizeEvent): void {
+    fileTreeWidth = clampFileTreeWidth(
+      fileTreeResizeStartWidth + event.deltaX,
+    );
+  }
 
-    function onMove(moveEvent: MouseEvent): void {
-      fileTreeWidth = clampFileTreeWidth(
-        startWidth + moveEvent.clientX - startX,
-      );
-    }
-
-    function onUp(): void {
-      saveFileTreeWidth(fileTreeWidth);
-      stopFileTreeResize();
-    }
-
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    resizeCleanup = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
+  function handleFileTreeResizeEnd(event: SplitResizeEvent): void {
+    const finalWidth = clampFileTreeWidth(
+      fileTreeResizeStartWidth + event.deltaX,
+    );
+    fileTreeWidth = finalWidth;
+    saveFileTreeWidth(finalWidth);
   }
 
   onDestroy(() => {
-    stopFileTreeResize();
+    saveFileTreeWidth(fileTreeWidth);
   });
 </script>
 
@@ -108,12 +98,13 @@
     >
       <DiffSidebar />
     </aside>
-    <button
+    <SplitResizeHandle
       class="files-resize-handle"
-      type="button"
-      aria-label="Resize file tree"
-      onmousedown={startFileTreeResize}
-    ></button>
+      ariaLabel="Resize file tree"
+      onResizeStart={handleFileTreeResizeStart}
+      onResize={handleFileTreeResize}
+      onResizeEnd={handleFileTreeResizeEnd}
+    />
     <div class="files-main">
       <DiffView {provider} {platformHost} {owner} {name} {repoPath} {number} />
     </div>
@@ -146,22 +137,6 @@
     flex-direction: column;
   }
 
-  .files-resize-handle {
-    width: 4px;
-    cursor: col-resize;
-    background: var(--border-muted);
-    appearance: none;
-    border: 0;
-    padding: 0;
-    flex-shrink: 0;
-  }
-
-  .files-resize-handle:hover,
-  .files-resize-handle:focus-visible {
-    background: var(--accent-blue);
-    outline: none;
-  }
-
   .files-main {
     flex: 1;
     min-width: 0;
@@ -182,7 +157,7 @@
       border-bottom: 1px solid var(--border-default);
     }
 
-    .files-resize-handle {
+    :global(.files-resize-handle) {
       display: none;
     }
 

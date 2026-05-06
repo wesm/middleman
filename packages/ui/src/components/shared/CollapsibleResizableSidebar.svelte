@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import LeftSidebarToggle from "./LeftSidebarToggle.svelte";
+  import SplitResizeHandle from "./SplitResizeHandle.svelte";
+  import type { SplitResizeEvent } from "./split-resize.js";
 
   interface Props {
     children?: Snippet | undefined;
@@ -44,33 +46,27 @@
   $effect(() => { committedWidth = sidebarWidth; });
   let dragWidth: number | null = $state(null);
   let currentWidth = $derived(dragWidth ?? committedWidth);
+  let resizeStartWidth = 0;
 
-  function startResize(event: MouseEvent): void {
-    event.preventDefault();
-    const startX = event.clientX;
-    const startWidth = currentWidth;
+  function handleResizeStart(): void {
+    resizeStartWidth = currentWidth;
+  }
 
-    function onMove(moveEvent: MouseEvent): void {
-      dragWidth = Math.max(
-        minSidebarWidth,
-        Math.min(
-          maxSidebarWidth,
-          startWidth + moveEvent.clientX - startX,
-        ),
-      );
-    }
+  function handleResize(event: SplitResizeEvent): void {
+    dragWidth = Math.max(
+      minSidebarWidth,
+      Math.min(maxSidebarWidth, resizeStartWidth + event.deltaX),
+    );
+  }
 
-    function onUp(): void {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      const finalWidth = currentWidth;
-      onSidebarResize?.(finalWidth);
-      committedWidth = finalWidth;
-      dragWidth = null;
-    }
-
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+  function handleResizeEnd(event: SplitResizeEvent): void {
+    const finalWidth = Math.max(
+      minSidebarWidth,
+      Math.min(maxSidebarWidth, resizeStartWidth + event.deltaX),
+    );
+    onSidebarResize?.(finalWidth);
+    committedWidth = finalWidth;
+    dragWidth = null;
   }
 </script>
 
@@ -83,14 +79,12 @@
       {@render sidebar()}
     </aside>
     {#if !sidebarOnly && hasMain}
-      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-      <div
-        class="resize-handle"
-        role="separator"
-        aria-label="Resize sidebar"
-        aria-orientation="vertical"
-        onmousedown={startResize}
-      ></div>
+      <SplitResizeHandle
+        ariaLabel="Resize sidebar"
+        onResizeStart={handleResizeStart}
+        onResize={handleResize}
+        onResizeEnd={handleResizeEnd}
+      />
     {/if}
   {:else if !hideSidebar && showCollapsedStrip}
     <aside class="sidebar sidebar--collapsed">
@@ -141,17 +135,6 @@
     width: 28px;
     align-items: center;
     padding-top: 6px;
-  }
-
-  .resize-handle {
-    width: 4px;
-    cursor: col-resize;
-    background: var(--border-muted);
-    flex-shrink: 0;
-  }
-
-  .resize-handle:hover {
-    background: var(--accent-blue);
   }
 
   .main-area {

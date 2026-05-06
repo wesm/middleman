@@ -18,7 +18,9 @@
   } from "../../api/workspace-runtime.js";
   import {
     CollapsibleResizableSidebar,
+    SplitResizeHandle,
     WorkspaceRightSidebar,
+    type SplitResizeEvent,
   } from "@middleman/ui";
   import { AlertIcon, SpinnerIcon } from "../../icons.ts";
   import { apiErrorMessage, client } from "../../api/runtime.js";
@@ -343,11 +345,13 @@
     };
   });
 
-  function startSidebarResize(e: MouseEvent): void {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startW = sidebarWidth;
-    const maxW = containerEl
+  let sidebarResizeStartWidth = 0;
+  let sidebarResizeMinWidth = MIN_SIDEBAR_WIDTH;
+  let sidebarResizeMaxWidth = 9999;
+
+  function handleSidebarResizeStart(): void {
+    sidebarResizeStartWidth = sidebarWidth;
+    sidebarResizeMaxWidth = containerEl
       ? Math.max(
           0,
           containerEl.clientWidth -
@@ -355,22 +359,20 @@
             RIGHT_SIDEBAR_RESIZE_HANDLE_WIDTH,
         )
       : 9999;
-    const minW = Math.min(MIN_SIDEBAR_WIDTH, maxW);
+    sidebarResizeMinWidth = Math.min(
+      MIN_SIDEBAR_WIDTH,
+      sidebarResizeMaxWidth,
+    );
+  }
 
-    function onMove(ev: MouseEvent): void {
-      sidebarWidth = Math.max(
-        minW,
-        Math.min(maxW, startW - (ev.clientX - startX)),
-      );
-    }
-
-    function onUp(): void {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    }
-
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+  function handleSidebarResize(event: SplitResizeEvent): void {
+    sidebarWidth = Math.max(
+      sidebarResizeMinWidth,
+      Math.min(
+        sidebarResizeMaxWidth,
+        sidebarResizeStartWidth - event.deltaX,
+      ),
+    );
   }
 
   $effect(() => {
@@ -1141,11 +1143,12 @@
             </div>
           </div>
           {#if sidebarOpen && workspace}
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div
+            <SplitResizeHandle
               class="sidebar-resize-handle"
-              onmousedown={startSidebarResize}
-            ></div>
+              ariaLabel="Resize workspace details"
+              onResizeStart={handleSidebarResizeStart}
+              onResize={handleSidebarResize}
+            />
             <div
               class="right-sidebar"
               style="width: {sidebarWidth}px"
@@ -1437,17 +1440,6 @@
     flex: 1;
     display: flex;
     overflow: hidden;
-  }
-
-  .sidebar-resize-handle {
-    width: 4px;
-    cursor: col-resize;
-    background: var(--border-muted);
-    flex-shrink: 0;
-  }
-
-  .sidebar-resize-handle:hover {
-    background: var(--accent-blue);
   }
 
   .right-sidebar {
