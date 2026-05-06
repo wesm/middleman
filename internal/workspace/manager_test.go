@@ -129,59 +129,59 @@ func TestCreate(t *testing.T) {
 	assert.Equal("creating", got.Status)
 }
 
-func TestCreateForkPR(t *testing.T) {
-	assert := Assert.New(t)
-	d := openTestDB(t)
-	wtDir := t.TempDir()
+func TestCreatePRHeadRepoClassification(t *testing.T) {
+	tests := []struct {
+		name           string
+		number         int
+		headBranch     string
+		headRepoURL    string
+		wantMRHeadRepo string
+	}{
+		{
+			name:           "fork PR keeps head repo",
+			number:         99,
+			headBranch:     "fix/typo",
+			headRepoURL:    "https://github.com/contributor/widget.git",
+			wantMRHeadRepo: "https://github.com/contributor/widget.git",
+		},
+		{
+			name:        "same-repo PR with populated head repo is not fork",
+			number:      244,
+			headBranch:  "feature/thing",
+			headRepoURL: "git@GitHub.com:Acme/Widget.git",
+		},
+	}
 
-	repoID := seedRepo(
-		t, d, "github.com", "acme", "widget",
-	)
-	seedMRWithHeadRepo(
-		t, d, repoID, 99, "fix/typo",
-		"https://github.com/contributor/widget.git",
-	)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := Assert.New(t)
+			d := openTestDB(t)
+			repoID := seedRepo(
+				t, d, "github.com", "acme", "widget",
+			)
+			seedMRWithHeadRepo(
+				t, d, repoID, tt.number, tt.headBranch, tt.headRepoURL,
+			)
 
-	mgr := NewManager(d, wtDir)
+			mgr := NewManager(d, t.TempDir())
+			ws, err := mgr.Create(
+				t.Context(), "github.com", "acme", "widget", tt.number,
+			)
+			require.NoError(t, err)
+			require.NotNil(t, ws)
 
-	ws, err := mgr.Create(
-		t.Context(), "github.com", "acme", "widget", 99,
-	)
-	require.NoError(t, err)
-	require.NotNil(t, ws)
-
-	assert.NotNil(ws.MRHeadRepo)
-	assert.Equal(
-		"https://github.com/contributor/widget.git",
-		*ws.MRHeadRepo,
-	)
-}
-
-func TestCreateSameRepoPRWithPopulatedHeadRepoIsNotFork(t *testing.T) {
-	assert := Assert.New(t)
-	d := openTestDB(t)
-	wtDir := t.TempDir()
-
-	repoID := seedRepo(
-		t, d, "github.com", "acme", "widget",
-	)
-	seedMRWithHeadRepo(
-		t, d, repoID, 244, "feature/thing",
-		"git@GitHub.com:Acme/Widget.git",
-	)
-
-	mgr := NewManager(d, wtDir)
-
-	ws, err := mgr.Create(
-		t.Context(), "github.com", "acme", "widget", 244,
-	)
-	require.NoError(t, err)
-	require.NotNil(t, ws)
-
-	// Same-repo PRs still have head repo clone URLs in GitHub payloads. Keeping
-	// MRHeadRepo nil is what sends workspace setup down the origin/<branch> path
-	// instead of the refs/pull/<number>/head path reserved for forks.
-	assert.Nil(ws.MRHeadRepo)
+			if tt.wantMRHeadRepo == "" {
+				// Same-repo PRs still have head repo clone URLs in GitHub
+				// payloads. Keeping MRHeadRepo nil sends workspace setup down
+				// the origin/<branch> path instead of the refs/pull/<number>/head
+				// path reserved for forks.
+				assert.Nil(ws.MRHeadRepo)
+				return
+			}
+			require.NotNil(t, ws.MRHeadRepo)
+			assert.Equal(tt.wantMRHeadRepo, *ws.MRHeadRepo)
+		})
+	}
 }
 
 func TestCreateRepoNotTracked(t *testing.T) {
@@ -386,82 +386,113 @@ func TestAddPreferredWorktreeRejectsUnsafeBranchName(t *testing.T) {
 	require.Contains(err.Error(), "invalid branch name")
 }
 
-func TestAddPreferredWorktreeSameRepoHeadRepoTracksRemoteBranch(t *testing.T) {
-	assert := Assert.New(t)
-	require := require.New(t)
+func TestAddPreferredWorktreeHeadRepoRouting(t *testing.T) {
+	type worktreeExpectation struct {
+		headSHA  string
+		remote   string
+		mergeRef string
+	}
 
-	cloneDir := setupBareCloneForWorkspaceGitTest(t)
-	// Reproduce the dangerous repo state from issue #256: the real branch and
-	// GitHub's synthetic pull ref both exist and point at the same commit.
-	// Starting a branch from refs/pull/<number>/head lets Git auto-configure
-	// that synthetic ref as the upstream, which breaks tools that inspect @{u}.
-	configureSameRepoPRRefs(t, cloneDir, "feature/thing", 244)
+	tests := []struct {
+		name        string
+		number      int
+		headBranch  string
+		headRepoURL string
+		configure   func(*testing.T, string, string, int) worktreeExpectation
+	}{
+		{
+			name:        "same-repo PR tracks real remote branch",
+			number:      244,
+			headBranch:  "feature/thing",
+			headRepoURL: "https://github.com/acme/widget.git",
+			configure: func(
+				t *testing.T, cloneDir, branch string, prNumber int,
+			) worktreeExpectation {
+				// Reproduce the dangerous repo state from issue #256: the real
+				// branch and GitHub's synthetic pull ref both exist and point at
+				// the same commit. Starting from refs/pull/<number>/head lets Git
+				// auto-configure that synthetic ref as the upstream, which breaks
+				// tools that inspect @{u}.
+				sha := configureSameRepoPRRefs(
+					t, cloneDir, branch, prNumber,
+				)
+				return worktreeExpectation{
+					headSHA:  sha,
+					remote:   "origin",
+					mergeRef: "refs/heads/" + branch,
+				}
+			},
+		},
+		{
+			name:        "fork PR prefers pull ref over same-named origin branch",
+			number:      245,
+			headBranch:  "fork/thing",
+			headRepoURL: "https://github.com/contributor/widget.git",
+			configure: func(
+				t *testing.T, cloneDir, branch string, prNumber int,
+			) worktreeExpectation {
+				// A base repo can have a branch with the same name as a fork PR
+				// branch, but that origin branch is not the fork head. Fork
+				// workspaces must prefer the GitHub pull ref over any same-named
+				// origin branch.
+				originSHA, pullSHA := configureForkPRRefs(
+					t, cloneDir, branch, prNumber,
+				)
+				gotOriginSHA, exists, err := gitRefSHA(
+					t.Context(), cloneDir, "refs/remotes/origin/"+branch,
+				)
+				require.NoError(t, err)
+				require.True(t, exists)
+				require.NotEqual(t, originSHA, pullSHA)
+				require.Equal(t, originSHA, gotOriginSHA)
+				return worktreeExpectation{headSHA: pullSHA}
+			},
+		},
+	}
 
-	d := openTestDB(t)
-	repoID := seedRepo(t, d, "github.com", "acme", "widget")
-	seedMRWithHeadRepo(
-		t, d, repoID, 244, "feature/thing",
-		"https://github.com/acme/widget.git",
-	)
-	mgr := NewManager(d, t.TempDir())
-	ws, err := mgr.Create(t.Context(), "github.com", "acme", "widget", 244)
-	require.NoError(err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := Assert.New(t)
+			require := require.New(t)
+			cloneDir := setupBareCloneForWorkspaceGitTest(t)
+			want := tt.configure(t, cloneDir, tt.headBranch, tt.number)
 
-	branch, err := mgr.addPreferredWorktree(t.Context(), cloneDir, ws)
-	require.NoError(err)
-	assert.Equal("feature/thing", branch)
+			d := openTestDB(t)
+			repoID := seedRepo(t, d, "github.com", "acme", "widget")
+			seedMRWithHeadRepo(
+				t, d, repoID, tt.number, tt.headBranch, tt.headRepoURL,
+			)
+			mgr := NewManager(d, t.TempDir())
+			ws, err := mgr.Create(
+				t.Context(), "github.com", "acme", "widget", tt.number,
+			)
+			require.NoError(err)
 
-	remote, err := gitConfigValue(
-		t.Context(), ws.WorktreePath, "branch.feature/thing.remote",
-	)
-	require.NoError(err)
-	mergeRef, err := gitConfigValue(
-		t.Context(), ws.WorktreePath, "branch.feature/thing.merge",
-	)
-	require.NoError(err)
+			branch, err := mgr.addPreferredWorktree(t.Context(), cloneDir, ws)
+			require.NoError(err)
+			assert.Equal(tt.headBranch, branch)
 
-	assert.Equal("origin", remote)
-	assert.Equal("refs/heads/feature/thing", mergeRef)
-}
+			headSHA, err := gitHeadSHA(t.Context(), ws.WorktreePath)
+			require.NoError(err)
+			assert.Equal(want.headSHA, headSHA)
 
-func TestAddPreferredWorktreeForkHeadRepoUsesPullRefOverOriginBranch(t *testing.T) {
-	assert := Assert.New(t)
-	require := require.New(t)
-
-	cloneDir := setupBareCloneForWorkspaceGitTest(t)
-	// A base repo can have a branch with the same name as a fork PR branch, but
-	// that origin branch is not the fork head. Fork workspaces must prefer the
-	// GitHub pull ref over any same-named origin branch.
-	originSHA, pullSHA := configureForkPRRefs(
-		t, cloneDir, "fork/thing", 245,
-	)
-
-	d := openTestDB(t)
-	repoID := seedRepo(t, d, "github.com", "acme", "widget")
-	seedMRWithHeadRepo(
-		t, d, repoID, 245, "fork/thing",
-		"https://github.com/contributor/widget.git",
-	)
-	mgr := NewManager(d, t.TempDir())
-	ws, err := mgr.Create(t.Context(), "github.com", "acme", "widget", 245)
-	require.NoError(err)
-	require.NotNil(ws.MRHeadRepo)
-
-	gotOriginSHA, exists, err := gitRefSHA(
-		t.Context(), cloneDir, "refs/remotes/origin/fork/thing",
-	)
-	require.NoError(err)
-	require.True(exists)
-	require.NotEqual(originSHA, pullSHA)
-	require.Equal(originSHA, gotOriginSHA)
-
-	branch, err := mgr.addPreferredWorktree(t.Context(), cloneDir, ws)
-	require.NoError(err)
-	assert.Equal("fork/thing", branch)
-
-	headSHA, err := gitHeadSHA(t.Context(), ws.WorktreePath)
-	require.NoError(err)
-	assert.Equal(pullSHA, headSHA)
+			if want.remote == "" && want.mergeRef == "" {
+				return
+			}
+			remote, err := gitConfigValue(
+				t.Context(), ws.WorktreePath,
+				"branch."+tt.headBranch+".remote",
+			)
+			require.NoError(err)
+			mergeRef, err := gitConfigValue(
+				t.Context(), ws.WorktreePath,
+				"branch."+tt.headBranch+".merge",
+			)
+			require.NoError(err)
+			assert.Equal(want.remote, remote)
+			assert.Equal(want.mergeRef, mergeRef)
+		})
+	}
 }
 
 func TestRollbackWorktreeDeletesBranchWhenContextCanceled(t *testing.T) {
@@ -565,7 +596,7 @@ func setupBareCloneForWorkspaceGitTest(t *testing.T) string {
 
 func configureSameRepoPRRefs(
 	t *testing.T, cloneDir, branch string, prNumber int,
-) {
+) string {
 	t.Helper()
 	out, err := gitOutput(t.Context(), cloneDir, "rev-parse", "main")
 	require.NoError(t, err)
@@ -578,6 +609,7 @@ func configureSameRepoPRRefs(
 		t, cloneDir, "update-ref",
 		fmt.Sprintf("refs/pull/%d/head", prNumber), sha,
 	)
+	return sha
 }
 
 func configureForkPRRefs(
