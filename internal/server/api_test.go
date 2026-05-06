@@ -10471,13 +10471,21 @@ func TestWorkspaceDiffEndpointReportsMergeTargetE2E(t *testing.T) {
 		[]byte("package dirty\n"), 0o644,
 	))
 
+	mergeTargetFiles := requestWorkspaceFiles(t, srv, ws.Id, "merge-target")
+	require.NotNil(mergeTargetFiles.Files)
+	filePaths := workspaceDiffPaths(*mergeTargetFiles.Files)
+	assert.Contains(filePaths, "new.txt")
+	assert.Contains(filePaths, "committed.go")
+	assert.Contains(filePaths, "dirty.go")
+	assert.NotContains(filePaths, "target-only.txt")
+
 	mergeTargetDiff := requestWorkspaceDiff(t, srv, ws.Id, "merge-target")
 	require.NotNil(mergeTargetDiff.Files)
-	paths := workspaceDiffPaths(*mergeTargetDiff.Files)
-	assert.Contains(paths, "new.txt")
-	assert.Contains(paths, "committed.go")
-	assert.Contains(paths, "dirty.go")
-	assert.NotContains(paths, "target-only.txt")
+	diffPaths := workspaceDiffPaths(*mergeTargetDiff.Files)
+	assert.Contains(diffPaths, "new.txt")
+	assert.Contains(diffPaths, "committed.go")
+	assert.Contains(diffPaths, "dirty.go")
+	assert.NotContains(diffPaths, "target-only.txt")
 }
 
 func TestWorkspaceDiffEndpointRejectsOriginBaseE2E(t *testing.T) {
