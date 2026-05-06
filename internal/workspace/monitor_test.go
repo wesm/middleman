@@ -412,6 +412,10 @@ func TestNormalizeCloneRepoIdentity(t *testing.T) {
 		"github.com/fork/widget",
 		normalizeCloneRepoIdentity("ssh://git@github.com:22/Fork/Widget.git"),
 	)
+	assert.Equal(
+		"ghe.example.com:8443/fork/widget",
+		normalizeCloneRepoIdentity("https://ghe.example.com:8443/Fork/Widget.git"),
+	)
 	assert.Empty(normalizeCloneRepoIdentity("/tmp/workspace/remote.git"))
 	assert.Empty(normalizeCloneRepoIdentity("not a clone url"))
 }

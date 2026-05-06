@@ -324,7 +324,7 @@ func workspaceHeadRepo(platformHost, owner, name, cloneURL string) *string {
 	// compare clone identities before treating a non-empty URL as fork metadata.
 	headRepo := normalizeCloneRepoIdentity(cloneURL)
 	baseRepo := strings.ToLower(strings.Join([]string{
-		strings.TrimSpace(platformHost),
+		normalizePlatformHostIdentity(platformHost),
 		strings.TrimSpace(owner),
 		strings.TrimSpace(name),
 	}, "/"))

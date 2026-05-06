@@ -132,6 +132,7 @@ func TestCreate(t *testing.T) {
 func TestCreatePRHeadRepoClassification(t *testing.T) {
 	tests := []struct {
 		name           string
+		platformHost   string
 		number         int
 		headBranch     string
 		headRepoURL    string
@@ -150,14 +151,25 @@ func TestCreatePRHeadRepoClassification(t *testing.T) {
 			headBranch:  "feature/thing",
 			headRepoURL: "git@GitHub.com:Acme/Widget.git",
 		},
+		{
+			name:         "same-repo PR on enterprise host with port is not fork",
+			platformHost: "ghe.example.com:8443",
+			number:       246,
+			headBranch:   "feature/enterprise",
+			headRepoURL:  "https://GHE.example.com:8443/Acme/Widget.git",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert := Assert.New(t)
 			d := openTestDB(t)
+			platformHost := tt.platformHost
+			if platformHost == "" {
+				platformHost = "github.com"
+			}
 			repoID := seedRepo(
-				t, d, "github.com", "acme", "widget",
+				t, d, platformHost, "acme", "widget",
 			)
 			seedMRWithHeadRepo(
 				t, d, repoID, tt.number, tt.headBranch, tt.headRepoURL,
@@ -165,7 +177,7 @@ func TestCreatePRHeadRepoClassification(t *testing.T) {
 
 			mgr := NewManager(d, t.TempDir())
 			ws, err := mgr.Create(
-				t.Context(), "github.com", "acme", "widget", tt.number,
+				t.Context(), platformHost, "acme", "widget", tt.number,
 			)
 			require.NoError(t, err)
 			require.NotNil(t, ws)
