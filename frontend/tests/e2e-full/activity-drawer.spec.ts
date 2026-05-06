@@ -1306,9 +1306,6 @@ test.describe("activity split view and detail drawers", () => {
       CIChecksJSON: "",
       labels: [],
       repo: widgetsRepo,
-      repo_owner: "acme",
-      repo_name: "widgets",
-      platform_host: "github.com",
       worktree_links: [],
     };
 
@@ -1336,9 +1333,6 @@ test.describe("activity split view and detail drawers", () => {
       CIChecksJSON: "",
       labels: [],
       repo: widgetsRepo,
-      repo_owner: "acme",
-      repo_name: "widgets",
-      platform_host: "github.com",
       worktree_links: [],
     };
 

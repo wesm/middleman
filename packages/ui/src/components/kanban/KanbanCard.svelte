@@ -11,11 +11,7 @@
   const { pr, onclick }: Props = $props();
 
   const ago = $derived(timeAgo(pr.LastActivityAt));
-  const repoLabel = $derived(
-    pr.repo_owner && pr.repo_name
-      ? `${pr.repo_name}`
-      : `#${pr.Number}`
-  );
+  const repoLabel = $derived(pr.repo.name);
 
   function handleDragStart(e: DragEvent): void {
     if (!e.dataTransfer) return;
