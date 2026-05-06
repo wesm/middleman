@@ -180,7 +180,7 @@ func (m *Manager) Create(
 		ItemType:        db.WorkspaceItemTypePullRequest,
 		ItemNumber:      mrNumber,
 		GitHeadRef:      mr.HeadBranch,
-		MRHeadRepo:      workspaceHeadRepo(mr.HeadRepoCloneURL),
+		MRHeadRepo:      workspaceHeadRepo(platformHost, owner, name, mr.HeadRepoCloneURL),
 		WorkspaceBranch: workspaceBranchUnknown,
 		WorktreePath: filepath.Join(
 			m.worktreeDir, platformHost, owner, name,
@@ -315,8 +315,17 @@ func newWorkspaceID() (string, error) {
 	return hex.EncodeToString(idBytes), nil
 }
 
-func workspaceHeadRepo(cloneURL string) *string {
+func workspaceHeadRepo(platformHost, owner, name, cloneURL string) *string {
 	if cloneURL == "" {
+		return nil
+	}
+	headRepo := normalizeCloneRepoIdentity(cloneURL)
+	baseRepo := strings.ToLower(strings.Join([]string{
+		strings.TrimSpace(platformHost),
+		strings.TrimSpace(owner),
+		strings.TrimSpace(name),
+	}, "/"))
+	if headRepo != "" && headRepo == baseRepo {
 		return nil
 	}
 	s := cloneURL

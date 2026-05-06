@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -154,6 +155,30 @@ func TestCreateForkPR(t *testing.T) {
 		"https://github.com/contributor/widget.git",
 		*ws.MRHeadRepo,
 	)
+}
+
+func TestCreateSameRepoPRWithPopulatedHeadRepoIsNotFork(t *testing.T) {
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	wtDir := t.TempDir()
+
+	repoID := seedRepo(
+		t, d, "github.com", "acme", "widget",
+	)
+	seedMRWithFork(
+		t, d, repoID, 244, "feature/thing",
+		"git@GitHub.com:Acme/Widget.git",
+	)
+
+	mgr := NewManager(d, wtDir)
+
+	ws, err := mgr.Create(
+		t.Context(), "github.com", "acme", "widget", 244,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, ws)
+
+	assert.Nil(ws.MRHeadRepo)
 }
 
 func TestCreateRepoNotTracked(t *testing.T) {
@@ -358,6 +383,40 @@ func TestAddPreferredWorktreeRejectsUnsafeBranchName(t *testing.T) {
 	require.Contains(err.Error(), "invalid branch name")
 }
 
+func TestAddPreferredWorktreeSameRepoHeadRepoTracksRemoteBranch(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	cloneDir := setupBareCloneForWorkspaceGitTest(t)
+	configureSameRepoPRRefs(t, cloneDir, "feature/thing", 244)
+
+	d := openTestDB(t)
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMRWithFork(
+		t, d, repoID, 244, "feature/thing",
+		"https://github.com/acme/widget.git",
+	)
+	mgr := NewManager(d, t.TempDir())
+	ws, err := mgr.Create(t.Context(), "github.com", "acme", "widget", 244)
+	require.NoError(err)
+
+	branch, err := mgr.addPreferredWorktree(t.Context(), cloneDir, ws)
+	require.NoError(err)
+	assert.Equal("feature/thing", branch)
+
+	remote, err := gitConfigValue(
+		t.Context(), ws.WorktreePath, "branch.feature/thing.remote",
+	)
+	require.NoError(err)
+	mergeRef, err := gitConfigValue(
+		t.Context(), ws.WorktreePath, "branch.feature/thing.merge",
+	)
+	require.NoError(err)
+
+	assert.Equal("origin", remote)
+	assert.Equal("refs/heads/feature/thing", mergeRef)
+}
+
 func TestRollbackWorktreeDeletesBranchWhenContextCanceled(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -455,6 +514,23 @@ func setupBareCloneForWorkspaceGitTest(t *testing.T) string {
 	runWorkspaceTestGit(t, dir, "clone", "--bare", remote, cloneDir)
 
 	return cloneDir
+}
+
+func configureSameRepoPRRefs(
+	t *testing.T, cloneDir, branch string, prNumber int,
+) {
+	t.Helper()
+	out, err := gitOutput(t.Context(), cloneDir, "rev-parse", "main")
+	require.NoError(t, err)
+	sha := strings.TrimSpace(out)
+	require.NotEmpty(t, sha)
+	runWorkspaceTestGit(
+		t, cloneDir, "update-ref", "refs/remotes/origin/"+branch, sha,
+	)
+	runWorkspaceTestGit(
+		t, cloneDir, "update-ref",
+		fmt.Sprintf("refs/pull/%d/head", prNumber), sha,
+	)
 }
 
 func runWorkspaceTestGit(t *testing.T, dir string, args ...string) {
