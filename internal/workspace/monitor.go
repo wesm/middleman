@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/url"
 	"os"
 	"os/exec"
@@ -314,7 +315,9 @@ func normalizeCloneURLHost(cloneURL string) string {
 		if err != nil {
 			return ""
 		}
-		return parsed.Hostname()
+		return normalizeHostPortIdentity(
+			parsed.Scheme, parsed.Hostname(), parsed.Port(),
+		)
 	}
 	beforePath, _, ok := strings.Cut(cloneURL, ":")
 	if !ok {
@@ -324,5 +327,50 @@ func normalizeCloneURLHost(cloneURL string) string {
 	if !ok {
 		return ""
 	}
-	return host
+	return strings.ToLower(host)
+}
+
+func normalizePlatformHostIdentity(platformHost string) string {
+	platformHost = strings.TrimSpace(platformHost)
+	if platformHost == "" {
+		return ""
+	}
+	if strings.Contains(platformHost, "://") {
+		parsed, err := url.Parse(platformHost)
+		if err != nil {
+			return ""
+		}
+		return normalizeHostPortIdentity(
+			parsed.Scheme, parsed.Hostname(), parsed.Port(),
+		)
+	}
+	host, port, err := net.SplitHostPort(platformHost)
+	if err == nil {
+		return normalizeHostPortIdentity("https", host, port)
+	}
+	return strings.ToLower(platformHost)
+}
+
+func normalizeHostPortIdentity(scheme, host, port string) string {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "" {
+		return ""
+	}
+	if port == "" || isDefaultCloneURLPort(scheme, port) {
+		return host
+	}
+	return strings.ToLower(net.JoinHostPort(host, port))
+}
+
+func isDefaultCloneURLPort(scheme, port string) bool {
+	switch strings.ToLower(scheme) {
+	case "http":
+		return port == "80"
+	case "https":
+		return port == "443"
+	case "ssh":
+		return port == "22"
+	default:
+		return false
+	}
 }

@@ -93,7 +93,7 @@ func TestPRMonitorRunOnceUsesUpstreamBranchMatch(t *testing.T) {
 
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedIssue(t, d, repoID, 7, "Track workspace association")
-	seedMRWithFork(
+	seedMRWithHeadRepo(
 		t, d, repoID, 42,
 		"feature/issue-7", "https://github.com/acme/widget.git",
 	)
@@ -243,11 +243,11 @@ func TestPRMonitorRunOnceUsesUpstreamRemoteIdentity(t *testing.T) {
 
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedIssue(t, d, repoID, 7, "Track workspace association")
-	seedMRWithFork(
+	seedMRWithHeadRepo(
 		t, d, repoID, 41,
 		"shared-branch", "https://github.com/Fork-One/Widget.git",
 	)
-	seedMRWithFork(
+	seedMRWithHeadRepo(
 		t, d, repoID, 42,
 		"shared-branch", "https://github.com/fork-two/widget.git",
 	)
@@ -412,6 +412,18 @@ func TestNormalizeCloneRepoIdentity(t *testing.T) {
 		"github.com/fork/widget",
 		normalizeCloneRepoIdentity("ssh://git@github.com:22/Fork/Widget.git"),
 	)
+	assert.Equal(
+		"ghe.example.com:8443/fork/widget",
+		normalizeCloneRepoIdentity("https://ghe.example.com:8443/Fork/Widget.git"),
+	)
 	assert.Empty(normalizeCloneRepoIdentity("/tmp/workspace/remote.git"))
 	assert.Empty(normalizeCloneRepoIdentity("not a clone url"))
+}
+
+func TestNormalizePlatformHostIdentity(t *testing.T) {
+	assert := Assert.New(t)
+
+	assert.Equal("ghe.example.com:8443", normalizePlatformHostIdentity("GHE.example.com:8443"))
+	assert.Equal("ghe.example.com", normalizePlatformHostIdentity("ghe.example.com:443"))
+	assert.Equal("ghe.example.com", normalizePlatformHostIdentity("ghe.example.com"))
 }
