@@ -307,15 +307,21 @@
 
   let containerEl = $state<HTMLElement | null>(null);
 
-  function clampRightSidebarWidth(
+  function maxRightSidebarWidth(
     containerWidth: number,
-  ): void {
-    const maxW = Math.max(
+  ): number {
+    return Math.max(
       0,
       containerWidth -
         MIN_TERMINAL_WIDTH -
         RIGHT_SIDEBAR_RESIZE_HANDLE_WIDTH,
     );
+  }
+
+  function clampRightSidebarWidth(
+    containerWidth: number,
+  ): void {
+    const maxW = maxRightSidebarWidth(containerWidth);
     if (sidebarWidth > maxW) {
       sidebarWidth = maxW;
     }
@@ -352,12 +358,7 @@
   function handleSidebarResizeStart(): void {
     sidebarResizeStartWidth = sidebarWidth;
     sidebarResizeMaxWidth = containerEl
-      ? Math.max(
-          0,
-          containerEl.clientWidth -
-            MIN_TERMINAL_WIDTH -
-            RIGHT_SIDEBAR_RESIZE_HANDLE_WIDTH,
-        )
+      ? maxRightSidebarWidth(containerEl.clientWidth)
       : 9999;
     sidebarResizeMinWidth = Math.min(
       MIN_SIDEBAR_WIDTH,

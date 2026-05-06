@@ -22,6 +22,18 @@
 
   let cleanup: (() => void) | null = null;
 
+  function resizeEventFromMouse(
+    event: MouseEvent,
+    startX: number,
+  ): SplitResizeEvent {
+    return {
+      deltaX: event.clientX - startX,
+      startX,
+      currentX: event.clientX,
+      event,
+    };
+  }
+
   function stopResize(): void {
     cleanup?.();
     cleanup = null;
@@ -31,33 +43,15 @@
     event.preventDefault();
     stopResize();
     const startX = event.clientX;
-    let lastEvent: SplitResizeEvent = {
-      deltaX: 0,
-      startX,
-      currentX: startX,
-      event,
-    };
 
     onResizeStart?.(event);
 
     function onMove(moveEvent: MouseEvent): void {
-      lastEvent = {
-        deltaX: moveEvent.clientX - startX,
-        startX,
-        currentX: moveEvent.clientX,
-        event: moveEvent,
-      };
-      onResize?.(lastEvent);
+      onResize?.(resizeEventFromMouse(moveEvent, startX));
     }
 
     function onUp(upEvent: MouseEvent): void {
-      lastEvent = {
-        deltaX: upEvent.clientX - startX,
-        startX,
-        currentX: upEvent.clientX,
-        event: upEvent,
-      };
-      onResizeEnd?.(lastEvent);
+      onResizeEnd?.(resizeEventFromMouse(upEvent, startX));
       stopResize();
     }
 

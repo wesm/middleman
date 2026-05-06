@@ -1,13 +1,9 @@
 <script lang="ts">
   import type { ActivityItem } from "../api/types.js";
-  import ActivityFeed
-    from "../components/ActivityFeed.svelte";
-  import LeftSidebarToggle
-    from "../components/shared/LeftSidebarToggle.svelte";
-  import SplitResizeHandle
-    from "../components/shared/SplitResizeHandle.svelte";
-  import type { SplitResizeEvent }
-    from "../components/shared/split-resize.js";
+  import ActivityFeed from "../components/ActivityFeed.svelte";
+  import LeftSidebarToggle from "../components/shared/LeftSidebarToggle.svelte";
+  import SplitResizeHandle from "../components/shared/SplitResizeHandle.svelte";
+  import type { SplitResizeEvent } from "../components/shared/split-resize.js";
   import PRListView from "./PRListView.svelte";
   import IssueListView from "./IssueListView.svelte";
 

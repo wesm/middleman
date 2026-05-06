@@ -52,18 +52,19 @@
     resizeStartWidth = currentWidth;
   }
 
-  function handleResize(event: SplitResizeEvent): void {
-    dragWidth = Math.max(
+  function widthFromResize(event: SplitResizeEvent): number {
+    return Math.max(
       minSidebarWidth,
       Math.min(maxSidebarWidth, resizeStartWidth + event.deltaX),
     );
   }
 
+  function handleResize(event: SplitResizeEvent): void {
+    dragWidth = widthFromResize(event);
+  }
+
   function handleResizeEnd(event: SplitResizeEvent): void {
-    const finalWidth = Math.max(
-      minSidebarWidth,
-      Math.min(maxSidebarWidth, resizeStartWidth + event.deltaX),
-    );
+    const finalWidth = widthFromResize(event);
     onSidebarResize?.(finalWidth);
     committedWidth = finalWidth;
     dragWidth = null;

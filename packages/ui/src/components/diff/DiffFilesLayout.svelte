@@ -69,16 +69,18 @@
     fileTreeResizeStartWidth = fileTreeWidth;
   }
 
-  function handleFileTreeResize(event: SplitResizeEvent): void {
-    fileTreeWidth = clampFileTreeWidth(
+  function widthFromResize(event: SplitResizeEvent): number {
+    return clampFileTreeWidth(
       fileTreeResizeStartWidth + event.deltaX,
     );
   }
 
+  function handleFileTreeResize(event: SplitResizeEvent): void {
+    fileTreeWidth = widthFromResize(event);
+  }
+
   function handleFileTreeResizeEnd(event: SplitResizeEvent): void {
-    const finalWidth = clampFileTreeWidth(
-      fileTreeResizeStartWidth + event.deltaX,
-    );
+    const finalWidth = widthFromResize(event);
     fileTreeWidth = finalWidth;
     saveFileTreeWidth(finalWidth);
   }
