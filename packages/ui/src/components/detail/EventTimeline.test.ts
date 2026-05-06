@@ -265,8 +265,11 @@ describe("EventTimeline", () => {
             PlatformID: 44,
           }),
         ],
+        provider: "github",
+        platformHost: "github.com",
         repoOwner: "acme",
         repoName: "widget",
+        repoPath: "acme/widget",
         onEditComment: vi.fn(),
       },
     });

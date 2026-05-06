@@ -81,6 +81,13 @@ describe("RepoSummaryPage", () => {
         owner: "acme",
         name: "widgets",
         platform_host: "github.com",
+        repo: {
+          provider: "github",
+          platform_host: "github.com",
+          owner: "acme",
+          name: "widgets",
+          repo_path: "acme/widgets",
+        },
         cached_pr_count: 6,
         open_pr_count: 3,
         draft_pr_count: 1,
@@ -194,6 +201,13 @@ describe("RepoSummaryPage", () => {
           owner: "acme",
           name: "widgets",
           platform_host: "github.com",
+          repo: {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "widgets",
+            repo_path: "acme/widgets",
+          },
           default_platform_host: "github.com",
           cached_pr_count: 0,
           open_pr_count: 0,
@@ -207,6 +221,13 @@ describe("RepoSummaryPage", () => {
           owner: "enterprise",
           name: "service",
           platform_host: "ghe.example.com",
+          repo: {
+            provider: "github",
+            platform_host: "ghe.example.com",
+            owner: "enterprise",
+            name: "service",
+            repo_path: "enterprise/service",
+          },
           default_platform_host: "github.com",
           cached_pr_count: 0,
           open_pr_count: 0,
@@ -233,6 +254,13 @@ describe("RepoSummaryPage", () => {
         owner: "acme",
         name: "widgets",
         platform_host: "github.com",
+        repo: {
+          provider: "github",
+          platform_host: "github.com",
+          owner: "acme",
+          name: "widgets",
+          repo_path: "acme/widgets",
+        },
         cached_pr_count: 6,
         open_pr_count: 3,
         draft_pr_count: 1,
@@ -264,6 +292,13 @@ describe("RepoSummaryPage", () => {
         owner: "acme",
         name: "widgets",
         platform_host: "github.com",
+        repo: {
+          provider: "github",
+          platform_host: "github.com",
+          owner: "acme",
+          name: "widgets",
+          repo_path: "acme/widgets",
+        },
         cached_pr_count: 6,
         open_pr_count: 3,
         draft_pr_count: 1,
@@ -314,6 +349,13 @@ describe("RepoSummaryPage", () => {
           owner: "acme",
           name: "fresh",
           platform_host: "github.com",
+          repo: {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "fresh",
+            repo_path: "acme/fresh",
+          },
           cached_pr_count: 2,
           open_pr_count: 1,
           draft_pr_count: 0,
@@ -340,6 +382,13 @@ describe("RepoSummaryPage", () => {
           owner: "acme",
           name: "stale",
           platform_host: "github.com",
+          repo: {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "stale",
+            repo_path: "acme/stale",
+          },
           cached_pr_count: 4,
           open_pr_count: 0,
           draft_pr_count: 0,
@@ -399,6 +448,13 @@ describe("RepoSummaryPage", () => {
           owner: "acme",
           name: "fresh",
           platform_host: "github.com",
+          repo: {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "fresh",
+            repo_path: "acme/fresh",
+          },
           cached_pr_count: 2,
           open_pr_count: 1,
           draft_pr_count: 0,
@@ -425,6 +481,13 @@ describe("RepoSummaryPage", () => {
           owner: "acme",
           name: "stale",
           platform_host: "github.com",
+          repo: {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "stale",
+            repo_path: "acme/stale",
+          },
           cached_pr_count: 4,
           open_pr_count: 0,
           draft_pr_count: 0,
@@ -484,6 +547,13 @@ describe("RepoSummaryPage", () => {
         owner: "acme",
         name: "widgets",
         platform_host: "github.com",
+        repo: {
+          provider: "github",
+          platform_host: "github.com",
+          owner: "acme",
+          name: "widgets",
+          repo_path: "acme/widgets",
+        },
         cached_pr_count: 2,
         open_pr_count: 1,
         draft_pr_count: 0,
@@ -517,7 +587,7 @@ describe("RepoSummaryPage", () => {
 
     expect(
       screen.getByRole("dialog", {
-        name: "New issue in acme/widgets",
+        name: "New issue in github.com/acme/widgets",
       }),
     ).toBeTruthy();
     const bodyEditor = screen.getByTestId("mock-comment-editor");
@@ -571,6 +641,13 @@ describe("RepoSummaryPage", () => {
         owner: "acme",
         name: "widgets",
         platform_host: "github.com",
+        repo: {
+          provider: "github",
+          platform_host: "github.com",
+          owner: "acme",
+          name: "widgets",
+          repo_path: "acme/widgets",
+        },
         cached_pr_count: 2,
         open_pr_count: 1,
         draft_pr_count: 0,
@@ -633,6 +710,13 @@ describe("RepoSummaryPage", () => {
           owner: "acme",
           name: "widgets",
           platform_host: "github.com",
+          repo: {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "widgets",
+            repo_path: "acme/widgets",
+          },
           cached_pr_count: 2,
           open_pr_count: 1,
           draft_pr_count: 0,
@@ -649,6 +733,13 @@ describe("RepoSummaryPage", () => {
           owner: "acme",
           name: "widgets",
           platform_host: "ghe.example.com",
+          repo: {
+            provider: "github",
+            platform_host: "ghe.example.com",
+            owner: "acme",
+            name: "widgets",
+            repo_path: "acme/widgets",
+          },
           cached_pr_count: 1,
           open_pr_count: 0,
           draft_pr_count: 0,
@@ -691,7 +782,7 @@ describe("RepoSummaryPage", () => {
     await fireEvent.click(firstIssueButton);
     await fireEvent.input(
       screen.getByPlaceholderText("Issue title"),
-      { target: { value: "GitHub.com draft" } },
+      { target: { value: "Enterprise draft" } },
     );
     await fireEvent.click(
       screen.getByRole("button", { name: "Cancel" }),
@@ -702,11 +793,15 @@ describe("RepoSummaryPage", () => {
       (screen.getByPlaceholderText("Issue title") as HTMLInputElement)
         .value,
     ).toBe("");
-
-    await fireEvent.input(
-      screen.getByPlaceholderText("Issue title"),
-      { target: { value: "Enterprise draft" } },
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Cancel" }),
     );
+
+    await fireEvent.click(firstIssueButton);
+    expect(
+      (screen.getByPlaceholderText("Issue title") as HTMLInputElement)
+        .value,
+    ).toBe("Enterprise draft");
     await fireEvent.submit(
       screen.getByRole("button", { name: "Create issue" }),
     );
@@ -743,6 +838,13 @@ describe("RepoSummaryPage", () => {
         owner: "acme",
         name: "widgets",
         platform_host: "github.com",
+        repo: {
+          provider: "github",
+          platform_host: "github.com",
+          owner: "acme",
+          name: "widgets",
+          repo_path: "acme/widgets",
+        },
         cached_pr_count: 2,
         open_pr_count: 1,
         draft_pr_count: 0,

@@ -45,11 +45,18 @@ describe("repo summary labels", () => {
     expect(repoKey(summary)).toBe("ghe.example.com/acme/widgets");
   });
 
-  it("defaults missing repo capabilities for older summary fixtures", () => {
+  it("defaults missing repo capabilities when provider identity is present", () => {
     const [summary] = normalizeSummaries([{
       owner: "acme",
       name: "widgets",
       platform_host: "github.com",
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "widgets",
+        repo_path: "acme/widgets",
+      },
       default_platform_host: "github.com",
       cached_pr_count: 0,
       open_pr_count: 0,
@@ -60,7 +67,6 @@ describe("repo summary labels", () => {
       recent_issues: null,
       commit_timeline: null,
       releases: null,
-      repo: undefined,
     } as unknown as RepoSummary]);
 
     expect(summary).toBeDefined();

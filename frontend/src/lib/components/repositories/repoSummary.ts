@@ -115,7 +115,10 @@ export function normalizeSummaries(
     }
     return {
       ...summary,
-      repo: summary.repo,
+      repo: {
+        ...summary.repo,
+        capabilities: summary.repo.capabilities ?? defaultProviderCapabilities,
+      },
       default_platform_host: summary.default_platform_host,
       active_authors: summary.active_authors ?? [],
       recent_issues: summary.recent_issues ?? [],

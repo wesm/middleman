@@ -224,7 +224,7 @@ describe("AppHeader", () => {
 
   it("opens selected Activity PR in PRs tab with files tab preserved", async () => {
     initTheme();
-    navigate("/?selected=pr:acme/widgets/1&selected_tab=files");
+    navigate("/?selected=pr:1&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&selected_tab=files");
     render(AppHeader);
 
     await fireEvent.click(screen.getByRole("button", { name: "PRs" }));
@@ -236,7 +236,7 @@ describe("AppHeader", () => {
 
   it("opens selected Activity issue in Issues tab with platform host preserved", async () => {
     initTheme();
-    navigate("/?selected=issue:acme/widgets/10&platform_host=ghe.example.com");
+    navigate("/?selected=issue:10&provider=github&platform_host=ghe.example.com&repo_path=acme%2Fwidgets");
     render(AppHeader);
 
     await fireEvent.click(screen.getByRole("button", { name: "Issues" }));
@@ -248,7 +248,7 @@ describe("AppHeader", () => {
 
   it("opens Issues list when Activity selection is a PR", async () => {
     initTheme();
-    navigate("/?selected=pr:acme/widgets/1&selected_tab=files");
+    navigate("/?selected=pr:1&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&selected_tab=files");
     render(AppHeader);
 
     await fireEvent.click(screen.getByRole("button", { name: "Issues" }));
