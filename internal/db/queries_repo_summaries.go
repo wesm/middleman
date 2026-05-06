@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	dbsqlc "github.com/wesm/middleman/internal/db/sqlc"
 )
 
 // ListRepoSummaries returns one summary per tracked repo. The summaries are
@@ -43,87 +45,32 @@ func (d *DB) loadRepoSummaryStats(
 	ctx context.Context,
 	summaryByRepoID map[int64]*RepoSummary,
 ) error {
-	rows, err := d.ro.QueryContext(ctx, `
-		WITH pr_stats AS (
-			SELECT repo_id,
-			       COUNT(*) AS cached_pr_count,
-			       SUM(CASE WHEN state = 'open' THEN 1 ELSE 0 END) AS open_pr_count,
-			       SUM(CASE WHEN state = 'open' AND is_draft THEN 1 ELSE 0 END) AS draft_pr_count,
-			       MAX(last_activity_at) AS last_pr_activity_at
-			FROM middleman_merge_requests
-			GROUP BY repo_id
-		),
-		issue_stats AS (
-			SELECT repo_id,
-			       COUNT(*) AS cached_issue_count,
-			       SUM(CASE WHEN state = 'open' THEN 1 ELSE 0 END) AS open_issue_count,
-			       MAX(last_activity_at) AS last_issue_activity_at
-			FROM middleman_issues
-			GROUP BY repo_id
-		)
-		SELECT r.id,
-		       COALESCE(pr.cached_pr_count, 0),
-		       COALESCE(pr.open_pr_count, 0),
-		       COALESCE(pr.draft_pr_count, 0),
-		       COALESCE(i.cached_issue_count, 0),
-		       COALESCE(i.open_issue_count, 0),
-		       CASE
-		           WHEN pr.last_pr_activity_at IS NULL THEN i.last_issue_activity_at
-		           WHEN i.last_issue_activity_at IS NULL THEN pr.last_pr_activity_at
-		           WHEN pr.last_pr_activity_at >= i.last_issue_activity_at THEN pr.last_pr_activity_at
-		           ELSE i.last_issue_activity_at
-		       END AS most_recent_activity_at
-		FROM middleman_repos r
-		LEFT JOIN pr_stats pr ON pr.repo_id = r.id
-		LEFT JOIN issue_stats i ON i.repo_id = r.id
-		ORDER BY r.owner, r.name`,
-	)
+	rows, err := d.readQueries.ListRepoSummaryStats(ctx)
 	if err != nil {
 		return fmt.Errorf("list repo summary stats: %w", err)
 	}
-	defer rows.Close()
 
-	for rows.Next() {
-		var (
-			repoID             int64
-			cachedPRCount      int
-			openPRCount        int
-			draftPRCount       int
-			cachedIssueCount   int
-			openIssueCount     int
-			mostRecentActivity *string
-		)
-		if err := rows.Scan(
-			&repoID,
-			&cachedPRCount,
-			&openPRCount,
-			&draftPRCount,
-			&cachedIssueCount,
-			&openIssueCount,
-			&mostRecentActivity,
-		); err != nil {
-			return fmt.Errorf("scan repo summary stats: %w", err)
-		}
-
-		summary := summaryByRepoID[repoID]
+	for _, row := range rows {
+		summary := summaryByRepoID[row.ID]
 		if summary == nil {
 			continue
 		}
-		summary.CachedPRCount = cachedPRCount
-		summary.OpenPRCount = openPRCount
-		summary.DraftPRCount = draftPRCount
-		summary.CachedIssueCount = cachedIssueCount
-		summary.OpenIssueCount = openIssueCount
-		if mostRecentActivity != nil {
-			t, err := parseDBTime(*mostRecentActivity)
+		summary.CachedPRCount = int(row.CachedPrCount)
+		summary.OpenPRCount = int(row.OpenPrCount)
+		summary.DraftPRCount = int(row.DraftPrCount)
+		summary.CachedIssueCount = int(row.CachedIssueCount)
+		summary.OpenIssueCount = int(row.OpenIssueCount)
+		mostRecentActivity := stringFromSQLValue(row.MostRecentActivityAt)
+		if mostRecentActivity != "" {
+			t, err := parseDBTime(mostRecentActivity)
 			if err != nil {
-				return fmt.Errorf("parse repo summary activity %q: %w", *mostRecentActivity, err)
+				return fmt.Errorf("parse repo summary activity %q: %w", mostRecentActivity, err)
 			}
 			summary.MostRecentActivityAt = &t
 		}
 	}
 
-	return rows.Err()
+	return nil
 }
 
 type repoCommitTimelineJSON struct {
@@ -194,171 +141,90 @@ func (d *DB) UpsertRepoOverview(
 		publishedAt = overview.LatestRelease.PublishedAt
 	}
 
-	_, err = d.rw.ExecContext(ctx, `
-		INSERT INTO middleman_repo_overviews
-		    (repo_id, latest_release_tag, latest_release_name,
-		     latest_release_url, latest_release_target,
-		     latest_release_prerelease, latest_release_published_at,
-		     commits_since_release, commit_timeline_json,
-		     releases_json, timeline_updated_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(repo_id) DO UPDATE SET
-		    latest_release_tag = excluded.latest_release_tag,
-		    latest_release_name = excluded.latest_release_name,
-		    latest_release_url = excluded.latest_release_url,
-		    latest_release_target = excluded.latest_release_target,
-		    latest_release_prerelease = excluded.latest_release_prerelease,
-		    latest_release_published_at = excluded.latest_release_published_at,
-		    commits_since_release = CASE
-		        WHEN excluded.timeline_updated_at IS NOT NULL
-		        THEN excluded.commits_since_release
-		        WHEN middleman_repo_overviews.latest_release_tag IS excluded.latest_release_tag
-		        THEN COALESCE(
-		            excluded.commits_since_release,
-		            middleman_repo_overviews.commits_since_release
-		        )
-		        ELSE excluded.commits_since_release
-		    END,
-		    commit_timeline_json = CASE
-		        WHEN excluded.timeline_updated_at IS NULL
-		             AND middleman_repo_overviews.latest_release_tag IS excluded.latest_release_tag
-		        THEN middleman_repo_overviews.commit_timeline_json
-		        ELSE excluded.commit_timeline_json
-		    END,
-		    releases_json = excluded.releases_json,
-		    timeline_updated_at = CASE
-		        WHEN excluded.timeline_updated_at IS NOT NULL
-		        THEN excluded.timeline_updated_at
-		        WHEN middleman_repo_overviews.latest_release_tag IS excluded.latest_release_tag
-		        THEN middleman_repo_overviews.timeline_updated_at
-		        ELSE excluded.timeline_updated_at
-		    END,
-		    updated_at = excluded.updated_at`,
-		repoID,
-		tagName,
-		releaseName,
-		releaseURL,
-		targetCommitish,
-		prerelease,
-		nullableTime(publishedAt),
-		overview.CommitsSinceRelease,
-		string(timelineJSON),
-		string(releasesJSON),
-		nullableTime(overview.TimelineUpdatedAt),
-		time.Now().UTC(),
-	)
-	if err != nil {
+	commitsSince := sql.NullInt64{}
+	if overview.CommitsSinceRelease != nil {
+		commitsSince = sql.NullInt64{
+			Int64: int64(*overview.CommitsSinceRelease),
+			Valid: true,
+		}
+	}
+	if err = d.writeQueries.UpsertRepoOverview(ctx, dbsqlc.UpsertRepoOverviewParams{
+		RepoID:                   repoID,
+		LatestReleaseTag:         tagName,
+		LatestReleaseName:        releaseName,
+		LatestReleaseUrl:         releaseURL,
+		LatestReleaseTarget:      targetCommitish,
+		LatestReleasePrerelease:  boolInt64(prerelease),
+		LatestReleasePublishedAt: nullUTCTime(publishedAt),
+		CommitsSinceRelease:      commitsSince,
+		CommitTimelineJson:       string(timelineJSON),
+		ReleasesJson:             string(releasesJSON),
+		TimelineUpdatedAt:        nullUTCTime(overview.TimelineUpdatedAt),
+		UpdatedAt:                time.Now().UTC(),
+	}); err != nil {
 		return fmt.Errorf("upsert repo overview: %w", err)
 	}
 	return nil
-}
-
-func nullableTime(t *time.Time) any {
-	if t == nil {
-		return nil
-	}
-	return t.UTC()
 }
 
 func (d *DB) loadRepoSummaryOverviews(
 	ctx context.Context,
 	summaryByRepoID map[int64]*RepoSummary,
 ) error {
-	rows, err := d.ro.QueryContext(ctx, `
-		SELECT repo_id,
-		       latest_release_tag,
-		       latest_release_name,
-		       latest_release_url,
-		       latest_release_target,
-		       latest_release_prerelease,
-		       latest_release_published_at,
-		       commits_since_release,
-		       commit_timeline_json,
-		       releases_json,
-		       timeline_updated_at
-		FROM middleman_repo_overviews`,
-	)
+	rows, err := d.readQueries.ListRepoSummaryOverviews(ctx)
 	if err != nil {
 		return fmt.Errorf("list repo summary overviews: %w", err)
 	}
-	defer rows.Close()
 
-	for rows.Next() {
-		var (
-			repoID             int64
-			tagName            string
-			releaseName        string
-			releaseURL         string
-			targetCommitish    string
-			prerelease         bool
-			publishedAtStr     sql.NullString
-			commitsSince       sql.NullInt64
-			timelineJSON       string
-			releasesJSON       string
-			timelineUpdatedStr sql.NullString
-		)
-		if err := rows.Scan(
-			&repoID,
-			&tagName,
-			&releaseName,
-			&releaseURL,
-			&targetCommitish,
-			&prerelease,
-			&publishedAtStr,
-			&commitsSince,
-			&timelineJSON,
-			&releasesJSON,
-			&timelineUpdatedStr,
-		); err != nil {
-			return fmt.Errorf("scan repo summary overview: %w", err)
-		}
-
-		summary := summaryByRepoID[repoID]
+	for _, row := range rows {
+		summary := summaryByRepoID[row.RepoID]
 		if summary == nil {
 			continue
 		}
 
-		if tagName != "" {
+		if row.LatestReleaseTag != "" {
 			release := &RepoRelease{
-				TagName:         tagName,
-				Name:            releaseName,
-				URL:             releaseURL,
-				TargetCommitish: targetCommitish,
-				Prerelease:      prerelease,
+				TagName:         row.LatestReleaseTag,
+				Name:            row.LatestReleaseName,
+				URL:             row.LatestReleaseUrl,
+				TargetCommitish: row.LatestReleaseTarget,
+				Prerelease:      row.LatestReleasePrerelease != 0,
 			}
-			if publishedAtStr.Valid {
-				t, err := parseDBTime(publishedAtStr.String)
+			publishedAt := stringFromSQLValue(row.LatestReleasePublishedAt)
+			if publishedAt != "" {
+				t, err := parseDBTime(publishedAt)
 				if err != nil {
-					return fmt.Errorf("parse repo release published_at %q: %w", publishedAtStr.String, err)
+					return fmt.Errorf("parse repo release published_at %q: %w", publishedAt, err)
 				}
 				release.PublishedAt = &t
 			}
 			summary.Overview.LatestRelease = release
 		}
-		if commitsSince.Valid {
-			count := int(commitsSince.Int64)
+		if row.CommitsSinceRelease.Valid {
+			count := int(row.CommitsSinceRelease.Int64)
 			summary.Overview.CommitsSinceRelease = &count
 		}
-		releases, err := parseRepoReleasesJSON(releasesJSON)
+		releases, err := parseRepoReleasesJSON(row.ReleasesJson)
 		if err != nil {
 			return fmt.Errorf("parse repo releases json: %w", err)
 		}
 		summary.Overview.Releases = releases
-		points, err := parseRepoTimelineJSON(timelineJSON)
+		points, err := parseRepoTimelineJSON(row.CommitTimelineJson)
 		if err != nil {
 			return fmt.Errorf("parse repo timeline json: %w", err)
 		}
 		summary.Overview.CommitTimeline = points
-		if timelineUpdatedStr.Valid {
-			t, err := parseDBTime(timelineUpdatedStr.String)
+		timelineUpdatedAt := stringFromSQLValue(row.TimelineUpdatedAt)
+		if timelineUpdatedAt != "" {
+			t, err := parseDBTime(timelineUpdatedAt)
 			if err != nil {
-				return fmt.Errorf("parse repo timeline updated_at %q: %w", timelineUpdatedStr.String, err)
+				return fmt.Errorf("parse repo timeline updated_at %q: %w", timelineUpdatedAt, err)
 			}
 			summary.Overview.TimelineUpdatedAt = &t
 		}
 	}
 
-	return rows.Err()
+	return nil
 }
 
 func parseRepoTimelineJSON(value string) ([]RepoCommitTimelinePoint, error) {
@@ -417,126 +283,54 @@ func (d *DB) loadRepoSummaryAuthors(
 	ctx context.Context,
 	summaryByRepoID map[int64]*RepoSummary,
 ) error {
-	rows, err := d.ro.QueryContext(ctx, `
-		WITH author_items AS (
-			SELECT repo_id, author, last_activity_at
-			FROM middleman_merge_requests
-			WHERE author <> ''
-			UNION ALL
-			SELECT repo_id, author, last_activity_at
-			FROM middleman_issues
-			WHERE author <> ''
-		),
-		author_totals AS (
-			SELECT repo_id,
-			       author,
-			       COUNT(*) AS item_count,
-			       MAX(last_activity_at) AS most_recent_activity_at
-			FROM author_items
-			GROUP BY repo_id, author
-		),
-		ranked AS (
-			SELECT repo_id,
-			       author,
-			       item_count,
-			       ROW_NUMBER() OVER (
-			           PARTITION BY repo_id
-			           ORDER BY item_count DESC, most_recent_activity_at DESC, author ASC
-			       ) AS rank
-			FROM author_totals
-		)
-		SELECT repo_id, author, item_count
-		FROM ranked
-		WHERE rank <= 3
-		ORDER BY repo_id, rank`,
-	)
+	rows, err := d.readQueries.ListRepoSummaryAuthors(ctx)
 	if err != nil {
 		return fmt.Errorf("list repo summary authors: %w", err)
 	}
-	defer rows.Close()
 
-	for rows.Next() {
-		var (
-			repoID    int64
-			login     string
-			itemCount int
-		)
-		if err := rows.Scan(&repoID, &login, &itemCount); err != nil {
-			return fmt.Errorf("scan repo summary author: %w", err)
-		}
-
-		summary := summaryByRepoID[repoID]
+	for _, row := range rows {
+		summary := summaryByRepoID[row.RepoID]
 		if summary == nil {
 			continue
 		}
 		summary.ActiveAuthors = append(summary.ActiveAuthors, RepoActivityAuthor{
-			Login:     login,
-			ItemCount: itemCount,
+			Login:     row.Author,
+			ItemCount: int(row.ItemCount),
 		})
 	}
 
-	return rows.Err()
+	return nil
 }
 
 func (d *DB) loadRepoSummaryIssues(
 	ctx context.Context,
 	summaryByRepoID map[int64]*RepoSummary,
 ) error {
-	rows, err := d.ro.QueryContext(ctx, `
-		WITH ranked AS (
-			SELECT repo_id,
-			       number,
-			       title,
-			       author,
-			       state,
-			       url,
-			       last_activity_at,
-			       ROW_NUMBER() OVER (
-			           PARTITION BY repo_id
-			           ORDER BY last_activity_at DESC, number DESC
-			       ) AS rank
-			FROM middleman_issues
-			WHERE state = 'open'
-		)
-		SELECT repo_id, number, title, author, state, url, last_activity_at
-		FROM ranked
-		WHERE rank <= 3
-		ORDER BY repo_id, rank`,
-	)
+	rows, err := d.readQueries.ListRepoSummaryIssues(ctx)
 	if err != nil {
 		return fmt.Errorf("list repo summary issues: %w", err)
 	}
-	defer rows.Close()
 
-	for rows.Next() {
-		var (
-			repoID         int64
-			issue          RepoIssueHeadline
-			lastActivityAt string
-		)
-		if err := rows.Scan(
-			&repoID,
-			&issue.Number,
-			&issue.Title,
-			&issue.Author,
-			&issue.State,
-			&issue.URL,
-			&lastActivityAt,
-		); err != nil {
-			return fmt.Errorf("scan repo summary issue: %w", err)
-		}
-		t, err := parseDBTime(lastActivityAt)
+	for _, row := range rows {
+		t, err := parseDBTime(row.LastActivityAt)
 		if err != nil {
-			return fmt.Errorf("parse repo summary issue activity %q: %w", lastActivityAt, err)
+			return fmt.Errorf("parse repo summary issue activity %q: %w", row.LastActivityAt, err)
 		}
-		issue.LastActivityAt = t
+		issue := RepoIssueHeadline{
+			Number:         int(row.Number),
+			Title:          row.Title,
+			Author:         row.Author,
+			State:          row.State,
+			URL:            row.Url,
+			LastActivityAt: t,
+		}
 
-		summary := summaryByRepoID[repoID]
+		summary := summaryByRepoID[row.RepoID]
 		if summary == nil {
 			continue
 		}
 		summary.RecentIssues = append(summary.RecentIssues, issue)
 	}
 
-	return rows.Err()
+	return nil
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/wesm/middleman/internal/db/dbupgrade"
+	dbsqlc "github.com/wesm/middleman/internal/db/sqlc"
 	_ "modernc.org/sqlite"
 )
 
@@ -13,6 +14,9 @@ import (
 type DB struct {
 	rw *sql.DB
 	ro *sql.DB
+
+	readQueries  *dbsqlc.Queries
+	writeQueries *dbsqlc.Queries
 }
 
 // Open opens (or creates) a SQLite database at path, enables WAL mode, and
@@ -31,7 +35,12 @@ func Open(path string) (*DB, error) {
 	}
 	ro.SetMaxOpenConns(4)
 
-	d := &DB{rw: rw, ro: ro}
+	d := &DB{
+		rw:           rw,
+		ro:           ro,
+		readQueries:  dbsqlc.New(ro),
+		writeQueries: dbsqlc.New(rw),
+	}
 	if err := d.init(); err != nil {
 		d.Close()
 		return nil, err
