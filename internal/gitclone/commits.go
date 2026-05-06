@@ -33,7 +33,10 @@ func (m *Manager) ListCommits(
 	ctx context.Context,
 	host, owner, name, mergeBase, headSHA string,
 ) ([]Commit, error) {
-	dir := m.ClonePath(host, owner, name)
+	dir, err := m.ClonePath(host, owner, name)
+	if err != nil {
+		return nil, err
+	}
 
 	args := []string{"log", "--first-parent", "--format=%H%x00%an%x00%aI%x00%s"}
 	if mergeBase == emptyTreeSHA {
@@ -89,7 +92,10 @@ func (m *Manager) CommitTimelineSinceTag(
 		limit = 1
 	}
 
-	dir := m.ClonePath(host, owner, name)
+	dir, err := m.ClonePath(host, owner, name)
+	if err != nil {
+		return 0, nil, err
+	}
 	defaultRef := m.defaultTimelineRef(ctx, host, dir)
 	rangeSpec := tagName + ".." + defaultRef
 	countOut, err := m.git(ctx, host, dir,
@@ -181,7 +187,10 @@ func (m *Manager) ParentOf(
 	ctx context.Context,
 	host, owner, name, sha string,
 ) (string, error) {
-	dir := m.ClonePath(host, owner, name)
+	dir, err := m.ClonePath(host, owner, name)
+	if err != nil {
+		return "", err
+	}
 	out, err := m.git(ctx, host, dir,
 		"rev-list", "--parents", "-n", "1", sha,
 	)

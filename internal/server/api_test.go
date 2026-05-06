@@ -3190,7 +3190,8 @@ func TestAPIListRepoSummariesIncludesSyncedReleaseTimeline(t *testing.T) {
 	runGit(t, work, "push", "--tags", "origin", "main")
 
 	clones := gitclone.New(filepath.Join(dir, "clones"), nil)
-	clonePath := clones.ClonePath("github.com", "acme", "widgets")
+	clonePath, err := clones.ClonePath("github.com", "acme", "widgets")
+	require.NoError(err)
 	require.NoError(os.MkdirAll(filepath.Dir(clonePath), 0o755))
 	runGit(t, dir, "clone", "--bare", remote, clonePath)
 

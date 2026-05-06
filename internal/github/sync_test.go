@@ -2709,10 +2709,9 @@ func TestSyncRepoUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 	syncer := NewSyncerWithRegistry(registry, d, clones, []RepoRef{repo}, time.Minute, nil, nil)
 
 	require.NoError(syncer.syncRepo(ctx, repo))
-	require.FileExists(filepath.Join(
-		clones.ClonePath("gitlab.example.com", "group/subgroup", "project"),
-		"HEAD",
-	))
+	clonePath, err := clones.ClonePath("gitlab.example.com", "group/subgroup", "project")
+	require.NoError(err)
+	require.FileExists(filepath.Join(clonePath, "HEAD"))
 }
 
 func TestDetailDrainUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
@@ -2778,10 +2777,9 @@ func TestDetailDrainUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 	syncer.drainDetailQueue(ctx, map[string]bool{rateKey: true})
 
 	assert.Equal(int32(1), provider.getMRCalls.Load())
-	require.FileExists(filepath.Join(
-		clones.ClonePath("gitlab.example.com", "group/subgroup", "project"),
-		"HEAD",
-	))
+	clonePath, err := clones.ClonePath("gitlab.example.com", "group/subgroup", "project")
+	require.NoError(err)
+	require.FileExists(filepath.Join(clonePath, "HEAD"))
 }
 
 func TestSyncMRUsesConfiguredProviderRegistry(t *testing.T) {

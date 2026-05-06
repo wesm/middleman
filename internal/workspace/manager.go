@@ -253,7 +253,10 @@ func (m *Manager) CreateIssue(
 			return nil, fmt.Errorf("ensure clone: %w", err)
 		}
 
-		cloneDir := m.clones.ClonePath(platformHost, owner, name)
+		cloneDir, err := m.clones.ClonePath(platformHost, owner, name)
+		if err != nil {
+			return nil, err
+		}
 		exists, err := localBranchExists(ctx, cloneDir, gitHeadRef)
 		if err != nil {
 			return nil, fmt.Errorf("inspect local branch: %w", err)
@@ -357,9 +360,15 @@ func (m *Manager) Setup(
 		)
 	}
 
-	cloneDir := m.clones.ClonePath(
+	cloneDir, err := m.clones.ClonePath(
 		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	)
+	if err != nil {
+		return m.failSetup(
+			ctx,
+			ws.ID, workspaceSetupStageClone, err,
+		)
+	}
 
 	branch, err := m.addWorktree(ctx, cloneDir, ws)
 	if err != nil {
@@ -833,9 +842,12 @@ func (m *Manager) cleanupWorkspaceArtifactsForRetry(
 		return nil
 	}
 
-	cloneDir := m.clones.ClonePath(
+	cloneDir, err := m.clones.ClonePath(
 		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	)
+	if err != nil {
+		return err
+	}
 	ready, err := gitCloneDirReady(cloneDir)
 	if err != nil {
 		return err
@@ -872,9 +884,12 @@ func (m *Manager) cleanupWorkspaceArtifactsForDelete(
 		return nil
 	}
 
-	cloneDir := m.clones.ClonePath(
+	cloneDir, err := m.clones.ClonePath(
 		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	)
+	if err != nil {
+		return err
+	}
 
 	_ = runGit(
 		ctx, cloneDir,

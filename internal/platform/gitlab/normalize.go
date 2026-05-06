@@ -12,12 +12,15 @@ import (
 	gitlab "gitlab.com/gitlab-org/api/client-go"
 )
 
-func NormalizeProject(host string, p *gitlab.Project) platform.Repository {
+func NormalizeProject(host string, p *gitlab.Project) (platform.Repository, error) {
 	if p == nil {
-		return platform.Repository{}
+		return platform.Repository{}, nil
 	}
 
-	repoPath := strings.Trim(p.PathWithNamespace, "/")
+	repoPath, err := normalizeSafeProjectPath(p.PathWithNamespace)
+	if err != nil {
+		return platform.Repository{}, err
+	}
 	owner := path.Dir(repoPath)
 	if owner == "." {
 		owner = ""
@@ -25,6 +28,9 @@ func NormalizeProject(host string, p *gitlab.Project) platform.Repository {
 	name := p.Path
 	if name == "" {
 		name = path.Base(repoPath)
+	}
+	if err := validateSafeProjectName(name); err != nil {
+		return platform.Repository{}, err
 	}
 
 	ref := platform.RepoRef{
@@ -51,7 +57,38 @@ func NormalizeProject(host string, p *gitlab.Project) platform.Repository {
 		CloneURL:           p.HTTPURLToRepo,
 		CreatedAt:          timeValue(p.CreatedAt),
 		UpdatedAt:          timeValue(p.UpdatedAt),
+	}, nil
+}
+
+func normalizeSafeProjectPath(raw string) (string, error) {
+	if raw == "" || strings.TrimSpace(raw) != raw {
+		return "", fmt.Errorf("unsafe GitLab project path %q", raw)
 	}
+	if strings.HasPrefix(raw, "/") || strings.Contains(raw, "\\") {
+		return "", fmt.Errorf("unsafe GitLab project path %q", raw)
+	}
+	cleaned := path.Clean(raw)
+	if cleaned != raw || cleaned == "." || strings.HasPrefix(cleaned, "../") || cleaned == ".." {
+		return "", fmt.Errorf("unsafe GitLab project path %q", raw)
+	}
+	parts := strings.Split(raw, "/")
+	if len(parts) < 2 {
+		return "", fmt.Errorf("unsafe GitLab project path %q", raw)
+	}
+	for _, part := range parts {
+		if part == "" || part == "." || part == ".." {
+			return "", fmt.Errorf("unsafe GitLab project path %q", raw)
+		}
+	}
+	return raw, nil
+}
+
+func validateSafeProjectName(name string) error {
+	if name == "" || name == "." || name == ".." ||
+		strings.Contains(name, "/") || strings.Contains(name, "\\") {
+		return fmt.Errorf("unsafe GitLab project path name %q", name)
+	}
+	return nil
 }
 
 func NormalizeMergeRequest(

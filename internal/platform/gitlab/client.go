@@ -197,7 +197,7 @@ func (c *Client) GetRepository(ctx context.Context, ref platform.RepoRef) (platf
 	if err != nil {
 		return platform.Repository{}, mapGitLabError("get_repository", err)
 	}
-	return NormalizeProject(c.host, project), nil
+	return NormalizeProject(c.host, project)
 }
 
 func (c *Client) ListRepositories(
@@ -591,7 +591,15 @@ func appendPreviewProjects(
 			result.Truncated = true
 			continue
 		}
-		result.Repositories = append(result.Repositories, NormalizeProject(host, project))
+		repo, err := NormalizeProject(host, project)
+		if err != nil {
+			result.PartialErrors = append(result.PartialErrors, PartialError{
+				Code:      "unsafe_project_path",
+				Namespace: namespace,
+			})
+			continue
+		}
+		result.Repositories = append(result.Repositories, repo)
 		result.ReturnedCount++
 	}
 	return result

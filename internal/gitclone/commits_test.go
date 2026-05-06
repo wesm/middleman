@@ -165,7 +165,8 @@ func TestCommitTimelineSinceTagWithoutOriginHEAD(t *testing.T) {
 
 	mgr := New(filepath.Join(dir, "clones"), nil)
 	require.NoError(mgr.EnsureClone(t.Context(), "github.com", "acme", "widgets", remote))
-	clonePath := mgr.ClonePath("github.com", "acme", "widgets")
+	clonePath, err := mgr.ClonePath("github.com", "acme", "widgets")
+	require.NoError(err)
 	commitTestRun(t, clonePath, "git", "symbolic-ref", "--delete", "refs/remotes/origin/HEAD")
 
 	count, points, err := mgr.CommitTimelineSinceTag(

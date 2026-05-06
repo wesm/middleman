@@ -15,7 +15,7 @@ func TestNormalizeProjectPreservesGitLabIdentity(t *testing.T) {
 	createdAt := time.Date(2026, 4, 1, 10, 0, 0, 0, time.UTC)
 	updatedAt := createdAt.Add(time.Hour)
 
-	repo := NormalizeProject("gitlab.example.com", &gitlab.Project{
+	repo, err := NormalizeProject("gitlab.example.com", &gitlab.Project{
 		ID:                42,
 		Description:       "project description",
 		Path:              "project",
@@ -28,6 +28,7 @@ func TestNormalizeProjectPreservesGitLabIdentity(t *testing.T) {
 		CreatedAt:         &createdAt,
 		UpdatedAt:         &updatedAt,
 	})
+	require.NoError(t, err)
 
 	assert.Equal(platform.KindGitLab, repo.Ref.Platform)
 	assert.Equal("gitlab.example.com", repo.Ref.Host)
@@ -40,6 +41,34 @@ func TestNormalizeProjectPreservesGitLabIdentity(t *testing.T) {
 	assert.True(repo.Archived)
 	assert.Equal(createdAt, repo.CreatedAt)
 	assert.Equal(updatedAt, repo.UpdatedAt)
+}
+
+func TestNormalizeProjectRejectsUnsafePathWithNamespace(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		repoName string
+	}{
+		{name: "parent traversal", path: "group/../../outside/project", repoName: "project"},
+		{name: "dot segment", path: "group/./project", repoName: "project"},
+		{name: "empty segment", path: "group//project", repoName: "project"},
+		{name: "absolute", path: "/group/project", repoName: "project"},
+		{name: "backslash", path: `group\project`, repoName: "project"},
+		{name: "separator in name", path: "group/project", repoName: "nested/project"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NormalizeProject("gitlab.example.com", &gitlab.Project{
+				ID:                42,
+				Path:              tt.repoName,
+				PathWithNamespace: tt.path,
+			})
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "unsafe GitLab project path")
+		})
+	}
 }
 
 func TestNormalizeMergeRequestUsesIIDAndPipelineStatus(t *testing.T) {
