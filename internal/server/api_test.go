@@ -8751,6 +8751,15 @@ func setupWorkspaceServerFixture(
 	cfg *config.Config,
 ) workspaceServerFixture {
 	t.Helper()
+	return setupWorkspaceServerFixtureWithHost(t, cfg, "github.com")
+}
+
+func setupWorkspaceServerFixtureWithHost(
+	t *testing.T,
+	cfg *config.Config,
+	platformHost string,
+) workspaceServerFixture {
+	t.Helper()
 
 	if testing.Short() {
 		t.Skip("workspace e2e tests skipped in short mode")
@@ -8793,7 +8802,7 @@ func setupWorkspaceServerFixture(
 	bareDir := filepath.Join(dir, "clones")
 	require.NoError(t, os.MkdirAll(bareDir, 0o755))
 	bare := filepath.Join(
-		bareDir, "github.com", "acme", "widget.git",
+		bareDir, platformHost, "acme", "widget.git",
 	)
 	runGit(t, dir, "clone", "--bare", remote, bare)
 
@@ -8801,7 +8810,7 @@ func setupWorkspaceServerFixture(
 	worktreeDir := filepath.Join(dir, "worktrees")
 	mock := &mockGH{}
 	repos := []ghclient.RepoRef{
-		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "widget", PlatformHost: platformHost},
 	}
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
@@ -8823,7 +8832,7 @@ func setupWorkspaceServerFixture(
 	t.Cleanup(func() { cleanupWorkspaceServerFixtureArtifacts(t, srv, database) })
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
-	seedPR(t, database, "acme", "widget", 1)
+	seedPROnHost(t, database, platformHost, "acme", "widget", 1)
 
 	clientBaseURL := "http://middleman.test"
 	if basePath != "/" {
@@ -12047,6 +12056,54 @@ func TestWorkspaceCreateSameRepoHeadCloneURLTracksOriginBranchE2E(t *testing.T) 
 		gitOutput(
 			t, ws.WorktreePath,
 			"config", "--get", "branch.feature.merge",
+		),
+	)
+}
+
+func TestWorkspaceCreatePortQualifiedHostTracksOriginBranchE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	fixture := setupWorkspaceServerFixtureWithHost(
+		t, nil, "ghe.example.com:8443",
+	)
+	ctx := t.Context()
+
+	headSHA := testGitSHA(t, fixture.remote, "refs/heads/feature")
+	runGit(t, fixture.remote, "update-ref", "refs/pull/1/head", headSHA)
+	_, err := fixture.database.WriteDB().ExecContext(
+		ctx,
+		`UPDATE middleman_merge_requests
+		 SET head_repo_clone_url = ?
+		 WHERE number = ?`,
+		"https://ghe.example.com:8443/acme/widget.git", 1,
+	)
+	require.NoError(err)
+
+	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "ghe.example.com:8443",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+
+	ws := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.Id)
+	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Nil(stored.MRHeadRepo)
+	assert.Equal("feature", gitOutput(t, ws.WorktreePath, "branch", "--show-current"))
+	assert.Equal(
+		"origin/feature",
+		gitOutput(
+			t, ws.WorktreePath,
+			"rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}",
 		),
 	)
 }

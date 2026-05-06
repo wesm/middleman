@@ -346,7 +346,7 @@ func normalizePlatformHostIdentity(platformHost string) string {
 	}
 	host, port, err := net.SplitHostPort(platformHost)
 	if err == nil {
-		return normalizeHostPortIdentity("", host, port)
+		return normalizeHostPortIdentity("https", host, port)
 	}
 	return strings.ToLower(platformHost)
 }

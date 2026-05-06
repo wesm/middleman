@@ -419,3 +419,11 @@ func TestNormalizeCloneRepoIdentity(t *testing.T) {
 	assert.Empty(normalizeCloneRepoIdentity("/tmp/workspace/remote.git"))
 	assert.Empty(normalizeCloneRepoIdentity("not a clone url"))
 }
+
+func TestNormalizePlatformHostIdentity(t *testing.T) {
+	assert := Assert.New(t)
+
+	assert.Equal("ghe.example.com:8443", normalizePlatformHostIdentity("GHE.example.com:8443"))
+	assert.Equal("ghe.example.com", normalizePlatformHostIdentity("ghe.example.com:443"))
+	assert.Equal("ghe.example.com", normalizePlatformHostIdentity("ghe.example.com"))
+}
