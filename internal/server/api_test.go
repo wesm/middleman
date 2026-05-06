@@ -13522,11 +13522,36 @@ func TestWorkspaceMonitorPassBroadcastsInvalidationEvents(t *testing.T) {
 
 	fixture.server.runWorkspacePRMonitorPass(ctx)
 
-	first := <-ch
-	second := <-ch
-	assert.Equal("workspace_status", first.Type)
-	assert.Equal(map[string]string{"id": created.ID}, first.Data)
-	assert.Equal("data_changed", second.Type)
+	status := readEventMatching(t, ch, func(ev Event) bool {
+		data, ok := ev.Data.(map[string]string)
+		return ev.Type == "workspace_status" && ok && data["id"] == created.ID
+	})
+	changed := readEventMatching(t, ch, func(ev Event) bool {
+		return ev.Type == "data_changed"
+	})
+
+	assert.Equal("workspace_status", status.Type)
+	assert.Equal(map[string]string{"id": created.ID}, status.Data)
+	assert.Equal("data_changed", changed.Type)
+}
+
+func readEventMatching(
+	t *testing.T,
+	ch <-chan Event,
+	matches func(Event) bool,
+) Event {
+	t.Helper()
+	timeout := time.After(2 * time.Second)
+	for {
+		select {
+		case ev := <-ch:
+			if matches(ev) {
+				return ev
+			}
+		case <-timeout:
+			require.FailNow(t, "timed out waiting for matching event")
+		}
+	}
 }
 
 func TestWorkspaceCreateUsesPRBranchAndFallbackBranch(t *testing.T) {

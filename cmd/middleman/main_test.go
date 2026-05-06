@@ -135,10 +135,21 @@ func TestResolveStartupReposUsesProviderRegistryForGitLab(t *testing.T) {
 	}}, repos)
 }
 
-func TestValidateProviderHostKeysAllowsMixedProvidersOnSameHost(t *testing.T) {
+func TestValidateProviderHostKeysRejectsMixedProvidersOnSameHostWithDifferentTokens(t *testing.T) {
+	assert := Assert.New(t)
 	err := validateProviderHostKeys(map[string]string{
 		providerHostKey("github", "code.example.com"): "github-token",
 		providerHostKey("gitlab", "code.example.com"): "gitlab-token",
+	})
+
+	require.Error(t, err)
+	assert.Contains(err.Error(), "code.example.com")
+}
+
+func TestValidateProviderHostKeysAllowsMixedProvidersOnSameHostWithSameToken(t *testing.T) {
+	err := validateProviderHostKeys(map[string]string{
+		providerHostKey("github", "code.example.com"): "shared-token",
+		providerHostKey("gitlab", "code.example.com"): "shared-token",
 	})
 
 	require.NoError(t, err)

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -44,10 +45,18 @@ func (m *Manager) ClonePath(host, owner, name string) string {
 func (m *Manager) EnsureClone(
 	ctx context.Context, host, owner, name, remoteURL string,
 ) error {
+	if err := validateRemoteURLHost(host, remoteURL); err != nil {
+		return err
+	}
 	clonePath := m.ClonePath(host, owner, name)
 
 	if _, err := os.Stat(filepath.Join(clonePath, "HEAD")); os.IsNotExist(err) {
 		return m.cloneBare(ctx, host, clonePath, remoteURL)
+	}
+	if out, err := m.git(ctx, host, clonePath, "config", "--get", "remote.origin.url"); err == nil {
+		if err := validateRemoteURLHost(host, strings.TrimSpace(string(out))); err != nil {
+			return err
+		}
 	}
 	m.ensureRefspecs(ctx, host, clonePath)
 	return m.fetch(ctx, host, clonePath)
@@ -182,6 +191,46 @@ func (m *Manager) MergeBase(
 }
 
 // git runs a git command with auth env vars set for the given host.
+func validateRemoteURLHost(expectedHost, remoteURL string) error {
+	actualHost := remoteURLHost(remoteURL)
+	if actualHost == "" {
+		return nil
+	}
+	if normalizeCloneHost(actualHost) != normalizeCloneHost(expectedHost) {
+		return fmt.Errorf(
+			"clone remote host %q does not match configured platform host %q",
+			actualHost, expectedHost,
+		)
+	}
+	return nil
+}
+
+func remoteURLHost(remoteURL string) string {
+	remoteURL = strings.TrimSpace(remoteURL)
+	if remoteURL == "" {
+		return ""
+	}
+	if u, err := url.Parse(remoteURL); err == nil && u.Host != "" {
+		return u.Host
+	}
+	prefix, _, ok := strings.Cut(remoteURL, ":")
+	if !ok || strings.Contains(prefix, "/") {
+		return ""
+	}
+	if at := strings.LastIndex(prefix, "@"); at >= 0 {
+		prefix = prefix[at+1:]
+	}
+	return prefix
+}
+
+func normalizeCloneHost(host string) string {
+	host = strings.ToLower(strings.Trim(strings.TrimSpace(host), "[]"))
+	if before, ok := strings.CutSuffix(host, ":443"); ok {
+		return before
+	}
+	return host
+}
+
 func (m *Manager) git(
 	ctx context.Context, host, dir string, args ...string,
 ) ([]byte, error) {

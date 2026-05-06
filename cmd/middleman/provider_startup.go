@@ -109,6 +109,9 @@ func buildProviderStartup(
 	providerTokens map[string]string,
 	factories map[string]providerFactory,
 ) (providerStartup, error) {
+	if err := validateProviderHostKeys(providerTokens); err != nil {
+		return providerStartup{}, err
+	}
 	startup := providerStartup{
 		rateTrackers: make(map[string]*github.RateTracker, len(providerTokens)),
 		budgets:      make(map[string]*github.SyncBudget, len(providerTokens)),
