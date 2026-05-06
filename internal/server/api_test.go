@@ -546,6 +546,10 @@ func withSeedPRHeadSHA(headSHA string) seedPROpt {
 	return func(pr *db.MergeRequest) { pr.PlatformHeadSHA = headSHA }
 }
 
+func withSeedPRHeadRepoCloneURL(cloneURL string) seedPROpt {
+	return func(pr *db.MergeRequest) { pr.HeadRepoCloneURL = cloneURL }
+}
+
 // seedPR inserts a repo and a PR into the DB, returning the PR's internal ID.
 func seedPR(t *testing.T, database *db.DB, owner, name string, number int, opts ...seedPROpt) int64 {
 	t.Helper()
@@ -11990,6 +11994,60 @@ func TestWorkspaceCreateUsesPRBranchAndFallbackBranch(t *testing.T) {
 	assert.Equal(
 		testGitSHA(t, ws1.WorktreePath, "HEAD"),
 		testGitSHA(t, ws2.WorktreePath, "HEAD"),
+	)
+}
+
+func TestWorkspaceCreateSameRepoHeadCloneURLTracksOriginBranchE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	client, database, clonePath, remotePath := setupTestServerWithWorkspaces(t)
+	ctx := t.Context()
+
+	headSHA := testGitSHA(t, remotePath, "refs/heads/feature")
+	runGit(t, remotePath, "update-ref", "refs/pull/2/head", headSHA)
+	runGit(t, clonePath, "update-ref", "refs/pull/2/head", headSHA)
+	seedPR(
+		t,
+		database,
+		"acme", "widget", 2,
+		withSeedPRHeadRepoCloneURL("https://github.com/acme/widget.git"),
+	)
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     2,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+
+	ws := waitForWorkspaceReady(t, ctx, client, createResp.JSON202.Id)
+	stored, err := database.GetWorkspace(ctx, ws.Id)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Nil(stored.MRHeadRepo)
+	assert.Empty(stored.WorkspaceBranch)
+	assert.Equal("feature", gitOutput(t, ws.WorktreePath, "branch", "--show-current"))
+	assert.Equal(headSHA, testGitSHA(t, ws.WorktreePath, "HEAD"))
+	assert.Equal(
+		"origin/feature",
+		gitOutput(
+			t, ws.WorktreePath,
+			"rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}",
+		),
+	)
+	assert.Equal(
+		"refs/heads/feature",
+		gitOutput(
+			t, ws.WorktreePath,
+			"config", "--get", "branch.feature.merge",
+		),
 	)
 }
 
