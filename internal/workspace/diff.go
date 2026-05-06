@@ -41,6 +41,20 @@ func WorktreeDiffFiles(
 	return worktreeDiffFilesFromRef(ctx, dir, baseRef, hideWhitespace)
 }
 
+func WorktreeDiffWhitespaceOnlyCount(
+	ctx context.Context,
+	dir string,
+	base WorktreeDiffBase,
+) (int, bool, error) {
+	baseRef, ok, err := worktreeDiffBaseRef(ctx, dir, base)
+	if err != nil || !ok {
+		return 0, ok, err
+	}
+
+	count, err := worktreeWhitespaceOnlyCount(ctx, dir, baseRef, "")
+	return count, true, err
+}
+
 func WorktreeDiffFilesAgainstMergeTarget(
 	ctx context.Context,
 	dir string,
@@ -53,6 +67,20 @@ func WorktreeDiffFilesAgainstMergeTarget(
 	}
 
 	return worktreeDiffFilesFromRef(ctx, dir, baseRef, hideWhitespace)
+}
+
+func WorktreeDiffWhitespaceOnlyCountAgainstMergeTarget(
+	ctx context.Context,
+	dir string,
+	targetBranch string,
+) (int, bool, error) {
+	baseRef, ok, err := worktreeMergeTargetBaseRef(ctx, dir, targetBranch)
+	if err != nil || !ok {
+		return 0, ok, err
+	}
+
+	count, err := worktreeWhitespaceOnlyCount(ctx, dir, baseRef, "")
+	return count, true, err
 }
 
 func worktreeDiffFilesFromRef(

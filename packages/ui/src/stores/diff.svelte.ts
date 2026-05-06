@@ -164,6 +164,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   let currentNumber = $state(0);
   let currentWorkspaceID = $state("");
   let currentWorkspaceBase = $state<WorkspaceDiffBase>("head");
+  let workspaceWhitespaceOnlyCount = $state(0);
 
   function getCurrentPR(): { owner: string; name: string; number: number } | null {
     if (!currentOwner) return null;
@@ -268,11 +269,12 @@ export function createDiffStore(opts?: DiffStoreOptions) {
 
   function requestScrollToFile(path: string): void {
     activeFile = path;
-    scrollTarget = path;
     scrolling = true;
     if (currentWorkspaceID) {
-      void loadWorkspaceFileDiff(path);
+      void loadWorkspaceFileDiff(path, undefined, true);
+      return;
     }
+    scrollTarget = path;
   }
 
   function getScrollTarget(): string | null {
@@ -533,6 +535,9 @@ export function createDiffStore(opts?: DiffStoreOptions) {
 
   function applyFilesResult(data: FilesResponse): void {
     fileList = normalizeFilesResult(data);
+    if (currentWorkspaceID) {
+      workspaceWhitespaceOnlyCount = data.whitespace_only_count ?? 0;
+    }
     setActiveIfNeeded(getVisibleFileList()?.files);
   }
 
@@ -547,7 +552,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     const files = file ? [file] : result.files.slice(0, 1);
     diff = {
       stale: result.stale,
-      whitespace_only_count: result.whitespace_only_count,
+      whitespace_only_count: workspaceWhitespaceOnlyCount,
       files,
     };
   }
@@ -565,6 +570,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     fileListAbortController = null;
     filesAc.abort();
     fileListLoading = false;
+    finishDiffLoad(diffAc);
   }
 
   async function loadDiff(
@@ -684,7 +690,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     if (!selectedPath) {
       diff = {
         stale: fileList?.stale ?? false,
-        whitespace_only_count: 0,
+        whitespace_only_count: workspaceWhitespaceOnlyCount,
         files: [],
       };
       finishDiffLoad(diffAc);
@@ -697,6 +703,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   async function loadWorkspaceFileDiff(
     path: string,
     existingAc?: AbortController,
+    scrollAfterLoad = false,
   ): Promise<void> {
     if (!currentWorkspaceID) return;
     const ac = existingAc ?? new AbortController();
@@ -705,6 +712,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
       abortController = ac;
       loading = true;
       storeError = null;
+      diff = null;
     }
     const workspaceID = currentWorkspaceID;
     const base = currentWorkspaceBase;
@@ -730,6 +738,9 @@ export function createDiffStore(opts?: DiffStoreOptions) {
         return;
       }
       applyWorkspaceFileDiffResult(path, data);
+      if (scrollAfterLoad) {
+        scrollTarget = path;
+      }
     } catch (_err) {
       if (ac.signal.aborted || !diffLoadIsCurrent(ac)) return;
       storeError = _err instanceof Error ? _err.message : String(_err);
@@ -763,6 +774,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     currentNumber = 0;
     currentWorkspaceID = "";
     currentWorkspaceBase = "head";
+    workspaceWhitespaceOnlyCount = 0;
   }
 
   async function loadCommits(): Promise<void> {

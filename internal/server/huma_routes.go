@@ -3063,9 +3063,24 @@ func (s *Server) getWorkspaceFiles(
 	if !ok {
 		return nil, workspaceDiffBaseUnavailable(req.Base)
 	}
+	whitespaceOnlyCount, countOK, countErr := s.workspaceDiffWhitespaceOnlyCount(
+		ctx, req,
+	)
+	if countErr != nil {
+		slog.Warn(
+			"failed to count workspace whitespace-only diff files",
+			"workspace_id", input.ID,
+			"base", req.Base,
+			"err", countErr,
+		)
+	}
+	if !countOK {
+		return nil, workspaceDiffBaseUnavailable(req.Base)
+	}
 	return &getWorkspaceFilesOutput{Body: filesResponse{
-		Stale: false,
-		Files: files,
+		Stale:               false,
+		WhitespaceOnlyCount: whitespaceOnlyCount,
+		Files:               files,
 	}}, nil
 }
 
@@ -3203,6 +3218,22 @@ func (s *Server) workspaceDiff(
 	}
 	return workspace.WorktreeDiff(
 		ctx, req.Summary.WorktreePath, req.Base, hideWhitespace,
+	)
+}
+
+func (s *Server) workspaceDiffWhitespaceOnlyCount(
+	ctx context.Context,
+	req workspaceDiffRequest,
+) (int, bool, error) {
+	if req.Base == workspace.WorktreeDiffBaseMergeTarget {
+		return workspace.WorktreeDiffWhitespaceOnlyCountAgainstMergeTarget(
+			ctx,
+			req.Summary.WorktreePath,
+			req.MergeTargetBranch,
+		)
+	}
+	return workspace.WorktreeDiffWhitespaceOnlyCount(
+		ctx, req.Summary.WorktreePath, req.Base,
 	)
 }
 

@@ -39,20 +39,26 @@
 
   const diff = $derived(diffStore.getDiff());
   const visibleFiles = $derived(diffStore.getVisibleDiffFiles());
+  const navigationFiles = $derived(
+    diffStore.getVisibleFileList()?.files ?? visibleFiles,
+  );
   const loading = $derived(diffStore.isDiffLoading());
   const error = $derived(diffStore.getDiffError());
   const tabWidth = $derived(diffStore.getTabWidth());
   const wordWrap = $derived(diffStore.getWordWrap());
 
-  function scrollToFile(path: string): void {
-    if (!diffArea) return;
+  function scrollToFile(path: string): boolean {
+    if (!diffArea) return false;
     const el = diffArea.querySelector(`[data-file-path="${CSS.escape(path)}"]`);
     if (el) {
       el.scrollIntoView({ behavior: "instant", block: "start" });
+    } else {
+      return false;
     }
     // Clear the scrolling flag after the instant scroll so the next user-initiated
     // scroll event resumes active file tracking.
     scrollRaf = requestAnimationFrame(() => diffStore.clearScrolling());
+    return true;
   }
 
   // Watch for scroll requests from the sidebar file list (via the store).
@@ -61,8 +67,9 @@
   $effect(() => {
     const target = diffStore.getScrollTarget();
     if (target && diffArea && diff) {
-      diffStore.consumeScrollTarget();
-      scrollToFile(target);
+      if (scrollToFile(target)) {
+        diffStore.consumeScrollTarget();
+      }
     }
   });
 
@@ -95,9 +102,9 @@
     if ((e.target as HTMLElement).isContentEditable) return;
 
     if (e.key === "j" || e.key === "k") {
-      if (!diff || visibleFiles.length === 0) return;
+      if (!diff || navigationFiles.length === 0) return;
       e.preventDefault();
-      const paths = visibleFiles.map((f) => f.path);
+      const paths = navigationFiles.map((f) => f.path);
       const currentIdx = diffStore.getActiveFile() ? paths.indexOf(diffStore.getActiveFile()!) : -1;
       let nextIdx: number;
       if (e.key === "j") {

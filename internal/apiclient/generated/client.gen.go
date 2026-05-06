@@ -265,9 +265,10 @@ type FilePreviewResponse struct {
 // FilesResponse defines model for FilesResponse.
 type FilesResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema *string     `json:"$schema,omitempty"`
-	Files  *[]DiffFile `json:"files"`
-	Stale  bool        `json:"stale"`
+	Schema              *string     `json:"$schema,omitempty"`
+	Files               *[]DiffFile `json:"files"`
+	Stale               bool        `json:"stale"`
+	WhitespaceOnlyCount int64       `json:"whitespace_only_count"`
 }
 
 // GithubStateInputBody defines model for GithubStateInputBody.

@@ -1187,6 +1187,8 @@ export interface components {
             readonly $schema?: string;
             files: components["schemas"]["DiffFile"][] | null;
             stale: boolean;
+            /** Format: int64 */
+            whitespace_only_count: number;
         };
         GithubStateInputBody: {
             /**

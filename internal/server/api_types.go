@@ -146,8 +146,9 @@ type diffResponse struct {
 }
 
 type filesResponse struct {
-	Stale bool                `json:"stale"`
-	Files []gitclone.DiffFile `json:"files"`
+	Stale               bool                `json:"stale"`
+	WhitespaceOnlyCount int                 `json:"whitespace_only_count"`
+	Files               []gitclone.DiffFile `json:"files"`
 }
 
 type filePreviewResponse struct {

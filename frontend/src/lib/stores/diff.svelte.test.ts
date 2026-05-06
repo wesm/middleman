@@ -30,7 +30,10 @@ function makeDiffResult(files: string[]): DiffResult {
   };
 }
 
-function makeFilesResult(files: string[]): FilesResult {
+function makeFilesResult(
+  files: string[],
+  overrides: Partial<FilesResult & { whitespace_only_count: number }> = {},
+): FilesResult {
   return {
     stale: false,
     files: files.map((path) => ({
@@ -43,6 +46,7 @@ function makeFilesResult(files: string[]): FilesResult {
       deletions: 0,
       hunks: [],
     })),
+    ...overrides,
   };
 }
 
@@ -281,6 +285,65 @@ describe("createDiffStore loadDiff", () => {
     expect(calls).toContain(
       "/api/v1/workspaces/ws-1/diff?base=head&path=b.ts",
     );
+  });
+
+  it("keeps the workspace-wide whitespace count while loading scoped patches", async () => {
+    const files = makeFilesResult(["a.ts", "whitespace.ts"], {
+      whitespace_only_count: 7,
+    });
+    const scopedDiff = makeDiffResult(["a.ts"]);
+    scopedDiff.whitespace_only_count = 0;
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+
+        if (url.includes("/workspaces/ws-1/files")) {
+          return Response.json(files);
+        }
+        if (url.includes("/workspaces/ws-1/diff")) {
+          return Response.json(scopedDiff);
+        }
+        return Response.json({}, { status: 404 });
+      },
+    );
+
+    const store = createDiffStore({ client: testClient() });
+    await store.loadWorkspaceDiff("ws-1", "head");
+
+    expect(store.getDiff()?.whitespace_only_count).toBe(7);
+  });
+
+  it("clears workspace diff loading when the file list fails", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+
+        if (url.includes("/workspaces/ws-1/files")) {
+          return Response.json(
+            { title: "workspace files failed" },
+            { status: 502 },
+          );
+        }
+        return Response.json({}, { status: 404 });
+      },
+    );
+
+    const store = createDiffStore({ client: testClient() });
+    await store.loadWorkspaceDiff("ws-1", "head");
+
+    expect(store.isDiffLoading()).toBe(false);
+    expect(store.getDiffError()).toBe("workspace files failed");
   });
 
   it("clears stale data when switching PRs", async () => {
