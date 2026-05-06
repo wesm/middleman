@@ -4,17 +4,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const {
   ghosttyTerminalCtor,
   mockGhosttyInit,
+  xtermOnDataHandlers,
   xtermTerminalCtor,
   xtermOpen,
 } = vi.hoisted(() => ({
   ghosttyTerminalCtor: vi.fn(),
   mockGhosttyInit: vi.fn().mockResolvedValue(undefined),
+  xtermOnDataHandlers: [] as Array<(data: string) => void>,
   xtermTerminalCtor: vi.fn(),
   xtermOpen: vi.fn(),
 }));
 
 let configuredRenderer: "xterm" | "ghostty-web" = "xterm";
 let configuredFontFamily = "";
+let mockSockets: MockWebSocket[] = [];
 
 class MockWebSocket {
   static OPEN = 1;
@@ -24,9 +27,14 @@ class MockWebSocket {
   onmessage: ((event: MessageEvent) => void) | null = null;
   onclose: (() => void) | null = null;
   onerror: (() => void) | null = null;
+  sent: Array<string | ArrayBuffer | ArrayBufferView> = [];
 
-  constructor(public url: string) {}
-  send(): void {}
+  constructor(public url: string) {
+    mockSockets.push(this);
+  }
+  send(data: string | ArrayBuffer | ArrayBufferView): void {
+    this.sent.push(data);
+  }
   close(): void {}
 }
 
@@ -50,7 +58,10 @@ vi.mock("@xterm/xterm", () => ({
       dispose: vi.fn(),
       loadAddon: vi.fn(),
       onBinary: vi.fn(),
-      onData: vi.fn(),
+      onData: vi.fn((handler: (data: string) => void) => {
+        xtermOnDataHandlers.push(handler);
+        return { dispose: vi.fn() };
+      }),
       open: xtermOpen,
       refresh: vi.fn(),
       write: vi.fn(),
@@ -103,6 +114,8 @@ describe("TerminalPane", () => {
     mockGhosttyInit.mockClear();
     xtermTerminalCtor.mockReset();
     xtermOpen.mockReset();
+    xtermOnDataHandlers.length = 0;
+    mockSockets = [];
 
     vi.stubGlobal("ResizeObserver", class {
       observe(): void {}
@@ -143,4 +156,39 @@ describe("TerminalPane", () => {
     expect(xtermTerminalCtor).not.toHaveBeenCalled();
     expect(mockGhosttyInit).toHaveBeenCalledTimes(1);
   });
+
+  it("filters tiny tmux mouse drags before sending terminal input", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+
+    await waitFor(() => expect(xtermOnDataHandlers).toHaveLength(1));
+    expect(mockSockets).toHaveLength(1);
+
+    xtermOnDataHandlers[0]!("\x1b[<0;10;5M\x1b[<32;12;5M\x1b[<0;12;5m");
+
+    expect(sentText(mockSockets[0]!, mockSockets[0]!.sent.length - 1)).toBe("\x1b[<0;10;5M\x1b[<0;12;5m");
+  });
+
+  it("does not update drag filter state while disconnected", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+
+    await waitFor(() => expect(xtermOnDataHandlers).toHaveLength(1));
+    const socket = mockSockets[0]!;
+    socket.readyState = 0;
+    socket.sent = [];
+
+    xtermOnDataHandlers[0]!("\x1b[<0;10;5M");
+    socket.readyState = MockWebSocket.OPEN;
+    xtermOnDataHandlers[0]!("\x1b[<32;12;5M");
+
+    expect(sentText(socket, 0)).toBe("\x1b[<32;12;5M");
+  });
 });
+
+function sentText(socket: MockWebSocket, index: number): string {
+  const value = socket.sent[index];
+  if (typeof value === "string") return value;
+  if (value instanceof ArrayBuffer) {
+    return new TextDecoder().decode(value);
+  }
+  return new TextDecoder().decode(value);
+}

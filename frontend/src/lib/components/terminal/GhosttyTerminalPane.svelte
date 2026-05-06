@@ -14,6 +14,7 @@
   import { getStores } from "@middleman/ui";
   import { FitAddon, Terminal } from "ghostty-web";
   import { workspaceTmuxWebSocketPath } from "../../api/workspace-runtime.js";
+  import { createTmuxMouseDragFilter } from "./tmuxMouseDragFilter.js";
 
   interface TerminalPaneProps {
     workspaceId?: string;
@@ -51,6 +52,7 @@
   let disposed = false;
   let exited = false;
   const encoder = new TextEncoder();
+  const tmuxMouseDragFilter = createTmuxMouseDragFilter();
 
   type TerminalInputData = string | ArrayBuffer | ArrayBufferView;
 
@@ -156,7 +158,10 @@
     if (ws?.readyState !== WebSocket.OPEN) return;
 
     if (typeof data === "string") {
-      ws.send(encoder.encode(data));
+      const filteredData = tmuxMouseDragFilter.filter(data);
+      if (filteredData) {
+        ws.send(encoder.encode(filteredData));
+      }
       return;
     }
     if (data instanceof ArrayBuffer) {

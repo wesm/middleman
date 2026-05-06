@@ -6,6 +6,7 @@
   import { WebglAddon } from "@xterm/addon-webgl";
   import "@xterm/xterm/css/xterm.css";
   import { workspaceTmuxWebSocketPath } from "../../api/workspace-runtime.js";
+  import { createTmuxMouseDragFilter } from "./tmuxMouseDragFilter.js";
 
   interface TerminalPaneProps {
     workspaceId?: string;
@@ -43,6 +44,7 @@
   let disposed = false;
   let exited = false;
   const encoder = new TextEncoder();
+  const tmuxMouseDragFilter = createTmuxMouseDragFilter();
 
   const MAX_RECONNECT_DELAY = 30000;
 
@@ -332,8 +334,11 @@
       fit.fit();
 
       term.onData((data: string) => {
-        if (ws?.readyState === WebSocket.OPEN) {
-          ws.send(encoder.encode(data));
+        if (ws?.readyState !== WebSocket.OPEN) return;
+
+        const filteredData = tmuxMouseDragFilter.filter(data);
+        if (filteredData) {
+          ws.send(encoder.encode(filteredData));
         }
       });
 
