@@ -304,6 +304,7 @@ test.describe("diff view", () => {
       localStorage.removeItem("diff-word-wrap");
       localStorage.removeItem("diff-rich-preview");
       localStorage.removeItem("diff-collapsed-files");
+      localStorage.removeItem("diff-file-tree-width");
     });
   });
 
@@ -321,6 +322,66 @@ test.describe("diff view", () => {
 
     // All 4 diff file sections are rendered in the detail area.
     await expect(page.locator(".diff-file")).toHaveCount(4);
+  });
+
+  test("resizes and remembers the changed-file tree width", async ({ page }) => {
+    await mockDiffApi(page, smallDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    const fileTree = page.getByRole("complementary", {
+      name: "Changed files",
+    });
+    const resizeHandle = page.getByRole("button", {
+      name: "Resize file tree",
+    });
+    await expect(fileTree).toBeVisible();
+    await expect(resizeHandle).toBeVisible();
+
+    const beforeWidth = await fileTree.evaluate((el) =>
+      Number.parseInt(getComputedStyle(el).width, 10),
+    );
+    const handleBox = await resizeHandle.boundingBox();
+    expect(handleBox).not.toBeNull();
+
+    await page.mouse.move(
+      handleBox!.x + handleBox!.width / 2,
+      handleBox!.y + handleBox!.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      handleBox!.x + handleBox!.width / 2 + 80,
+      handleBox!.y + handleBox!.height / 2,
+    );
+    await page.mouse.up();
+
+    await expect.poll(async () =>
+      fileTree.evaluate((el) =>
+        Number.parseInt(getComputedStyle(el).width, 10),
+      ),
+    ).toBeGreaterThanOrEqual(beforeWidth + 75);
+
+    await expect.poll(async () =>
+      page.evaluate(() => localStorage.getItem("diff-file-tree-width")),
+    ).toBe(String(beforeWidth + 80));
+
+    await page.locator(".detail-tab", {
+      hasText: "Conversation",
+    }).click();
+    await expect(page.locator(".diff-view")).toHaveCount(0);
+
+    await page.locator(".detail-tab", {
+      hasText: "Files changed",
+    }).click();
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    await expect.poll(async () =>
+      fileTree.evaluate((el) =>
+        Number.parseInt(getComputedStyle(el).width, 10),
+      ),
+    ).toBe(beforeWidth + 80);
   });
 
   test("sidebar file list shows status indicators", async ({ page }) => {

@@ -6,9 +6,7 @@
   import PullList from "../components/sidebar/PullList.svelte";
   import PullDetail
     from "../components/detail/PullDetail.svelte";
-  import DiffSidebar from "../components/diff/DiffSidebar.svelte";
-  import DiffToolbar from "../components/diff/DiffToolbar.svelte";
-  import DiffView from "../components/diff/DiffView.svelte";
+  import DiffFilesLayout from "../components/diff/DiffFilesLayout.svelte";
   import StackSidebar
     from "../components/detail/StackSidebar.svelte";
   import type { DetailSyncMode } from "../stores/detail.svelte.js";
@@ -94,25 +92,15 @@
       </button>
     </div>
     {#if detailTab === "files"}
-      {#key `${selectedPR.owner}/${selectedPR.name}/${selectedPR.number}`}
-        <div class="files-view">
-          <DiffToolbar />
-          <div class="files-layout">
-            <aside class="files-sidebar">
-              <DiffSidebar />
-            </aside>
-            <div class="files-main">
-              <DiffView
-                owner={selectedPR.owner}
-                name={selectedPR.name}
-                number={selectedPR.number}
-                provider={selectedPR.provider}
-                platformHost={selectedPR.platformHost}
-                repoPath={selectedPR.repoPath}
-              />
-            </div>
-          </div>
-        </div>
+      {#key `${selectedPR.provider}/${selectedPR.platformHost ?? ""}/${selectedPR.repoPath}/${selectedPR.number}`}
+        <DiffFilesLayout
+          owner={selectedPR.owner}
+          name={selectedPR.name}
+          number={selectedPR.number}
+          provider={selectedPR.provider}
+          platformHost={selectedPR.platformHost}
+          repoPath={selectedPR.repoPath}
+        />
       {/key}
     {:else}
       <PullDetail
@@ -156,57 +144,6 @@
     border-bottom: 1px solid var(--border-default);
     background: var(--bg-surface);
     flex-shrink: 0;
-  }
-
-  .files-layout {
-    display: flex;
-    flex: 1;
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  .files-view {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  .files-sidebar {
-    width: 280px;
-    flex-shrink: 0;
-    border-right: 1px solid var(--border-default);
-    background: var(--bg-surface);
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .files-main {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  @media (max-width: 720px) {
-    .files-layout {
-      flex-direction: column;
-    }
-
-    .files-sidebar {
-      width: 100%;
-      max-height: 35vh;
-      border-right: none;
-      border-bottom: 1px solid var(--border-default);
-    }
-
-    .files-main {
-      flex: 1;
-      min-height: 0;
-    }
   }
 
   .placeholder-content {
