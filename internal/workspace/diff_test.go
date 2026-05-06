@@ -82,7 +82,7 @@ func TestWorktreeDiffFilesHidesWhitespaceOnlyUntrackedFiles(t *testing.T) {
 	assert.Equal("z-empty.txt", files[1].Path)
 }
 
-func TestWorktreeDiffAgainstUpstreamIncludesLocalCommitsAndDirtyChanges(t *testing.T) {
+func TestWorktreeDiffAgainstPushedBranchIncludesLocalCommitsAndDirtyChanges(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 	work := setupDivergenceWorktree(t)
@@ -97,7 +97,7 @@ func TestWorktreeDiffAgainstUpstreamIncludesLocalCommitsAndDirtyChanges(t *testi
 	))
 
 	diff, ok, err := WorktreeDiff(
-		t.Context(), work, WorktreeDiffBaseUpstream, false,
+		t.Context(), work, WorktreeDiffBasePushed, false,
 	)
 	require.NoError(err)
 	require.True(ok)
@@ -112,7 +112,51 @@ func TestWorktreeDiffAgainstUpstreamIncludesLocalCommitsAndDirtyChanges(t *testi
 	assert.Equal(0, diff.WhitespaceOnlyCount)
 }
 
-func TestWorktreeDiffAgainstUpstreamWithoutTrackingBranch(t *testing.T) {
+func TestWorktreeDiffAgainstMergeTargetUsesMergeBase(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	work := setupDivergenceWorktree(t)
+
+	other := filepath.Join(filepath.Dir(work), "other")
+	remote := filepath.Join(filepath.Dir(work), "remote.git")
+	runWorkspaceTestGit(t, filepath.Dir(work), "clone", remote, other)
+	runWorkspaceTestGit(t, other, "config", "user.email", "o@test.com")
+	runWorkspaceTestGit(t, other, "config", "user.name", "Other")
+	require.NoError(os.WriteFile(
+		filepath.Join(other, "target-only.txt"), []byte("target\n"), 0o644,
+	))
+	runWorkspaceTestGit(t, other, "add", ".")
+	runWorkspaceTestGit(t, other, "commit", "-m", "target branch advance")
+	runWorkspaceTestGit(t, other, "push", "origin", "main")
+	runWorkspaceTestGit(t, work, "fetch", "origin", "main")
+
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "committed.go"), []byte("package committed\n"), 0o644,
+	))
+	runWorkspaceTestGit(t, work, "add", ".")
+	runWorkspaceTestGit(t, work, "commit", "-m", "local commit")
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "dirty.go"), []byte("package dirty\n"), 0o644,
+	))
+
+	diff, ok, err := WorktreeDiffAgainstMergeTarget(
+		t.Context(), work, "main", false,
+	)
+	require.NoError(err)
+	require.True(ok)
+	require.NotNil(diff)
+
+	paths := make([]string, 0, len(diff.Files))
+	for _, file := range diff.Files {
+		paths = append(paths, file.Path)
+	}
+	assert.Contains(paths, "f.txt")
+	assert.Contains(paths, "committed.go")
+	assert.Contains(paths, "dirty.go")
+	assert.NotContains(paths, "target-only.txt")
+}
+
+func TestWorktreeDiffAgainstPushedBranchWithoutTrackingBranch(t *testing.T) {
 	require := require.New(t)
 	root := t.TempDir()
 	work := filepath.Join(root, "work")
@@ -126,7 +170,7 @@ func TestWorktreeDiffAgainstUpstreamWithoutTrackingBranch(t *testing.T) {
 	runWorkspaceTestGit(t, work, "commit", "-m", "init")
 
 	diff, ok, err := WorktreeDiff(
-		t.Context(), work, WorktreeDiffBaseUpstream, false,
+		t.Context(), work, WorktreeDiffBasePushed, false,
 	)
 	require.NoError(err)
 	require.False(ok)

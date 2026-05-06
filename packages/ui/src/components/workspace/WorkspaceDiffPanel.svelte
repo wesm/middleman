@@ -52,12 +52,20 @@
         HEAD
       </button>
       <button
-        class="scope-btn"
-        class:scope-btn--active={base === "origin"}
-        aria-pressed={base === "origin"}
-        onclick={() => selectBase("origin")}
+        class="scope-btn scope-btn--wide"
+        class:scope-btn--active={base === "pushed"}
+        aria-pressed={base === "pushed"}
+        onclick={() => selectBase("pushed")}
       >
-        Origin
+        Pushed branch
+      </button>
+      <button
+        class="scope-btn scope-btn--wide"
+        class:scope-btn--active={base === "merge-target"}
+        aria-pressed={base === "merge-target"}
+        onclick={() => selectBase("merge-target")}
+      >
+        Merge target
       </button>
     </div>
   </div>
@@ -110,6 +118,7 @@
 
   .scope-toggle {
     display: inline-flex;
+    flex-wrap: wrap;
     padding: 2px;
     border: 1px solid var(--border-muted);
     border-radius: 4px;
@@ -127,6 +136,10 @@
     font-size: 11px;
     font-weight: 600;
     cursor: pointer;
+  }
+
+  .scope-btn--wide {
+    min-width: 92px;
   }
 
   .scope-btn:hover {

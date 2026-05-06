@@ -20,8 +20,9 @@ import (
 type WorktreeDiffBase string
 
 const (
-	WorktreeDiffBaseHead     WorktreeDiffBase = "head"
-	WorktreeDiffBaseUpstream WorktreeDiffBase = "origin"
+	WorktreeDiffBaseHead        WorktreeDiffBase = "head"
+	WorktreeDiffBasePushed      WorktreeDiffBase = "pushed"
+	WorktreeDiffBaseMergeTarget WorktreeDiffBase = "merge-target"
 )
 
 const maxUntrackedTextFileBytes = 1 << 20
@@ -37,6 +38,29 @@ func WorktreeDiffFiles(
 		return nil, ok, err
 	}
 
+	return worktreeDiffFilesFromRef(ctx, dir, baseRef, hideWhitespace)
+}
+
+func WorktreeDiffFilesAgainstMergeTarget(
+	ctx context.Context,
+	dir string,
+	targetBranch string,
+	hideWhitespace bool,
+) ([]gitclone.DiffFile, bool, error) {
+	baseRef, ok, err := worktreeMergeTargetBaseRef(ctx, dir, targetBranch)
+	if err != nil || !ok {
+		return nil, ok, err
+	}
+
+	return worktreeDiffFilesFromRef(ctx, dir, baseRef, hideWhitespace)
+}
+
+func worktreeDiffFilesFromRef(
+	ctx context.Context,
+	dir string,
+	baseRef string,
+	hideWhitespace bool,
+) ([]gitclone.DiffFile, bool, error) {
 	rawArgs := addWorktreeWhitespaceFlag([]string{
 		"diff", "--raw", "-z", "-M", "-C", "--find-copies-harder",
 		baseRef,
@@ -74,6 +98,29 @@ func WorktreeDiff(
 		return nil, ok, err
 	}
 
+	return worktreeDiffFromRef(ctx, dir, baseRef, hideWhitespace)
+}
+
+func WorktreeDiffAgainstMergeTarget(
+	ctx context.Context,
+	dir string,
+	targetBranch string,
+	hideWhitespace bool,
+) (*gitclone.DiffResult, bool, error) {
+	baseRef, ok, err := worktreeMergeTargetBaseRef(ctx, dir, targetBranch)
+	if err != nil || !ok {
+		return nil, ok, err
+	}
+
+	return worktreeDiffFromRef(ctx, dir, baseRef, hideWhitespace)
+}
+
+func worktreeDiffFromRef(
+	ctx context.Context,
+	dir string,
+	baseRef string,
+	hideWhitespace bool,
+) (*gitclone.DiffResult, bool, error) {
 	wsCount, err := worktreeWhitespaceOnlyCount(ctx, dir, baseRef)
 	if err != nil {
 		return nil, false, fmt.Errorf("whitespace count: %w", err)
@@ -370,7 +417,7 @@ func worktreeDiffBaseRef(
 	switch base {
 	case WorktreeDiffBaseHead:
 		return "HEAD", true, nil
-	case WorktreeDiffBaseUpstream:
+	case WorktreeDiffBasePushed:
 		_, ok, err := WorktreeDivergence(ctx, dir)
 		if err != nil || !ok {
 			return "", ok, err
@@ -379,6 +426,41 @@ func worktreeDiffBaseRef(
 	default:
 		return "", false, fmt.Errorf("unknown worktree diff base %q", base)
 	}
+}
+
+func worktreeMergeTargetBaseRef(
+	ctx context.Context,
+	dir string,
+	targetBranch string,
+) (string, bool, error) {
+	targetBranch = strings.TrimSpace(targetBranch)
+	if targetBranch == "" {
+		return "", false, nil
+	}
+	if _, err := worktreeGitOutput(
+		ctx, dir, "check-ref-format", "--branch", targetBranch,
+	); err != nil {
+		return "", false, nil
+	}
+
+	targetRef := "refs/remotes/origin/" + targetBranch
+	if _, err := worktreeGitOutput(
+		ctx, dir, "rev-parse", "--verify", "--quiet",
+		targetRef+"^{commit}",
+	); err != nil {
+		return "", false, nil
+	}
+	out, err := worktreeGitOutput(
+		ctx, dir, "merge-base", targetRef, "HEAD",
+	)
+	if err != nil {
+		return "", false, fmt.Errorf("git merge-base: %w", err)
+	}
+	baseRef := strings.TrimSpace(string(out))
+	if baseRef == "" {
+		return "", false, nil
+	}
+	return baseRef, true, nil
 }
 
 func worktreeGitOutput(

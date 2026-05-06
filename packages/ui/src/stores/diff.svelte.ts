@@ -19,7 +19,7 @@ export type DiffScope =
   | { kind: "commit"; sha: string }
   | { kind: "range"; fromSha: string; toSha: string };
 
-export type WorkspaceDiffBase = "head" | "origin";
+export type WorkspaceDiffBase = "head" | "pushed" | "merge-target";
 
 export interface DiffStoreOptions {
   client?: MiddlemanClient;

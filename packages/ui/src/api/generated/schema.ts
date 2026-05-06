@@ -3761,7 +3761,7 @@ export interface operations {
     "get-workspaces-by-id-diff": {
         parameters: {
             query?: {
-                /** @description Diff base: head or origin */
+                /** @description Diff base: head, pushed, or merge-target */
                 base?: string;
                 /** @description Set to hide to ignore whitespace-only changes */
                 whitespace?: string;
@@ -3797,7 +3797,7 @@ export interface operations {
     "get-workspaces-by-id-files": {
         parameters: {
             query?: {
-                /** @description Diff base: head or origin */
+                /** @description Diff base: head, pushed, or merge-target */
                 base?: string;
                 /** @description Set to hide to ignore whitespace-only changes */
                 whitespace?: string;
