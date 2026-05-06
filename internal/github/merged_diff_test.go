@@ -373,7 +373,7 @@ func TestSyncOpenToMergedTransition(t *testing.T) {
 
 	// Re-fetch the bare clone to pick up the merge commit.
 	barePath, err := mgr.ClonePath("github.com", "owner", "repo")
-	require.NoError(t, err)
+	require.NoError(err)
 	gitRun(t, barePath, "fetch", "--prune", "origin")
 
 	closedState := "closed"
@@ -561,7 +561,7 @@ func TestSyncMRWrapsDiffFailureAsDiffSyncError(t *testing.T) {
 	emptyRemote := t.TempDir()
 	initTestRepo(t, emptyRemote)
 	barePath, err := mgr.ClonePath("github.com", "owner", "repo")
-	require.NoError(t, err)
+	require.NoError(err)
 	gitRun(t, barePath, "remote", "set-url", "origin", emptyRemote)
 
 	number := 42
@@ -595,7 +595,7 @@ func TestSyncMRWrapsDiffFailureAsDiffSyncError(t *testing.T) {
 		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
 		time.Minute, nil, nil)
 
-	err := syncer.SyncMR(ctx, "owner", "repo", number)
+	err = syncer.SyncMR(ctx, "owner", "repo", number)
 	require.Error(err)
 	var diffErr *DiffSyncError
 	require.ErrorAs(err, &diffErr)
@@ -663,7 +663,7 @@ func TestSyncItemByNumberReturnsTypeOnDiffSyncError(t *testing.T) {
 	emptyRemote := t.TempDir()
 	initTestRepo(t, emptyRemote)
 	barePath, err := mgr.ClonePath("github.com", "owner", "repo")
-	require.NoError(t, err)
+	require.NoError(err)
 	gitRun(t, barePath, "remote", "set-url", "origin", emptyRemote)
 
 	number := 77
