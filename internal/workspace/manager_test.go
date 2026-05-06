@@ -424,6 +424,42 @@ func TestAddPreferredWorktreeSameRepoHeadRepoTracksRemoteBranch(t *testing.T) {
 	assert.Equal("refs/heads/feature/thing", mergeRef)
 }
 
+func TestAddPreferredWorktreeForkHeadRepoUsesPullRef(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	cloneDir := setupBareCloneForWorkspaceGitTest(t)
+	// True fork PRs do not have an origin/<head-branch> in the base repo clone.
+	// The pull ref is the only guaranteed local ref that can materialize the
+	// fork head without adding another remote.
+	pullSHA := configureForkPRRef(t, cloneDir, 245)
+
+	d := openTestDB(t)
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMRWithHeadRepo(
+		t, d, repoID, 245, "fork/thing",
+		"https://github.com/contributor/widget.git",
+	)
+	mgr := NewManager(d, t.TempDir())
+	ws, err := mgr.Create(t.Context(), "github.com", "acme", "widget", 245)
+	require.NoError(err)
+	require.NotNil(ws.MRHeadRepo)
+
+	_, exists, err := gitRefSHA(
+		t.Context(), cloneDir, "refs/remotes/origin/fork/thing",
+	)
+	require.NoError(err)
+	require.False(exists)
+
+	branch, err := mgr.addPreferredWorktree(t.Context(), cloneDir, ws)
+	require.NoError(err)
+	assert.Equal("fork/thing", branch)
+
+	headSHA, err := gitHeadSHA(t.Context(), ws.WorktreePath)
+	require.NoError(err)
+	assert.Equal(pullSHA, headSHA)
+}
+
 func TestRollbackWorktreeDeletesBranchWhenContextCanceled(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -538,6 +574,19 @@ func configureSameRepoPRRefs(
 		t, cloneDir, "update-ref",
 		fmt.Sprintf("refs/pull/%d/head", prNumber), sha,
 	)
+}
+
+func configureForkPRRef(t *testing.T, cloneDir string, prNumber int) string {
+	t.Helper()
+	out, err := gitOutput(t.Context(), cloneDir, "rev-parse", "main")
+	require.NoError(t, err)
+	sha := strings.TrimSpace(out)
+	require.NotEmpty(t, sha)
+	runWorkspaceTestGit(
+		t, cloneDir, "update-ref",
+		fmt.Sprintf("refs/pull/%d/head", prNumber), sha,
+	)
+	return sha
 }
 
 func runWorkspaceTestGit(t *testing.T, dir string, args ...string) {
