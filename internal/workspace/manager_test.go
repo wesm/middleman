@@ -424,15 +424,17 @@ func TestAddPreferredWorktreeSameRepoHeadRepoTracksRemoteBranch(t *testing.T) {
 	assert.Equal("refs/heads/feature/thing", mergeRef)
 }
 
-func TestAddPreferredWorktreeForkHeadRepoUsesPullRef(t *testing.T) {
+func TestAddPreferredWorktreeForkHeadRepoUsesPullRefOverOriginBranch(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 
 	cloneDir := setupBareCloneForWorkspaceGitTest(t)
-	// True fork PRs do not have an origin/<head-branch> in the base repo clone.
-	// The pull ref is the only guaranteed local ref that can materialize the
-	// fork head without adding another remote.
-	pullSHA := configureForkPRRef(t, cloneDir, 245)
+	// A base repo can have a branch with the same name as a fork PR branch, but
+	// that origin branch is not the fork head. Fork workspaces must prefer the
+	// GitHub pull ref over any same-named origin branch.
+	originSHA, pullSHA := configureForkPRRefs(
+		t, cloneDir, "fork/thing", 245,
+	)
 
 	d := openTestDB(t)
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
@@ -445,11 +447,13 @@ func TestAddPreferredWorktreeForkHeadRepoUsesPullRef(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(ws.MRHeadRepo)
 
-	_, exists, err := gitRefSHA(
+	gotOriginSHA, exists, err := gitRefSHA(
 		t.Context(), cloneDir, "refs/remotes/origin/fork/thing",
 	)
 	require.NoError(err)
-	require.False(exists)
+	require.True(exists)
+	require.NotEqual(originSHA, pullSHA)
+	require.Equal(originSHA, gotOriginSHA)
 
 	branch, err := mgr.addPreferredWorktree(t.Context(), cloneDir, ws)
 	require.NoError(err)
@@ -576,17 +580,34 @@ func configureSameRepoPRRefs(
 	)
 }
 
-func configureForkPRRef(t *testing.T, cloneDir string, prNumber int) string {
+func configureForkPRRefs(
+	t *testing.T, cloneDir, branch string, prNumber int,
+) (originSHA, pullSHA string) {
 	t.Helper()
 	out, err := gitOutput(t.Context(), cloneDir, "rev-parse", "main")
 	require.NoError(t, err)
-	sha := strings.TrimSpace(out)
-	require.NotEmpty(t, sha)
+	originSHA = strings.TrimSpace(out)
+	require.NotEmpty(t, originSHA)
+	treeOut, err := gitOutput(t.Context(), cloneDir, "rev-parse", "main^{tree}")
+	require.NoError(t, err)
+	runWorkspaceTestGit(t, cloneDir, "config", "user.email", "test@test.com")
+	runWorkspaceTestGit(t, cloneDir, "config", "user.name", "Test")
+	commitOut, err := gitOutput(
+		t.Context(), cloneDir,
+		"commit-tree", strings.TrimSpace(treeOut),
+		"-p", originSHA, "-m", "fork head",
+	)
+	require.NoError(t, err)
+	pullSHA = strings.TrimSpace(commitOut)
+	require.NotEmpty(t, pullSHA)
+	runWorkspaceTestGit(
+		t, cloneDir, "update-ref", "refs/remotes/origin/"+branch, originSHA,
+	)
 	runWorkspaceTestGit(
 		t, cloneDir, "update-ref",
-		fmt.Sprintf("refs/pull/%d/head", prNumber), sha,
+		fmt.Sprintf("refs/pull/%d/head", prNumber), pullSHA,
 	)
-	return sha
+	return originSHA, pullSHA
 }
 
 func runWorkspaceTestGit(t *testing.T, dir string, args ...string) {
