@@ -120,6 +120,13 @@ function issueDetailFixture(
     platform_host: platformHost,
     repo_owner: "acme",
     repo_name: "widgets",
+    repo: {
+      provider: "github",
+      platform_host: platformHost,
+      owner: "acme",
+      name: "widgets",
+      repo_path: "acme/widgets",
+    },
     issue: {
       ID: issueNumber,
       PlatformID: 10_000 + issueNumber,
@@ -183,6 +190,13 @@ async function mockActivityWithGheIssue(page: Page): Promise<void> {
             platform_host: "ghe.example.com",
             repo_owner: "acme",
             repo_name: "widgets",
+            repo: {
+              provider: "github",
+              platform_host: "ghe.example.com",
+              owner: "acme",
+              name: "widgets",
+              repo_path: "acme/widgets",
+            },
             item_type: "issue",
             item_number: 10,
             item_title: "Fix Safari layout issue",
@@ -213,6 +227,13 @@ async function mockActivityWithTwoGheIssues(page: Page): Promise<void> {
             platform_host: "ghe.example.com",
             repo_owner: "acme",
             repo_name: "widgets",
+            repo: {
+              provider: "github",
+              platform_host: "ghe.example.com",
+              owner: "acme",
+              name: "widgets",
+              repo_path: "acme/widgets",
+            },
             item_type: "issue",
             item_number: 10,
             item_title: "Fix Safari layout issue",
@@ -229,6 +250,13 @@ async function mockActivityWithTwoGheIssues(page: Page): Promise<void> {
             platform_host: "ghe.example.com",
             repo_owner: "acme",
             repo_name: "widgets",
+            repo: {
+              provider: "github",
+              platform_host: "ghe.example.com",
+              owner: "acme",
+              name: "widgets",
+              repo_path: "acme/widgets",
+            },
             item_type: "issue",
             item_number: 11,
             item_title: "Fix Firefox layout issue",
@@ -758,8 +786,10 @@ test.describe("activity split view and detail drawers", () => {
     await page.locator(".activity-row", { hasText: "Fix Safari layout issue" })
       .click();
 
-    await expect(page).toHaveURL(/selected=issue%3Aacme%2Fwidgets%2F10/);
+    await expect(page).toHaveURL(/selected=issue%3A10/);
+    await expect(page).toHaveURL(/provider=github/);
     await expect(page).toHaveURL(/platform_host=ghe\.example\.com/);
+    await expect(page).toHaveURL(/repo_path=acme%2Fwidgets/);
     await expect(page.locator(".activity-detail .issue-detail")).toBeVisible();
     expect(seenHosts).toContain("ghe.example.com");
     expect(seenHosts).not.toContain("github.com");
@@ -1482,9 +1512,9 @@ test.describe("PR list tabs", () => {
     await expect(page.locator(".main-area .detail-tabs")).toHaveCount(1);
   });
 
-  test("direct load of /pulls/:owner/:name/:number/files renders the diff with a single tab bar", async ({ page }) => {
+  test("direct load of provider PR files route renders the diff with a single tab bar", async ({ page }) => {
     // Regression guard for initialization-only bugs that affect deep
-    // links to the /files sub-route. Going there directly must render
+    // links to the provider /files route. Going there directly must render
     // the diff and keep exactly one outer PRListView tab bar — the
     // router-click test above does not exercise this path.
     await mockDiffForAllPRs(page, tinyDiff);

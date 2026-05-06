@@ -617,6 +617,9 @@ func (s *Server) deleteConfiguredRepo(
 }
 
 func normalizeRouteProvider(raw string) (string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return "", errors.New("provider is required")
+	}
 	kind, err := platform.NormalizeKind(raw)
 	if err != nil {
 		return "", err

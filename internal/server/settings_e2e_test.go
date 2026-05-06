@@ -118,7 +118,12 @@ func TestRepoConfigAPIE2EAddDeleteAndErrors(t *testing.T) {
 	duplicateResp := doServerJSON(
 		t, ts.Client(), http.MethodPost,
 		ts.URL+"/api/v1/repos",
-		map[string]string{"owner": "acme", "name": "widget"},
+		map[string]string{
+			"provider": "github",
+			"host":     "github.com",
+			"owner":    "acme",
+			"name":     "widget",
+		},
 	)
 	defer duplicateResp.Body.Close()
 	require.Equal(http.StatusBadRequest, duplicateResp.StatusCode)
@@ -126,7 +131,12 @@ func TestRepoConfigAPIE2EAddDeleteAndErrors(t *testing.T) {
 	addResp := doServerJSON(
 		t, ts.Client(), http.MethodPost,
 		ts.URL+"/api/v1/repos",
-		map[string]string{"owner": "other-org", "name": "other-repo"},
+		map[string]string{
+			"provider": "github",
+			"host":     "github.com",
+			"owner":    "other-org",
+			"name":     "other-repo",
+		},
 	)
 	defer addResp.Body.Close()
 	require.Equal(http.StatusCreated, addResp.StatusCode)

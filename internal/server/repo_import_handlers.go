@@ -22,7 +22,7 @@ type repoPreviewInput struct {
 }
 
 type repoPreviewRequest struct {
-	Provider     string `json:"provider,omitempty"`
+	Provider     string `json:"provider"`
 	Host         string `json:"host,omitempty"`
 	PlatformHost string `json:"platform_host,omitempty"`
 	Owner        string `json:"owner"`
@@ -63,7 +63,7 @@ type bulkAddReposRequest struct {
 type bulkAddReposOutput = createdOutput[settingsResponse]
 
 type bulkAddRepoRequest struct {
-	Provider     string `json:"provider,omitempty"`
+	Provider     string `json:"provider"`
 	Host         string `json:"host,omitempty"`
 	PlatformHost string `json:"platform_host,omitempty"`
 	Owner        string `json:"owner,omitempty"`
@@ -77,6 +77,9 @@ type resolvedBulkRepo struct {
 }
 
 func normalizeImportPlatform(provider, host string) (platform.Kind, string, error) {
+	if strings.TrimSpace(provider) == "" {
+		return "", "", fmt.Errorf("provider is required")
+	}
 	kind, err := platform.NormalizeKind(provider)
 	if err != nil {
 		return "", "", err

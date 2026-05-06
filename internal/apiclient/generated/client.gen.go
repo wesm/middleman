@@ -68,7 +68,7 @@ type AddRepoInputBody struct {
 	Name         string  `json:"name"`
 	Owner        string  `json:"owner"`
 	PlatformHost *string `json:"platform_host,omitempty"`
-	Provider     *string `json:"provider,omitempty"`
+	Provider     string  `json:"provider"`
 }
 
 // Agent defines model for Agent.
@@ -99,7 +99,7 @@ type BulkAddRepoRequest struct {
 	Name         *string `json:"name,omitempty"`
 	Owner        *string `json:"owner,omitempty"`
 	PlatformHost *string `json:"platform_host,omitempty"`
-	Provider     *string `json:"provider,omitempty"`
+	Provider     string  `json:"provider"`
 	RepoPath     *string `json:"repo_path,omitempty"`
 }
 
@@ -719,7 +719,7 @@ type RepoPreviewRequest struct {
 	Owner        string  `json:"owner"`
 	Pattern      string  `json:"pattern"`
 	PlatformHost *string `json:"platform_host,omitempty"`
-	Provider     *string `json:"provider,omitempty"`
+	Provider     string  `json:"provider"`
 }
 
 // RepoPreviewResponse defines model for RepoPreviewResponse.

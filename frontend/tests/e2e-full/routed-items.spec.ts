@@ -73,7 +73,9 @@ test.describe("routed item builders through the UI", () => {
     );
     await page.locator(".focus-list .pull-item").filter({ hasText: prTitle }).first().click();
 
-    await expect(page).toHaveURL(/\/focus\/pr\/acme\/widgets\/1$/);
+    await expect(page).toHaveURL(
+      /\/focus\/pr\?provider=github&platform_host=github\.com&repo_path=acme%2Fwidgets&number=1$/,
+    );
     await expect(page.locator(".focus-layout .pull-detail .detail-title"))
       .toContainText(prTitle);
     await expect(page.locator(".app-header")).not.toBeAttached();
@@ -92,7 +94,7 @@ test.describe("routed item builders through the UI", () => {
     await page.locator(".focus-list .issue-item").filter({ hasText: issueTitle }).first().click();
 
     await expect(page).toHaveURL(
-      /\/focus\/issue\/acme\/widgets\/10\?platform_host=github\.com$/,
+      /\/focus\/issue\?provider=github&platform_host=github\.com&repo_path=acme%2Fwidgets&number=10$/,
     );
     await expect(page.locator(".focus-layout .issue-detail .detail-title"))
       .toContainText(issueTitle);

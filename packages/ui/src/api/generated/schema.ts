@@ -1437,7 +1437,7 @@ export interface components {
             name: string;
             owner: string;
             platform_host?: string;
-            provider?: string;
+            provider: string;
         };
         Agent: {
             command: string[] | null;
@@ -1468,7 +1468,7 @@ export interface components {
             name?: string;
             owner?: string;
             platform_host?: string;
-            provider?: string;
+            provider: string;
             repo_path?: string;
         };
         BulkAddReposRequest: {
@@ -2225,7 +2225,7 @@ export interface components {
             owner: string;
             pattern: string;
             platform_host?: string;
-            provider?: string;
+            provider: string;
         };
         RepoPreviewResponse: {
             /**

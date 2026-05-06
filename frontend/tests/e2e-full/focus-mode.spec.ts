@@ -28,16 +28,22 @@ test.describe("focus mode", () => {
     // Navigate forward to an issue focus route.
     await page.goto("/focus/issue?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=10");
     await page.locator(".issue-detail").waitFor({ state: "visible", timeout: 10_000 });
-    await expect(page).toHaveURL(/\/focus\/issue\/acme\/widgets\/10/);
+    await expect(page).toHaveURL(
+      /\/focus\/issue\?provider=github&platform_host=github\.com&repo_path=acme%2Fwidgets&number=10$/,
+    );
 
     // Go back to the PR focus route.
     await page.goBack();
     await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
-    await expect(page).toHaveURL(/\/focus\/pr\/acme\/widgets\/1/);
+    await expect(page).toHaveURL(
+      /\/focus\/pr\?provider=github&platform_host=github\.com&repo_path=acme%2Fwidgets&number=1$/,
+    );
 
     // Go forward to the issue focus route.
     await page.goForward();
     await page.locator(".issue-detail").waitFor({ state: "visible", timeout: 10_000 });
-    await expect(page).toHaveURL(/\/focus\/issue\/acme\/widgets\/10/);
+    await expect(page).toHaveURL(
+      /\/focus\/issue\?provider=github&platform_host=github\.com&repo_path=acme%2Fwidgets&number=10$/,
+    );
   });
 });

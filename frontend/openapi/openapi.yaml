@@ -129,6 +129,7 @@ components:
         provider:
           type: string
       required:
+        - provider
         - owner
         - name
       type: object
@@ -197,6 +198,8 @@ components:
           type: string
         repo_path:
           type: string
+      required:
+        - provider
       type: object
     BulkAddReposRequest:
       additionalProperties: false
@@ -1808,6 +1811,7 @@ components:
         provider:
           type: string
       required:
+        - provider
         - owner
         - pattern
       type: object

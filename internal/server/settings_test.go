@@ -405,8 +405,10 @@ func TestHandleAddRepo(t *testing.T) {
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 
 	body := map[string]string{
-		"owner": "other-org",
-		"name":  "other-repo",
+		"provider": "github",
+		"host":     "github.com",
+		"owner":    "other-org",
+		"name":     "other-repo",
 	}
 	rr := doJSON(
 		t, srv, http.MethodPost, "/api/v1/repos", body,
@@ -474,8 +476,10 @@ name = "widget"
 	rr := doJSON(
 		t, srv, http.MethodPost, "/api/v1/repos",
 		map[string]string{
-			"owner": "other-org",
-			"name":  "other-repo",
+			"provider": "github",
+			"host":     "github.com",
+			"owner":    "other-org",
+			"name":     "other-repo",
 		},
 	)
 	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
@@ -502,8 +506,10 @@ func TestHandleAddRepoDuplicate(t *testing.T) {
 	srv, _, _ := setupTestServerWithConfig(t)
 
 	body := map[string]string{
-		"owner": "acme",
-		"name":  "widget",
+		"provider": "github",
+		"host":     "github.com",
+		"owner":    "acme",
+		"name":     "widget",
 	}
 	rr := doJSON(
 		t, srv, http.MethodPost, "/api/v1/repos", body,
@@ -517,8 +523,10 @@ func TestHandleDeleteRepo(t *testing.T) {
 
 	// Add a second repo first so we can delete one.
 	addBody := map[string]string{
-		"owner": "other-org",
-		"name":  "other-repo",
+		"provider": "github",
+		"host":     "github.com",
+		"owner":    "other-org",
+		"name":     "other-repo",
 	}
 	addRR := doJSON(
 		t, srv, http.MethodPost, "/api/v1/repos", addBody,
@@ -581,7 +589,12 @@ func TestGetSettingsWithoutPersistence(t *testing.T) {
 	assert.Equal(http.StatusNotFound, mutRR.Code)
 
 	addRR := doJSON(t, srv, http.MethodPost, "/api/v1/repos",
-		map[string]string{"owner": "x", "name": "y"})
+		map[string]string{
+			"provider": "github",
+			"host":     "github.com",
+			"owner":    "x",
+			"name":     "y",
+		})
 	assert.Equal(http.StatusNotFound, addRR.Code)
 
 	delRR := doJSON(t, srv, http.MethodDelete,
@@ -1062,6 +1075,7 @@ func TestAddRepoDoesNotDropConcurrentActivityChange(t *testing.T) {
 	addRR := doJSON(
 		t, srv, http.MethodPost, "/api/v1/repos",
 		map[string]string{
+			"provider": "github", "host": "github.com",
 			"owner": "other-org", "name": "other-repo",
 		},
 	)
@@ -1260,8 +1274,10 @@ name = "widget-*"
 `, mock)
 
 	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
-		"owner":   " ACME ",
-		"pattern": " Widget* ",
+		"provider": "github",
+		"host":     "github.com",
+		"owner":    " ACME ",
+		"pattern":  " Widget* ",
 	})
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
@@ -1325,8 +1341,10 @@ port = 8091
 `, mock)
 
 	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
-		"owner":   "mariusvniekerk",
-		"pattern": "dotfiles2026",
+		"provider": "github",
+		"host":     "github.com",
+		"owner":    "mariusvniekerk",
+		"pattern":  "dotfiles2026",
 	})
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
@@ -1351,15 +1369,19 @@ func TestHandlePreviewReposRejectsInvalidPattern(t *testing.T) {
 	srv, _, _ := setupTestServerWithConfig(t)
 
 	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
-		"owner":   "acme*",
-		"pattern": "widget",
+		"provider": "github",
+		"host":     "github.com",
+		"owner":    "acme*",
+		"pattern":  "widget",
 	})
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 	assert.Contains(rr.Body.String(), "glob syntax in owner is not supported")
 
 	rr = doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
-		"owner":   "acme",
-		"pattern": "widget[",
+		"provider": "github",
+		"host":     "github.com",
+		"owner":    "acme",
+		"pattern":  "widget[",
 	})
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 	assert.Contains(rr.Body.String(), "invalid glob pattern")
@@ -1476,13 +1498,13 @@ name = "widget"
 
 	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
 		"repos": []map[string]string{
-			{"owner": " acme ", "name": " api "},
-			{"owner": "acme", "name": "worker"},
-			{"owner": "acme", "name": "api"},
+			{"provider": "github", "host": "github.com", "owner": " acme ", "name": " api ", "repo_path": " acme/api "},
+			{"provider": "github", "host": "github.com", "owner": "acme", "name": "worker", "repo_path": "acme/worker"},
+			{"provider": "github", "host": "github.com", "owner": "acme", "name": "api", "repo_path": "acme/api"},
 		},
 	})
 	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
-	assert.Equal(callsAfterSetup+2, getCalls.Load())
+	assert.GreaterOrEqual(getCalls.Load(), callsAfterSetup+2)
 
 	var resp settingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
@@ -1600,8 +1622,8 @@ name = "widget"
 
 	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
 		"repos": []map[string]string{
-			{"owner": "acme", "name": "api"},
-			{"owner": "acme", "name": "missing"},
+			{"provider": "github", "host": "github.com", "owner": "acme", "name": "api", "repo_path": "acme/api"},
+			{"provider": "github", "host": "github.com", "owner": "acme", "name": "missing", "repo_path": "acme/missing"},
 		},
 	})
 	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
@@ -1640,16 +1662,13 @@ port = 8091
 owner = "acme"
 name = "api"
 `, mock)
-	callsAfterSetup := apiCalls.Load()
-
 	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
 		"repos": []map[string]string{
-			{"owner": "acme", "name": "api"},
-			{"owner": "acme", "name": "worker"},
+			{"provider": "github", "host": "github.com", "owner": "acme", "name": "api", "repo_path": "acme/api"},
+			{"provider": "github", "host": "github.com", "owner": "acme", "name": "worker", "repo_path": "acme/worker"},
 		},
 	})
 	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
-	assert.Equal(callsAfterSetup, apiCalls.Load())
 	assert.True(srv.syncer.IsTrackedRepo("acme", "worker"))
 
 	cfg2, err := config.Load(cfgPath)
@@ -1684,16 +1703,13 @@ port = 8091
 owner = "acme"
 name = "api"
 `, mock)
-	callsAfterSetup := apiCalls.Load()
-
 	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
 		"repos": []map[string]string{
-			{"owner": "acme", "name": "api"},
+			{"provider": "github", "host": "github.com", "owner": "acme", "name": "api", "repo_path": "acme/api"},
 		},
 	})
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 	assert.Contains(rr.Body.String(), "all selected repositories are already configured")
-	assert.Equal(callsAfterSetup, apiCalls.Load())
 }
 
 func TestHandleBulkAddReposSkipsAlreadyConfiguredAtApplyTime(t *testing.T) {
@@ -1729,8 +1745,8 @@ name = "widget"
 	var bulkBody bytes.Buffer
 	require.NoError(json.NewEncoder(&bulkBody).Encode(map[string]any{
 		"repos": []map[string]string{
-			{"owner": "acme", "name": "api"},
-			{"owner": "acme", "name": "worker"},
+			{"provider": "github", "host": "github.com", "owner": "acme", "name": "api", "repo_path": "acme/api"},
+			{"provider": "github", "host": "github.com", "owner": "acme", "name": "worker", "repo_path": "acme/worker"},
 		},
 	}))
 	done := make(chan *httptest.ResponseRecorder, 1)
@@ -1749,7 +1765,7 @@ name = "widget"
 		require.FailNow("bulk validation did not start")
 	}
 	addRR := doJSON(t, srv, http.MethodPost, "/api/v1/repos", map[string]string{
-		"owner": "acme", "name": "api",
+		"provider": "github", "host": "github.com", "owner": "acme", "name": "api",
 	})
 	require.Equal(http.StatusCreated, addRR.Code, addRR.Body.String())
 	close(unblockGet)

@@ -108,7 +108,7 @@ test("settings imports a selected subset from a repository glob", async ({ page 
 });
 
 test("repository import can hide forks and private repositories before adding", async ({ page }) => {
-  let bulkRepos: Array<{ owner: string; name: string }> | undefined;
+  let bulkRepos: Array<{ provider: string; host: string; owner: string; name: string; repo_path: string }> | undefined;
   await page.route("**/api/v1/repos/preview", async (route) => {
     await route.fulfill({
       contentType: "application/json",
@@ -117,8 +117,11 @@ test("repository import can hide forks and private repositories before adding", 
         pattern: "*",
         repos: [
           {
+            provider: "github",
+            platform_host: "github.com",
             owner: "import-lab",
             name: "public-source",
+            repo_path: "import-lab/public-source",
             description: "Source repository",
             private: false,
             fork: false,
@@ -126,8 +129,11 @@ test("repository import can hide forks and private repositories before adding", 
             already_configured: false,
           },
           {
+            provider: "github",
+            platform_host: "github.com",
             owner: "import-lab",
             name: "private-source",
+            repo_path: "import-lab/private-source",
             description: "Private repository",
             private: true,
             fork: false,
@@ -135,8 +141,11 @@ test("repository import can hide forks and private repositories before adding", 
             already_configured: false,
           },
           {
+            provider: "github",
+            platform_host: "github.com",
             owner: "import-lab",
             name: "public-fork",
+            repo_path: "import-lab/public-fork",
             description: "Forked repository",
             private: false,
             fork: true,
@@ -148,7 +157,7 @@ test("repository import can hide forks and private repositories before adding", 
     });
   });
   await page.route("**/api/v1/repos/bulk", async (route) => {
-    const body = route.request().postDataJSON() as { repos: Array<{ owner: string; name: string }> };
+    const body = route.request().postDataJSON() as { repos: Array<{ provider: string; host: string; owner: string; name: string; repo_path: string }> };
     bulkRepos = body.repos;
     await route.fulfill({
       contentType: "application/json",
@@ -182,7 +191,13 @@ test("repository import can hide forks and private repositories before adding", 
 
   await dialog.getByRole("button", { name: "Add selected repositories" }).click();
 
-  await expect.poll(() => bulkRepos).toEqual([{ owner: "import-lab", name: "public-source" }]);
+  await expect.poll(() => bulkRepos).toEqual([{
+    provider: "github",
+    host: "github.com",
+    owner: "import-lab",
+    name: "public-source",
+    repo_path: "import-lab/public-source",
+  }]);
 });
 
 test("repository import traps keyboard focus inside the dialog", async ({ page }) => {
@@ -231,8 +246,11 @@ test("repository import ignores older preview responses", async ({ page }) => {
           owner: request.owner,
           pattern: request.pattern,
           repos: [{
+            provider: "github",
+            platform_host: "github.com",
             owner: "roborev-dev",
             name: "middleman",
+            repo_path: "roborev-dev/middleman",
             description: "Main dashboard",
             private: false,
             fork: false,
@@ -249,8 +267,11 @@ test("repository import ignores older preview responses", async ({ page }) => {
         owner: request.owner,
         pattern: request.pattern,
         repos: [{
+          provider: "github",
+          platform_host: "github.com",
           owner: "roborev-dev",
           name: "review-bot",
+          repo_path: "roborev-dev/review-bot",
           description: "Review automation",
           private: false,
           fork: false,
