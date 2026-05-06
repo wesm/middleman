@@ -1261,6 +1261,28 @@ test.describe("activity split view and detail drawers", () => {
     // request fall through to the real backend. That way the close
     // refresh is the only thing that can change what the board shows.
     let pullsContainsWidgets1 = true;
+    const widgetsRepo = {
+      provider: "github",
+      platform_host: "github.com",
+      owner: "acme",
+      name: "widgets",
+      repo_path: "acme/widgets",
+      capabilities: {
+        read_repositories: true,
+        read_merge_requests: true,
+        read_issues: true,
+        read_comments: true,
+        read_releases: true,
+        read_ci: true,
+        comment_mutation: true,
+        state_mutation: true,
+        merge_mutation: true,
+        review_mutation: true,
+        workflow_approval: true,
+        ready_for_review: true,
+        issue_mutation: true,
+      },
+    };
 
     const widgets1Card = {
       ID: 1001,
@@ -1283,8 +1305,10 @@ test.describe("activity split view and detail drawers", () => {
       Starred: false,
       CIChecksJSON: "",
       labels: [],
+      repo: widgetsRepo,
       repo_owner: "acme",
       repo_name: "widgets",
+      platform_host: "github.com",
       worktree_links: [],
     };
 
@@ -1311,8 +1335,10 @@ test.describe("activity split view and detail drawers", () => {
       Starred: false,
       CIChecksJSON: "",
       labels: [],
+      repo: widgetsRepo,
       repo_owner: "acme",
       repo_name: "widgets",
+      platform_host: "github.com",
       worktree_links: [],
     };
 
