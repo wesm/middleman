@@ -1187,6 +1187,8 @@ export interface components {
             readonly $schema?: string;
             files: components["schemas"]["DiffFile"][] | null;
             stale: boolean;
+            /** Format: int64 */
+            whitespace_only_count: number;
         };
         GithubStateInputBody: {
             /**
@@ -3765,6 +3767,8 @@ export interface operations {
                 base?: string;
                 /** @description Set to hide to ignore whitespace-only changes */
                 whitespace?: string;
+                /** @description Optional file path to limit the returned patch */
+                path?: string;
             };
             header?: never;
             path: {

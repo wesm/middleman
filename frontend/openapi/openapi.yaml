@@ -566,8 +566,12 @@ components:
             - "null"
         stale:
           type: boolean
+        whitespace_only_count:
+          format: int64
+          type: integer
       required:
         - stale
+        - whitespace_only_count
         - files
       type: object
     GithubStateInputBody:
@@ -4054,6 +4058,13 @@ paths:
           name: whitespace
           schema:
             description: Set to hide to ignore whitespace-only changes
+            type: string
+        - description: Optional file path to limit the returned patch
+          explode: false
+          in: query
+          name: path
+          schema:
+            description: Optional file path to limit the returned patch
             type: string
       responses:
         "200":

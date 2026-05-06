@@ -265,9 +265,10 @@ type FilePreviewResponse struct {
 // FilesResponse defines model for FilesResponse.
 type FilesResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema *string     `json:"$schema,omitempty"`
-	Files  *[]DiffFile `json:"files"`
-	Stale  bool        `json:"stale"`
+	Schema              *string     `json:"$schema,omitempty"`
+	Files               *[]DiffFile `json:"files"`
+	Stale               bool        `json:"stale"`
+	WhitespaceOnlyCount int64       `json:"whitespace_only_count"`
 }
 
 // GithubStateInputBody defines model for GithubStateInputBody.
@@ -1000,6 +1001,9 @@ type GetWorkspacesByIdDiffParams struct {
 
 	// Whitespace Set to hide to ignore whitespace-only changes
 	Whitespace *string `form:"whitespace,omitempty" json:"whitespace,omitempty"`
+
+	// Path Optional file path to limit the returned patch
+	Path *string `form:"path,omitempty" json:"path,omitempty"`
 }
 
 // GetWorkspacesByIdFilesParams defines parameters for GetWorkspacesByIdFiles.
@@ -5363,6 +5367,22 @@ func NewGetWorkspacesByIdDiffRequest(server string, id string, params *GetWorksp
 		if params.Whitespace != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "whitespace", *params.Whitespace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Path != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "path", *params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err

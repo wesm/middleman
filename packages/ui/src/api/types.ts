@@ -98,6 +98,7 @@ export interface DiffResult {
 
 export interface FilesResult {
   stale: boolean;
+  whitespace_only_count?: number;
   files: DiffFile[];
 }
 

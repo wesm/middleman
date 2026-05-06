@@ -271,10 +271,17 @@ type getWorkspaceInput struct {
 	ID string `path:"id"`
 }
 
+type getWorkspaceFilesInput struct {
+	ID         string `path:"id"`
+	Base       string `query:"base"      doc:"Diff base: head, pushed, or merge-target"`
+	Whitespace string `query:"whitespace" doc:"Set to hide to ignore whitespace-only changes"`
+}
+
 type getWorkspaceDiffInput struct {
 	ID         string `path:"id"`
 	Base       string `query:"base"      doc:"Diff base: head, pushed, or merge-target"`
 	Whitespace string `query:"whitespace" doc:"Set to hide to ignore whitespace-only changes"`
+	Path       string `query:"path"      doc:"Optional file path to limit the returned patch"`
 }
 
 type retryWorkspaceInput struct {
@@ -3031,9 +3038,9 @@ func (s *Server) getWorkspace(
 }
 
 func (s *Server) getWorkspaceFiles(
-	ctx context.Context, input *getWorkspaceDiffInput,
+	ctx context.Context, input *getWorkspaceFilesInput,
 ) (*getWorkspaceFilesOutput, error) {
-	req, err := s.workspaceDiffRequest(ctx, input)
+	req, err := s.workspaceDiffRequest(ctx, input.ID, input.Base)
 	if err != nil {
 		return nil, err
 	}
@@ -3056,23 +3063,38 @@ func (s *Server) getWorkspaceFiles(
 	if !ok {
 		return nil, workspaceDiffBaseUnavailable(req.Base)
 	}
+	whitespaceOnlyCount, countOK, countErr := s.workspaceDiffWhitespaceOnlyCount(
+		ctx, req,
+	)
+	if countErr != nil {
+		slog.Warn(
+			"failed to count workspace whitespace-only diff files",
+			"workspace_id", input.ID,
+			"base", req.Base,
+			"err", countErr,
+		)
+	}
+	if !countOK {
+		return nil, workspaceDiffBaseUnavailable(req.Base)
+	}
 	return &getWorkspaceFilesOutput{Body: filesResponse{
-		Stale: false,
-		Files: files,
+		Stale:               false,
+		WhitespaceOnlyCount: whitespaceOnlyCount,
+		Files:               files,
 	}}, nil
 }
 
 func (s *Server) getWorkspaceDiff(
 	ctx context.Context, input *getWorkspaceDiffInput,
 ) (*getWorkspaceDiffOutput, error) {
-	req, err := s.workspaceDiffRequest(ctx, input)
+	req, err := s.workspaceDiffRequest(ctx, input.ID, input.Base)
 	if err != nil {
 		return nil, err
 	}
 
 	hideWhitespace := input.Whitespace == "hide"
 	result, ok, diffErr := s.workspaceDiff(
-		ctx, req, hideWhitespace,
+		ctx, req, hideWhitespace, input.Path,
 	)
 	if diffErr != nil {
 		slog.Error(
@@ -3097,7 +3119,8 @@ func (s *Server) getWorkspaceDiff(
 
 func (s *Server) workspaceDiffRequest(
 	ctx context.Context,
-	input *getWorkspaceDiffInput,
+	id string,
+	baseInput string,
 ) (workspaceDiffRequest, error) {
 	if s.workspaces == nil {
 		return workspaceDiffRequest{}, huma.Error503ServiceUnavailable(
@@ -3105,7 +3128,7 @@ func (s *Server) workspaceDiffRequest(
 		)
 	}
 
-	summary, err := s.workspaces.GetSummary(ctx, input.ID)
+	summary, err := s.workspaces.GetSummary(ctx, id)
 	if err != nil {
 		return workspaceDiffRequest{}, huma.Error500InternalServerError(
 			"get workspace failed",
@@ -3120,7 +3143,7 @@ func (s *Server) workspaceDiffRequest(
 		)
 	}
 
-	base := workspace.WorktreeDiffBase(input.Base)
+	base := workspace.WorktreeDiffBase(baseInput)
 	if base == "" {
 		base = workspace.WorktreeDiffBaseHead
 	}
@@ -3169,8 +3192,18 @@ func (s *Server) workspaceDiff(
 	ctx context.Context,
 	req workspaceDiffRequest,
 	hideWhitespace bool,
+	path string,
 ) (*gitclone.DiffResult, bool, error) {
 	if req.Base == workspace.WorktreeDiffBaseMergeTarget {
+		if path != "" {
+			return workspace.WorktreeFileDiffAgainstMergeTarget(
+				ctx,
+				req.Summary.WorktreePath,
+				req.MergeTargetBranch,
+				hideWhitespace,
+				path,
+			)
+		}
 		return workspace.WorktreeDiffAgainstMergeTarget(
 			ctx,
 			req.Summary.WorktreePath,
@@ -3178,8 +3211,29 @@ func (s *Server) workspaceDiff(
 			hideWhitespace,
 		)
 	}
+	if path != "" {
+		return workspace.WorktreeFileDiff(
+			ctx, req.Summary.WorktreePath, req.Base, hideWhitespace, path,
+		)
+	}
 	return workspace.WorktreeDiff(
 		ctx, req.Summary.WorktreePath, req.Base, hideWhitespace,
+	)
+}
+
+func (s *Server) workspaceDiffWhitespaceOnlyCount(
+	ctx context.Context,
+	req workspaceDiffRequest,
+) (int, bool, error) {
+	if req.Base == workspace.WorktreeDiffBaseMergeTarget {
+		return workspace.WorktreeDiffWhitespaceOnlyCountAgainstMergeTarget(
+			ctx,
+			req.Summary.WorktreePath,
+			req.MergeTargetBranch,
+		)
+	}
+	return workspace.WorktreeDiffWhitespaceOnlyCount(
+		ctx, req.Summary.WorktreePath, req.Base,
 	)
 }
 
