@@ -70,28 +70,4 @@ describe("DiffFilesLayout", () => {
     expect(localStorage.getItem("diff-file-tree-width")).toBe("360");
   });
 
-  it("supports keyboard resizing for the changed-file tree", async () => {
-    renderLayout();
-
-    const fileTree = screen.getByRole("complementary", {
-      name: "Changed files",
-    });
-    const resizeHandle = screen.getByRole("button", {
-      name: "Resize file tree",
-    });
-
-    await fireEvent.keyDown(resizeHandle, { key: "ArrowRight" });
-
-    expect(fileTree.getAttribute("style")).toContain(
-      "--diff-file-tree-width: 304px",
-    );
-    expect(localStorage.getItem("diff-file-tree-width")).toBe("304");
-
-    await fireEvent.keyDown(resizeHandle, { key: "ArrowLeft" });
-
-    expect(fileTree.getAttribute("style")).toContain(
-      "--diff-file-tree-width: 280px",
-    );
-    expect(localStorage.getItem("diff-file-tree-width")).toBe("280");
-  });
 });

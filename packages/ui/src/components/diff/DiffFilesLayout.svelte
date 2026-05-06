@@ -26,7 +26,6 @@
   const defaultFileTreeWidth = 280;
   const minFileTreeWidth = 200;
   const maxFileTreeWidth = 520;
-  const keyboardResizeStep = 24;
   let resizeCleanup: (() => void) | null = null;
 
   function safeGetItem(key: string): string | null {
@@ -94,22 +93,6 @@
     };
   }
 
-  function handleFileTreeResizeKeydown(event: KeyboardEvent): void {
-    if (event.key === "ArrowLeft") {
-      event.preventDefault();
-      fileTreeWidth = clampFileTreeWidth(
-        fileTreeWidth - keyboardResizeStep,
-      );
-      saveFileTreeWidth(fileTreeWidth);
-    } else if (event.key === "ArrowRight") {
-      event.preventDefault();
-      fileTreeWidth = clampFileTreeWidth(
-        fileTreeWidth + keyboardResizeStep,
-      );
-      saveFileTreeWidth(fileTreeWidth);
-    }
-  }
-
   onDestroy(() => {
     stopFileTreeResize();
   });
@@ -129,7 +112,6 @@
       class="files-resize-handle"
       type="button"
       aria-label="Resize file tree"
-      onkeydown={handleFileTreeResizeKeydown}
       onmousedown={startFileTreeResize}
     ></button>
     <div class="files-main">
