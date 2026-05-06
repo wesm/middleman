@@ -3765,6 +3765,8 @@ export interface operations {
                 base?: string;
                 /** @description Set to hide to ignore whitespace-only changes */
                 whitespace?: string;
+                /** @description Optional file path to limit the returned patch */
+                path?: string;
             };
             header?: never;
             path: {

@@ -96,18 +96,14 @@ afterEach(() => {
 });
 
 describe("createDiffStore loadDiff", () => {
-  it("loads workspace diffs with the selected base", async () => {
+  it("loads workspace files and only the active workspace patch", async () => {
     const calls: string[] = [];
     const files = makeFilesResult([
       "src/app.go",
       "src/app_test.go",
       "docs/plan.md",
     ]);
-    const diff = makeDiffResult([
-      "src/app.go",
-      "src/app_test.go",
-      "docs/plan.md",
-    ]);
+    const diff = makeDiffResult(["src/app.go"]);
 
     vi.spyOn(globalThis, "fetch").mockImplementation(
       async (input: RequestInfo | URL) => {
@@ -133,7 +129,13 @@ describe("createDiffStore loadDiff", () => {
     await store.loadWorkspaceDiff("ws-1", "pushed");
 
     expect(calls).toContain("/api/v1/workspaces/ws-1/files?base=pushed");
-    expect(calls).toContain("/api/v1/workspaces/ws-1/diff?base=pushed");
+    expect(calls).toContain(
+      "/api/v1/workspaces/ws-1/diff?base=pushed&path=src%2Fapp.go",
+    );
+    expect(calls).not.toContain("/api/v1/workspaces/ws-1/diff?base=pushed");
+    expect(store.getVisibleDiffFiles().map((file) => file.path)).toEqual([
+      "src/app.go",
+    ]);
     expect(store.getFileCategoryCounts()).toEqual({
       all: 3,
       plansDocs: 1,
@@ -175,6 +177,9 @@ describe("createDiffStore loadDiff", () => {
       "/api/v1/workspaces/ws-1/files?base=merge-target",
     );
     expect(calls).toContain(
+      "/api/v1/workspaces/ws-1/diff?base=merge-target&path=src%2Fapp.go",
+    );
+    expect(calls).not.toContain(
       "/api/v1/workspaces/ws-1/diff?base=merge-target",
     );
   });
@@ -230,6 +235,51 @@ describe("createDiffStore loadDiff", () => {
 
     expect(calls).toContain(
       "/api/v1/workspaces/ws-1/files?base=head&whitespace=hide",
+    );
+    expect(calls).toContain(
+      "/api/v1/workspaces/ws-1/diff?base=head&whitespace=hide&path=a.ts",
+    );
+  });
+
+  it("loads the selected workspace file patch on demand", async () => {
+    const calls: string[] = [];
+    const files = makeFilesResult(["a.ts", "b.ts"]);
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        calls.push(url);
+
+        if (url.includes("/workspaces/ws-1/files")) {
+          return Response.json(files);
+        }
+        if (url.includes("path=a.ts")) {
+          return Response.json(makeDiffResult(["a.ts"]));
+        }
+        if (url.includes("path=b.ts")) {
+          return Response.json(makeDiffResult(["b.ts"]));
+        }
+        return Response.json({}, { status: 404 });
+      },
+    );
+
+    const store = createDiffStore({ client: testClient() });
+    await store.loadWorkspaceDiff("ws-1", "head");
+
+    store.requestScrollToFile("b.ts");
+    await vi.waitFor(() => {
+      expect(store.getVisibleDiffFiles().map((file) => file.path)).toEqual([
+        "b.ts",
+      ]);
+    });
+
+    expect(calls).toContain(
+      "/api/v1/workspaces/ws-1/diff?base=head&path=b.ts",
     );
   });
 

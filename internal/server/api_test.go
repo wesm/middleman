@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10556,6 +10557,35 @@ func TestWorkspaceDiffEndpointHandlesUntrackedSymlinkAndLargeFileE2E(t *testing.
 	assert.Empty(*large.Hunks)
 }
 
+func TestWorkspaceDiffEndpointScopesPatchByPathE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "first.go"),
+		[]byte("package first\n"), 0o644,
+	))
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "second.go"),
+		[]byte("package second\n"), 0o644,
+	))
+
+	diff := requestWorkspaceDiffForPath(t, srv, ws.Id, "head", "first.go")
+	require.NotNil(diff.Files)
+	require.Len(*diff.Files, 1)
+
+	file := (*diff.Files)[0]
+	assert.Equal("first.go", file.Path)
+	assert.Equal("added", file.Status)
+	require.NotNil(file.Hunks)
+	require.Len(*file.Hunks, 1)
+	assert.NotContains(workspaceDiffPaths(*diff.Files), "second.go")
+}
+
 func requestWorkspaceFiles(
 	t *testing.T,
 	srv *Server,
@@ -10598,6 +10628,33 @@ func requestWorkspaceDiff(
 	if len(whitespace) > 0 {
 		query += "&whitespace=" + whitespace[0]
 	}
+	req := httptest.NewRequest(
+		http.MethodGet,
+		query,
+		nil,
+	)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	resp := rr.Result()
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var body generated.DiffResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	return body
+}
+
+func requestWorkspaceDiffForPath(
+	t *testing.T,
+	srv *Server,
+	workspaceID string,
+	base string,
+	path string,
+) generated.DiffResponse {
+	t.Helper()
+
+	query := "/api/v1/workspaces/" + workspaceID +
+		"/diff?base=" + base + "&path=" + url.QueryEscape(path)
 	req := httptest.NewRequest(
 		http.MethodGet,
 		query,

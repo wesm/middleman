@@ -4055,6 +4055,13 @@ paths:
           schema:
             description: Set to hide to ignore whitespace-only changes
             type: string
+        - description: Optional file path to limit the returned patch
+          explode: false
+          in: query
+          name: path
+          schema:
+            description: Optional file path to limit the returned patch
+            type: string
       responses:
         "200":
           content:

@@ -1000,6 +1000,9 @@ type GetWorkspacesByIdDiffParams struct {
 
 	// Whitespace Set to hide to ignore whitespace-only changes
 	Whitespace *string `form:"whitespace,omitempty" json:"whitespace,omitempty"`
+
+	// Path Optional file path to limit the returned patch
+	Path *string `form:"path,omitempty" json:"path,omitempty"`
 }
 
 // GetWorkspacesByIdFilesParams defines parameters for GetWorkspacesByIdFiles.
@@ -5363,6 +5366,22 @@ func NewGetWorkspacesByIdDiffRequest(server string, id string, params *GetWorksp
 		if params.Whitespace != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "whitespace", *params.Whitespace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Path != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "path", *params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err
