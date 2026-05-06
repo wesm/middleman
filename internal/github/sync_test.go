@@ -482,7 +482,14 @@ func (m *mockClient) GetRepository(
 	if m.getRepositoryFn != nil {
 		return m.getRepositoryFn(ctx, owner, repo)
 	}
-	return &gh.Repository{}, nil
+	id := int64(1)
+	nodeID := "repo-" + owner + "-" + repo
+	return &gh.Repository{
+		ID:     &id,
+		NodeID: &nodeID,
+		Name:   &repo,
+		Owner:  &gh.User{Login: &owner},
+	}, nil
 }
 
 func (m *mockClient) CreateReview(
@@ -1700,7 +1707,10 @@ func TestSyncerStopWaitsForRunOnce(t *testing.T) {
 	database := openTestDB(t)
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mock}, database, nil,
-		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
+		[]RepoRef{{
+			Owner: "o", Name: "r", PlatformHost: "github.com",
+			PlatformExternalID: "repo-o-r",
+		}},
 		time.Hour, nil, nil,
 	)
 
@@ -2630,6 +2640,49 @@ func TestFetcherForSkipsNonGitHubRepoOnSameHost(t *testing.T) {
 	}))
 }
 
+func TestSyncRepoUsesProviderIDToPreserveRenamedRepo(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	originalID, err := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.example.com",
+		PlatformRepoID: "gid://gitlab/Project/42",
+		Owner:          "old-group",
+		Name:           "old-project",
+		RepoPath:       "old-group/old-project",
+	})
+	require.NoError(err)
+	repo := RepoRef{
+		Platform:           platform.KindGitLab,
+		PlatformHost:       "gitlab.example.com",
+		Owner:              "new-group",
+		Name:               "new-project",
+		RepoPath:           "new-group/new-project",
+		PlatformExternalID: "gid://gitlab/Project/42",
+	}
+	provider := &syncTestReadProvider{
+		syncTestProvider: syncTestProvider{
+			kind: platform.KindGitLab,
+			host: "gitlab.example.com",
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(registry, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
+
+	require.NoError(syncer.syncRepo(ctx, repo))
+
+	repos, err := d.ListRepos(ctx)
+	require.NoError(err)
+	require.Len(repos, 1)
+	assert.Equal(originalID, repos[0].ID)
+	assert.Equal("new-group", repos[0].Owner)
+	assert.Equal("new-project", repos[0].Name)
+	assert.Equal("new-group/new-project", repos[0].RepoPath)
+}
+
 func TestSyncRepoUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()
@@ -2637,12 +2690,13 @@ func TestSyncRepoUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 	remote := setupBareRemoteForSyncTest(t)
 	clones := gitclone.New(t.TempDir(), nil)
 	repo := RepoRef{
-		Platform:     platform.KindGitLab,
-		PlatformHost: "gitlab.example.com",
-		Owner:        "group/subgroup",
-		Name:         "project",
-		RepoPath:     "group/subgroup/project",
-		CloneURL:     remote,
+		Platform:           platform.KindGitLab,
+		PlatformHost:       "gitlab.example.com",
+		Owner:              "group/subgroup",
+		Name:               "project",
+		RepoPath:           "group/subgroup/project",
+		PlatformExternalID: "gid://gitlab/Project/43",
+		CloneURL:           remote,
 	}
 	provider := &syncTestReadProvider{
 		syncTestProvider: syncTestProvider{
@@ -3183,10 +3237,11 @@ func TestSyncRunUsesProviderReadersForIndexSync(t *testing.T) {
 	d := openTestDB(t)
 	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	repo := RepoRef{
-		Platform:     platform.KindGitLab,
-		PlatformHost: "gitlab.com",
-		Owner:        "acme",
-		Name:         "widget",
+		Platform:           platform.KindGitLab,
+		PlatformHost:       "gitlab.com",
+		Owner:              "acme",
+		Name:               "widget",
+		PlatformExternalID: "gid://gitlab/Project/100",
 	}
 	provider := &syncTestReadProvider{
 		syncTestProvider: syncTestProvider{
@@ -3248,10 +3303,11 @@ func TestSyncRunAllowsMergeRequestOnlyProvider(t *testing.T) {
 	d := openTestDB(t)
 	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	repo := RepoRef{
-		Platform:     platform.KindGitLab,
-		PlatformHost: "gitlab.com",
-		Owner:        "acme",
-		Name:         "widget",
+		Platform:           platform.KindGitLab,
+		PlatformHost:       "gitlab.com",
+		Owner:              "acme",
+		Name:               "widget",
+		PlatformExternalID: "gid://gitlab/Project/101",
 	}
 	provider := &syncTestMergeRequestOnlyProvider{
 		syncTestProvider: syncTestProvider{
@@ -3304,10 +3360,11 @@ func TestSyncRunAllowsIssueOnlyProvider(t *testing.T) {
 	d := openTestDB(t)
 	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	repo := RepoRef{
-		Platform:     platform.KindGitLab,
-		PlatformHost: "gitlab.com",
-		Owner:        "acme",
-		Name:         "widget",
+		Platform:           platform.KindGitLab,
+		PlatformHost:       "gitlab.com",
+		Owner:              "acme",
+		Name:               "widget",
+		PlatformExternalID: "gid://gitlab/Project/102",
 	}
 	provider := &syncTestIssueOnlyProvider{
 		syncTestProvider: syncTestProvider{

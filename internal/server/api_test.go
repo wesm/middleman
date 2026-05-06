@@ -306,8 +306,10 @@ func (m *mockGH) GetRepository(
 	if m.getRepositoryFn != nil {
 		return m.getRepositoryFn(ctx, owner, repo)
 	}
+	nodeID := "repo-" + owner + "-" + repo
 	return &gh.Repository{
 		Name:     &repo,
+		NodeID:   &nodeID,
 		Owner:    &gh.User{Login: &owner},
 		Archived: new(false),
 	}, nil

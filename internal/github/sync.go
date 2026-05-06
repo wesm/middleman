@@ -1937,11 +1937,35 @@ dispatch:
 	})
 }
 
+func (s *Syncer) syncRepoIdentity(ctx context.Context, repo RepoRef) (db.RepoIdentity, error) {
+	identity := platform.DBRepoIdentity(platformRepoRef(repo))
+	if identity.PlatformRepoID != "" {
+		return identity, nil
+	}
+	reader, err := s.clients.RepositoryReader(repoPlatform(repo), repoHost(repo))
+	if err != nil {
+		return db.RepoIdentity{}, err
+	}
+	resolved, err := reader.GetRepository(ctx, platformRepoRef(repo))
+	if err != nil {
+		return db.RepoIdentity{}, err
+	}
+	identity = platform.DBRepositoryIdentity(resolved)
+	if identity.PlatformRepoID == "" {
+		return db.RepoIdentity{}, fmt.Errorf("provider returned no repo id")
+	}
+	return identity, nil
+}
+
 // syncRepo syncs one repository: open PRs, timeline events, and stale closures.
 func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
-	repoID, err := s.db.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	repoIdentity, err := s.syncRepoIdentity(ctx, repo)
 	if err != nil {
-		return fmt.Errorf("upsert repo %s/%s: %w", repo.Owner, repo.Name, err)
+		return fmt.Errorf("resolve repo identity %s/%s: %w", repo.Owner, repo.Name, err)
+	}
+	repoID, err := s.db.UpsertRepoByProviderID(ctx, repoIdentity)
+	if err != nil {
+		return fmt.Errorf("upsert repo %s/%s by provider id: %w", repo.Owner, repo.Name, err)
 	}
 
 	if client, ok := s.optionalGitHubClientFor(repo); ok {

@@ -4,16 +4,26 @@
 
   interface Props {
     itemType: "pr" | "issue";
+    provider?: string | undefined;
     platformHost?: string | undefined;
     owner: string;
     name: string;
+    repoPath?: string | undefined;
     number: number;
     onClose: () => void;
     onPullsRefresh?: () => Promise<void>;
   }
 
   let {
-    itemType, platformHost, owner, name, number, onClose, onPullsRefresh,
+    itemType,
+    provider,
+    platformHost,
+    owner,
+    name,
+    repoPath,
+    number,
+    onClose,
+    onPullsRefresh,
   }: Props = $props();
 
   function handleKeydown(e: KeyboardEvent): void {
@@ -38,11 +48,14 @@
       </span>
     </div>
     <div class="drawer-body">
-      {#key `${owner}/${name}/${number}`}
+      {#key `${provider}/${platformHost}/${owner}/${name}/${number}`}
         {#if itemType === "pr"}
           <PullDetail
+            {provider}
+            {platformHost}
             {owner}
             {name}
+            {repoPath}
             {number}
             {...(onPullsRefresh ? { onPullsRefresh } : {})}
           />

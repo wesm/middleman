@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PullRequest, KanbanStatus } from "../../api/types.js";
   import KanbanCard from "./KanbanCard.svelte";
+  import { parseKanbanDragPayload, type KanbanDragPayload } from "./drag.js";
 
   interface Props {
     id: string;
@@ -8,7 +9,7 @@
     color: string;
     pulls: PullRequest[];
     onSelect: (pr: PullRequest) => void;
-    onDrop: (owner: string, name: string, number: number, status: KanbanStatus) => void;
+    onDrop: (payload: KanbanDragPayload, status: KanbanStatus) => void;
   }
 
   const { id, title, color, pulls, onSelect, onDrop }: Props = $props();
@@ -30,12 +31,10 @@
     dragOver = false;
     if (!e.dataTransfer) return;
     try {
-      const data = JSON.parse(e.dataTransfer.getData("text/plain")) as {
-        owner: string;
-        name: string;
-        number: number;
-      };
-      onDrop(data.owner, data.name, data.number, id as KanbanStatus);
+      const data = parseKanbanDragPayload(
+        e.dataTransfer.getData("text/plain"),
+      );
+      onDrop(data, id as KanbanStatus);
     } catch {
       // Invalid drag data
     }
