@@ -1,0 +1,346 @@
+package gitealike
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/wesm/middleman/internal/platform"
+)
+
+func NormalizeRepository(
+	kind platform.Kind,
+	host string,
+	repo RepositoryDTO,
+) (platform.Repository, error) {
+	repoPath := strings.TrimSpace(repo.FullName)
+	if repoPath == "" {
+		repoPath = OwnerRepoPath(repo.Owner.UserName, repo.Name)
+	}
+	owner, name, err := splitRepoPath(repoPath, repo.Name)
+	if err != nil {
+		return platform.Repository{}, err
+	}
+	ref := platform.RepoRef{
+		Platform:           kind,
+		Host:               host,
+		Owner:              owner,
+		Name:               name,
+		RepoPath:           repoPath,
+		PlatformID:         repo.ID,
+		PlatformExternalID: strconv.FormatInt(repo.ID, 10),
+		WebURL:             repo.HTMLURL,
+		CloneURL:           repo.CloneURL,
+		DefaultBranch:      repo.DefaultBranch,
+	}
+	return platform.Repository{
+		Ref:                ref,
+		PlatformID:         repo.ID,
+		PlatformExternalID: strconv.FormatInt(repo.ID, 10),
+		Description:        repo.Description,
+		Private:            repo.Private,
+		Archived:           repo.Archived,
+		DefaultBranch:      repo.DefaultBranch,
+		WebURL:             repo.HTMLURL,
+		CloneURL:           repo.CloneURL,
+		CreatedAt:          repo.Created.UTC(),
+		UpdatedAt:          repo.Updated.UTC(),
+	}, nil
+}
+
+func NormalizePullRequest(repo platform.RepoRef, pr PullRequestDTO) platform.MergeRequest {
+	state := NormalizeState(pr.State)
+	if pr.Merged || pr.MergedAt != nil {
+		state = "merged"
+	}
+	return platform.MergeRequest{
+		Repo:               repo,
+		PlatformID:         pr.ID,
+		PlatformExternalID: strconv.FormatInt(pr.ID, 10),
+		Number:             pr.Index,
+		URL:                pr.HTMLURL,
+		Title:              pr.Title,
+		Author:             pr.User.UserName,
+		AuthorDisplayName:  pr.User.FullName,
+		State:              state,
+		IsDraft:            pr.IsLocked,
+		Body:               pr.Body,
+		HeadBranch:         pr.Head.Ref,
+		BaseBranch:         pr.Base.Ref,
+		HeadSHA:            pr.Head.SHA,
+		BaseSHA:            pr.Base.SHA,
+		HeadRepoCloneURL:   pr.Head.RepoCloneURL,
+		CommentCount:       pr.Comments,
+		CreatedAt:          pr.Created.UTC(),
+		UpdatedAt:          pr.Updated.UTC(),
+		LastActivityAt:     pr.Updated.UTC(),
+		MergedAt:           timePtrUTC(pr.MergedAt),
+		ClosedAt:           timePtrUTC(pr.Closed),
+		Labels:             NormalizeLabels(repo, pr.Labels),
+	}
+}
+
+func NormalizeIssue(repo platform.RepoRef, issue IssueDTO) platform.Issue {
+	return platform.Issue{
+		Repo:               repo,
+		PlatformID:         issue.ID,
+		PlatformExternalID: strconv.FormatInt(issue.ID, 10),
+		Number:             issue.Index,
+		URL:                issue.HTMLURL,
+		Title:              issue.Title,
+		Author:             issue.User.UserName,
+		State:              NormalizeState(issue.State),
+		Body:               issue.Body,
+		CommentCount:       issue.Comments,
+		CreatedAt:          issue.Created.UTC(),
+		UpdatedAt:          issue.Updated.UTC(),
+		LastActivityAt:     issue.Updated.UTC(),
+		ClosedAt:           timePtrUTC(issue.Closed),
+		Labels:             NormalizeLabels(repo, issue.Labels),
+	}
+}
+
+func NormalizeLabels(repo platform.RepoRef, labels []LabelDTO) []platform.Label {
+	if len(labels) == 0 {
+		return nil
+	}
+	out := make([]platform.Label, 0, len(labels))
+	for _, label := range labels {
+		out = append(out, platform.Label{
+			Repo:               repo,
+			PlatformID:         label.ID,
+			PlatformExternalID: strconv.FormatInt(label.ID, 10),
+			Name:               label.Name,
+			Description:        label.Description,
+			Color:              label.Color,
+			IsDefault:          label.IsDefault,
+		})
+	}
+	return out
+}
+
+func NormalizeIssueComments(
+	kind platform.Kind,
+	repo platform.RepoRef,
+	number int,
+	comments []CommentDTO,
+) []platform.IssueEvent {
+	events := make([]platform.IssueEvent, 0, len(comments))
+	for _, comment := range comments {
+		events = append(events, platform.IssueEvent{
+			Repo:               repo,
+			PlatformID:         comment.ID,
+			PlatformExternalID: strconv.FormatInt(comment.ID, 10),
+			IssueNumber:        number,
+			EventType:          "issue_comment",
+			Author:             comment.User.UserName,
+			Body:               comment.Body,
+			CreatedAt:          comment.Created.UTC(),
+			DedupeKey: NoteDedupeKey(
+				kind, repo.Host, repo.RepoPath, "issue", number, "issue_comment",
+				strconv.FormatInt(comment.ID, 10),
+			),
+		})
+	}
+	return events
+}
+
+func NormalizeMergeRequestEvents(
+	kind platform.Kind,
+	repo platform.RepoRef,
+	number int,
+	comments []CommentDTO,
+	reviews []ReviewDTO,
+	commits []CommitDTO,
+) []platform.MergeRequestEvent {
+	events := make([]platform.MergeRequestEvent, 0, len(comments)+len(reviews)+len(commits))
+	for _, comment := range comments {
+		externalID := strconv.FormatInt(comment.ID, 10)
+		events = append(events, platform.MergeRequestEvent{
+			Repo:               repo,
+			PlatformID:         comment.ID,
+			PlatformExternalID: externalID,
+			MergeRequestNumber: number,
+			EventType:          "issue_comment",
+			Author:             comment.User.UserName,
+			Body:               comment.Body,
+			CreatedAt:          comment.Created.UTC(),
+			DedupeKey:          NoteDedupeKey(kind, repo.Host, repo.RepoPath, "mr", number, "issue_comment", externalID),
+		})
+	}
+	for _, review := range reviews {
+		externalID := strconv.FormatInt(review.ID, 10)
+		events = append(events, platform.MergeRequestEvent{
+			Repo:               repo,
+			PlatformID:         review.ID,
+			PlatformExternalID: externalID,
+			MergeRequestNumber: number,
+			EventType:          "review",
+			Author:             review.User.UserName,
+			Summary:            review.State,
+			Body:               review.Body,
+			CreatedAt:          review.Submitted.UTC(),
+			DedupeKey:          NoteDedupeKey(kind, repo.Host, repo.RepoPath, "mr", number, "review", externalID),
+		})
+	}
+	for _, commit := range commits {
+		events = append(events, platform.MergeRequestEvent{
+			Repo:               repo,
+			PlatformExternalID: commit.SHA,
+			MergeRequestNumber: number,
+			EventType:          "commit",
+			Author:             commit.AuthorName,
+			Summary:            commit.Message,
+			CreatedAt:          commit.Created.UTC(),
+			DedupeKey:          NoteDedupeKey(kind, repo.Host, repo.RepoPath, "mr", number, "commit", commit.SHA),
+		})
+	}
+	return events
+}
+
+func NormalizeRelease(repo platform.RepoRef, release ReleaseDTO) platform.Release {
+	return platform.Release{
+		Repo:               repo,
+		PlatformID:         release.ID,
+		PlatformExternalID: strconv.FormatInt(release.ID, 10),
+		TagName:            release.TagName,
+		Name:               release.Title,
+		URL:                release.HTMLURL,
+		TargetCommitish:    release.Target,
+		Prerelease:         release.Prerelease,
+		PublishedAt:        timePtrUTC(release.PublishedAt),
+		CreatedAt:          release.CreatedAt.UTC(),
+	}
+}
+
+func NormalizeTag(repo platform.RepoRef, tag TagDTO) platform.Tag {
+	return platform.Tag{
+		Repo:               repo,
+		PlatformExternalID: tag.Commit.SHA,
+		Name:               tag.Name,
+		SHA:                tag.Commit.SHA,
+		URL:                tag.URL,
+	}
+}
+
+func NormalizeStatuses(
+	repo platform.RepoRef,
+	statuses []StatusDTO,
+	actionRuns []ActionRunDTO,
+) []platform.CICheck {
+	checks := make([]platform.CICheck, 0, len(statuses)+len(actionRuns))
+	for _, status := range statuses {
+		checkStatus, conclusion := NormalizeCommitStatus(status.State)
+		checks = append(checks, platform.CICheck{
+			Repo:               repo,
+			PlatformID:         status.ID,
+			PlatformExternalID: strconv.FormatInt(status.ID, 10),
+			Name:               status.Context,
+			Status:             checkStatus,
+			Conclusion:         conclusion,
+			URL:                status.TargetURL,
+			App:                "status",
+			StartedAt:          timePtr(status.Created),
+			CompletedAt:        timePtr(status.Updated),
+		})
+	}
+	for _, run := range actionRuns {
+		checkStatus, conclusion := NormalizeCommitStatus(run.Status)
+		checks = append(checks, platform.CICheck{
+			Repo:               repo,
+			PlatformID:         run.ID,
+			PlatformExternalID: strconv.FormatInt(run.ID, 10),
+			Name:               run.Title,
+			Status:             checkStatus,
+			Conclusion:         conclusion,
+			URL:                run.HTMLURL,
+			App:                "action",
+			StartedAt:          timePtrUTC(run.Started),
+			CompletedAt:        timePtrUTC(run.Stopped),
+		})
+	}
+	return checks
+}
+
+func NormalizeState(state string) string {
+	switch strings.ToLower(strings.TrimSpace(state)) {
+	case "opened":
+		return "open"
+	case "closed":
+		return "closed"
+	case "merged":
+		return "merged"
+	default:
+		return strings.TrimSpace(state)
+	}
+}
+
+func OwnerRepoPath(owner, name string) string {
+	if owner == "" {
+		return name
+	}
+	return owner + "/" + name
+}
+
+func NoteDedupeKey(
+	kind platform.Kind,
+	host string,
+	repoPath string,
+	parentKind string,
+	number int,
+	eventKind string,
+	externalID string,
+) string {
+	return fmt.Sprintf("%s/%s/%s/%s/%d/%s/%s", kind, host, repoPath, parentKind, number, eventKind, externalID)
+}
+
+func NormalizeCommitStatus(state string) (status string, conclusion string) {
+	switch strings.ToLower(strings.TrimSpace(state)) {
+	case "pending", "running", "queued", "waiting":
+		return "pending", ""
+	case "success", "successful", "passed":
+		return "completed", "success"
+	case "failure", "failed", "error", "cancelled", "canceled":
+		return "completed", "failure"
+	case "skipped":
+		return "completed", "skipped"
+	default:
+		return NormalizeState(state), ""
+	}
+}
+
+func NextPage(next int) int {
+	if next < 0 {
+		return 0
+	}
+	return next
+}
+
+func splitRepoPath(repoPath, fallbackName string) (string, string, error) {
+	parts := strings.Split(repoPath, "/")
+	if len(parts) < 2 {
+		return "", "", fmt.Errorf("invalid repository path %q", repoPath)
+	}
+	name := fallbackName
+	if name == "" {
+		name = parts[len(parts)-1]
+	}
+	return strings.Join(parts[:len(parts)-1], "/"), name, nil
+}
+
+func timePtrUTC(t *time.Time) *time.Time {
+	if t == nil {
+		return nil
+	}
+	utc := t.UTC()
+	return &utc
+}
+
+func timePtr(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	utc := t.UTC()
+	return &utc
+}
