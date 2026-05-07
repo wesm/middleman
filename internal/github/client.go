@@ -302,6 +302,7 @@ mutation($pullRequestId: ID!) {
       title
       state
       isDraft
+      locked
       body
       url
       author {

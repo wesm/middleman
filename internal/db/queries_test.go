@@ -1313,6 +1313,7 @@ func TestUpsertAndGetPullRequest(t *testing.T) {
 		Author:         "alice",
 		State:          "open",
 		IsDraft:        false,
+		IsLocked:       true,
 		Body:           "body text",
 		HeadBranch:     "fix/something",
 		BaseBranch:     "main",
@@ -1337,6 +1338,7 @@ func TestUpsertAndGetPullRequest(t *testing.T) {
 	assert.Equal(pr.Title, got.Title)
 	assert.Equal(pr.Author, got.Author)
 	assert.Equal(pr.Additions, got.Additions)
+	assert.True(got.IsLocked)
 	assert.Empty(got.KanbanStatus)
 
 	// Update via upsert — change title and additions.
@@ -1353,6 +1355,7 @@ func TestUpsertAndGetPullRequest(t *testing.T) {
 	require.NotNil(got2)
 	assert.Equal("fix: something updated", got2.Title)
 	assert.Equal(20, got2.Additions)
+	assert.True(got2.IsLocked)
 	// created_at must not change.
 	assert.True(got2.CreatedAt.Equal(now))
 

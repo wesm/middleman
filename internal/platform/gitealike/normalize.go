@@ -65,6 +65,7 @@ func NormalizePullRequest(repo platform.RepoRef, pr PullRequestDTO) platform.Mer
 		AuthorDisplayName:  pr.User.FullName,
 		State:              state,
 		IsDraft:            pr.Draft,
+		IsLocked:           pr.IsLocked,
 		Body:               pr.Body,
 		HeadBranch:         pr.Head.Ref,
 		BaseBranch:         pr.Base.Ref,

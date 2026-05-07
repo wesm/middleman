@@ -623,6 +623,7 @@ func TestOpenRepairsLegacyTimestampStorage(t *testing.T) {
 	)
 	require.NoError(err)
 	require.NoError(rewriteWorkspacesToVersion9ForTest(raw))
+	require.NoError(removeMergeRequestLockedColumnForTest(raw))
 	require.NoError(removeProviderIdentityColumnsForTest(raw))
 	_, err = raw.ExecContext(ctx,
 		`UPDATE schema_migrations SET version = ?, dirty = FALSE`,
@@ -725,6 +726,7 @@ func TestOpenRepairsBrokenWorkspaceMigrationVersion11(t *testing.T) {
 	raw, err := sql.Open("sqlite", path)
 	require.NoError(err)
 	require.NoError(rewriteWorkspacesToVersion11ForTest(raw))
+	require.NoError(removeMergeRequestLockedColumnForTest(raw))
 	require.NoError(removeProviderIdentityColumnsForTest(raw))
 	_, err = raw.Exec(`UPDATE schema_migrations SET version = 11, dirty = FALSE`)
 	require.NoError(err)
@@ -796,6 +798,7 @@ func TestOpenMigratesWorkspaceUniquenessAndPreservesSetupEvents(t *testing.T) {
 	raw, err := sql.Open("sqlite", path)
 	require.NoError(err)
 	require.NoError(rewriteWorkspacesToVersion11ForTest(raw))
+	require.NoError(removeMergeRequestLockedColumnForTest(raw))
 	require.NoError(removeProviderIdentityColumnsForTest(raw))
 	_, err = raw.Exec(`UPDATE schema_migrations SET version = 11, dirty = FALSE`)
 	require.NoError(err)
@@ -1216,6 +1219,11 @@ func removeProviderIdentityColumnsForTest(raw *sql.DB) error {
 		    SELECT RAISE(ABORT, 'repo identifiers must be lowercase');
 		END;
 	`)
+	return err
+}
+
+func removeMergeRequestLockedColumnForTest(raw *sql.DB) error {
+	_, err := raw.Exec(`ALTER TABLE middleman_merge_requests DROP COLUMN is_locked`)
 	return err
 }
 
