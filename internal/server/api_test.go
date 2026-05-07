@@ -8694,7 +8694,7 @@ func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
 		platform.KindGitea,
 		"gitea.test",
 		transport,
-		gitealike.Options{Mutations: true},
+		gitealike.WithMutations(),
 	)
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
