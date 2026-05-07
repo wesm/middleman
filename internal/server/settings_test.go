@@ -1629,7 +1629,7 @@ func TestHandlePreviewReposSupportsForgejoOrgFallback(t *testing.T) {
 		},
 	}
 	provider := gitealike.NewProvider(
-		platform.KindForgejo, "codeberg.example.com", transport, gitealike.Options{},
+		platform.KindForgejo, "codeberg.example.com", transport,
 	)
 	srv, _, _ := setupTestServerWithConfigProviders(t, `
 sync_interval = "5m"
@@ -1813,7 +1813,7 @@ func TestHandleBulkAddReposPersistsGiteaProviderIdentity(t *testing.T) {
 		},
 	}
 	provider := gitealike.NewProvider(
-		platform.KindGitea, "gitea.example.com", transport, gitealike.Options{},
+		platform.KindGitea, "gitea.example.com", transport,
 	)
 	srv, database, cfgPath := setupTestServerWithConfigProviders(t, `
 sync_interval = "5m"
