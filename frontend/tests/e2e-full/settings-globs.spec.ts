@@ -200,28 +200,7 @@ test("repository import can hide forks and private repositories before adding", 
   }]);
 });
 
-test("repository import exposes Forgejo and Gitea provider defaults", async ({ page }) => {
-  const previewRequests: Array<{ provider: string; host: string; owner: string; pattern: string }> = [];
-  await page.route("**/api/v1/repos/preview", async (route) => {
-    const body = route.request().postDataJSON() as {
-      provider: string;
-      host: string;
-      owner: string;
-      pattern: string;
-    };
-    previewRequests.push(body);
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
-        provider: body.provider,
-        platform_host: body.host,
-        owner: body.owner,
-        pattern: body.pattern,
-        repos: [],
-      }),
-    });
-  });
-
+test("repository import previews and adds Forgejo and Gitea repositories through the API", async ({ page }) => {
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
   await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
   await page.getByRole("button", { name: "Add repositories…" }).click();
@@ -232,19 +211,58 @@ test("repository import exposes Forgejo and Gitea provider defaults", async ({ p
   await dialog.getByLabel("Repository pattern").fill("team/subgroup/service-*");
   await dialog.getByRole("button", { name: "Preview" }).click();
   await expect(dialog.getByRole("alert")).toContainText("Format: owner/pattern");
-  expect(previewRequests).toEqual([]);
+
+  await dialog.getByLabel("Repository pattern").fill("forge-lab/*");
+  await dialog.getByRole("button", { name: "Preview" }).click();
+  await expect(dialog.getByText("forge-lab/service")).toBeVisible();
+  await expect(dialog.getByText("forge-lab/archived")).toHaveCount(0);
 
   await dialog.getByLabel("Provider").selectOption("gitea");
   await expect(dialog.getByLabel("Host")).toHaveValue("gitea.com");
-  await dialog.getByLabel("Repository pattern").fill("team/service-*");
+  await dialog.getByLabel("Repository pattern").fill("gitea-team/*");
   await dialog.getByRole("button", { name: "Preview" }).click();
+  await expect(dialog.getByText("gitea-team/service")).toBeVisible();
+  await expect(dialog.getByText("gitea-team/private-service")).toBeVisible();
+  await expect(dialog.getByText("gitea-team/archived")).toHaveCount(0);
 
-  await expect.poll(() => previewRequests).toEqual([{
+  await dialog.getByLabel("Hide private").check();
+  await expect(dialog.getByText("gitea-team/service")).toBeVisible();
+  await expect(dialog.getByText("gitea-team/private-service")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Add selected repositories" }).click();
+
+  await expect(page.getByRole("dialog", { name: "Add repositories" })).toHaveCount(0);
+  await expect(page.locator(".repo-row", { hasText: "gitea-team/service" })).toBeVisible();
+
+  if (!api) throw new Error("settings-globs API context not initialized");
+  const settingsResponse = await api.get("/api/v1/settings");
+  const settings = await settingsResponse.json() as {
+    repos: Array<{
+      provider: string;
+      platform_host: string;
+      owner: string;
+      name: string;
+      repo_path: string;
+      is_glob: boolean;
+    }>;
+  };
+  expect(settings.repos).toContainEqual(expect.objectContaining({
     provider: "gitea",
-    host: "gitea.com",
-    owner: "team",
-    pattern: "service-*",
-  }]);
+    platform_host: "gitea.com",
+    owner: "gitea-team",
+    name: "service",
+    repo_path: "gitea-team/service",
+    is_glob: false,
+  }));
+
+  await expect.poll(async () => {
+    const response = await api!.get("/api/v1/repos");
+    const repos = await response.json() as RepoSummary[];
+    return repos
+      .filter((repo) => repo.Owner === "gitea-team")
+      .map((repo) => repo.Name)
+      .sort()
+      .join(",");
+  }).toBe("service");
 });
 
 test("repository import traps keyboard focus inside the dialog", async ({ page }) => {

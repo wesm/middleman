@@ -83,6 +83,7 @@ type e2eStaticProvider struct {
 	kind        platform.Kind
 	host        string
 	caps        platform.Capabilities
+	repos       []platform.Repository
 	issue       platform.Issue
 	issueEvents []platform.IssueEvent
 }
@@ -97,6 +98,33 @@ func (p e2eStaticProvider) Host() string {
 
 func (p e2eStaticProvider) Capabilities() platform.Capabilities {
 	return p.caps
+}
+
+func (p e2eStaticProvider) GetRepository(
+	_ context.Context,
+	ref platform.RepoRef,
+) (platform.Repository, error) {
+	for _, repo := range p.repos {
+		if repo.Ref.RepoPath == ref.RepoPath ||
+			(repo.Ref.Owner == ref.Owner && repo.Ref.Name == ref.Name) {
+			return repo, nil
+		}
+	}
+	return platform.Repository{}, platform.ErrNotFound
+}
+
+func (p e2eStaticProvider) ListRepositories(
+	_ context.Context,
+	owner string,
+	_ platform.RepositoryListOptions,
+) ([]platform.Repository, error) {
+	repos := make([]platform.Repository, 0, len(p.repos))
+	for _, repo := range p.repos {
+		if strings.EqualFold(repo.Ref.Owner, owner) {
+			repos = append(repos, repo)
+		}
+	}
+	return repos, nil
 }
 
 func (p e2eStaticProvider) ListOpenIssues(
@@ -445,6 +473,8 @@ func run(
 	gitLabIssue, gitLabIssueEvents := gitLabReadOnlyIssueFixture(
 		time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC),
 	)
+	forgeUpdated := time.Date(2026, 4, 25, 10, 0, 0, 0, time.UTC)
+	giteaUpdated := time.Date(2026, 4, 26, 10, 0, 0, 0, time.UTC)
 	registry, err := ghclient.NewProviderRegistry(
 		fixtureClients,
 		e2eStaticProvider{
@@ -455,6 +485,86 @@ func run(
 			caps: platform.Capabilities{
 				ReadIssues:   true,
 				ReadComments: true,
+			},
+		},
+		e2eStaticProvider{
+			kind: platform.KindForgejo,
+			host: "codeberg.org",
+			caps: platform.Capabilities{
+				ReadRepositories: true,
+			},
+			repos: []platform.Repository{
+				{
+					Ref: platform.RepoRef{
+						Platform: platform.KindForgejo,
+						Host:     "codeberg.org",
+						Owner:    "forge-lab",
+						Name:     "service",
+						RepoPath: "forge-lab/service",
+					},
+					Description:   "Forgejo service",
+					Private:       false,
+					UpdatedAt:     forgeUpdated,
+					DefaultBranch: "main",
+					WebURL:        "https://codeberg.org/forge-lab/service",
+					CloneURL:      "https://codeberg.org/forge-lab/service.git",
+				},
+				{
+					Ref: platform.RepoRef{
+						Platform: platform.KindForgejo,
+						Host:     "codeberg.org",
+						Owner:    "forge-lab",
+						Name:     "archived",
+						RepoPath: "forge-lab/archived",
+					},
+					Archived: true,
+				},
+			},
+		},
+		e2eStaticProvider{
+			kind: platform.KindGitea,
+			host: "gitea.com",
+			caps: platform.Capabilities{
+				ReadRepositories: true,
+			},
+			repos: []platform.Repository{
+				{
+					Ref: platform.RepoRef{
+						Platform: platform.KindGitea,
+						Host:     "gitea.com",
+						Owner:    "gitea-team",
+						Name:     "service",
+						RepoPath: "gitea-team/service",
+					},
+					Description:   "Gitea service",
+					Private:       false,
+					UpdatedAt:     giteaUpdated,
+					DefaultBranch: "main",
+					WebURL:        "https://gitea.com/gitea-team/service",
+					CloneURL:      "https://gitea.com/gitea-team/service.git",
+				},
+				{
+					Ref: platform.RepoRef{
+						Platform: platform.KindGitea,
+						Host:     "gitea.com",
+						Owner:    "gitea-team",
+						Name:     "private-service",
+						RepoPath: "gitea-team/private-service",
+					},
+					Description: "Private Gitea service",
+					Private:     true,
+					UpdatedAt:   giteaUpdated.Add(-time.Hour),
+				},
+				{
+					Ref: platform.RepoRef{
+						Platform: platform.KindGitea,
+						Host:     "gitea.com",
+						Owner:    "gitea-team",
+						Name:     "archived",
+						RepoPath: "gitea-team/archived",
+					},
+					Archived: true,
+				},
 			},
 		},
 	)
