@@ -2,6 +2,8 @@ package forgejo
 
 import (
 	"context"
+	"errors"
+	"net/http"
 
 	forgejosdk "codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3"
 	"github.com/wesm/middleman/internal/platform"
@@ -365,12 +367,29 @@ func (t *transport) ListActionRuns(
 		return err
 	})
 	if err != nil {
-		return nil, gitealike.Page{}, forgejoHTTPError(resp, err)
+		mappedErr := forgejoHTTPError(resp, err)
+		if actionRunsUnavailable(mappedErr) {
+			return nil, forgejoPage(resp), nil
+		}
+		return nil, gitealike.Page{}, mappedErr
 	}
 	if runs == nil {
 		return nil, forgejoPage(resp), nil
 	}
 	return convertActionRuns(runs.WorkflowRuns), forgejoPage(resp), nil
+}
+
+func actionRunsUnavailable(err error) bool {
+	var httpErr *gitealike.HTTPError
+	if !errors.As(err, &httpErr) {
+		return false
+	}
+	switch httpErr.StatusCode {
+	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented:
+		return true
+	default:
+		return false
+	}
 }
 
 func forgejoListOptions(opts gitealike.PageOptions) forgejosdk.ListOptions {

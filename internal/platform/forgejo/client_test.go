@@ -282,6 +282,53 @@ func TestClientReadsOpenPullRequestsIssuesAndCIChecks(t *testing.T) {
 	assert.Len(checks, 2)
 }
 
+func TestClientReadsCommitStatusesWhenActionsEndpointUnavailable(t *testing.T) {
+	assert := Assert.New(t)
+	require := Require.New(t)
+
+	testCases := []struct {
+		name       string
+		statusCode int
+	}{
+		{name: "not found", statusCode: http.StatusNotFound},
+		{name: "method not allowed", statusCode: http.StatusMethodNotAllowed},
+		{name: "not implemented", statusCode: http.StatusNotImplemented},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal("token forgejo-token", r.Header.Get("Authorization"))
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/api/v1/repos/owner/repo/commits/abc/statuses":
+					assert.NoError(json.NewEncoder(w).Encode([]map[string]any{{
+						"id": 31, "context": "build", "status": "success", "target_url": "https://ci.test/build",
+					}}))
+				case "/api/v1/repos/owner/repo/actions/runs":
+					assert.Equal("abc", r.URL.Query().Get("head_sha"))
+					w.WriteHeader(testCase.statusCode)
+					assert.NoError(json.NewEncoder(w).Encode(map[string]string{"message": "actions unavailable"}))
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+
+			client, err := NewClient("codeberg.test", "forgejo-token", WithBaseURLForTesting(server.URL))
+			require.NoError(err)
+			ref := platform.RepoRef{Owner: "owner", Name: "repo"}
+
+			checks, err := client.ListCIChecks(context.Background(), ref, "abc")
+
+			require.NoError(err)
+			require.Len(checks, 1)
+			assert.Equal("build", checks[0].Name)
+			assert.Equal("success", checks[0].Conclusion)
+		})
+	}
+}
+
 func TestClientMapsNotFoundResponsesToPlatformError(t *testing.T) {
 	assert := Assert.New(t)
 	require := Require.New(t)
