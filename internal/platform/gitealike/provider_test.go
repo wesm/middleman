@@ -11,7 +11,7 @@ import (
 )
 
 func TestProviderCapabilitiesEnableSharedReadBehavior(t *testing.T) {
-	provider := NewProvider(platform.KindForgejo, "codeberg.org", &fakeTransport{}, Options{ReadActions: true})
+	provider := NewProvider(platform.KindForgejo, "codeberg.org", &fakeTransport{}, WithReadActions())
 
 	Assert.Equal(t, platform.Capabilities{
 		ReadRepositories:  true,
@@ -62,7 +62,7 @@ func TestProviderPaginatesAndNormalizesReadMethods(t *testing.T) {
 		tags:     [][]TagDTO{{{Name: "v1", Commit: CommitDTO{SHA: "abc"}}}},
 		statuses: [][]StatusDTO{{{ID: 9, Context: "ci", State: "success", Created: base}}},
 	}
-	provider := NewProvider(platform.KindForgejo, "codeberg.org", transport, Options{})
+	provider := NewProvider(platform.KindForgejo, "codeberg.org", transport)
 
 	repo, err := provider.GetRepository(context.Background(), ref)
 	require.NoError(err)
@@ -108,7 +108,7 @@ func TestProviderFallsBackFromUserToOrgRepositoryImport(t *testing.T) {
 			{{ID: 10, Owner: UserDTO{UserName: "org"}, Name: "repo", FullName: "org/repo"}},
 		},
 	}
-	provider := NewProvider(platform.KindGitea, "gitea.com", transport, Options{})
+	provider := NewProvider(platform.KindGitea, "gitea.com", transport)
 
 	repos, err := provider.ListRepositories(context.Background(), "org", platform.RepositoryListOptions{})
 	require.NoError(err)
@@ -136,7 +136,7 @@ func TestProviderMapsHTTPStatusErrorsToTypedPlatformErrors(t *testing.T) {
 			require := Require.New(t)
 			provider := NewProvider(platform.KindForgejo, "codeberg.org", &fakeTransport{
 				repoErr: &HTTPError{StatusCode: tt.statusCode, Message: "failed"},
-			}, Options{})
+			})
 
 			_, err := provider.GetRepository(context.Background(), platform.RepoRef{
 				Owner: "forgejo",

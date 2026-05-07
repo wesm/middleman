@@ -18,12 +18,24 @@ type Options struct {
 	ReadActions bool
 }
 
+type Option func(*Options)
+
+func WithReadActions() Option {
+	return func(options *Options) {
+		options.ReadActions = true
+	}
+}
+
 func NewProvider(
 	kind platform.Kind,
 	host string,
 	transport Transport,
-	options Options,
+	opts ...Option,
 ) *Provider {
+	var options Options
+	for _, opt := range opts {
+		opt(&options)
+	}
 	return &Provider{
 		kind:      kind,
 		host:      host,
