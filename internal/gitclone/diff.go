@@ -148,10 +148,24 @@ func (m *Manager) Diff(
 		files = []DiffFile{}
 	}
 
-	// Step 4: Mark whitespace-only files (only in default mode).
-	if !hideWhitespace {
-		wsFiles := m.getWhitespaceOnlyFiles(
-			ctx, host, clonePath, mergeBase, headSHA)
+	// Step 4: Tag or drop whitespace-only modifications.
+	// In default mode they stay in the list and get tagged so the UI can
+	// surface them; in hide mode they leave the list entirely. Both modes
+	// need this server-side filter because git before 2.50 doesn't honor
+	// -w in --raw output, so step 2 returns whitespace-only files even
+	// when the caller asked to hide them.
+	wsFiles := m.getWhitespaceOnlyFiles(
+		ctx, host, clonePath, mergeBase, headSHA)
+	if hideWhitespace {
+		filtered := files[:0]
+		for i := range files {
+			if files[i].Status == "modified" && wsFiles[files[i].Path] {
+				continue
+			}
+			filtered = append(filtered, files[i])
+		}
+		files = filtered
+	} else {
 		for i := range files {
 			if wsFiles[files[i].Path] {
 				files[i].IsWhitespaceOnly = true
@@ -188,21 +202,30 @@ func (m *Manager) getWhitespaceOnlyFiles(
 func (m *Manager) whitespaceOnlyFiles(
 	ctx context.Context, host, clonePath, mergeBase, headSHA string,
 ) (map[string]bool, error) {
-	out1, err := m.git(ctx, host, clonePath, diffRawNoRenameArgs(mergeBase, headSHA, false)...)
+	// Compare --raw (full file list) against --numstat -w (files with
+	// non-whitespace changes). --raw -w would be more symmetric, but git
+	// before 2.50 ignores -w in --raw mode (it compares blob SHAs), so the
+	// two outputs match and we conclude no file is whitespace-only — wrong
+	// on every Ubuntu image that ships an older git, including the
+	// Playwright noble image used by the e2e job (git 2.43). --numstat
+	// honors -w in every supported git version, so we pivot through it.
+	rawOut, err := m.git(ctx, host, clonePath, diffRawNoRenameArgs(mergeBase, headSHA, false)...)
 	if err != nil {
 		return nil, err
 	}
-	out2, err := m.git(ctx, host, clonePath, diffRawNoRenameArgs(mergeBase, headSHA, true)...)
+	numstatOut, err := m.git(ctx, host, clonePath,
+		"diff", "--numstat", "-z", "--no-renames", "-w", mergeBase, headSHA,
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	allFiles := parseRawZPaths(out1)
-	wFiles := parseRawZPaths(out2)
+	allFiles := parseRawZPaths(rawOut)
+	nonWhitespace := parseNumstatZ(numstatOut)
 
 	result := make(map[string]bool)
 	for f := range allFiles {
-		if !wFiles[f] {
+		if _, ok := nonWhitespace[f]; !ok {
 			result[f] = true
 		}
 	}

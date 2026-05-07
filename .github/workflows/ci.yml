@@ -191,6 +191,27 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
+    # Browsers and their OS deps are preinstalled here, so apt-get is skipped
+    # entirely. The image tag must track @playwright/test in bun.lock.
+    container:
+      image: mcr.microsoft.com/playwright:v1.55.1-noble
+    # setup-go folds ImageOS into its cache key. Hosted runners set this to
+    # ubuntu24; container jobs don't, so without this the e2e job misses the
+    # host jobs' shared 178 MB Go cache. The Playwright image is also noble
+    # on amd64, so the host's content-addressed build/module entries are
+    # safe to reuse.
+    #
+    # GOCACHE / GOMODCACHE pin the build and module caches to the same
+    # absolute paths the host jobs use. setup-go's cache tarball stores
+    # absolute paths, so even with a matching key the restore lands at
+    # /home/runner/... — which doesn't exist in the container. By
+    # overriding go env to point at those paths (and mkdir'ing them in
+    # the first step), the restored entries end up where Go looks for
+    # them, dropping ~30 s off the e2e-server build per browser.
+    env:
+      ImageOS: ubuntu24
+      GOCACHE: /home/runner/.cache/go-build
+      GOMODCACHE: /home/runner/go/pkg/mod
     strategy:
       fail-fast: false
       matrix:
@@ -200,6 +221,33 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           persist-credentials: false
+
+      # actions/checkout sets safe.directory in a temporary HOME, so the
+      # config is gone by the time later steps run. go build's VCS stamping
+      # shells out to git and fails ("error obtaining VCS status: exit
+      # status 128") without this. Re-register against the persistent
+      # /github/home for the rest of the job.
+      - name: Mark workspace as safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # The Playwright image is minimal; install the few extras the e2e
+      # server and setup-bun need:
+      #   - unzip: setup-bun shells out to it to extract the bun tarball
+      #   - tmux:  the e2e workspace runtime spawns tmux sessions
+      #   - zstd:  @actions/cache prefers zstd when present and falls back
+      #            to gzip otherwise. The compression method is part of the
+      #            cache version, so without zstd the container's lookup
+      #            (gzip) doesn't match the host's saved cache (zstd) even
+      #            for an identical key. Installing zstd brings the two
+      #            into alignment so the host-warmed Go cache restores.
+      - name: Install missing OS deps for the e2e job
+        run: apt-get update && apt-get install -y --no-install-recommends unzip tmux zstd
+
+      # Pre-create the Go cache dirs at the host paths configured via
+      # GOCACHE / GOMODCACHE so setup-go's restore (which extracts to
+      # absolute paths from the host save) has somewhere to land.
+      - name: Pre-create host-aligned Go cache dirs
+        run: mkdir -p /home/runner/.cache/go-build /home/runner/go/pkg/mod
 
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
         with:
@@ -220,10 +268,16 @@ jobs:
       - name: Build E2E server
         run: go build -o ./cmd/e2e-server/e2e-server ./cmd/e2e-server
 
-      - name: Install Playwright browser
-        run: cd frontend && bunx playwright install --with-deps ${{ matrix.browser }}
-
+      # Firefox/WebKit refuse to launch when $HOME isn't owned by the running
+      # user. Actions sets HOME=/github/home (owned by pwuser, the image's
+      # default user) but starts the container as root, so Playwright bails
+      # with "Firefox is unable to launch if the $HOME folder isn't owned by
+      # the current user". Override HOME for the test run as Playwright's
+      # docs recommend; the rest of the job keeps /github/home so setup-go's
+      # cache paths still resolve.
       - name: Run E2E tests
+        env:
+          HOME: /root
         run: cd frontend && bun run playwright test --config=playwright-e2e.config.ts --project=${{ matrix.browser }}
 
       - name: Upload Playwright report
