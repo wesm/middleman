@@ -185,6 +185,7 @@ func TestNormalizeStatusesMapsCommitStatusesAndActionRuns(t *testing.T) {
 	require := Require.New(t)
 	started := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	stopped := started.Add(time.Minute)
+	laterStopped := stopped.Add(time.Minute)
 	repo := platform.RepoRef{Platform: platform.KindForgejo, Host: "codeberg.org", RepoPath: "forgejo/forgejo"}
 
 	checks := NormalizeStatuses(repo, []StatusDTO{
@@ -193,6 +194,7 @@ func TestNormalizeStatusesMapsCommitStatusesAndActionRuns(t *testing.T) {
 		{ID: 3, Context: "ci/error", State: "error", TargetURL: "https://ci/error", Created: started},
 	}, []ActionRunDTO{
 		{ID: 4, WorkflowID: "build", Title: "Build", Status: "failure", CommitSHA: "abc123", HTMLURL: "https://actions/build", Started: &started, Stopped: &stopped, NeedApproval: true},
+		{ID: 5, WorkflowID: "build", Title: "Build", Status: "completed", Conclusion: "success", CommitSHA: "abc123", HTMLURL: "https://actions/build-rerun", Started: &started, Stopped: &laterStopped},
 	})
 
 	require.Len(checks, 4)
@@ -204,8 +206,10 @@ func TestNormalizeStatusesMapsCommitStatusesAndActionRuns(t *testing.T) {
 	assert.Equal("failure", checks[2].Conclusion)
 	assert.Equal("Build", checks[3].Name)
 	assert.Equal("action", checks[3].App)
+	assert.Equal("success", checks[3].Conclusion)
+	assert.Equal("https://actions/build-rerun", checks[3].URL)
 	assert.Equal(&started, checks[3].StartedAt)
-	assert.Equal(&stopped, checks[3].CompletedAt)
+	assert.Equal(&laterStopped, checks[3].CompletedAt)
 }
 
 func TestSharedHelpersNormalizeStateDedupeAndPagination(t *testing.T) {

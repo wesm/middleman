@@ -250,7 +250,7 @@ func NormalizeStatuses(
 			CompletedAt:        timePtr(status.Updated),
 		})
 	}
-	for _, run := range actionRuns {
+	for _, run := range latestActionRuns(actionRuns) {
 		name := actionRunName(run)
 		if strings.TrimSpace(run.HTMLURL) != "" {
 			if _, ok := statusURLs[casefoldKey(run.HTMLURL)]; ok {
@@ -272,6 +272,56 @@ func NormalizeStatuses(
 		})
 	}
 	return checks
+}
+
+func latestActionRuns(actionRuns []ActionRunDTO) []ActionRunDTO {
+	latest := make(map[string]ActionRunDTO, len(actionRuns))
+	order := make([]string, 0, len(actionRuns))
+	for _, run := range actionRuns {
+		key := actionRunKey(run)
+		if _, seen := latest[key]; !seen {
+			order = append(order, key)
+			latest[key] = run
+			continue
+		}
+		if actionRunIsNewer(run, latest[key]) {
+			latest[key] = run
+		}
+	}
+	out := make([]ActionRunDTO, 0, len(latest))
+	for _, key := range order {
+		out = append(out, latest[key])
+	}
+	return out
+}
+
+func actionRunKey(run ActionRunDTO) string {
+	if workflowID := strings.TrimSpace(run.WorkflowID); workflowID != "" {
+		return "workflow:" + casefoldKey(workflowID)
+	}
+	if name := actionRunName(run); name != "" {
+		return "name:" + casefoldKey(name)
+	}
+	return "id:" + strconv.FormatInt(run.ID, 10)
+}
+
+func actionRunIsNewer(candidate, current ActionRunDTO) bool {
+	candidateTime := actionRunSortTime(candidate)
+	currentTime := actionRunSortTime(current)
+	if !candidateTime.Equal(currentTime) {
+		return candidateTime.After(currentTime)
+	}
+	return candidate.ID > current.ID
+}
+
+func actionRunSortTime(run ActionRunDTO) time.Time {
+	if run.Stopped != nil && !run.Stopped.IsZero() {
+		return run.Stopped.UTC()
+	}
+	if run.Started != nil && !run.Started.IsZero() {
+		return run.Started.UTC()
+	}
+	return time.Time{}
 }
 
 func actionRunName(run ActionRunDTO) string {
