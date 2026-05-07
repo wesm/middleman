@@ -8494,6 +8494,282 @@ func TestAPIGitLabUnsupportedMutationsReturnCodedCapabilityErrors(t *testing.T) 
 	}
 }
 
+func TestAPIGitealikeReadSyncPersistsThroughServer(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	base := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	transport := &apiTestGitealikeTransport{
+		repo: gitealike.RepositoryDTO{
+			ID:            101,
+			Owner:         gitealike.UserDTO{UserName: "forgejo"},
+			Name:          "tea",
+			FullName:      "forgejo/tea",
+			HTMLURL:       "https://codeberg.test/forgejo/tea",
+			CloneURL:      "https://codeberg.test/forgejo/tea.git",
+			DefaultBranch: "main",
+			Created:       base,
+			Updated:       base,
+		},
+		pulls: []gitealike.PullRequestDTO{{
+			ID:       201,
+			Index:    7,
+			HTMLURL:  "https://codeberg.test/forgejo/tea/pulls/7",
+			Title:    "Add tea",
+			User:     gitealike.UserDTO{UserName: "alice"},
+			State:    "open",
+			IsLocked: true,
+			Head:     gitealike.BranchDTO{Ref: "feature", SHA: "abc123"},
+			Base:     gitealike.BranchDTO{Ref: "main", SHA: "def456"},
+			Created:  base,
+			Updated:  base.Add(time.Minute),
+		}},
+		pullComments: []gitealike.CommentDTO{{
+			ID:      301,
+			User:    gitealike.UserDTO{UserName: "reviewer"},
+			Body:    "looks good",
+			Created: base.Add(2 * time.Minute),
+			Updated: base.Add(2 * time.Minute),
+		}},
+		issues: []gitealike.IssueDTO{{
+			ID:      401,
+			Index:   8,
+			HTMLURL: "https://codeberg.test/forgejo/tea/issues/8",
+			Title:   "Missing cup",
+			User:    gitealike.UserDTO{UserName: "bob"},
+			State:   "open",
+			Created: base,
+			Updated: base.Add(time.Minute),
+		}},
+		issueComments: []gitealike.CommentDTO{{
+			ID:      501,
+			User:    gitealike.UserDTO{UserName: "triager"},
+			Body:    "confirmed",
+			Created: base.Add(3 * time.Minute),
+			Updated: base.Add(3 * time.Minute),
+		}},
+		statuses: []gitealike.StatusDTO{{
+			ID:        601,
+			Context:   "build",
+			State:     "success",
+			TargetURL: "https://ci.test/build",
+			Created:   base.Add(time.Minute),
+			Updated:   base.Add(time.Minute),
+		}},
+	}
+	provider := gitealike.NewProvider(
+		platform.KindForgejo,
+		"codeberg.test",
+		transport,
+		gitealike.Options{},
+	)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(database.Close()) })
+
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry,
+		database,
+		nil,
+		[]ghclient.RepoRef{{
+			Platform:     platform.KindForgejo,
+			PlatformHost: "codeberg.test",
+			Owner:        "forgejo",
+			Name:         "tea",
+			RepoPath:     "forgejo/tea",
+		}},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	syncer.RunOnce(ctx)
+	require.NoError(syncer.SyncMR(ctx, "forgejo", "tea", 7))
+	require.NoError(syncer.SyncIssue(ctx, "forgejo", "tea", 8))
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "forgejo",
+		PlatformHost: "codeberg.test",
+		RepoPath:     "forgejo/tea",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.True(mr.IsLocked)
+	assert.Equal("success", mr.CIStatus)
+
+	pullResp, err := client.HTTP.GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberWithResponse(
+		ctx, "codeberg.test", "forgejo", "forgejo", "tea", 7,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, pullResp.StatusCode())
+	require.NotNil(pullResp.JSON200)
+	assert.True(pullResp.JSON200.MergeRequest.IsLocked)
+	assert.Equal("forgejo", pullResp.JSON200.Repo.Provider)
+	assert.True(pullResp.JSON200.Repo.Capabilities.ReadMergeRequests)
+	assert.True(pullResp.JSON200.Repo.Capabilities.ReadCi)
+	require.NotNil(pullResp.JSON200.Events)
+	require.Len(*pullResp.JSON200.Events, 1)
+	assert.Equal("looks good", (*pullResp.JSON200.Events)[0].Body)
+
+	issueResp, err := client.HTTP.GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberWithResponse(
+		ctx, "codeberg.test", "forgejo", "forgejo", "tea", 8,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, issueResp.StatusCode())
+	require.NotNil(issueResp.JSON200)
+	assert.Equal("Missing cup", issueResp.JSON200.Issue.Title)
+	require.NotNil(issueResp.JSON200.Events)
+	require.Len(*issueResp.JSON200.Events, 1)
+	assert.Equal("confirmed", (*issueResp.JSON200.Events)[0].Body)
+}
+
+type apiTestGitealikeTransport struct {
+	repo          gitealike.RepositoryDTO
+	pulls         []gitealike.PullRequestDTO
+	pullComments  []gitealike.CommentDTO
+	issues        []gitealike.IssueDTO
+	issueComments []gitealike.CommentDTO
+	statuses      []gitealike.StatusDTO
+}
+
+func (t *apiTestGitealikeTransport) GetRepository(
+	context.Context,
+	string,
+	string,
+) (gitealike.RepositoryDTO, error) {
+	return t.repo, nil
+}
+
+func (t *apiTestGitealikeTransport) ListUserRepositories(
+	context.Context,
+	string,
+	gitealike.PageOptions,
+) ([]gitealike.RepositoryDTO, gitealike.Page, error) {
+	return []gitealike.RepositoryDTO{t.repo}, gitealike.Page{}, nil
+}
+
+func (t *apiTestGitealikeTransport) ListOrgRepositories(
+	context.Context,
+	string,
+	gitealike.PageOptions,
+) ([]gitealike.RepositoryDTO, gitealike.Page, error) {
+	return []gitealike.RepositoryDTO{t.repo}, gitealike.Page{}, nil
+}
+
+func (t *apiTestGitealikeTransport) ListOpenPullRequests(
+	context.Context,
+	platform.RepoRef,
+	gitealike.PageOptions,
+) ([]gitealike.PullRequestDTO, gitealike.Page, error) {
+	return t.pulls, gitealike.Page{}, nil
+}
+
+func (t *apiTestGitealikeTransport) GetPullRequest(
+	_ context.Context,
+	_ platform.RepoRef,
+	number int,
+) (gitealike.PullRequestDTO, error) {
+	for _, pr := range t.pulls {
+		if pr.Index == number {
+			return pr, nil
+		}
+	}
+	return gitealike.PullRequestDTO{}, platform.ErrNotFound
+}
+
+func (t *apiTestGitealikeTransport) ListPullRequestComments(
+	context.Context,
+	platform.RepoRef,
+	int,
+	gitealike.PageOptions,
+) ([]gitealike.CommentDTO, gitealike.Page, error) {
+	return t.pullComments, gitealike.Page{}, nil
+}
+
+func (t *apiTestGitealikeTransport) ListPullRequestReviews(
+	context.Context,
+	platform.RepoRef,
+	int,
+	gitealike.PageOptions,
+) ([]gitealike.ReviewDTO, gitealike.Page, error) {
+	return nil, gitealike.Page{}, nil
+}
+
+func (t *apiTestGitealikeTransport) ListPullRequestCommits(
+	context.Context,
+	platform.RepoRef,
+	int,
+	gitealike.PageOptions,
+) ([]gitealike.CommitDTO, gitealike.Page, error) {
+	return nil, gitealike.Page{}, nil
+}
+
+func (t *apiTestGitealikeTransport) ListOpenIssues(
+	context.Context,
+	platform.RepoRef,
+	gitealike.PageOptions,
+) ([]gitealike.IssueDTO, gitealike.Page, error) {
+	return t.issues, gitealike.Page{}, nil
+}
+
+func (t *apiTestGitealikeTransport) GetIssue(
+	_ context.Context,
+	_ platform.RepoRef,
+	number int,
+) (gitealike.IssueDTO, error) {
+	for _, issue := range t.issues {
+		if issue.Index == number {
+			return issue, nil
+		}
+	}
+	return gitealike.IssueDTO{}, platform.ErrNotFound
+}
+
+func (t *apiTestGitealikeTransport) ListIssueComments(
+	context.Context,
+	platform.RepoRef,
+	int,
+	gitealike.PageOptions,
+) ([]gitealike.CommentDTO, gitealike.Page, error) {
+	return t.issueComments, gitealike.Page{}, nil
+}
+
+func (t *apiTestGitealikeTransport) ListReleases(
+	context.Context,
+	platform.RepoRef,
+	gitealike.PageOptions,
+) ([]gitealike.ReleaseDTO, gitealike.Page, error) {
+	return nil, gitealike.Page{}, nil
+}
+
+func (t *apiTestGitealikeTransport) ListTags(
+	context.Context,
+	platform.RepoRef,
+	gitealike.PageOptions,
+) ([]gitealike.TagDTO, gitealike.Page, error) {
+	return nil, gitealike.Page{}, nil
+}
+
+func (t *apiTestGitealikeTransport) ListStatuses(
+	context.Context,
+	platform.RepoRef,
+	string,
+	gitealike.PageOptions,
+) ([]gitealike.StatusDTO, gitealike.Page, error) {
+	return t.statuses, gitealike.Page{}, nil
+}
+
 func setupGitLabCapabilityServer(t *testing.T) (*Server, *db.DB) {
 	t.Helper()
 	require := require.New(t)
