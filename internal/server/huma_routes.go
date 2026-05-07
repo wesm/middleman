@@ -1092,7 +1092,7 @@ func (s *Server) editComment(ctx context.Context, input *editCommentInput) (*edi
 	}
 
 	platformEvent, err := mutator.EditMergeRequestComment(
-		ctx, platformRepoRefFromDB(*repo), input.CommentID, input.Body.Body,
+		ctx, platformRepoRefFromDB(*repo), input.Number, input.CommentID, input.Body.Body,
 	)
 	if err != nil {
 		return nil, huma.Error502BadGateway("edit comment on provider failed")
@@ -1391,7 +1391,7 @@ func (s *Server) editIssueComment(ctx context.Context, input *editIssueCommentIn
 	}
 
 	platformEvent, err := mutator.EditIssueComment(
-		ctx, platformRepoRefFromDB(*repo), input.CommentID, input.Body.Body,
+		ctx, platformRepoRefFromDB(*repo), input.Number, input.CommentID, input.Body.Body,
 	)
 	if err != nil {
 		return nil, huma.Error502BadGateway("edit comment on provider failed")

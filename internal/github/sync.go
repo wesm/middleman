@@ -690,6 +690,7 @@ func (p gitHubClientProvider) CreateMergeRequestComment(
 func (p gitHubClientProvider) EditMergeRequestComment(
 	ctx context.Context,
 	ref platform.RepoRef,
+	number int,
 	commentID int64,
 	body string,
 ) (platform.MergeRequestEvent, error) {
@@ -700,7 +701,7 @@ func (p gitHubClientProvider) EditMergeRequestComment(
 	if comment == nil {
 		return platform.MergeRequestEvent{}, fmt.Errorf("provider returned no comment")
 	}
-	return platformgithub.NormalizeCommentEvent(ref, 0, comment), nil
+	return platformgithub.NormalizeCommentEvent(ref, number, comment), nil
 }
 
 func (p gitHubClientProvider) CreateIssueComment(
@@ -722,6 +723,7 @@ func (p gitHubClientProvider) CreateIssueComment(
 func (p gitHubClientProvider) EditIssueComment(
 	ctx context.Context,
 	ref platform.RepoRef,
+	number int,
 	commentID int64,
 	body string,
 ) (platform.IssueEvent, error) {
@@ -732,7 +734,7 @@ func (p gitHubClientProvider) EditIssueComment(
 	if comment == nil {
 		return platform.IssueEvent{}, fmt.Errorf("provider returned no comment")
 	}
-	return platformgithub.NormalizeIssueCommentEvent(ref, 0, comment), nil
+	return platformgithub.NormalizeIssueCommentEvent(ref, number, comment), nil
 }
 
 func (p gitHubClientProvider) SetMergeRequestState(

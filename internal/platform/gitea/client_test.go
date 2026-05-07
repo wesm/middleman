@@ -248,7 +248,7 @@ func TestClientMutationCapabilityUsesGiteaEndpoints(t *testing.T) {
 
 	_, err = client.CreateMergeRequestComment(context.Background(), ref, 7, "comment")
 	require.NoError(err)
-	_, err = client.EditIssueComment(context.Background(), ref, 10, "comment")
+	_, err = client.EditIssueComment(context.Background(), ref, 8, 10, "comment")
 	require.NoError(err)
 	_, err = client.CreateIssue(context.Background(), ref, "issue", "body")
 	require.NoError(err)
