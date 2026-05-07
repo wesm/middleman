@@ -200,8 +200,18 @@ jobs:
     # host jobs' shared 178 MB Go cache. The Playwright image is also noble
     # on amd64, so the host's content-addressed build/module entries are
     # safe to reuse.
+    #
+    # GOCACHE / GOMODCACHE pin the build and module caches to the same
+    # absolute paths the host jobs use. setup-go's cache tarball stores
+    # absolute paths, so even with a matching key the restore lands at
+    # /home/runner/... — which doesn't exist in the container. By
+    # overriding go env to point at those paths (and mkdir'ing them in
+    # the first step), the restored entries end up where Go looks for
+    # them, dropping ~30 s off the e2e-server build per browser.
     env:
       ImageOS: ubuntu24
+      GOCACHE: /home/runner/.cache/go-build
+      GOMODCACHE: /home/runner/go/pkg/mod
     strategy:
       fail-fast: false
       matrix:
@@ -226,6 +236,12 @@ jobs:
       #   - tmux:  the e2e workspace runtime spawns tmux sessions
       - name: Install missing OS deps for the e2e job
         run: apt-get update && apt-get install -y --no-install-recommends unzip tmux
+
+      # Pre-create the Go cache dirs at the host paths configured via
+      # GOCACHE / GOMODCACHE so setup-go's restore (which extracts to
+      # absolute paths from the host save) has somewhere to land.
+      - name: Pre-create host-aligned Go cache dirs
+        run: mkdir -p /home/runner/.cache/go-build /home/runner/go/pkg/mod
 
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
         with:
