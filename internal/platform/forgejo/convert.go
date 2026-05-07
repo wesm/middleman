@@ -2,6 +2,7 @@ package forgejo
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	forgejosdk "codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3"
@@ -39,6 +40,7 @@ func convertPullRequest(pr *forgejosdk.PullRequest) gitealike.PullRequestDTO {
 		Title:    pr.Title,
 		User:     convertUser(pr.Poster),
 		State:    string(pr.State),
+		Draft:    forgejoDraftFromTitle(pr.Title),
 		IsLocked: pr.IsLocked,
 		Body:     pr.Body,
 		Head:     convertBranch(pr.Head),
@@ -51,6 +53,14 @@ func convertPullRequest(pr *forgejosdk.PullRequest) gitealike.PullRequestDTO {
 		MergedAt: timePtrValue(pr.Merged),
 		Closed:   timePtrValue(pr.Closed),
 	}
+}
+
+func forgejoDraftFromTitle(title string) bool {
+	normalized := strings.TrimSpace(strings.ToLower(title))
+	return strings.HasPrefix(normalized, "wip:") ||
+		strings.HasPrefix(normalized, "wip ") ||
+		strings.HasPrefix(normalized, "[wip]") ||
+		strings.HasPrefix(normalized, "(wip)")
 }
 
 func convertIssue(issue *forgejosdk.Issue) gitealike.IssueDTO {
