@@ -67,6 +67,7 @@ func TestNormalizeMergeRequestIssueEventsAndArtifacts(t *testing.T) {
 		Title:    "Add tea",
 		User:     UserDTO{UserName: "alice", FullName: "Alice"},
 		State:    "closed",
+		Draft:    true,
 		Body:     "body",
 		Head:     BranchDTO{Ref: "feature", SHA: "abc123", RepoCloneURL: "https://example/head.git"},
 		Base:     BranchDTO{Ref: "main", SHA: "def456"},
@@ -78,6 +79,7 @@ func TestNormalizeMergeRequestIssueEventsAndArtifacts(t *testing.T) {
 		Closed:   &closed,
 	})
 	assert.Equal("merged", pr.State)
+	assert.True(pr.IsDraft)
 	assert.Equal(7, pr.Number)
 	assert.Equal("alice", pr.Author)
 	assert.Equal("Alice", pr.AuthorDisplayName)
