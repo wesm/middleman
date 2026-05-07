@@ -2,6 +2,7 @@ package forgejo
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -144,10 +145,23 @@ func convertStatus(status *forgejosdk.Status) gitealike.StatusDTO {
 		ID:          status.ID,
 		Context:     status.Context,
 		State:       string(status.State),
-		TargetURL:   status.TargetURL,
+		TargetURL:   safeStatusTargetURL(status.TargetURL),
 		Description: status.Description,
 		Created:     status.Created,
 		Updated:     status.Updated,
+	}
+}
+
+func safeStatusTargetURL(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	switch parsed.Scheme {
+	case "http", "https":
+		return rawURL
+	default:
+		return ""
 	}
 }
 

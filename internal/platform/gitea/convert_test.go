@@ -111,4 +111,8 @@ func TestConvertGiteaSDKRecords(t *testing.T) {
 	status := convertStatus(&giteasdk.Status{ID: 14, Context: "ci", State: giteasdk.StatusState("success"), TargetURL: "https://ci", Description: "ok", Created: created, Updated: updated})
 	assert.Equal("success", status.State)
 	assert.Equal("ci", status.Context)
+	assert.Equal("https://ci", status.TargetURL)
+
+	unsafeStatus := convertStatus(&giteasdk.Status{TargetURL: "javascript:alert(1)"})
+	assert.Empty(unsafeStatus.TargetURL)
 }

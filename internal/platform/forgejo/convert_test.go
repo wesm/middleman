@@ -121,6 +121,10 @@ func TestConvertForgejoSDKRecords(t *testing.T) {
 	status := convertStatus(&forgejosdk.Status{ID: 14, Context: "ci", State: forgejosdk.StatusState("success"), TargetURL: "https://ci", Description: "ok", Created: created, Updated: updated})
 	assert.Equal("success", status.State)
 	assert.Equal("ci", status.Context)
+	assert.Equal("https://ci", status.TargetURL)
+
+	unsafeStatus := convertStatus(&forgejosdk.Status{TargetURL: "javascript:alert(1)"})
+	assert.Empty(unsafeStatus.TargetURL)
 }
 
 func TestConvertForgejoActionRun(t *testing.T) {
