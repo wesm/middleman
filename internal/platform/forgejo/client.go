@@ -66,14 +66,17 @@ func NewClient(host, token string, options ...ClientOption) (*Client, error) {
 			forgejosdk.SetForgejoVersion("13.0.0+gitea-1.26.0"),
 		)
 	}
+	httpTransport := http.DefaultTransport
 	if opts.rateTracker != nil {
-		clientOptions = append(clientOptions, forgejosdk.SetHTTPClient(&http.Client{
-			Transport: &rateTrackingTransport{
-				base:        http.DefaultTransport,
-				rateTracker: opts.rateTracker,
-			},
-		}))
+		httpTransport = &rateTrackingTransport{
+			base:        httpTransport,
+			rateTracker: opts.rateTracker,
+		}
 	}
+	clientOptions = append(clientOptions, forgejosdk.SetHTTPClient(&http.Client{
+		Timeout:   opts.foregroundTimeout,
+		Transport: httpTransport,
+	}))
 
 	api, err := forgejosdk.NewClient(opts.baseURL, clientOptions...)
 	if err != nil {
