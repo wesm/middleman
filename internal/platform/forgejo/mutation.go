@@ -20,10 +20,11 @@ func (c *Client) CreateMergeRequestComment(
 func (c *Client) EditMergeRequestComment(
 	ctx context.Context,
 	ref platform.RepoRef,
+	number int,
 	commentID int64,
 	body string,
 ) (platform.MergeRequestEvent, error) {
-	return c.provider.EditMergeRequestComment(ctx, ref, commentID, body)
+	return c.provider.EditMergeRequestComment(ctx, ref, number, commentID, body)
 }
 
 func (c *Client) CreateIssueComment(
@@ -38,10 +39,11 @@ func (c *Client) CreateIssueComment(
 func (c *Client) EditIssueComment(
 	ctx context.Context,
 	ref platform.RepoRef,
+	number int,
 	commentID int64,
 	body string,
 ) (platform.IssueEvent, error) {
-	return c.provider.EditIssueComment(ctx, ref, commentID, body)
+	return c.provider.EditIssueComment(ctx, ref, number, commentID, body)
 }
 
 func (c *Client) CreateIssue(

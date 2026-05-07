@@ -289,6 +289,7 @@ func (p *Provider) CreateMergeRequestComment(
 func (p *Provider) EditMergeRequestComment(
 	ctx context.Context,
 	ref platform.RepoRef,
+	number int,
 	commentID int64,
 	body string,
 ) (platform.MergeRequestEvent, error) {
@@ -300,7 +301,7 @@ func (p *Provider) EditMergeRequestComment(
 	if err != nil {
 		return platform.MergeRequestEvent{}, p.mapError(err)
 	}
-	return NormalizeMergeRequestEvents(p.kind, ref, 0, []CommentDTO{comment}, nil, nil)[0], nil
+	return NormalizeMergeRequestEvents(p.kind, ref, number, []CommentDTO{comment}, nil, nil)[0], nil
 }
 
 func (p *Provider) CreateIssueComment(
@@ -323,6 +324,7 @@ func (p *Provider) CreateIssueComment(
 func (p *Provider) EditIssueComment(
 	ctx context.Context,
 	ref platform.RepoRef,
+	number int,
 	commentID int64,
 	body string,
 ) (platform.IssueEvent, error) {
@@ -334,7 +336,7 @@ func (p *Provider) EditIssueComment(
 	if err != nil {
 		return platform.IssueEvent{}, p.mapError(err)
 	}
-	return NormalizeIssueComments(p.kind, ref, 0, []CommentDTO{comment})[0], nil
+	return NormalizeIssueComments(p.kind, ref, number, []CommentDTO{comment})[0], nil
 }
 
 func (p *Provider) CreateIssue(
