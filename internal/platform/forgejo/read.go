@@ -367,6 +367,9 @@ func (t *transport) ListActionRuns(
 	if err != nil {
 		return nil, gitealike.Page{}, forgejoHTTPError(resp, err)
 	}
+	if runs == nil {
+		return nil, forgejoPage(resp), nil
+	}
 	return convertActionRuns(runs.WorkflowRuns), forgejoPage(resp), nil
 }
 
