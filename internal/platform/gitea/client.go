@@ -8,6 +8,7 @@ import (
 
 	giteasdk "code.gitea.io/sdk/gitea"
 	"github.com/wesm/middleman/internal/platform"
+	"github.com/wesm/middleman/internal/platform/gitealike"
 	"github.com/wesm/middleman/internal/ratelimit"
 )
 
@@ -24,6 +25,7 @@ type Client struct {
 	host              string
 	baseURL           string
 	transport         *transport
+	provider          *gitealike.Provider
 	api               *giteasdk.Client
 	foregroundTimeout time.Duration
 }
@@ -79,11 +81,13 @@ func NewClient(host, token string, options ...ClientOption) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	transport := &transport{api: api, requestContextLock: make(chan struct{}, 1)}
 	return &Client{
 		host:              host,
 		baseURL:           opts.baseURL,
 		api:               api,
-		transport:         &transport{api: api, requestContextLock: make(chan struct{}, 1)},
+		transport:         transport,
+		provider:          gitealike.NewProvider(platform.KindGitea, host, transport),
 		foregroundTimeout: opts.foregroundTimeout,
 	}, nil
 }
@@ -97,7 +101,7 @@ func (c *Client) Host() string {
 }
 
 func (c *Client) Capabilities() platform.Capabilities {
-	return platform.Capabilities{}
+	return c.provider.Capabilities()
 }
 
 type transport struct {
