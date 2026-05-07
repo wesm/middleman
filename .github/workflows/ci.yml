@@ -195,6 +195,13 @@ jobs:
     # entirely. The image tag must track @playwright/test in bun.lock.
     container:
       image: mcr.microsoft.com/playwright:v1.55.1-noble
+    # setup-go folds ImageOS into its cache key. Hosted runners set this to
+    # ubuntu24; container jobs don't, so without this the e2e job misses the
+    # host jobs' shared 178 MB Go cache. The Playwright image is also noble
+    # on amd64, so the host's content-addressed build/module entries are
+    # safe to reuse.
+    env:
+      ImageOS: ubuntu24
     strategy:
       fail-fast: false
       matrix:
