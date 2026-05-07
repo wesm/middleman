@@ -231,11 +231,9 @@ func NormalizeStatuses(
 	actionRuns []ActionRunDTO,
 ) []platform.CICheck {
 	checks := make([]platform.CICheck, 0, len(statuses)+len(actionRuns))
-	statusNames := make(map[string]struct{}, len(statuses))
 	statusURLs := make(map[string]struct{}, len(statuses))
 	for _, status := range statuses {
 		checkStatus, conclusion := NormalizeCommitStatus(status.State)
-		statusNames[casefoldKey(status.Context)] = struct{}{}
 		if strings.TrimSpace(status.TargetURL) != "" {
 			statusURLs[casefoldKey(status.TargetURL)] = struct{}{}
 		}
@@ -254,9 +252,6 @@ func NormalizeStatuses(
 	}
 	for _, run := range actionRuns {
 		name := actionRunName(run)
-		if _, ok := statusNames[casefoldKey(name)]; ok {
-			continue
-		}
 		if strings.TrimSpace(run.HTMLURL) != "" {
 			if _, ok := statusURLs[casefoldKey(run.HTMLURL)]; ok {
 				continue
@@ -341,11 +336,21 @@ func NormalizeActionRunStatus(status, conclusion string) (string, string) {
 	if strings.TrimSpace(conclusion) == "" {
 		return normalizedStatus, normalizedConclusion
 	}
-	_, normalizedConclusion = NormalizeCommitStatus(conclusion)
-	if normalizedConclusion == "" {
-		normalizedConclusion = NormalizeState(conclusion)
+	return "completed", NormalizeCIConclusion(conclusion)
+}
+
+func NormalizeCIConclusion(conclusion string) string {
+	normalized := strings.ToLower(strings.TrimSpace(conclusion))
+	switch normalized {
+	case "success", "successful", "passed":
+		return "success"
+	case "failure", "failed", "error", "cancelled", "canceled", "timed_out":
+		return "failure"
+	case "skipped", "neutral":
+		return normalized
+	default:
+		return normalized
 	}
-	return "completed", normalizedConclusion
 }
 
 func casefoldKey(value string) string {
