@@ -109,8 +109,14 @@ func (t *transport) CreateIssueComment(
 	number int,
 	body string,
 ) (gitealike.CommentDTO, error) {
-	comment, resp, err := t.api.CreateIssueComment(ref.Owner, ref.Name, int64(number), forgejosdk.CreateIssueCommentOption{
-		Body: body,
+	var comment *forgejosdk.Comment
+	var resp *forgejosdk.Response
+	err := t.withRequestContext(ctx, func() error {
+		var err error
+		comment, resp, err = t.api.CreateIssueComment(ref.Owner, ref.Name, int64(number), forgejosdk.CreateIssueCommentOption{
+			Body: body,
+		})
+		return err
 	})
 	if err != nil {
 		return gitealike.CommentDTO{}, forgejoHTTPError(resp, err)
@@ -124,8 +130,14 @@ func (t *transport) EditIssueComment(
 	commentID int64,
 	body string,
 ) (gitealike.CommentDTO, error) {
-	comment, resp, err := t.api.EditIssueComment(ref.Owner, ref.Name, commentID, forgejosdk.EditIssueCommentOption{
-		Body: body,
+	var comment *forgejosdk.Comment
+	var resp *forgejosdk.Response
+	err := t.withRequestContext(ctx, func() error {
+		var err error
+		comment, resp, err = t.api.EditIssueComment(ref.Owner, ref.Name, commentID, forgejosdk.EditIssueCommentOption{
+			Body: body,
+		})
+		return err
 	})
 	if err != nil {
 		return gitealike.CommentDTO{}, forgejoHTTPError(resp, err)
@@ -139,9 +151,15 @@ func (t *transport) CreateIssue(
 	title string,
 	body string,
 ) (gitealike.IssueDTO, error) {
-	issue, resp, err := t.api.CreateIssue(ref.Owner, ref.Name, forgejosdk.CreateIssueOption{
-		Title: title,
-		Body:  body,
+	var issue *forgejosdk.Issue
+	var resp *forgejosdk.Response
+	err := t.withRequestContext(ctx, func() error {
+		var err error
+		issue, resp, err = t.api.CreateIssue(ref.Owner, ref.Name, forgejosdk.CreateIssueOption{
+			Title: title,
+			Body:  body,
+		})
+		return err
 	})
 	if err != nil {
 		return gitealike.IssueDTO{}, forgejoHTTPError(resp, err)
@@ -155,10 +173,16 @@ func (t *transport) EditIssue(
 	number int,
 	opts gitealike.IssueMutationOptions,
 ) (gitealike.IssueDTO, error) {
-	issue, resp, err := t.api.EditIssue(ref.Owner, ref.Name, int64(number), forgejosdk.EditIssueOption{
-		Title: stringValue(opts.Title),
-		Body:  opts.Body,
-		State: forgejoStatePtr(opts.State),
+	var issue *forgejosdk.Issue
+	var resp *forgejosdk.Response
+	err := t.withRequestContext(ctx, func() error {
+		var err error
+		issue, resp, err = t.api.EditIssue(ref.Owner, ref.Name, int64(number), forgejosdk.EditIssueOption{
+			Title: stringValue(opts.Title),
+			Body:  opts.Body,
+			State: forgejoStatePtr(opts.State),
+		})
+		return err
 	})
 	if err != nil {
 		return gitealike.IssueDTO{}, forgejoHTTPError(resp, err)
@@ -172,10 +196,16 @@ func (t *transport) EditPullRequest(
 	number int,
 	opts gitealike.PullRequestMutationOptions,
 ) (gitealike.PullRequestDTO, error) {
-	pr, resp, err := t.api.EditPullRequest(ref.Owner, ref.Name, int64(number), forgejosdk.EditPullRequestOption{
-		Title: stringValue(opts.Title),
-		Body:  opts.Body,
-		State: forgejoStatePtr(opts.State),
+	var pr *forgejosdk.PullRequest
+	var resp *forgejosdk.Response
+	err := t.withRequestContext(ctx, func() error {
+		var err error
+		pr, resp, err = t.api.EditPullRequest(ref.Owner, ref.Name, int64(number), forgejosdk.EditPullRequestOption{
+			Title: stringValue(opts.Title),
+			Body:  opts.Body,
+			State: forgejoStatePtr(opts.State),
+		})
+		return err
 	})
 	if err != nil {
 		return gitealike.PullRequestDTO{}, forgejoHTTPError(resp, err)
@@ -189,10 +219,16 @@ func (t *transport) MergePullRequest(
 	number int,
 	opts gitealike.MergeOptions,
 ) (gitealike.MergeResultDTO, error) {
-	merged, resp, err := t.api.MergePullRequest(ref.Owner, ref.Name, int64(number), forgejosdk.MergePullRequestOption{
-		Style:   forgejoMergeStyle(opts.Method),
-		Title:   opts.CommitTitle,
-		Message: opts.CommitMessage,
+	var merged bool
+	var resp *forgejosdk.Response
+	err := t.withRequestContext(ctx, func() error {
+		var err error
+		merged, resp, err = t.api.MergePullRequest(ref.Owner, ref.Name, int64(number), forgejosdk.MergePullRequestOption{
+			Style:   forgejoMergeStyle(opts.Method),
+			Title:   opts.CommitTitle,
+			Message: opts.CommitMessage,
+		})
+		return err
 	})
 	if err != nil {
 		return gitealike.MergeResultDTO{}, forgejoHTTPError(resp, err)
@@ -206,9 +242,15 @@ func (t *transport) CreatePullReview(
 	number int,
 	body string,
 ) (gitealike.ReviewDTO, error) {
-	review, resp, err := t.api.CreatePullReview(ref.Owner, ref.Name, int64(number), forgejosdk.CreatePullReviewOptions{
-		State: forgejosdk.ReviewStateApproved,
-		Body:  body,
+	var review *forgejosdk.PullReview
+	var resp *forgejosdk.Response
+	err := t.withRequestContext(ctx, func() error {
+		var err error
+		review, resp, err = t.api.CreatePullReview(ref.Owner, ref.Name, int64(number), forgejosdk.CreatePullReviewOptions{
+			State: forgejosdk.ReviewStateApproved,
+			Body:  body,
+		})
+		return err
 	})
 	if err != nil {
 		return gitealike.ReviewDTO{}, forgejoHTTPError(resp, err)

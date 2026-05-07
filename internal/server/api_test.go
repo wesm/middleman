@@ -8734,13 +8734,30 @@ func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(repo)
 
+	editedTitle := "Edited kettle"
+	editedBody := "Updated kettle body"
+	editContentResp, err := client.HTTP.EditPrContentOnHostWithResponse(
+		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
+		generated.EditPrContentOnHostJSONRequestBody{
+			Title: &editedTitle,
+			Body:  &editedBody,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, editContentResp.StatusCode())
+	require.NotNil(editContentResp.JSON200)
+	assert.Equal(editedTitle, editContentResp.JSON200.MergeRequest.Title)
+	assert.Equal(editedBody, editContentResp.JSON200.MergeRequest.Body)
+	mrSeven := requireMR(t, database, repo.ID, 7)
+	assert.Equal(editedTitle, mrSeven.Title)
+	assert.Equal(editedBody, mrSeven.Body)
+
 	commentResp, err := client.HTTP.PostPrCommentOnHostWithResponse(
 		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
 		generated.PostPrCommentOnHostJSONRequestBody{Body: "Looks good"},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusCreated, commentResp.StatusCode())
-	mrSeven := requireMR(t, database, repo.ID, 7)
 	mrEvents, err := database.ListMREvents(ctx, mrSeven.ID)
 	require.NoError(err)
 	require.Len(mrEvents, 1)
@@ -8840,6 +8857,7 @@ func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
 	require.NotNil(issueEight.ClosedAt)
 
 	assert.Subset(transport.mutationCalls, []string{
+		"edit_pull_content:7:Edited kettle:Updated kettle body",
 		"create_comment:7:Looks good",
 		"edit_comment:900:Still good",
 		"review:7:approved",
@@ -9229,6 +9247,9 @@ func (t *apiTestGitealikeTransport) EditPullRequest(
 	}
 	if opts.Body != nil {
 		pr.Body = *opts.Body
+	}
+	if opts.Title != nil || opts.Body != nil {
+		t.mutationCalls = append(t.mutationCalls, fmt.Sprintf("edit_pull_content:%d:%s:%s", number, pr.Title, pr.Body))
 	}
 	pr.Updated = time.Now().UTC().Truncate(time.Second)
 	if pr.State == "closed" {
