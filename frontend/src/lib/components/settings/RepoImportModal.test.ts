@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { MockedFunction } from "vitest";
 import RepoImportModal from "./RepoImportModal.svelte";
 import { bulkAddRepos, previewRepos } from "../../api/settings.js";
 
@@ -8,8 +9,8 @@ vi.mock("../../api/settings.js", () => ({
   bulkAddRepos: vi.fn(),
 }));
 
-const preview = vi.mocked(previewRepos);
-const bulk = vi.mocked(bulkAddRepos);
+const preview = previewRepos as MockedFunction<typeof previewRepos>;
+const bulk = bulkAddRepos as MockedFunction<typeof bulkAddRepos>;
 
 const rows = [
   { provider: "github", platform_host: "github.com", owner: "acme", name: "worker", repo_path: "acme/worker", description: "Background jobs", private: false, fork: false, pushed_at: "2026-04-20T00:00:00Z", already_configured: false },
@@ -93,6 +94,38 @@ describe("RepoImportModal", () => {
     await fireEvent.keyDown(input, { key: "Enter" });
 
     expect(preview).toHaveBeenCalledTimes(1);
+  });
+
+  it("sets Forgejo and Gitea default hosts and keeps owner patterns non-nested", async () => {
+    render(RepoImportModal, { props: { open: true, onClose: vi.fn(), onImported: vi.fn() } });
+
+    const provider = screen.getByLabelText("Provider");
+    const host = screen.getByLabelText("Host") as HTMLInputElement;
+    const pattern = screen.getByLabelText("Repository pattern");
+
+    await fireEvent.change(provider, { target: { value: "forgejo" } });
+    expect(host.value).toBe("codeberg.org");
+    await fireEvent.input(pattern, { target: { value: "team/subgroup/project-*" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("Format: owner/pattern");
+    expect(preview).not.toHaveBeenCalled();
+
+    await fireEvent.change(provider, { target: { value: "gitea" } });
+    expect(host.value).toBe("gitea.com");
+    await fireEvent.input(pattern, { target: { value: "team/service-*" } });
+    preview.mockResolvedValueOnce({
+      provider: "gitea",
+      platform_host: "gitea.com",
+      owner: "team",
+      pattern: "service-*",
+      repos: [],
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+
+    await waitFor(() => expect(preview).toHaveBeenCalledWith("team", "service-*", {
+      provider: "gitea",
+      host: "gitea.com",
+    }));
   });
 
   it("keeps tab focus inside the modal", async () => {

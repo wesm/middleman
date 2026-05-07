@@ -9,6 +9,7 @@ import {
   sortRows,
   type RepoImportRow,
 } from "./repoImportSelection.js";
+import { repoImportProvider, repoImportProviders } from "./repoImportProviders.js";
 
 const rows: RepoImportRow[] = [
   { provider: "github", platform_host: "github.com", owner: "acme", name: "worker", repo_path: "acme/worker", description: "Background jobs", private: false, fork: false, pushed_at: "2026-04-20T00:00:00Z", already_configured: false },
@@ -29,6 +30,29 @@ describe("repo import selection helpers", () => {
       owner: "group/subgroup",
       pattern: "project-*",
     });
+  });
+
+  it("keeps Forgejo and Gitea owner patterns non-nested", () => {
+    expect(repoImportProviders.map((provider) => provider.id)).toEqual([
+      "github",
+      "gitlab",
+      "forgejo",
+      "gitea",
+    ]);
+    expect(repoImportProvider("forgejo")).toMatchObject({
+      defaultHost: "codeberg.org",
+      allowNestedOwner: false,
+      ownerPatternPlaceholder: "owner/pattern",
+    });
+    expect(repoImportProvider("gitea")).toMatchObject({
+      defaultHost: "gitea.com",
+      allowNestedOwner: false,
+      ownerPatternPlaceholder: "owner/pattern",
+    });
+    expect(() => parseImportPattern("team/subgroup/project-*", repoImportProvider("forgejo").allowNestedOwner))
+      .toThrow("Format: owner/pattern");
+    expect(() => parseImportPattern("team/subgroup/project-*", repoImportProvider("gitea").allowNestedOwner))
+      .toThrow("Format: owner/pattern");
   });
 
   it("rejects malformed patterns before the API call", () => {

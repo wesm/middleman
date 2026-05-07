@@ -200,6 +200,53 @@ test("repository import can hide forks and private repositories before adding", 
   }]);
 });
 
+test("repository import exposes Forgejo and Gitea provider defaults", async ({ page }) => {
+  const previewRequests: Array<{ provider: string; host: string; owner: string; pattern: string }> = [];
+  await page.route("**/api/v1/repos/preview", async (route) => {
+    const body = route.request().postDataJSON() as {
+      provider: string;
+      host: string;
+      owner: string;
+      pattern: string;
+    };
+    previewRequests.push(body);
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        provider: body.provider,
+        platform_host: body.host,
+        owner: body.owner,
+        pattern: body.pattern,
+        repos: [],
+      }),
+    });
+  });
+
+  await page.goto(`${isolatedServer!.info.base_url}/settings`);
+  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+  await page.getByRole("button", { name: "Add repositories…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Add repositories" });
+
+  await dialog.getByLabel("Provider").selectOption("forgejo");
+  await expect(dialog.getByLabel("Host")).toHaveValue("codeberg.org");
+  await dialog.getByLabel("Repository pattern").fill("team/subgroup/service-*");
+  await dialog.getByRole("button", { name: "Preview" }).click();
+  await expect(dialog.getByRole("alert")).toContainText("Format: owner/pattern");
+  expect(previewRequests).toEqual([]);
+
+  await dialog.getByLabel("Provider").selectOption("gitea");
+  await expect(dialog.getByLabel("Host")).toHaveValue("gitea.com");
+  await dialog.getByLabel("Repository pattern").fill("team/service-*");
+  await dialog.getByRole("button", { name: "Preview" }).click();
+
+  await expect.poll(() => previewRequests).toEqual([{
+    provider: "gitea",
+    host: "gitea.com",
+    owner: "team",
+    pattern: "service-*",
+  }]);
+});
+
 test("repository import traps keyboard focus inside the dialog", async ({ page }) => {
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
   await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });

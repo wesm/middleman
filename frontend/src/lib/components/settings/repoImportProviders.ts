@@ -23,6 +23,20 @@ export const repoImportProviders: RepoImportProvider[] = [
     allowNestedOwner: true,
     ownerPatternPlaceholder: "group/subgroup/pattern",
   },
+  {
+    id: "forgejo",
+    label: "Forgejo",
+    defaultHost: "codeberg.org",
+    allowNestedOwner: false,
+    ownerPatternPlaceholder: "owner/pattern",
+  },
+  {
+    id: "gitea",
+    label: "Gitea",
+    defaultHost: "gitea.com",
+    allowNestedOwner: false,
+    ownerPatternPlaceholder: "owner/pattern",
+  },
 ];
 
 export function repoImportProvider(id: string): RepoImportProvider {
