@@ -1043,16 +1043,14 @@ func (c *Config) TokenEnvNames() []string {
 		}
 	}
 	for _, r := range c.Repos {
-		if r.TokenEnv == "" {
-			names = appendTokenEnvName(
-				names,
-				c.effectiveTokenEnvForPlatformHost(
-					r.PlatformOrDefault(),
-					r.PlatformHostOrDefault(),
-					r.TokenEnv,
-				),
-			)
-		}
+		names = appendTokenEnvName(
+			names,
+			c.effectiveTokenEnvForPlatformHost(
+				r.PlatformOrDefault(),
+				r.PlatformHostOrDefault(),
+				"",
+			),
+		)
 	}
 	for _, r := range c.Repos {
 		if r.TokenEnv != "" {
