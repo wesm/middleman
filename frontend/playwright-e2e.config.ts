@@ -36,6 +36,7 @@ export default defineConfig({
       testIgnore: /roborev/,
       use: {
         ...devices["Desktop Safari"],
+        deviceScaleFactor: 1,
       },
     },
     {
