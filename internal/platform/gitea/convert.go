@@ -162,6 +162,7 @@ func convertActionRun(run *giteasdk.ActionWorkflowRun) gitealike.ActionRunDTO {
 	}
 	return gitealike.ActionRunDTO{
 		ID:         run.ID,
+		RunNumber:  run.RunNumber,
 		WorkflowID: run.Path,
 		Title:      run.DisplayTitle,
 		Status:     run.Status,

@@ -124,6 +124,7 @@ func TestConvertGiteaActionRun(t *testing.T) {
 
 	run := convertActionRun(&giteasdk.ActionWorkflowRun{
 		ID:           15,
+		RunNumber:    16,
 		Path:         ".gitea/workflows/build.yaml",
 		DisplayTitle: "Build",
 		Status:       "completed",
@@ -135,6 +136,7 @@ func TestConvertGiteaActionRun(t *testing.T) {
 	})
 
 	assert.Equal(int64(15), run.ID)
+	assert.Equal(int64(16), run.RunNumber)
 	assert.Equal(".gitea/workflows/build.yaml", run.WorkflowID)
 	assert.Equal("Build", run.Title)
 	assert.Equal("completed", run.Status)

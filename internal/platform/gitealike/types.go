@@ -200,12 +200,15 @@ type MergeResultDTO struct {
 
 type ActionRunDTO struct {
 	ID           int64
+	RunNumber    int64
 	WorkflowID   string
 	Title        string
 	Status       string
 	Conclusion   string
 	CommitSHA    string
 	HTMLURL      string
+	Created      time.Time
+	Updated      time.Time
 	Started      *time.Time
 	Stopped      *time.Time
 	NeedApproval bool
