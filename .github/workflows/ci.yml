@@ -205,6 +205,14 @@ jobs:
         with:
           persist-credentials: false
 
+      # actions/checkout sets safe.directory in a temporary HOME, so the
+      # config is gone by the time later steps run. go build's VCS stamping
+      # shells out to git and fails ("error obtaining VCS status: exit
+      # status 128") without this. Re-register against the persistent
+      # /github/home for the rest of the job.
+      - name: Mark workspace as safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       # The Playwright image is minimal; setup-bun needs unzip to extract the
       # bun tarball. apt-get update is a tiny metadata fetch (cached layer).
       - name: Install unzip for setup-bun
