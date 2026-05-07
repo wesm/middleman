@@ -384,6 +384,24 @@ test.describe("diff view", () => {
     ).toBe(beforeWidth + 80);
   });
 
+  test("clamps persisted file tree width inside narrow split panes", async ({ page }) => {
+    await page.setViewportSize({ width: 900, height: 720 });
+    await page.addInitScript(() => {
+      localStorage.setItem("diff-file-tree-width", "520");
+    });
+    await mockDiffApi(page, smallDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    const diffPane = page.locator(".files-main");
+
+    await expect.poll(async () => {
+      const box = await diffPane.boundingBox();
+      return Math.floor(box?.width ?? 0);
+    }).toBeGreaterThanOrEqual(320);
+  });
+
   test("sidebar file list shows status indicators", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);

@@ -28,6 +28,8 @@
   const defaultFileTreeWidth = 280;
   const minFileTreeWidth = 200;
   const maxFileTreeWidth = 520;
+  const minDiffPaneWidth = 320;
+  const resizeHandleWidth = 4;
   let fileTreeResizeStartWidth = 0;
 
   function safeGetItem(key: string): string | null {
@@ -46,10 +48,23 @@
     }
   }
 
+  function maxAllowedFileTreeWidth(): number {
+    if (filesLayoutWidth <= 0) {
+      return maxFileTreeWidth;
+    }
+    return Math.max(
+      minFileTreeWidth,
+      Math.min(
+        maxFileTreeWidth,
+        filesLayoutWidth - minDiffPaneWidth - resizeHandleWidth,
+      ),
+    );
+  }
+
   function clampFileTreeWidth(width: number): number {
     return Math.max(
       minFileTreeWidth,
-      Math.min(maxFileTreeWidth, Math.round(width)),
+      Math.min(maxAllowedFileTreeWidth(), Math.round(width)),
     );
   }
 
@@ -59,10 +74,18 @@
     return clampFileTreeWidth(raw);
   }
 
+  let filesLayout: HTMLDivElement | undefined = $state();
+  let filesLayoutWidth = $state(0);
   let fileTreeWidth = $state(loadFileTreeWidth());
 
   function saveFileTreeWidth(width: number): void {
     safeSetItem(storageKey, String(width));
+  }
+
+  function updateFilesLayoutWidth(width: number): void {
+    if (!Number.isFinite(width) || width <= 0) return;
+    filesLayoutWidth = Math.round(width);
+    fileTreeWidth = clampFileTreeWidth(fileTreeWidth);
   }
 
   function handleFileTreeResizeStart(): void {
@@ -85,6 +108,25 @@
     saveFileTreeWidth(finalWidth);
   }
 
+  $effect(() => {
+    const layout = filesLayout;
+    if (!layout) return;
+
+    updateFilesLayoutWidth(layout.getBoundingClientRect().width);
+    if (typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver((entries) => {
+      updateFilesLayoutWidth(
+        entries[0]?.contentRect.width ?? layout.getBoundingClientRect().width,
+      );
+    });
+    observer.observe(layout);
+
+    return () => {
+      observer.disconnect();
+    };
+  });
+
   onDestroy(() => {
     saveFileTreeWidth(fileTreeWidth);
   });
@@ -92,7 +134,7 @@
 
 <div class="files-view">
   <DiffToolbar />
-  <div class="files-layout">
+  <div class="files-layout" bind:this={filesLayout}>
     <aside
       class="files-sidebar"
       aria-label="Changed files"
