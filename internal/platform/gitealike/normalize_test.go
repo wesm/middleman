@@ -191,21 +191,24 @@ func TestNormalizeStatusesMapsCommitStatusesAndActionRuns(t *testing.T) {
 		{ID: 1, Context: "ci/success", State: "success", TargetURL: "https://ci/success", Description: "ok", Created: started, Updated: stopped},
 		{ID: 2, Context: "ci/pending", State: "pending", TargetURL: "https://ci/pending", Created: started},
 		{ID: 3, Context: "ci/error", State: "error", TargetURL: "https://ci/error", Created: started},
+		{ID: 5, Context: "ci/unsafe", State: "success", TargetURL: "javascript:alert(1)", Created: started},
 	}, []ActionRunDTO{
 		{ID: 4, WorkflowID: "build", Title: "Build", Status: "failure", CommitSHA: "abc123", HTMLURL: "https://actions/build", Started: &started, Stopped: &stopped, NeedApproval: true},
 	})
 
-	require.Len(checks, 4)
+	require.Len(checks, 5)
 	assert.Equal("ci/success", checks[0].Name)
 	assert.Equal("completed", checks[0].Status)
 	assert.Equal("success", checks[0].Conclusion)
 	assert.Equal("pending", checks[1].Status)
 	assert.Empty(checks[1].Conclusion)
 	assert.Equal("failure", checks[2].Conclusion)
-	assert.Equal("Build", checks[3].Name)
-	assert.Equal("action", checks[3].App)
-	assert.Equal(&started, checks[3].StartedAt)
-	assert.Equal(&stopped, checks[3].CompletedAt)
+	assert.Equal("ci/unsafe", checks[3].Name)
+	assert.Empty(checks[3].URL)
+	assert.Equal("Build", checks[4].Name)
+	assert.Equal("action", checks[4].App)
+	assert.Equal(&started, checks[4].StartedAt)
+	assert.Equal(&stopped, checks[4].CompletedAt)
 }
 
 func TestSharedHelpersNormalizeStateDedupeAndPagination(t *testing.T) {

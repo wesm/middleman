@@ -2,6 +2,7 @@ package gitealike
 
 import (
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -240,7 +241,7 @@ func NormalizeStatuses(
 			Name:               status.Context,
 			Status:             checkStatus,
 			Conclusion:         conclusion,
-			URL:                status.TargetURL,
+			URL:                safeLinkURL(status.TargetURL),
 			App:                "status",
 			StartedAt:          timePtr(status.Created),
 			CompletedAt:        timePtr(status.Updated),
@@ -255,13 +256,26 @@ func NormalizeStatuses(
 			Name:               run.Title,
 			Status:             checkStatus,
 			Conclusion:         conclusion,
-			URL:                run.HTMLURL,
+			URL:                safeLinkURL(run.HTMLURL),
 			App:                "action",
 			StartedAt:          timePtrUTC(run.Started),
 			CompletedAt:        timePtrUTC(run.Stopped),
 		})
 	}
 	return checks
+}
+
+func safeLinkURL(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	switch parsed.Scheme {
+	case "http", "https":
+		return rawURL
+	default:
+		return ""
+	}
 }
 
 func NormalizeState(state string) string {

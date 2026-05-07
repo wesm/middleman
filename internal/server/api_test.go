@@ -8737,11 +8737,12 @@ func TestAPIGitealikeDraftPRFieldsPersistThroughServer(t *testing.T) {
 			Closed:   &closed,
 		},
 		statuses: []gitealike.StatusDTO{{
-			ID:      401,
-			Context: "build",
-			State:   "success",
-			Created: base.Add(time.Minute),
-			Updated: base.Add(time.Minute),
+			ID:        401,
+			Context:   "build",
+			State:     "success",
+			TargetURL: "javascript:alert(1)",
+			Created:   base.Add(time.Minute),
+			Updated:   base.Add(time.Minute),
 		}},
 	}
 	provider := gitealike.NewProvider(platform.KindGitea, "gitea.test", transport)
@@ -8793,6 +8794,7 @@ func TestAPIGitealikeDraftPRFieldsPersistThroughServer(t *testing.T) {
 	assert.Equal("def789", mr.PlatformBaseSHA)
 	assert.Equal("success", mr.CIStatus)
 	assert.NotEmpty(mr.CIChecksJSON)
+	assert.NotContains(mr.CIChecksJSON, "javascript:")
 	require.NotNil(mr.MergedAt)
 	require.NotNil(mr.ClosedAt)
 	require.Len(mr.Labels, 1)
@@ -8809,6 +8811,7 @@ func TestAPIGitealikeDraftPRFieldsPersistThroughServer(t *testing.T) {
 	assert.Equal("feature", apiMR.HeadBranch)
 	assert.Equal("main", apiMR.BaseBranch)
 	assert.Equal("success", apiMR.CIStatus)
+	assert.NotContains(apiMR.CIChecksJSON, "javascript:")
 	require.NotNil(apiMR.MergedAt)
 	require.NotNil(apiMR.ClosedAt)
 	require.NotNil(apiMR.Labels)
