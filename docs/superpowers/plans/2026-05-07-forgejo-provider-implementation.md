@@ -27,7 +27,7 @@
 - Default hosts: use `codeberg.org` for Forgejo and `gitea.com` for Gitea. Self-hosted instances remain first-class through `platform_host`.
 - Metadata: `AllowNestedOwner=false` for both Forgejo and Gitea; both use `owner/repo` identities, unlike GitLab nested namespaces.
 - Case handling: do not lower-case configured Forgejo or Gitea owner/name during config normalization. Preserve API-returned canonical owner, repo name, and full name in persisted display fields. Existing DB lookup keys may remain case-folded where already provider-neutral, but provider normalization should not rewrite display values.
-- Token envs: introduce `MIDDLEMAN_FORGEJO_TOKEN` and `MIDDLEMAN_GITEA_TOKEN` as documented platform token env defaults. Do not add a `gh auth token` fallback for either provider.
+- Token envs: introduce `MIDDLEMAN_FORGEJO_TOKEN` and `MIDDLEMAN_GITEA_TOKEN` as documented public-host defaults, but make token resolution host-specific. Federated and self-hosted Forgejo/Gitea deployments must be configured with one `[[platforms]]` entry per `(type, host)` pair and may use a different `token_env` per hostname. Do not share a Forgejo token across `codeberg.org` and a self-hosted Forgejo instance unless the user explicitly points both hosts at the same env var. Do not add a `gh auth token` or `tea` fallback for either provider.
 - SDK split: use `codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3` for Forgejo and `code.gitea.io/sdk/gitea` for Gitea. Do not route Forgejo through the Gitea SDK; the overlap is real, but Forgejo-specific Actions APIs and future divergence should be visible in code.
 - Shared code: make `internal/platform/gitealike` the default home for shared behavior. It should own the common provider implementation, shared DTO structs, pagination loops, read-method orchestration, repo import fallback, state/status normalization, dedupe keys, rate-limit parsing, error mapping, and default read capabilities. Provider packages should adapt SDK structs into `gitealike` DTOs or implement a narrow transport interface; they should not duplicate method loops unless an endpoint truly diverges.
 - Adapter boundary: do not put either SDK's concrete structs into `gitealike`. Instead, each provider package maps SDK records into shared DTOs like `RepositoryDTO`, `PullRequestDTO`, `IssueDTO`, `CommentDTO`, `ReleaseDTO`, `TagDTO`, `StatusDTO`, and optionally `ActionRunDTO`. This keeps common behavior highly reused without letting one SDK leak into the other provider.
@@ -229,6 +229,55 @@ name = "forgejo"
 ```
 
 ```go
+func TestLoadForgejoDefaultHostUsesDefaultTokenEnv(t *testing.T) {
+	cfg := loadConfigFromString(t, `
+[[repos]]
+platform = "forgejo"
+platform_host = "codeberg.org"
+owner = "forgejo"
+name = "forgejo"
+`)
+	t.Setenv("MIDDLEMAN_FORGEJO_TOKEN", "codeberg-secret")
+
+	assert.Equal(t, "codeberg-secret", cfg.TokenForPlatformHost("forgejo", "codeberg.org", ""))
+	assert.Empty(t, cfg.TokenForPlatformHost("forgejo", "forgejo.example.com", ""))
+}
+```
+
+```go
+func TestLoadPlatformConfigForgejoTokensAreHostScoped(t *testing.T) {
+	cfg := loadConfigFromString(t, `
+[[platforms]]
+type = "forgejo"
+host = "codeberg.org"
+token_env = "MIDDLEMAN_FORGEJO_TOKEN"
+
+[[platforms]]
+type = "forgejo"
+host = "forgejo.example.com"
+token_env = "FORGEJO_EXAMPLE_TOKEN"
+
+[[repos]]
+platform = "forgejo"
+platform_host = "codeberg.org"
+owner = "forgejo"
+name = "forgejo"
+
+[[repos]]
+platform = "forgejo"
+platform_host = "forgejo.example.com"
+owner = "team"
+name = "service"
+`)
+	t.Setenv("MIDDLEMAN_FORGEJO_TOKEN", "codeberg-secret")
+	t.Setenv("FORGEJO_EXAMPLE_TOKEN", "self-hosted-secret")
+
+	assert.Equal(t, "codeberg-secret", cfg.TokenForPlatformHost("forgejo", "codeberg.org", ""))
+	assert.Equal(t, "self-hosted-secret", cfg.TokenForPlatformHost("forgejo", "forgejo.example.com", ""))
+}
+```
+
+```go
 func TestLoadParsesForgejoCodebergURL(t *testing.T) {
 	cfg := loadConfigFromString(t, `
 [[repos]]
@@ -266,6 +315,55 @@ name = "tea"
 	assert.Equal(t, "gitea", cfg.Repos[0].Platform)
 	assert.Equal(t, "gitea.com", cfg.Repos[0].PlatformHost)
 	assert.Equal(t, "gitea-secret", cfg.TokenForPlatformHost("gitea", "gitea.com", ""))
+}
+```
+
+```go
+func TestLoadGiteaDefaultHostUsesDefaultTokenEnv(t *testing.T) {
+	cfg := loadConfigFromString(t, `
+[[repos]]
+platform = "gitea"
+platform_host = "gitea.com"
+owner = "gitea"
+name = "tea"
+`)
+	t.Setenv("MIDDLEMAN_GITEA_TOKEN", "gitea-public-secret")
+
+	assert.Equal(t, "gitea-public-secret", cfg.TokenForPlatformHost("gitea", "gitea.com", ""))
+	assert.Empty(t, cfg.TokenForPlatformHost("gitea", "gitea.internal.example", ""))
+}
+```
+
+```go
+func TestLoadPlatformConfigGiteaTokensAreHostScoped(t *testing.T) {
+	cfg := loadConfigFromString(t, `
+[[platforms]]
+type = "gitea"
+host = "gitea.com"
+token_env = "MIDDLEMAN_GITEA_TOKEN"
+
+[[platforms]]
+type = "gitea"
+host = "gitea.internal.example"
+token_env = "GITEA_INTERNAL_TOKEN"
+
+[[repos]]
+platform = "gitea"
+platform_host = "gitea.com"
+owner = "gitea"
+name = "tea"
+
+[[repos]]
+platform = "gitea"
+platform_host = "gitea.internal.example"
+owner = "team"
+name = "service"
+`)
+	t.Setenv("MIDDLEMAN_GITEA_TOKEN", "gitea-public-secret")
+	t.Setenv("GITEA_INTERNAL_TOKEN", "gitea-internal-secret")
+
+	assert.Equal(t, "gitea-public-secret", cfg.TokenForPlatformHost("gitea", "gitea.com", ""))
+	assert.Equal(t, "gitea-internal-secret", cfg.TokenForPlatformHost("gitea", "gitea.internal.example", ""))
 }
 ```
 
@@ -320,19 +418,50 @@ name = "https://gitlab.com/gitlab-org/gitlab.git"
 }
 ```
 
+Update `TestTokenEnvNamesIncludesGlobalAndPerRepo` so platform-scoped token env vars are stripped from launched agent environments too:
+
+```go
+func TestTokenEnvNamesIncludesGlobalPlatformAndPerRepo(t *testing.T) {
+	var nilCfg *Config
+	require.Nil(t, nilCfg.TokenEnvNames())
+
+	cfg := &Config{
+		GitHubTokenEnv: "WORK_GH_BOT_TOKEN",
+		Platforms: []PlatformConfig{
+			{Type: "forgejo", Host: "codeberg.org", TokenEnv: "MIDDLEMAN_FORGEJO_TOKEN"},
+			{Type: "forgejo", Host: "forgejo.example.com", TokenEnv: "FORGEJO_EXAMPLE_TOKEN"},
+			{Type: "gitea", Host: "gitea.internal.example", TokenEnv: "GITEA_INTERNAL_TOKEN"},
+		},
+		Repos: []Repo{
+			{Owner: "acme", Name: "widget", TokenEnv: "ACME_TOKEN"},
+			{Owner: "other", Name: "thing"},
+			{Owner: "third", Name: "x", TokenEnv: "THIRD_TOKEN"},
+		},
+	}
+	assert.Equal(t, []string{
+		"WORK_GH_BOT_TOKEN",
+		"MIDDLEMAN_FORGEJO_TOKEN",
+		"FORGEJO_EXAMPLE_TOKEN",
+		"GITEA_INTERNAL_TOKEN",
+		"ACME_TOKEN",
+		"THIRD_TOKEN",
+	}, cfg.TokenEnvNames())
+}
+```
+
 - [ ] **Step 5: Run config tests and confirm failure**
 
 Run:
 
 ```bash
-go test ./internal/config -run 'TestLoadPlatformConfigForgejoToken|TestLoadParsesForgejoCodebergURL|TestLoadPlatformConfigGiteaToken|TestLoadParsesGiteaURL|TestLoadKeepsExistingGitHubURLInference|TestLoadKeepsExistingGitLabURLInference' -shuffle=on
+go test ./internal/config -run 'TestLoadPlatformConfigForgejoToken|TestLoadForgejoDefaultHostUsesDefaultTokenEnv|TestLoadPlatformConfigForgejoTokensAreHostScoped|TestLoadParsesForgejoCodebergURL|TestLoadPlatformConfigGiteaToken|TestLoadGiteaDefaultHostUsesDefaultTokenEnv|TestLoadPlatformConfigGiteaTokensAreHostScoped|TestLoadParsesGiteaURL|TestLoadKeepsExistingGitHubURLInference|TestLoadKeepsExistingGitLabURLInference|TestTokenEnvNamesIncludesGlobalPlatformAndPerRepo' -shuffle=on
 ```
 
 Expected: fails until Forgejo and Gitea metadata and URL parsing are wired.
 
 - [ ] **Step 6: Implement config support**
 
-Update `Repo.normalize` so parsed Forgejo and Gitea URLs set `RepoPath = owner + "/" + name`, just like GitHub. Extend URL host inference so `codeberg.org` maps to Forgejo and `gitea.com` maps to Gitea when `platform` is omitted or explicitly set.
+Update `Repo.normalize` so parsed Forgejo and Gitea URLs set `RepoPath = owner + "/" + name`, just like GitHub. Extend URL host inference so `codeberg.org` maps to Forgejo and `gitea.com` maps to Gitea when `platform` is omitted or explicitly set. Keep `TokenForPlatformHost` keyed by `(platform, host)`: `MIDDLEMAN_FORGEJO_TOKEN` should resolve only for `forgejo/codeberg.org`, `MIDDLEMAN_GITEA_TOKEN` should resolve only for `gitea/gitea.com`, and additional federated hosts should resolve only through matching `[[platforms]]` entries or repo-level `token_env` overrides. Update `TokenEnvNames` to include `Platforms[].TokenEnv` so host-scoped Forgejo/Gitea tokens are stripped from launched agent environments alongside GitHub and repo-level tokens.
 
 - [ ] **Step 7: Run tests**
 
@@ -773,6 +902,42 @@ func TestBuildProviderStartupRegistersForgejoAndGiteaFactories(t *testing.T) {
 
 Use a fake factory if the test should not instantiate a real SDK client.
 
+Add a host-scoped token startup test:
+
+```go
+func TestCollectProviderTokensScopesForgeTokensByHost(t *testing.T) {
+	cfg := config.Config{
+		Host: "127.0.0.1",
+		Port: 8091,
+		Platforms: []config.PlatformConfig{
+			{Type: "forgejo", Host: "codeberg.org", TokenEnv: "MIDDLEMAN_FORGEJO_TOKEN"},
+			{Type: "forgejo", Host: "forgejo.example.com", TokenEnv: "FORGEJO_EXAMPLE_TOKEN"},
+			{Type: "gitea", Host: "gitea.com", TokenEnv: "MIDDLEMAN_GITEA_TOKEN"},
+			{Type: "gitea", Host: "gitea.internal.example", TokenEnv: "GITEA_INTERNAL_TOKEN"},
+		},
+		Repos: []config.Repo{
+			{Platform: "forgejo", PlatformHost: "codeberg.org", Owner: "forgejo", Name: "forgejo"},
+			{Platform: "forgejo", PlatformHost: "forgejo.example.com", Owner: "team", Name: "service"},
+			{Platform: "gitea", PlatformHost: "gitea.com", Owner: "gitea", Name: "tea"},
+			{Platform: "gitea", PlatformHost: "gitea.internal.example", Owner: "team", Name: "service"},
+		},
+	}
+	t.Setenv("MIDDLEMAN_FORGEJO_TOKEN", "codeberg-token")
+	t.Setenv("FORGEJO_EXAMPLE_TOKEN", "forgejo-example-token")
+	t.Setenv("MIDDLEMAN_GITEA_TOKEN", "gitea-token")
+	t.Setenv("GITEA_INTERNAL_TOKEN", "gitea-internal-token")
+
+	providerTokens, err := collectProviderTokens(&cfg)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{
+		providerHostKey("forgejo", "codeberg.org"):         "codeberg-token",
+		providerHostKey("forgejo", "forgejo.example.com"):  "forgejo-example-token",
+		providerHostKey("gitea", "gitea.com"):              "gitea-token",
+		providerHostKey("gitea", "gitea.internal.example"): "gitea-internal-token",
+	}, providerTokens)
+}
+```
+
 - [ ] **Step 2: Run focused startup tests**
 
 Run:
@@ -1069,6 +1234,18 @@ name = "forgejo"
 repo_path = "forgejo/forgejo"
 
 [[platforms]]
+type = "forgejo"
+host = "forgejo.example.com"
+token_env = "FORGEJO_EXAMPLE_TOKEN"
+
+[[repos]]
+platform = "forgejo"
+platform_host = "forgejo.example.com"
+owner = "team"
+name = "service"
+repo_path = "team/service"
+
+[[platforms]]
 type = "gitea"
 host = "gitea.com"
 token_env = "MIDDLEMAN_GITEA_TOKEN"
@@ -1079,7 +1256,21 @@ platform_host = "gitea.com"
 owner = "gitea"
 name = "tea"
 repo_path = "gitea/tea"
+
+[[platforms]]
+type = "gitea"
+host = "gitea.internal.example"
+token_env = "GITEA_INTERNAL_TOKEN"
+
+[[repos]]
+platform = "gitea"
+platform_host = "gitea.internal.example"
+owner = "team"
+name = "service"
+repo_path = "team/service"
 ```
+
+Document that token lookup is per `(type, host)`. `MIDDLEMAN_FORGEJO_TOKEN` is the convenient Codeberg default, `MIDDLEMAN_GITEA_TOKEN` is the convenient Gitea.com default, and each federated/self-hosted host should normally get its own `[[platforms]] token_env`.
 
 Document minimum read scopes for both providers:
 
