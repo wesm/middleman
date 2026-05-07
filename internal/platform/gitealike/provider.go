@@ -3,9 +3,12 @@ package gitealike
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/wesm/middleman/internal/platform"
 )
+
+const maxCollectedPages = 1000
 
 type Provider struct {
 	kind      platform.Kind
@@ -285,21 +288,33 @@ func collectPages[T any](
 ) ([]T, error) {
 	var out []T
 	page := 1
+	seen := make(map[int]bool)
 	for {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		default:
 		}
+		if seen[page] {
+			return nil, fmt.Errorf("gitealike pagination did not advance: page %d repeated", page)
+		}
+		if len(seen) >= maxCollectedPages {
+			return nil, fmt.Errorf("gitealike pagination exceeded %d pages", maxCollectedPages)
+		}
+		seen[page] = true
 		items, next, err := fetch(PageOptions{Page: page, PageSize: defaultPageSize})
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, items...)
-		page = NextPage(next.Next)
-		if page == 0 {
+		nextPage := NextPage(next.Next)
+		if nextPage == 0 {
 			return out, nil
 		}
+		if nextPage <= page {
+			return nil, fmt.Errorf("gitealike pagination did not advance: next page %d after page %d", nextPage, page)
+		}
+		page = nextPage
 	}
 }
 
