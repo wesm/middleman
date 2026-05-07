@@ -23,16 +23,24 @@ AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
 DEV_LOG_DIR ?= tmp/logs
 DEV_BACKEND_LOG ?= $(DEV_LOG_DIR)/backend-dev.log
 
-.PHONY: ensure-embed-dir check-air air-install build build-release install \
+.PHONY: ensure-embed-dir ensure-tmp-dir check-air air-install build build-release install \
         frontend-deps frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
-        dev test test-short test-e2e test-e2e-roborev test-gitlab-container gitlab-fixture-bake vet lint nilaway testify-helper-check \
+        dev test test-short test-integration test-e2e test-e2e-roborev test-gitlab-container gitlab-fixture-bake vet lint nilaway testify-helper-check \
         frontend-api-client-check huma-route-check script-tests guardrail-check tidy svelte-skills svelte-skills-sync clean install-hooks help
+
+# gotestsum prints package names on success and full output on failure,
+# while persisting raw `go test -json` events for downstream reporters.
+GOTESTSUM := go tool gotestsum --format pkgname-and-test-fails --jsonfile
 
 # Ensure go:embed has at least one file (no-op if frontend is built)
 ensure-embed-dir:
 	@mkdir -p internal/web/dist
 	@test -n "$$(ls internal/web/dist/ 2>/dev/null)" \
 		|| echo ok > internal/web/dist/stub.html
+
+# Ensure tmp/ exists so gotestsum can write JSON output there
+ensure-tmp-dir:
+	@mkdir -p tmp
 
 # Build the binary (debug, with embedded frontend)
 build: frontend
@@ -152,16 +160,16 @@ dev: ensure-embed-dir check-air
 	fi
 
 # Run tests
-test: ensure-embed-dir
-	go test ./... -v -shuffle=on
+test: ensure-embed-dir ensure-tmp-dir
+	$(GOTESTSUM)=tmp/test-output.json -- ./... -shuffle=on
 
 # Run fast tests only
-test-short: ensure-embed-dir
-	go test ./... -short -shuffle=on
+test-short: ensure-embed-dir ensure-tmp-dir
+	$(GOTESTSUM)=tmp/test-short-output.json -- ./... -short -shuffle=on
 
 # Run integration tests that execute real git commands (excluded from test-short)
-test-integration: ensure-embed-dir
-	go test -tags integration ./... -v -shuffle=on
+test-integration: ensure-embed-dir ensure-tmp-dir
+	$(GOTESTSUM)=tmp/test-integration-output.json -- -tags integration ./... -shuffle=on
 
 # Run full-stack E2E tests (Playwright against real Go server, excludes roborev)
 test-e2e: frontend
@@ -174,12 +182,12 @@ test-e2e-roborev:
 		./scripts/run-roborev-e2e.sh
 
 # Run opt-in GitLab CE container compatibility tests.
-test-gitlab-container: ensure-embed-dir
+test-gitlab-container: ensure-embed-dir ensure-tmp-dir
 	@if [ "$${MIDDLEMAN_GITLAB_CONTAINER_E2E:-}" != "1" ]; then \
 		echo "Set MIDDLEMAN_GITLAB_CONTAINER_E2E=1 to run the GitLab CE container e2e fixture." >&2; \
 		exit 1; \
 	fi
-	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go test ./internal/server -run TestGitLabContainerE2E -shuffle=on -timeout 40m
+	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" $(GOTESTSUM)=tmp/test-gitlab-container-output.json -- ./internal/server -run TestGitLabContainerE2E -shuffle=on -timeout 40m
 
 # Build a reusable GitLab fixture image from the idempotent bootstrap script.
 gitlab-fixture-bake:
