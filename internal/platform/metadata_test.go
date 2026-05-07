@@ -21,6 +21,16 @@ func TestProviderMetadataForBuiltIns(t *testing.T) {
 	require.True(ok)
 	assert.Equal(DefaultGitLabHost, gitlab.DefaultHost)
 	assert.True(gitlab.AllowNestedOwner)
+
+	forgejo, ok := MetadataFor(KindForgejo)
+	require.True(ok)
+	assert.Equal(DefaultForgejoHost, forgejo.DefaultHost)
+	assert.False(forgejo.AllowNestedOwner)
+
+	gitea, ok := MetadataFor(KindGitea)
+	require.True(ok)
+	assert.Equal(DefaultGiteaHost, gitea.DefaultHost)
+	assert.False(gitea.AllowNestedOwner)
 }
 
 func TestNormalizeKindAllowsFutureProviderKinds(t *testing.T) {
@@ -47,4 +57,12 @@ func TestNormalizeKindCanonicalizesBuiltInShorthands(t *testing.T) {
 	gl, err := NormalizeKind(" gl ")
 	require.NoError(err)
 	assert.Equal(KindGitLab, gl)
+
+	fj, err := NormalizeKind("FJ")
+	require.NoError(err)
+	assert.Equal(KindForgejo, fj)
+
+	tea, err := NormalizeKind(" tea ")
+	require.NoError(err)
+	assert.Equal(KindGitea, tea)
 }

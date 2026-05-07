@@ -30,6 +30,18 @@ var builtInMetadata = map[Kind]Metadata{
 		DefaultHost:      DefaultGitLabHost,
 		AllowNestedOwner: true,
 	},
+	KindForgejo: {
+		Kind:             KindForgejo,
+		Label:            "Forgejo",
+		DefaultHost:      DefaultForgejoHost,
+		AllowNestedOwner: false,
+	},
+	KindGitea: {
+		Kind:             KindGitea,
+		Label:            "Gitea",
+		DefaultHost:      DefaultGiteaHost,
+		AllowNestedOwner: false,
+	},
 }
 
 func NormalizeKind(raw string) (Kind, error) {
@@ -42,6 +54,10 @@ func NormalizeKind(raw string) (Kind, error) {
 		return KindGitHub, nil
 	case "gl":
 		return KindGitLab, nil
+	case "fj":
+		return KindForgejo, nil
+	case "tea":
+		return KindGitea, nil
 	}
 	if !validKindRe.MatchString(string(kind)) {
 		return "", fmt.Errorf("unsupported platform %q", raw)
