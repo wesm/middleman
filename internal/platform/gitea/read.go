@@ -83,6 +83,7 @@ func (t *transport) GetRepository(
 	ctx context.Context,
 	owner, repo string,
 ) (gitealike.RepositoryDTO, error) {
+	t.spendSyncBudget(ctx)
 	repository, resp, err := t.api.GetRepo(owner, repo)
 	if err != nil {
 		return gitealike.RepositoryDTO{}, giteaHTTPError(resp, err)
@@ -95,6 +96,7 @@ func (t *transport) ListUserRepositories(
 	owner string,
 	opts gitealike.PageOptions,
 ) ([]gitealike.RepositoryDTO, gitealike.Page, error) {
+	t.spendSyncBudget(ctx)
 	repos, resp, err := t.api.ListUserRepos(owner, giteasdk.ListReposOptions{
 		ListOptions: giteaListOptions(opts),
 	})
@@ -109,6 +111,7 @@ func (t *transport) ListOrgRepositories(
 	owner string,
 	opts gitealike.PageOptions,
 ) ([]gitealike.RepositoryDTO, gitealike.Page, error) {
+	t.spendSyncBudget(ctx)
 	repos, resp, err := t.api.ListOrgRepos(owner, giteasdk.ListOrgReposOptions{
 		ListOptions: giteaListOptions(opts),
 	})
@@ -123,6 +126,7 @@ func (t *transport) ListOpenPullRequests(
 	ref platform.RepoRef,
 	opts gitealike.PageOptions,
 ) ([]gitealike.PullRequestDTO, gitealike.Page, error) {
+	t.spendSyncBudget(ctx)
 	prs, resp, err := t.api.ListRepoPullRequests(ref.Owner, ref.Name, giteasdk.ListPullRequestsOptions{
 		ListOptions: giteaListOptions(opts),
 		State:       giteasdk.StateOpen,
@@ -138,6 +142,7 @@ func (t *transport) GetPullRequest(
 	ref platform.RepoRef,
 	number int,
 ) (gitealike.PullRequestDTO, error) {
+	t.spendSyncBudget(ctx)
 	pr, resp, err := t.api.GetPullRequest(ref.Owner, ref.Name, int64(number))
 	if err != nil {
 		return gitealike.PullRequestDTO{}, giteaHTTPError(resp, err)
@@ -151,6 +156,7 @@ func (t *transport) ListPullRequestComments(
 	number int,
 	opts gitealike.PageOptions,
 ) ([]gitealike.CommentDTO, gitealike.Page, error) {
+	t.spendSyncBudget(ctx)
 	comments, resp, err := t.api.ListIssueComments(ref.Owner, ref.Name, int64(number), giteasdk.ListIssueCommentOptions{
 		ListOptions: giteaListOptions(opts),
 	})
@@ -166,6 +172,7 @@ func (t *transport) ListPullRequestReviews(
 	number int,
 	opts gitealike.PageOptions,
 ) ([]gitealike.ReviewDTO, gitealike.Page, error) {
+	t.spendSyncBudget(ctx)
 	reviews, resp, err := t.api.ListPullReviews(ref.Owner, ref.Name, int64(number), giteasdk.ListPullReviewsOptions{
 		ListOptions: giteaListOptions(opts),
 	})
@@ -181,6 +188,7 @@ func (t *transport) ListPullRequestCommits(
 	number int,
 	opts gitealike.PageOptions,
 ) ([]gitealike.CommitDTO, gitealike.Page, error) {
+	t.spendSyncBudget(ctx)
 	commits, resp, err := t.api.ListPullRequestCommits(ref.Owner, ref.Name, int64(number), giteasdk.ListPullRequestCommitsOptions{
 		ListOptions: giteaListOptions(opts),
 	})
@@ -195,6 +203,7 @@ func (t *transport) ListOpenIssues(
 	ref platform.RepoRef,
 	opts gitealike.PageOptions,
 ) ([]gitealike.IssueDTO, gitealike.Page, error) {
+	t.spendSyncBudget(ctx)
 	issues, resp, err := t.api.ListRepoIssues(ref.Owner, ref.Name, giteasdk.ListIssueOption{
 		ListOptions: giteaListOptions(opts),
 		State:       giteasdk.StateOpen,
@@ -211,6 +220,7 @@ func (t *transport) GetIssue(
 	ref platform.RepoRef,
 	number int,
 ) (gitealike.IssueDTO, error) {
+	t.spendSyncBudget(ctx)
 	issue, resp, err := t.api.GetIssue(ref.Owner, ref.Name, int64(number))
 	if err != nil {
 		return gitealike.IssueDTO{}, giteaHTTPError(resp, err)
@@ -232,6 +242,7 @@ func (t *transport) ListReleases(
 	ref platform.RepoRef,
 	opts gitealike.PageOptions,
 ) ([]gitealike.ReleaseDTO, gitealike.Page, error) {
+	t.spendSyncBudget(ctx)
 	releases, resp, err := t.api.ListReleases(ref.Owner, ref.Name, giteasdk.ListReleasesOptions{
 		ListOptions: giteaListOptions(opts),
 	})
@@ -246,6 +257,7 @@ func (t *transport) ListTags(
 	ref platform.RepoRef,
 	opts gitealike.PageOptions,
 ) ([]gitealike.TagDTO, gitealike.Page, error) {
+	t.spendSyncBudget(ctx)
 	tags, resp, err := t.api.ListRepoTags(ref.Owner, ref.Name, giteasdk.ListRepoTagsOptions{
 		ListOptions: giteaListOptions(opts),
 	})
@@ -261,6 +273,7 @@ func (t *transport) ListStatuses(
 	sha string,
 	opts gitealike.PageOptions,
 ) ([]gitealike.StatusDTO, gitealike.Page, error) {
+	t.spendSyncBudget(ctx)
 	statuses, resp, err := t.api.ListStatuses(ref.Owner, ref.Name, sha, giteasdk.ListStatusesOption{
 		ListOptions: giteaListOptions(opts),
 	})
