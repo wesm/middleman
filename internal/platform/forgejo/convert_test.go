@@ -125,27 +125,35 @@ func TestConvertForgejoSDKRecords(t *testing.T) {
 
 func TestConvertForgejoActionRun(t *testing.T) {
 	assert := Assert.New(t)
+	created := time.Date(2026, 5, 1, 2, 0, 0, 0, time.UTC)
 	started := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	stopped := started.Add(time.Minute)
+	updated := stopped.Add(time.Second)
 
 	run := convertActionRun(&forgejosdk.ActionRun{
 		ID:           15,
+		RunNumber:    16,
 		WorkflowID:   "build.yaml",
 		Title:        "Build",
 		Status:       "failure",
 		CommitSHA:    "abc",
 		HTMLURL:      "https://actions/run",
+		Created:      created,
 		Started:      started,
 		Stopped:      stopped,
+		Updated:      updated,
 		NeedApproval: true,
 	})
 
 	assert.Equal(int64(15), run.ID)
+	assert.Equal(int64(16), run.RunNumber)
 	assert.Equal("build.yaml", run.WorkflowID)
 	assert.Equal("Build", run.Title)
 	assert.Equal("failure", run.Status)
 	assert.Equal("abc", run.CommitSHA)
 	assert.Equal("https://actions/run", run.HTMLURL)
+	assert.Equal(created, run.Created)
+	assert.Equal(updated, run.Updated)
 	assert.Equal(&started, run.Started)
 	assert.Equal(&stopped, run.Stopped)
 	assert.True(run.NeedApproval)

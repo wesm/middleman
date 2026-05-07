@@ -172,11 +172,14 @@ func convertActionRun(run *forgejosdk.ActionRun) gitealike.ActionRunDTO {
 	}
 	return gitealike.ActionRunDTO{
 		ID:           run.ID,
+		RunNumber:    run.RunNumber,
 		WorkflowID:   run.WorkflowID,
 		Title:        run.Title,
 		Status:       run.Status,
 		CommitSHA:    run.CommitSHA,
 		HTMLURL:      run.HTMLURL,
+		Created:      run.Created,
+		Updated:      run.Updated,
 		Started:      nonZeroTimePtr(run.Started),
 		Stopped:      nonZeroTimePtr(run.Stopped),
 		NeedApproval: run.NeedApproval,

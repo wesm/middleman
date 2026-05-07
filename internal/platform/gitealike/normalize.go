@@ -306,6 +306,9 @@ func actionRunKey(run ActionRunDTO) string {
 }
 
 func actionRunIsNewer(candidate, current ActionRunDTO) bool {
+	if candidate.RunNumber != 0 && current.RunNumber != 0 && candidate.RunNumber != current.RunNumber {
+		return candidate.RunNumber > current.RunNumber
+	}
 	candidateTime := actionRunSortTime(candidate)
 	currentTime := actionRunSortTime(current)
 	if !candidateTime.Equal(currentTime) {
@@ -315,6 +318,12 @@ func actionRunIsNewer(candidate, current ActionRunDTO) bool {
 }
 
 func actionRunSortTime(run ActionRunDTO) time.Time {
+	if !run.Updated.IsZero() {
+		return run.Updated.UTC()
+	}
+	if !run.Created.IsZero() {
+		return run.Created.UTC()
+	}
 	if run.Stopped != nil && !run.Stopped.IsZero() {
 		return run.Stopped.UTC()
 	}

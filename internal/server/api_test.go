@@ -8925,24 +8925,27 @@ func TestAPIGiteaActionsSyncPersistsThroughServer(t *testing.T) {
 			},
 			{
 				ID:         503,
+				RunNumber:  1,
 				Title:      "Deploy",
 				Status:     "completed",
 				Conclusion: "failure",
 				CommitSHA:  "sha-actions",
 				HTMLURL:    "https://gitea.test/tea/actions/actions/runs/503",
+				Created:    base,
+				Updated:    base,
 				Started:    &base,
 				Stopped:    &base,
 				WorkflowID: "deploy.yml",
 			},
 			{
 				ID:         504,
+				RunNumber:  2,
 				Title:      "Deploy",
-				Status:     "completed",
-				Conclusion: "skipped",
+				Status:     "queued",
 				CommitSHA:  "sha-actions",
 				HTMLURL:    "https://gitea.test/tea/actions/actions/runs/504",
-				Started:    &base,
-				Stopped:    &stopped,
+				Created:    stopped,
+				Updated:    stopped,
 				WorkflowID: "deploy.yml",
 			},
 		},
@@ -9004,7 +9007,7 @@ func TestAPIGiteaActionsSyncPersistsThroughServer(t *testing.T) {
 	var checks []db.CICheck
 	require.NoError(json.Unmarshal([]byte(pullResp.JSON200.MergeRequest.CIChecksJSON), &checks))
 	require.Len(checks, 4)
-	assert.Equal([]string{"Build/status/success", "Lint/status/", "Build/action/failure", "Deploy/action/skipped"}, ciCheckSummaries(checks))
+	assert.Equal([]string{"Build/status/success", "Lint/status/", "Build/action/failure", "Deploy/action/"}, ciCheckSummaries(checks))
 	assert.Equal("failure", pullResp.JSON200.MergeRequest.CIStatus)
 }
 
