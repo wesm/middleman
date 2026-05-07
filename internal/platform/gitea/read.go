@@ -2,6 +2,7 @@ package gitea
 
 import (
 	"context"
+	"strings"
 
 	giteasdk "code.gitea.io/sdk/gitea"
 	"github.com/wesm/middleman/internal/platform"
@@ -295,9 +296,21 @@ func (t *transport) ListActionRuns(
 		HeadSHA:     sha,
 	})
 	if err != nil {
+		if isActionsUnsupportedVersionError(err) {
+			return nil, gitealike.Page{}, nil
+		}
 		return nil, gitealike.Page{}, giteaHTTPError(resp, err)
 	}
 	return convertActionRuns(runs.WorkflowRuns), giteaPage(resp), nil
+}
+
+func isActionsUnsupportedVersionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "is older than 1.26.0") ||
+		strings.Contains(msg, "does not satisfy version constraint >= 1.26.0")
 }
 
 func giteaListOptions(opts gitealike.PageOptions) giteasdk.ListOptions {
