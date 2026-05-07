@@ -1349,6 +1349,28 @@ git commit -m "docs: describe Forgejo and Gitea provider setup" -m "Documents Fo
 - Optional: `MIDDLEMAN_FORGEJO_CONTAINER_TESTS=1 go test ./internal/server -run TestForgejoContainerSync -shuffle=on`
 - Optional: `MIDDLEMAN_GITEA_CONTAINER_TESTS=1 go test ./internal/server -run TestGiteaContainerSync -shuffle=on`
 
+## Kata Task Graph
+
+This plan has been converted into kata issues in project `github.com/wesm/middleman`.
+
+- Epic: `#56` Forgejo and Gitea provider implementation epic.
+- `#57` Add Forgejo/Gitea provider metadata and host-scoped config. Ready first; no implementation blockers.
+- `#58` Add Forgejo/Gitea SDK client skeletons and auth probes. Blocked by `#57`.
+- `#59` Build shared gitealike DTO and provider core. Blocked by `#58`.
+- `#60` Add Forgejo and Gitea SDK converters. Blocked by `#59`.
+- `#61` Implement Forgejo/Gitea read APIs and typed errors. Blocked by `#60`.
+- `#62` Register forge providers at startup with per-host tokens. Blocked by `#57` and `#61`.
+- `#63` Import repositories from Forgejo and Gitea providers. Blocked by `#57`, `#61`, and `#62`.
+- `#64` Expose Forgejo/Gitea in repository import settings UI. Blocked by `#57` and `#63`.
+- `#65` Add optional Forgejo and Gitea container e2e fixtures. Blocked by `#61` and `#62`.
+- `#66` Document Forgejo/Gitea setup and platform invariants. Blocked by `#64` and `#65`.
+- `#67` Enable proven Forgejo/Gitea mutation capabilities. Post-MVP; blocked by `#61` and `#62`.
+- `#68` Evaluate Forgejo/Gitea Actions CI parity. Post-MVP; blocked by `#61` and `#65`.
+
+The epic `#56` is blocked by the final MVP docs task `#66` and the two post-MVP parity tasks `#67` and `#68`, so it will not appear as implementation-ready while concrete work remains.
+
+Use `kata ready --json` to find the next unblocked task. At creation time, the first implementation-ready issue is `#57`.
+
 ## Handoff Notes
 
 - The branch for this stack is `forgejo-provider-impl`, but the branch scope now covers both Forgejo and Gitea.
