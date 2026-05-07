@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	Assert "github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
@@ -46,6 +47,26 @@ func TestClientLooksUpRepositoryAndSendsToken(t *testing.T) {
 	repo, err := client.transport.getRepositoryRaw(context.Background(), "owner", "repo")
 	require.NoError(err)
 	assert.Equal("repo", repo.Name)
+}
+
+func TestClientLookupUsesForegroundTimeout(t *testing.T) {
+	require := Require.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client, err := NewClient(
+		"gitea.test",
+		"gitea-token",
+		WithBaseURLForTesting(server.URL),
+		WithForegroundTimeoutForTesting(20*time.Millisecond),
+	)
+	require.NoError(err)
+
+	_, err = client.transport.getRepositoryRaw(context.Background(), "owner", "repo")
+	require.Error(err)
 }
 
 func TestClientProviderIdentityHasNoReadCapabilitiesYet(t *testing.T) {

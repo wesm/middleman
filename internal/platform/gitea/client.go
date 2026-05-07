@@ -63,14 +63,17 @@ func NewClient(host, token string, options ...ClientOption) (*Client, error) {
 	if opts.skipVersionProbe {
 		clientOptions = append(clientOptions, giteasdk.SetGiteaVersion("1.26.0"))
 	}
+	httpTransport := http.DefaultTransport
 	if opts.rateTracker != nil {
-		clientOptions = append(clientOptions, giteasdk.SetHTTPClient(&http.Client{
-			Transport: &rateTrackingTransport{
-				base:        http.DefaultTransport,
-				rateTracker: opts.rateTracker,
-			},
-		}))
+		httpTransport = &rateTrackingTransport{
+			base:        httpTransport,
+			rateTracker: opts.rateTracker,
+		}
 	}
+	clientOptions = append(clientOptions, giteasdk.SetHTTPClient(&http.Client{
+		Timeout:   opts.foregroundTimeout,
+		Transport: httpTransport,
+	}))
 
 	api, err := giteasdk.NewClient(opts.baseURL, clientOptions...)
 	if err != nil {
