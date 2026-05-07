@@ -15,6 +15,11 @@ func WithSyncBudget(ctx context.Context) context.Context {
 	return context.WithValue(ctx, syncBudgetKey{}, true)
 }
 
+func IsSyncBudgetContext(ctx context.Context) bool {
+	_, ok := ctx.Value(syncBudgetKey{}).(bool)
+	return ok
+}
+
 // budgetTransport wraps an http.RoundTripper and increments a
 // SyncBudget for every RoundTrip invocation whose request
 // context carries the sync-budget key. This captures paginated
@@ -31,7 +36,7 @@ type budgetTransport struct {
 func (t *budgetTransport) RoundTrip(
 	req *http.Request,
 ) (*http.Response, error) {
-	if _, ok := req.Context().Value(syncBudgetKey{}).(bool); ok {
+	if IsSyncBudgetContext(req.Context()) {
 		t.budget.Spend(1)
 	}
 	return t.base.RoundTrip(req)

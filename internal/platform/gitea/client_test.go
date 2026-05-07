@@ -10,6 +10,7 @@ import (
 
 	Assert "github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
+	ghsync "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/platform"
 	"github.com/wesm/middleman/internal/platform/gitealike"
 )
@@ -186,6 +187,38 @@ func TestTransportGetRepositoryRawCancelsWhileWaitingForRequestContext(t *testin
 	case <-time.After(time.Second):
 		require.FailNow("first request did not finish")
 	}
+}
+
+func TestClientLookupCountsSyncBudget(t *testing.T) {
+	assert := Assert.New(t)
+	require := Require.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+			"id":        1,
+			"name":      "repo",
+			"full_name": "owner/repo",
+			"owner":     map[string]any{"login": "owner"},
+		}))
+	}))
+	defer server.Close()
+
+	budget := ghsync.NewSyncBudget(20)
+	client, err := NewClient(
+		"gitea.test",
+		"gitea-token",
+		WithBaseURLForTesting(server.URL),
+		WithSyncBudget(budget),
+	)
+	require.NoError(err)
+
+	_, err = client.transport.getRepositoryRaw(
+		ghsync.WithSyncBudget(context.Background()),
+		"owner",
+		"repo",
+	)
+	require.NoError(err)
+	require.Equal(1, budget.Spent())
 }
 
 func TestClientProviderIdentityExposesReadCapabilities(t *testing.T) {

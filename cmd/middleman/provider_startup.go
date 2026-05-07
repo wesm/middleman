@@ -63,6 +63,7 @@ func defaultProviderFactories() map[string]providerFactory {
 			client, err := forgejoclient.NewClient(
 				input.host, input.token,
 				forgejoclient.WithRateTracker(input.rateTracker),
+				forgejoclient.WithSyncBudget(input.budget),
 			)
 			if err != nil {
 				return providerFactoryOutput{}, err
@@ -73,6 +74,7 @@ func defaultProviderFactories() map[string]providerFactory {
 			client, err := giteaclient.NewClient(
 				input.host, input.token,
 				giteaclient.WithRateTracker(input.rateTracker),
+				giteaclient.WithSyncBudget(input.budget),
 			)
 			if err != nil {
 				return providerFactoryOutput{}, err
