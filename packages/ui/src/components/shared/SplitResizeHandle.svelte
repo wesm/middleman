@@ -84,7 +84,7 @@
 </script>
 
 <button
-  class={["split-resize-handle", className]}
+  class={["split-resize-handle", className].filter(Boolean).join(" ")}
   type="button"
   aria-label={ariaLabel}
   onkeydown={handleKeydown}

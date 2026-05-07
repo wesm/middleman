@@ -12,6 +12,22 @@ describe("SplitResizeHandle", () => {
     cleanup();
   });
 
+  it("combines base and custom classes without comma separators", () => {
+    render(SplitResizeHandle, {
+      props: {
+        ariaLabel: "Resize sidebar",
+        class: "activity-split-resize-handle",
+      },
+    });
+
+    const handle = screen.getByRole("button", {
+      name: "Resize sidebar",
+    });
+    expect(handle.classList.contains("split-resize-handle")).toBe(true);
+    expect(handle.classList.contains("activity-split-resize-handle")).toBe(true);
+    expect(handle.className).not.toContain(",");
+  });
+
   it("reports horizontal drag deltas", async () => {
     const onResizeStart = vi.fn();
     const onResize = vi.fn();
