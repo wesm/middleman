@@ -231,7 +231,11 @@ func runGiteaLikeContainerFixture(
 		t.Logf("keeping %s Compose stack %s at http://127.0.0.1:%s", cfg.TitlePrefix, cfg.StackID, cfg.HTTPPort)
 	} else {
 		t.Cleanup(func() {
-			assert.NoError(composeStack.Down(context.Background(), compose.RemoveOrphans(true)))
+			assert.NoError(composeStack.Down(
+				context.Background(),
+				compose.RemoveOrphans(true),
+				compose.RemoveVolumes(true),
+			))
 		})
 	}
 
