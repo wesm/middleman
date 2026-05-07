@@ -1,0 +1,141 @@
+package forgejo
+
+import (
+	"testing"
+	"time"
+
+	forgejosdk "codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3"
+	Assert "github.com/stretchr/testify/assert"
+	Require "github.com/stretchr/testify/require"
+)
+
+func TestConvertForgejoSDKRecords(t *testing.T) {
+	assert := Assert.New(t)
+	require := Require.New(t)
+	created := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
+	updated := created.Add(time.Hour)
+	closed := created.Add(2 * time.Hour)
+
+	repo, err := convertRepository(&forgejosdk.Repository{
+		ID:            1,
+		Owner:         &forgejosdk.User{ID: 2, UserName: "forgejo", FullName: "Forgejo"},
+		Name:          "forgejo",
+		FullName:      "forgejo/forgejo",
+		HTMLURL:       "https://codeberg.org/forgejo/forgejo",
+		CloneURL:      "https://codeberg.org/forgejo/forgejo.git",
+		DefaultBranch: "main",
+		Private:       true,
+		Archived:      true,
+		Description:   "forge",
+		Created:       created,
+		Updated:       updated,
+	})
+	require.NoError(err)
+	assert.Equal(int64(1), repo.ID)
+	assert.Equal("forgejo", repo.Owner.UserName)
+	assert.Equal("forgejo/forgejo", repo.FullName)
+	assert.Equal("main", repo.DefaultBranch)
+	assert.True(repo.Private)
+	assert.True(repo.Archived)
+
+	pr := convertPullRequest(&forgejosdk.PullRequest{
+		ID:       3,
+		Index:    4,
+		Poster:   &forgejosdk.User{UserName: "alice", FullName: "Alice"},
+		Title:    "Add thing",
+		Body:     "body",
+		State:    forgejosdk.StateType("open"),
+		IsLocked: true,
+		Comments: 5,
+		HTMLURL:  "https://codeberg.org/forgejo/forgejo/pulls/4",
+		Head: &forgejosdk.PRBranchInfo{
+			Ref:        "feature",
+			Sha:        "abc",
+			Repository: &forgejosdk.Repository{CloneURL: "https://example/head.git"},
+		},
+		Base:    &forgejosdk.PRBranchInfo{Ref: "main", Sha: "def"},
+		Labels:  []*forgejosdk.Label{{ID: 6, Name: "feature", Color: "00ff00", Description: "desc"}},
+		Created: &created,
+		Updated: &updated,
+		Closed:  &closed,
+		Merged:  &closed,
+	})
+	assert.Equal(4, pr.Index)
+	assert.Equal("alice", pr.User.UserName)
+	assert.Equal("open", pr.State)
+	assert.True(pr.IsLocked)
+	assert.False(pr.Draft)
+	assert.Equal("feature", pr.Head.Ref)
+	assert.Equal("abc", pr.Head.SHA)
+	assert.Equal("https://example/head.git", pr.Head.RepoCloneURL)
+	assert.Equal("main", pr.Base.Ref)
+	assert.Equal("feature", pr.Labels[0].Name)
+	assert.Equal(&closed, pr.MergedAt)
+
+	issue := convertIssue(&forgejosdk.Issue{
+		ID:          7,
+		Index:       8,
+		Poster:      &forgejosdk.User{UserName: "bob"},
+		Title:       "Bug",
+		Body:        "issue body",
+		State:       forgejosdk.StateType("closed"),
+		Comments:    9,
+		HTMLURL:     "https://codeberg.org/forgejo/forgejo/issues/8",
+		Labels:      []*forgejosdk.Label{{ID: 10, Name: "bug"}},
+		Created:     created,
+		Updated:     updated,
+		Closed:      &closed,
+		PullRequest: &forgejosdk.PullRequestMeta{},
+	})
+	assert.Equal(8, issue.Index)
+	assert.Equal("bob", issue.User.UserName)
+	assert.True(issue.IsPullRequest)
+	assert.Equal("bug", issue.Labels[0].Name)
+
+	comment := convertComment(&forgejosdk.Comment{ID: 11, Poster: &forgejosdk.User{UserName: "carol"}, Body: "comment", Created: created, Updated: updated})
+	assert.Equal("carol", comment.User.UserName)
+	assert.Equal("comment", comment.Body)
+
+	review := convertReview(&forgejosdk.PullReview{ID: 12, Reviewer: &forgejosdk.User{UserName: "dave"}, State: forgejosdk.ReviewStateType("APPROVED"), Body: "review", Submitted: created})
+	assert.Equal("APPROVED", review.State)
+	assert.Equal("dave", review.User.UserName)
+
+	release := convertRelease(&forgejosdk.Release{ID: 13, TagName: "v1", Title: "One", HTMLURL: "https://release", Target: "main", IsPrerelease: true, CreatedAt: created, PublishedAt: updated})
+	assert.Equal("v1", release.TagName)
+	assert.Equal(&updated, release.PublishedAt)
+
+	tag := convertTag(&forgejosdk.Tag{Name: "v1", Commit: &forgejosdk.CommitMeta{SHA: "abc", URL: "https://commit", Created: created}})
+	assert.Equal("abc", tag.Commit.SHA)
+
+	status := convertStatus(&forgejosdk.Status{ID: 14, Context: "ci", State: forgejosdk.StatusState("success"), TargetURL: "https://ci", Description: "ok", Created: created, Updated: updated})
+	assert.Equal("success", status.State)
+	assert.Equal("ci", status.Context)
+}
+
+func TestConvertForgejoActionRun(t *testing.T) {
+	assert := Assert.New(t)
+	started := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
+	stopped := started.Add(time.Minute)
+
+	run := convertActionRun(&forgejosdk.ActionRun{
+		ID:           15,
+		WorkflowID:   "build.yaml",
+		Title:        "Build",
+		Status:       "failure",
+		CommitSHA:    "abc",
+		HTMLURL:      "https://actions/run",
+		Started:      started,
+		Stopped:      stopped,
+		NeedApproval: true,
+	})
+
+	assert.Equal(int64(15), run.ID)
+	assert.Equal("build.yaml", run.WorkflowID)
+	assert.Equal("Build", run.Title)
+	assert.Equal("failure", run.Status)
+	assert.Equal("abc", run.CommitSHA)
+	assert.Equal("https://actions/run", run.HTMLURL)
+	assert.Equal(&started, run.Started)
+	assert.Equal(&stopped, run.Stopped)
+	assert.True(run.NeedApproval)
+}
