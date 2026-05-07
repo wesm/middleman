@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	forgejosdk "codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3"
@@ -87,7 +86,7 @@ func NewClient(host, token string, options ...ClientOption) (*Client, error) {
 		host:              host,
 		baseURL:           opts.baseURL,
 		api:               api,
-		transport:         &transport{api: api},
+		transport:         &transport{api: api, requestContextLock: make(chan struct{}, 1)},
 		foregroundTimeout: opts.foregroundTimeout,
 	}, nil
 }
@@ -105,8 +104,8 @@ func (c *Client) Capabilities() platform.Capabilities {
 }
 
 type transport struct {
-	api              *forgejosdk.Client
-	requestContextMu sync.Mutex
+	api                *forgejosdk.Client
+	requestContextLock chan struct{}
 }
 
 func (t *transport) getRepositoryRaw(
@@ -128,8 +127,13 @@ func (t *transport) withRequestContext(ctx context.Context, request func() error
 	default:
 	}
 
-	t.requestContextMu.Lock()
-	defer t.requestContextMu.Unlock()
+	select {
+	case t.requestContextLock <- struct{}{}:
+		defer func() { <-t.requestContextLock }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
 	t.api.SetContext(ctx)
 	defer t.api.SetContext(context.Background())
 	return request()

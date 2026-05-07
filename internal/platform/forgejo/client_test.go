@@ -111,6 +111,72 @@ func TestTransportGetRepositoryRawCancelsInFlightRequest(t *testing.T) {
 	}
 }
 
+func TestTransportGetRepositoryRawCancelsWhileWaitingForRequestContext(t *testing.T) {
+	assert := Assert.New(t)
+	require := Require.New(t)
+	requestStarted := make(chan struct{})
+	releaseRequest := make(chan struct{})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal("/api/v1/repos/owner/repo", r.URL.Path)
+		close(requestStarted)
+		<-releaseRequest
+		w.Header().Set("Content-Type", "application/json")
+		assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+			"id":        1,
+			"name":      "repo",
+			"full_name": "owner/repo",
+			"owner": map[string]any{
+				"id":    2,
+				"login": "owner",
+			},
+		}))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(
+		"codeberg.test",
+		"forgejo-token",
+		WithBaseURLForTesting(server.URL),
+		WithForegroundTimeoutForTesting(time.Minute),
+	)
+	require.NoError(err)
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := client.transport.getRepositoryRaw(context.Background(), "owner", "repo")
+		firstDone <- err
+	}()
+
+	select {
+	case <-requestStarted:
+	case <-time.After(time.Second):
+		require.FailNow("request did not start")
+	}
+
+	waitingCtx, cancelWaiting := context.WithCancel(context.Background())
+	waitingDone := make(chan error, 1)
+	go func() {
+		_, err := client.transport.getRepositoryRaw(waitingCtx, "owner", "repo")
+		waitingDone <- err
+	}()
+	cancelWaiting()
+
+	select {
+	case err := <-waitingDone:
+		require.ErrorIs(err, context.Canceled)
+	case <-time.After(time.Second):
+		require.FailNow("waiting request was not canceled")
+	}
+
+	close(releaseRequest)
+	select {
+	case err := <-firstDone:
+		require.NoError(err)
+	case <-time.After(time.Second):
+		require.FailNow("first request did not finish")
+	}
+}
+
 func TestClientProviderIdentityHasNoReadCapabilitiesYet(t *testing.T) {
 	assert := Assert.New(t)
 	require := Require.New(t)

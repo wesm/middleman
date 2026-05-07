@@ -5,13 +5,17 @@ import "time"
 type Kind string
 
 const (
-	KindGitHub Kind = "github"
-	KindGitLab Kind = "gitlab"
+	KindGitHub  Kind = "github"
+	KindGitLab  Kind = "gitlab"
+	KindForgejo Kind = "forgejo"
+	KindGitea   Kind = "gitea"
 )
 
 const (
-	DefaultGitHubHost = "github.com"
-	DefaultGitLabHost = "gitlab.com"
+	DefaultGitHubHost  = "github.com"
+	DefaultGitLabHost  = "gitlab.com"
+	DefaultForgejoHost = "codeberg.org"
+	DefaultGiteaHost   = "gitea.com"
 )
 
 type RepoRef struct {
