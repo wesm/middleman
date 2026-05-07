@@ -246,7 +246,16 @@ jobs:
       - name: Build E2E server
         run: go build -o ./cmd/e2e-server/e2e-server ./cmd/e2e-server
 
+      # Firefox/WebKit refuse to launch when $HOME isn't owned by the running
+      # user. Actions sets HOME=/github/home (owned by pwuser, the image's
+      # default user) but starts the container as root, so Playwright bails
+      # with "Firefox is unable to launch if the $HOME folder isn't owned by
+      # the current user". Override HOME for the test run as Playwright's
+      # docs recommend; the rest of the job keeps /github/home so setup-go's
+      # cache paths still resolve.
       - name: Run E2E tests
+        env:
+          HOME: /root
         run: cd frontend && bun run playwright test --config=playwright-e2e.config.ts --project=${{ matrix.browser }}
 
       - name: Upload Playwright report
