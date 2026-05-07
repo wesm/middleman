@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add Forgejo and Gitea as sibling Middleman providers, alongside the existing GitHub and GitLab providers, with read sync, repo import, provider-aware routing, and optional mutation capabilities where each API supports them.
+**Goal:** Add Forgejo and Gitea as sibling Middleman providers, alongside the existing GitHub and GitLab providers, with read sync, repo import, provider-aware routing, and a documented post-MVP path to GitHub-parity mutations.
 
 **Architecture:** Reuse the existing `internal/platform` capability model. GitHub remains the compatibility baseline for user-visible PR behavior, GitLab remains the template for provider-neutral startup, registry, pagination, and persistence wiring. Forgejo and Gitea share a substantial `internal/platform/gitealike` implementation for provider methods, pagination, DTO normalization, rate/error mapping, and capability defaults; `internal/platform/forgejo` and `internal/platform/gitea` are thin SDK adapters plus true divergences such as Forgejo Actions.
 
@@ -32,7 +32,8 @@
 - Shared code: make `internal/platform/gitealike` the default home for shared behavior. It should own the common provider implementation, shared DTO structs, pagination loops, read-method orchestration, repo import fallback, state/status normalization, dedupe keys, rate-limit parsing, error mapping, and default read capabilities. Provider packages should adapt SDK structs into `gitealike` DTOs or implement a narrow transport interface; they should not duplicate method loops unless an endpoint truly diverges.
 - Adapter boundary: do not put either SDK's concrete structs into `gitealike`. Instead, each provider package maps SDK records into shared DTOs like `RepositoryDTO`, `PullRequestDTO`, `IssueDTO`, `CommentDTO`, `ReleaseDTO`, `TagDTO`, `StatusDTO`, and optionally `ActionRunDTO`. This keeps common behavior highly reused without letting one SDK leak into the other provider.
 - API base URL: construct each SDK client with `https://<platform_host>` for normal use, plus `WithBaseURLForTesting` for container and `httptest` coverage. Both SDKs append API routes internally.
-- First milestone capabilities: read repositories, open pull requests as `platform.MergeRequest`, open issues, comments/timeline where available, releases, tags, and commit statuses for both providers. Enable comment mutation, issue mutation, state mutation, review mutation, and merge mutation only after tests prove the SDK methods work against that provider.
+- First milestone capabilities: read repositories, open pull requests as `platform.MergeRequest`, open issues, comments/timeline where available, releases, tags, and commit statuses for both providers. Keep comment mutation, issue mutation, state mutation, review mutation, and merge mutation disabled in the MVP; Task 7 enables them later only after tests prove the SDK methods work against that provider.
+- MVP acceptance boundary: the first releasable Forgejo/Gitea implementation is read-only plus repo import and settings UI. Tasks 1 through 6 plus Task 8 define the MVP. Task 7 is an explicit post-MVP parity task unless the implementer intentionally chooses to keep working before merge and proves each mutation with provider tests and optional container fixtures. No Forgejo or Gitea mutation capability should be true in the MVP.
 - CI mapping: start with commit statuses through `ListStatuses(owner, repo, sha, opts)` for both providers. Add Forgejo Actions read support through the Forgejo SDK as a separate capability-backed enhancement; add Gitea Actions only if the Gitea SDK and live fixture prove equivalent behavior.
 - Repo import: support exact owner/org repo listing through `ListUserRepos` or `ListOrgRepos` style SDK methods, with a user-first then org fallback similar to GitLab group/user fallback. Do not support nested group glob semantics for Forgejo or Gitea.
 - Local e2e: add optional Forgejo and Gitea fixtures parallel to `scripts/e2e/gitlab`, using SQLite inside each container for speed and bootstrap scripts that seed a user/org, repository, branch, pull request, issue, label, comments, tag, release, and commit status. Forgejo's fixture should additionally seed or query Actions data when testing Forgejo-only Actions support.
@@ -40,6 +41,8 @@
 ## GitHub Provider Feature Parity Target
 
 GitHub is the user-visible behavior baseline for these providers. Forgejo and Gitea should expose the same Middleman capability whenever the provider SDK and a real or `httptest` fixture prove the operation works. A missing or incompatible endpoint is acceptable only when the provider reports the capability as false and the server/UI tests prove the action is hidden or returns `unsupported_capability`.
+
+Rows marked `Target yes` for mutations are post-MVP parity targets, not MVP acceptance requirements.
 
 | GitHub provider feature | Forgejo target | Gitea target | Implementation spec |
 | --- | --- | --- | --- |
@@ -283,12 +286,46 @@ name = "https://gitea.com/gitea/tea.git"
 }
 ```
 
+Add regression tests that existing GitHub and GitLab config parsing is unchanged:
+
+```go
+func TestLoadKeepsExistingGitHubURLInference(t *testing.T) {
+	cfg := loadConfigFromString(t, `
+[[repos]]
+name = "https://github.com/wesm/middleman.git"
+`)
+
+	require.Len(t, cfg.Repos, 1)
+	assert.Equal(t, "github", cfg.Repos[0].Platform)
+	assert.Equal(t, "github.com", cfg.Repos[0].PlatformHost)
+	assert.Equal(t, "wesm", cfg.Repos[0].Owner)
+	assert.Equal(t, "middleman", cfg.Repos[0].Name)
+	assert.Equal(t, "wesm/middleman", cfg.Repos[0].RepoPath)
+}
+```
+
+```go
+func TestLoadKeepsExistingGitLabURLInference(t *testing.T) {
+	cfg := loadConfigFromString(t, `
+[[repos]]
+name = "https://gitlab.com/gitlab-org/gitlab.git"
+`)
+
+	require.Len(t, cfg.Repos, 1)
+	assert.Equal(t, "gitlab", cfg.Repos[0].Platform)
+	assert.Equal(t, "gitlab.com", cfg.Repos[0].PlatformHost)
+	assert.Equal(t, "gitlab-org", cfg.Repos[0].Owner)
+	assert.Equal(t, "gitlab", cfg.Repos[0].Name)
+	assert.Equal(t, "gitlab-org/gitlab", cfg.Repos[0].RepoPath)
+}
+```
+
 - [ ] **Step 5: Run config tests and confirm failure**
 
 Run:
 
 ```bash
-go test ./internal/config -run 'TestLoadPlatformConfigForgejoToken|TestLoadParsesForgejoCodebergURL|TestLoadPlatformConfigGiteaToken|TestLoadParsesGiteaURL' -shuffle=on
+go test ./internal/config -run 'TestLoadPlatformConfigForgejoToken|TestLoadParsesForgejoCodebergURL|TestLoadPlatformConfigGiteaToken|TestLoadParsesGiteaURL|TestLoadKeepsExistingGitHubURLInference|TestLoadKeepsExistingGitLabURLInference' -shuffle=on
 ```
 
 Expected: fails until Forgejo and Gitea metadata and URL parsing are wired.
@@ -314,7 +351,7 @@ git add internal/platform/types.go internal/platform/metadata.go internal/platfo
 git commit -m "feat: recognize Forgejo and Gitea provider configuration" -m "Adds Forgejo and Gitea metadata and config parsing so Codeberg, Gitea.com, and self-hosted repos can be represented before provider sync is implemented."
 ```
 
-## Task 2: Forgejo And Gitea Client Skeletons And Read Capabilities
+## Task 2: Forgejo And Gitea SDK Client Skeletons And Auth
 
 **Files:**
 - Create: `internal/platform/forgejo/client.go`
@@ -347,7 +384,7 @@ client, err := NewClient(
 )
 ```
 
-and calls `GetRepository` for `owner/repo`. The handler must assert the request path is `/api/v1/repos/owner/repo` and that the token is sent through an authorization header accepted by the Forgejo SDK. Accept either `Authorization: token forgejo-token` or `Authorization: Bearer forgejo-token` depending on the SDK output; lock the observed header into the test after the first failure.
+and calls the package-private SDK transport method that fetches `owner/repo` directly through the Forgejo SDK. Do not call `GetRepository` from `platform.RepositoryReader` in Task 2; the shared `gitealike.Provider` does not exist until Task 3. The handler must assert the request path is `/api/v1/repos/owner/repo` and that the token is sent through an authorization header accepted by the Forgejo SDK. Accept either `Authorization: token forgejo-token` or `Authorization: Bearer forgejo-token` depending on the SDK output; lock the observed header into the test after the first failure.
 
 Create `internal/platform/gitea/client_test.go` with the same test shape:
 
@@ -359,7 +396,7 @@ client, err := NewClient(
 )
 ```
 
-The Gitea handler must also assert `/api/v1/repos/owner/repo` and lock down the Gitea SDK's observed auth header.
+The Gitea test should call the package-private SDK transport method that fetches `owner/repo` directly through the Gitea SDK. The handler must also assert `/api/v1/repos/owner/repo` and lock down the Gitea SDK's observed auth header.
 
 - [ ] **Step 3: Run the failing test**
 
@@ -389,42 +426,35 @@ type clientOptions struct {
 type Client struct {
 	host              string
 	baseURL           string
-	provider          *gitealike.Provider
 	transport         *transport
 	api               *forgejosdk.Client
 	foregroundTimeout time.Duration
 }
 ```
 
-`NewClient(host, token string, options ...ClientOption) (*Client, error)` should default `baseURL` to `https://` plus the normalized host, use an SDK alias such as `forgejosdk "codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3"`, call `forgejosdk.NewClient(baseURL, forgejosdk.SetToken(token), forgejosdk.SetUserAgent("middleman"))`, and attach `forgejosdk.SetHTTPClient` when rate tracking is configured. If version probing makes `httptest` setup awkward, use `forgejosdk.SetForgejoVersion("13.0.0+gitea-1.26.0")` or the SDK's exact version option in tests only. Wrap the SDK in a private `transport` type, pass that to `gitealike.NewProvider(platform.KindForgejo, host, transport, gitealike.Options{ReadActions: true})`, and delegate provider methods to that shared provider.
+`NewClient(host, token string, options ...ClientOption) (*Client, error)` should default `baseURL` to `https://` plus the normalized host, use an SDK alias such as `forgejosdk "codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3"`, call `forgejosdk.NewClient(baseURL, forgejosdk.SetToken(token), forgejosdk.SetUserAgent("middleman"))`, and attach `forgejosdk.SetHTTPClient` when rate tracking is configured. If version probing makes `httptest` setup awkward, use `forgejosdk.SetForgejoVersion("13.0.0+gitea-1.26.0")` or the SDK's exact version option in tests only. Wrap the SDK in a private `transport` type with only the minimal method used by the auth test, such as `getRepositoryRaw(ctx, owner, repo string)`.
 
-In `internal/platform/gitea/client.go`, mirror the same structure with `package gitea` and an SDK alias such as `giteasdk "code.gitea.io/sdk/gitea"`. Use `giteasdk.NewClient(baseURL, giteasdk.SetToken(token), giteasdk.SetUserAgent("middleman"))` and `giteasdk.SetHTTPClient` for rate tracking. Wrap the SDK in a private `transport`, pass that to `gitealike.NewProvider(platform.KindGitea, host, transport, gitealike.Options{})`, and delegate provider methods to that shared provider.
+In `internal/platform/gitea/client.go`, mirror the same structure with `package gitea` and an SDK alias such as `giteasdk "code.gitea.io/sdk/gitea"`. Use `giteasdk.NewClient(baseURL, giteasdk.SetToken(token), giteasdk.SetUserAgent("middleman"))` and `giteasdk.SetHTTPClient` for rate tracking. Wrap the SDK in a private `transport` type with only the minimal method used by the auth test, such as `getRepositoryRaw(ctx, owner, repo string)`.
 
-- [ ] **Step 5: Implement provider identity and capabilities**
+- [ ] **Step 5: Implement provider identity with no read delegation yet**
 
-Implement for Forgejo by delegating to the embedded shared provider:
+Implement for Forgejo:
 
 ```go
 func (c *Client) Platform() platform.Kind { return platform.KindForgejo }
 func (c *Client) Host() string { return c.host }
-func (c *Client) Capabilities() platform.Capabilities { return c.provider.Capabilities() }
-func (c *Client) GetRepository(ctx context.Context, ref platform.RepoRef) (platform.Repository, error) {
-	return c.provider.GetRepository(ctx, ref)
-}
+func (c *Client) Capabilities() platform.Capabilities { return platform.Capabilities{} }
 ```
 
-Implement the same delegation pattern for Gitea:
+Implement the same pattern for Gitea:
 
 ```go
 func (c *Client) Platform() platform.Kind { return platform.KindGitea }
 func (c *Client) Host() string { return c.host }
-func (c *Client) Capabilities() platform.Capabilities { return c.provider.Capabilities() }
-func (c *Client) GetRepository(ctx context.Context, ref platform.RepoRef) (platform.Repository, error) {
-	return c.provider.GetRepository(ctx, ref)
-}
+func (c *Client) Capabilities() platform.Capabilities { return platform.Capabilities{} }
 ```
 
-Add forwarding methods for every shared read interface as each interface is enabled. Leave mutation capabilities false until Task 7. This keeps both packages thin and forces shared behavior through `gitealike`.
+Task 3 replaces the empty capability set with shared `gitealike.Provider` delegation and adds forwarding methods for every shared read interface. Task 2 intentionally avoids temporary read-provider code.
 
 - [ ] **Step 6: Run tests**
 
@@ -440,7 +470,7 @@ Expected: pass for construction and capability tests.
 
 ```bash
 git add go.mod go.sum internal/platform/forgejo/client.go internal/platform/forgejo/client_test.go internal/platform/gitea/client.go internal/platform/gitea/client_test.go
-git commit -m "feat: add Forgejo and Gitea provider client skeletons" -m "Introduces separate SDK-backed Forgejo and Gitea providers with host-scoped auth, rate-tracking hooks, and read capability metadata."
+git commit -m "feat: add Forgejo and Gitea SDK client skeletons" -m "Introduces separate SDK-backed Forgejo and Gitea clients with host-scoped auth and rate-tracking hooks before shared read behavior is added."
 ```
 
 ## Task 3: Shared Gitea-Like Core And SDK Conversion
@@ -574,7 +604,45 @@ func convertActionRun(run *forgejosdk.ActionRun) gitealike.ActionRunDTO
 
 Implement in `internal/platform/gitea/convert.go` the same converter names with `giteasdk` concrete types, excluding `convertActionRun` unless Gitea Actions support is proven.
 
-- [ ] **Step 6: Run tests**
+- [ ] **Step 6: Wire provider delegation and read capabilities**
+
+Update `internal/platform/forgejo/client.go` so `Client` owns the shared provider:
+
+```go
+type Client struct {
+	host              string
+	baseURL           string
+	provider          *gitealike.Provider
+	transport         *transport
+	api               *forgejosdk.Client
+	foregroundTimeout time.Duration
+}
+```
+
+In `NewClient`, pass the private transport to:
+
+```go
+gitealike.NewProvider(platform.KindForgejo, host, transport, gitealike.Options{ReadActions: true})
+```
+
+and delegate capabilities and read methods:
+
+```go
+func (c *Client) Capabilities() platform.Capabilities { return c.provider.Capabilities() }
+func (c *Client) GetRepository(ctx context.Context, ref platform.RepoRef) (platform.Repository, error) {
+	return c.provider.GetRepository(ctx, ref)
+}
+```
+
+Update `internal/platform/gitea/client.go` in the same way, using:
+
+```go
+gitealike.NewProvider(platform.KindGitea, host, transport, gitealike.Options{})
+```
+
+Add forwarding methods for every shared read interface as each interface is enabled. Leave mutation capabilities false until Task 7. This keeps both packages thin and forces shared behavior through `gitealike`.
+
+- [ ] **Step 7: Run tests**
 
 Run:
 
@@ -584,7 +652,7 @@ go test ./internal/platform/gitealike ./internal/platform/forgejo ./internal/pla
 
 Expected: pass.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add internal/platform/gitealike internal/platform/forgejo/convert.go internal/platform/forgejo/convert_test.go internal/platform/gitea/convert.go internal/platform/gitea/convert_test.go
@@ -614,12 +682,14 @@ Add most read API tests in `internal/platform/gitealike/provider_test.go` agains
 - `ListReleases`, `ListTags`, and `ListCIChecks` paginate.
 - Forgejo `ListCIChecks` optionally merges commit statuses with Forgejo Actions runs when the Forgejo SDK endpoint is available.
 - HTTP 404 maps to `platform.ErrRepoNotFound` or a typed provider error equivalent used elsewhere.
+- HTTP 401 and 403 map to a typed provider auth/scope error that preserves provider kind, host, status code, and a message suitable for sync failure display. Insufficient token scopes must not be collapsed into generic repo-not-found or pagination errors.
 
 Add smaller provider-package `httptest` cases only for SDK-specific request shape:
 
 - Forgejo transport sends the expected paths, query parameters, pagination values, and token header through the Forgejo SDK.
 - Gitea transport sends the expected paths, query parameters, pagination values, and token header through the Gitea SDK.
 - Forgejo transport implements `gitealike.ActionsTransport`; Gitea transport does not unless a proven Gitea Actions endpoint is added.
+- Forgejo and Gitea transports expose enough response metadata for `gitealike` to distinguish 401/403 insufficient-scope failures from missing resources.
 
 - [ ] **Step 2: Run focused failing tests**
 
@@ -633,7 +703,7 @@ Expected: fails for unimplemented shared provider and transport methods.
 
 - [ ] **Step 3: Implement pagination helpers**
 
-Add SDK-specific response adapters in the provider packages and keep the pagination loop in `gitealike.Provider`.
+Add SDK-specific response adapters in the provider packages and keep the pagination loop and auth/scope error mapping in `gitealike.Provider`.
 
 ```go
 const defaultPageSize = 100
@@ -655,7 +725,7 @@ func nextGiteaPage(resp *giteasdk.Response) int {
 }
 ```
 
-Every transport list call should accept `gitealike.PageOptions` and translate it to the relevant SDK's `ListOptions{Page: 1, PageSize: defaultPageSize}` or current equivalent. Update the exact option field names after `go test` compiles against the pinned SDK versions.
+Every transport list call should accept `gitealike.PageOptions` and translate it to the relevant SDK's `ListOptions{Page: 1, PageSize: defaultPageSize}` or current equivalent. Update the exact option field names after `go test` compiles against the pinned SDK versions. Error adapters should classify 401 and 403 responses as the typed provider auth/scope error used by sync logs.
 
 - [ ] **Step 4: Implement read methods**
 
@@ -687,6 +757,7 @@ git commit -m "feat: read Forgejo and Gitea through shared provider core" -m "Co
 - Modify: `frontend/src/lib/components/settings/repoImportProviders.ts`
 - Modify: `frontend/src/lib/components/settings/repoImportSelection.test.ts`
 - Modify: `frontend/src/lib/components/settings/RepoImportModal.test.ts`
+- Modify: `frontend/tests/e2e-full/settings-globs.spec.ts`
 
 - [ ] **Step 1: Write startup factory test**
 
@@ -762,14 +833,15 @@ Run:
 ```bash
 go test ./cmd/middleman ./internal/server -run 'TestBuildProviderStartup|TestHandlePreviewRepos|TestHandleBulkAddRepos' -shuffle=on
 bun test frontend/src/lib/components/settings/repoImportSelection.test.ts frontend/src/lib/components/settings/RepoImportModal.test.ts
+bun --cwd frontend run test:e2e -- tests/e2e-full/settings-globs.spec.ts
 ```
 
-Expected: pass.
+Expected: pass. Extend `settings-globs.spec.ts` before running it so the browser test covers selecting Forgejo and Gitea, default host population, and owner pattern behavior.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add cmd/middleman/provider_startup.go cmd/middleman/main_test.go internal/server/settings_test.go frontend/src/lib/components/settings/repoImportProviders.ts frontend/src/lib/components/settings/repoImportSelection.test.ts frontend/src/lib/components/settings/RepoImportModal.test.ts
+git add cmd/middleman/provider_startup.go cmd/middleman/main_test.go internal/server/settings_test.go frontend/src/lib/components/settings/repoImportProviders.ts frontend/src/lib/components/settings/repoImportSelection.test.ts frontend/src/lib/components/settings/RepoImportModal.test.ts frontend/tests/e2e-full/settings-globs.spec.ts
 git commit -m "feat: wire Forgejo and Gitea provider startup" -m "Registers Forgejo and Gitea with the provider registry and exposes both providers in repository import settings."
 ```
 
@@ -797,7 +869,7 @@ if os.Getenv("MIDDLEMAN_FORGEJO_CONTAINER_TESTS") != "1" {
 }
 ```
 
-The test should start the compose stack, run the bootstrap script, load the manifest, instantiate `platform/forgejo.NewClient` with the manifest API URL, sync one configured repo through Middleman, and assert one pull request, one issue, one release, one tag, and one CI check are persisted.
+The test should start the compose stack, run the bootstrap script, load the manifest, instantiate `platform/forgejo.NewClient` with the manifest `base_url`, sync one configured repo through Middleman, and assert one pull request, one issue, one release, one tag, and one CI check are persisted. Do not pass manifest `api_url` to `NewClient`; the SDK appends `/api/v1` internally.
 
 Create `internal/server/gitea_container_e2e_test.go` with:
 
@@ -807,7 +879,7 @@ if os.Getenv("MIDDLEMAN_GITEA_CONTAINER_TESTS") != "1" {
 }
 ```
 
-The Gitea test should start the compose stack, run the bootstrap script, load the manifest, instantiate `platform/gitea.NewClient` with the manifest API URL, sync one configured repo through Middleman, and assert one pull request, one issue, one release, one tag, and one CI check are persisted.
+The Gitea test should start the compose stack, run the bootstrap script, load the manifest, instantiate `platform/gitea.NewClient` with the manifest `base_url`, sync one configured repo through Middleman, and assert one pull request, one issue, one release, one tag, and one CI check are persisted. Do not pass manifest `api_url` to `NewClient`; the SDK appends `/api/v1` internally.
 
 - [ ] **Step 2: Add compose fixture**
 
@@ -873,6 +945,8 @@ Each `bootstrap.sh` should create an admin token or use a pre-seeded admin accou
 - commit status for the feature SHA
 
 Write a manifest JSON with `base_url`, `api_url`, `token`, `owner`, `repo`, `repo_path`, `pull_number`, `issue_number`, and `head_sha`.
+
+Use manifest `base_url` for SDK-backed Middleman clients and reserve manifest `api_url` for bootstrap scripts or raw setup calls only.
 
 The Forgejo bootstrap should also create or query enough Actions state to verify `ListRepoActionRuns` when Actions are enabled in the container. The Gitea bootstrap should not assert Forgejo-only Actions behavior.
 
@@ -1036,9 +1110,10 @@ Run:
 ```bash
 go test ./internal/platform ./internal/platform/forgejo ./internal/config ./cmd/middleman ./internal/server -shuffle=on
 bun test frontend/src/lib/components/settings/repoImportSelection.test.ts frontend/src/lib/components/settings/RepoImportModal.test.ts
+bun --cwd frontend run test:e2e -- tests/e2e-full/settings-globs.spec.ts
 ```
 
-Expected: pass.
+Expected: pass. The Playwright run is required because the provider dropdown is a visible settings workflow change.
 
 - [ ] **Step 4: Run broader verification**
 
@@ -1050,7 +1125,7 @@ make test-short
 
 Expected: pass.
 
-If visible UI changed beyond the provider dropdown, run the affected Playwright e2e-full suite before pushing, per repository instructions.
+If visible UI changed beyond the provider dropdown, broaden the Playwright e2e-full run to cover that additional workflow before pushing, per repository instructions.
 
 - [ ] **Step 5: Commit**
 
@@ -1069,7 +1144,7 @@ git commit -m "docs: describe Forgejo and Gitea provider setup" -m "Documents Fo
 - Does Gitea's Actions API shape match Forgejo's for the subset Middleman cares about, or should Gitea remain status-only until a container fixture proves parity?
 - Which Forgejo or Gitea endpoint, if any, approves pending workflow runs in a way that matches GitHub's `WorkflowApprovalMutator` contract?
 - Which Forgejo or Gitea endpoint, if any, marks a draft pull request ready in a way that matches GitHub's `ReadyForReviewMutator` contract?
-- Which mutation capabilities are acceptable in the first implementation? The safe default is read-only plus comments, issue creation, and PR content edits once proved; merge/review/state mutations should wait for container proof per provider.
+- Post-MVP mutation ordering remains a product decision, but it must not block the MVP. When Task 7 is picked up, implement mutations in this order unless user priorities change: comments, issue creation, PR content edits, state changes, merge, review approval, workflow approval, ready-for-review.
 
 ## Final Test Matrix
 
