@@ -8561,7 +8561,6 @@ func TestAPIGitealikeReadSyncPersistsThroughServer(t *testing.T) {
 		platform.KindForgejo,
 		"codeberg.test",
 		transport,
-		gitealike.Options{},
 	)
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
