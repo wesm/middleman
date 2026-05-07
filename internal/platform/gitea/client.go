@@ -90,12 +90,13 @@ func NewClient(host, token string, options ...ClientOption) (*Client, error) {
 		return nil, err
 	}
 	transport := &transport{api: api, budget: opts.budget}
+	readActions := api.CheckServerVersionConstraint(">= 1.26.0") == nil
 	return &Client{
 		host:              host,
 		baseURL:           opts.baseURL,
 		api:               api,
 		transport:         transport,
-		provider:          gitealike.NewProvider(platform.KindGitea, host, transport, gitealike.Options{Mutations: true}),
+		provider:          gitealike.NewProvider(platform.KindGitea, host, transport, gitealike.Options{ReadActions: readActions, Mutations: true}),
 		foregroundTimeout: opts.foregroundTimeout,
 	}, nil
 }

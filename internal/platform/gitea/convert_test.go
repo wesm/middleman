@@ -112,3 +112,31 @@ func TestConvertGiteaSDKRecords(t *testing.T) {
 	assert.Equal("success", status.State)
 	assert.Equal("ci", status.Context)
 }
+
+func TestConvertGiteaActionRun(t *testing.T) {
+	assert := Assert.New(t)
+	started := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
+	completed := started.Add(time.Minute)
+
+	run := convertActionRun(&giteasdk.ActionWorkflowRun{
+		ID:           15,
+		Path:         ".gitea/workflows/build.yaml",
+		DisplayTitle: "Build",
+		Status:       "completed",
+		Conclusion:   "failure",
+		HeadSha:      "abc",
+		HTMLURL:      "https://actions/run",
+		StartedAt:    started,
+		CompletedAt:  completed,
+	})
+
+	assert.Equal(int64(15), run.ID)
+	assert.Equal(".gitea/workflows/build.yaml", run.WorkflowID)
+	assert.Equal("Build", run.Title)
+	assert.Equal("completed", run.Status)
+	assert.Equal("failure", run.Conclusion)
+	assert.Equal("abc", run.CommitSHA)
+	assert.Equal("https://actions/run", run.HTMLURL)
+	assert.Equal(&started, run.Started)
+	assert.Equal(&completed, run.Stopped)
+}

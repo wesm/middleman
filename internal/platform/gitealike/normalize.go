@@ -231,8 +231,14 @@ func NormalizeStatuses(
 	actionRuns []ActionRunDTO,
 ) []platform.CICheck {
 	checks := make([]platform.CICheck, 0, len(statuses)+len(actionRuns))
+	statusNames := make(map[string]struct{}, len(statuses))
+	statusURLs := make(map[string]struct{}, len(statuses))
 	for _, status := range statuses {
 		checkStatus, conclusion := NormalizeCommitStatus(status.State)
+		statusNames[casefoldKey(status.Context)] = struct{}{}
+		if strings.TrimSpace(status.TargetURL) != "" {
+			statusURLs[casefoldKey(status.TargetURL)] = struct{}{}
+		}
 		checks = append(checks, platform.CICheck{
 			Repo:               repo,
 			PlatformID:         status.ID,
@@ -247,12 +253,21 @@ func NormalizeStatuses(
 		})
 	}
 	for _, run := range actionRuns {
-		checkStatus, conclusion := NormalizeCommitStatus(run.Status)
+		name := actionRunName(run)
+		if _, ok := statusNames[casefoldKey(name)]; ok {
+			continue
+		}
+		if strings.TrimSpace(run.HTMLURL) != "" {
+			if _, ok := statusURLs[casefoldKey(run.HTMLURL)]; ok {
+				continue
+			}
+		}
+		checkStatus, conclusion := NormalizeActionRunStatus(run.Status, run.Conclusion)
 		checks = append(checks, platform.CICheck{
 			Repo:               repo,
 			PlatformID:         run.ID,
 			PlatformExternalID: strconv.FormatInt(run.ID, 10),
-			Name:               run.Title,
+			Name:               name,
 			Status:             checkStatus,
 			Conclusion:         conclusion,
 			URL:                run.HTMLURL,
@@ -262,6 +277,13 @@ func NormalizeStatuses(
 		})
 	}
 	return checks
+}
+
+func actionRunName(run ActionRunDTO) string {
+	if title := strings.TrimSpace(run.Title); title != "" {
+		return title
+	}
+	return strings.TrimSpace(run.WorkflowID)
 }
 
 func NormalizeState(state string) string {
@@ -309,6 +331,25 @@ func NormalizeCommitStatus(state string) (status string, conclusion string) {
 	default:
 		return NormalizeState(state), ""
 	}
+}
+
+func NormalizeActionRunStatus(status, conclusion string) (string, string) {
+	normalizedStatus, normalizedConclusion := NormalizeCommitStatus(status)
+	if normalizedStatus == "pending" {
+		return normalizedStatus, ""
+	}
+	if strings.TrimSpace(conclusion) == "" {
+		return normalizedStatus, normalizedConclusion
+	}
+	_, normalizedConclusion = NormalizeCommitStatus(conclusion)
+	if normalizedConclusion == "" {
+		normalizedConclusion = NormalizeState(conclusion)
+	}
+	return "completed", normalizedConclusion
+}
+
+func casefoldKey(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }
 
 func NextPage(next int) int {

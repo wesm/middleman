@@ -283,6 +283,23 @@ func (t *transport) ListStatuses(
 	return convertStatuses(statuses), giteaPage(resp), nil
 }
 
+func (t *transport) ListActionRuns(
+	ctx context.Context,
+	ref platform.RepoRef,
+	sha string,
+	opts gitealike.PageOptions,
+) ([]gitealike.ActionRunDTO, gitealike.Page, error) {
+	t.spendSyncBudget(ctx)
+	runs, resp, err := t.api.ListRepoActionRuns(ref.Owner, ref.Name, giteasdk.ListRepoActionRunsOptions{
+		ListOptions: giteaListOptions(opts),
+		HeadSHA:     sha,
+	})
+	if err != nil {
+		return nil, gitealike.Page{}, giteaHTTPError(resp, err)
+	}
+	return convertActionRuns(runs.WorkflowRuns), giteaPage(resp), nil
+}
+
 func giteaListOptions(opts gitealike.PageOptions) giteasdk.ListOptions {
 	return giteasdk.ListOptions{Page: opts.Page, PageSize: opts.PageSize}
 }

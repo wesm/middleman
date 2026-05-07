@@ -203,6 +203,7 @@ type ActionRunDTO struct {
 	WorkflowID   string
 	Title        string
 	Status       string
+	Conclusion   string
 	CommitSHA    string
 	HTMLURL      string
 	Started      *time.Time
