@@ -23,6 +23,86 @@ func TestProviderCapabilitiesEnableSharedReadBehavior(t *testing.T) {
 	}, provider.Capabilities())
 }
 
+func TestProviderCapabilitiesEnableProvenMutations(t *testing.T) {
+	provider := NewProvider(
+		platform.KindForgejo,
+		"codeberg.org",
+		&fakeTransport{},
+		WithReadActions(),
+		WithMutations(),
+	)
+
+	Assert.Equal(t, platform.Capabilities{
+		ReadRepositories:  true,
+		ReadMergeRequests: true,
+		ReadIssues:        true,
+		ReadComments:      true,
+		ReadReleases:      true,
+		ReadCI:            true,
+		CommentMutation:   true,
+		StateMutation:     true,
+		MergeMutation:     true,
+		ReviewMutation:    true,
+		IssueMutation:     true,
+	}, provider.Capabilities())
+}
+
+func TestProviderMutationsNormalizeTransportResponses(t *testing.T) {
+	assert := Assert.New(t)
+	require := Require.New(t)
+	base := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
+	ref := platform.RepoRef{Platform: platform.KindForgejo, Host: "codeberg.org", Owner: "forgejo", Name: "forgejo", RepoPath: "forgejo/forgejo"}
+	transport := &fakeTransport{
+		comment: CommentDTO{ID: 10, User: UserDTO{UserName: "alice"}, Body: "done", Created: base},
+		pr: PullRequestDTO{
+			ID: 11, Index: 7, Title: "edited", User: UserDTO{UserName: "bob"}, State: "open",
+			Created: base, Updated: base,
+		},
+		issue:  IssueDTO{ID: 12, Index: 8, Title: "issue", User: UserDTO{UserName: "carol"}, State: "closed", Created: base, Updated: base},
+		review: ReviewDTO{ID: 13, User: UserDTO{UserName: "dana"}, State: "APPROVED", Body: "ship it", Submitted: base},
+		merge:  MergeResultDTO{Merged: true, SHA: "abc", Message: "merged"},
+	}
+	provider := NewProvider(platform.KindForgejo, "codeberg.org", transport, WithMutations())
+
+	mrComment, err := provider.CreateMergeRequestComment(context.Background(), ref, 7, "done")
+	require.NoError(err)
+	issueComment, err := provider.CreateIssueComment(context.Background(), ref, 8, "done")
+	require.NoError(err)
+	editedComment, err := provider.EditIssueComment(context.Background(), ref, 10, "edited")
+	require.NoError(err)
+	issue, err := provider.CreateIssue(context.Background(), ref, "issue", "body")
+	require.NoError(err)
+	closedPR, err := provider.SetMergeRequestState(context.Background(), ref, 7, "closed")
+	require.NoError(err)
+	closedIssue, err := provider.SetIssueState(context.Background(), ref, 8, "closed")
+	require.NoError(err)
+	merged, err := provider.MergeMergeRequest(context.Background(), ref, 7, "title", "body", "squash")
+	require.NoError(err)
+	review, err := provider.ApproveMergeRequest(context.Background(), ref, 7, "ship it")
+	require.NoError(err)
+	prTitle := "new title"
+	prBody := "new body"
+	editedPR, err := provider.EditMergeRequestContent(context.Background(), ref, 7, &prTitle, &prBody)
+	require.NoError(err)
+
+	assert.Equal("done", mrComment.Body)
+	assert.Equal(7, mrComment.MergeRequestNumber)
+	assert.Equal("done", issueComment.Body)
+	assert.Equal(8, issueComment.IssueNumber)
+	assert.Equal("edited", editedComment.Body)
+	assert.Equal("issue", issue.Title)
+	assert.Equal("edited", closedPR.Title)
+	assert.Equal("closed", closedIssue.State)
+	assert.True(merged.Merged)
+	assert.Equal("abc", merged.SHA)
+	assert.Equal("APPROVED", review.Summary)
+	assert.Equal("edited", editedPR.Title)
+	assert.Equal([]string{
+		"create_pr_comment", "create_issue_comment", "edit_issue_comment", "create_issue",
+		"edit_pull:closed", "edit_issue:closed", "merge:squash", "review", "edit_pull:",
+	}, transport.mutationCalls)
+}
+
 func TestProviderPaginatesAndNormalizesReadMethods(t *testing.T) {
 	assert := Assert.New(t)
 	require := Require.New(t)
@@ -186,10 +266,16 @@ type fakeTransport struct {
 	releases    [][]ReleaseDTO
 	tags        [][]TagDTO
 	statuses    [][]StatusDTO
+	comment     CommentDTO
+	pr          PullRequestDTO
+	issue       IssueDTO
+	review      ReviewDTO
+	merge       MergeResultDTO
 
 	userRepoPages []int
 	orgRepoPages  []int
 	pullPages     []int
+	mutationCalls []string
 }
 
 func (t *fakeTransport) GetRepository(context.Context, string, string) (RepositoryDTO, error) {
@@ -267,6 +353,55 @@ func (t *fakeTransport) ListTags(_ context.Context, _ platform.RepoRef, opts Pag
 
 func (t *fakeTransport) ListStatuses(_ context.Context, _ platform.RepoRef, _ string, opts PageOptions) ([]StatusDTO, Page, error) {
 	return pageFor(t.statuses, opts.Page)
+}
+
+func (t *fakeTransport) CreateIssueComment(_ context.Context, _ platform.RepoRef, number int, _ string) (CommentDTO, error) {
+	if number == 7 {
+		t.mutationCalls = append(t.mutationCalls, "create_pr_comment")
+	} else {
+		t.mutationCalls = append(t.mutationCalls, "create_issue_comment")
+	}
+	return t.comment, nil
+}
+
+func (t *fakeTransport) EditIssueComment(_ context.Context, _ platform.RepoRef, _ int64, body string) (CommentDTO, error) {
+	t.mutationCalls = append(t.mutationCalls, "edit_issue_comment")
+	comment := t.comment
+	comment.Body = body
+	return comment, nil
+}
+
+func (t *fakeTransport) CreateIssue(context.Context, platform.RepoRef, string, string) (IssueDTO, error) {
+	t.mutationCalls = append(t.mutationCalls, "create_issue")
+	return t.issue, nil
+}
+
+func (t *fakeTransport) EditIssue(_ context.Context, _ platform.RepoRef, _ int, opts IssueMutationOptions) (IssueDTO, error) {
+	state := ""
+	if opts.State != nil {
+		state = *opts.State
+	}
+	t.mutationCalls = append(t.mutationCalls, "edit_issue:"+state)
+	return t.issue, nil
+}
+
+func (t *fakeTransport) EditPullRequest(_ context.Context, _ platform.RepoRef, _ int, opts PullRequestMutationOptions) (PullRequestDTO, error) {
+	state := ""
+	if opts.State != nil {
+		state = *opts.State
+	}
+	t.mutationCalls = append(t.mutationCalls, "edit_pull:"+state)
+	return t.pr, nil
+}
+
+func (t *fakeTransport) MergePullRequest(_ context.Context, _ platform.RepoRef, _ int, opts MergeOptions) (MergeResultDTO, error) {
+	t.mutationCalls = append(t.mutationCalls, "merge:"+opts.Method)
+	return t.merge, nil
+}
+
+func (t *fakeTransport) CreatePullReview(context.Context, platform.RepoRef, int, string) (ReviewDTO, error) {
+	t.mutationCalls = append(t.mutationCalls, "review")
+	return t.review, nil
 }
 
 func pageFor[T any](pages [][]T, page int) ([]T, Page, error) {
