@@ -94,11 +94,13 @@ func NewClient(host, token string, options ...ClientOption) (*Client, error) {
 	}
 	transport := &transport{api: api, budget: opts.budget}
 	return &Client{
-		host:              host,
-		baseURL:           opts.baseURL,
-		api:               api,
-		transport:         transport,
-		provider:          gitealike.NewProvider(platform.KindForgejo, host, transport, gitealike.Options{ReadActions: true}),
+		host:      host,
+		baseURL:   opts.baseURL,
+		api:       api,
+		transport: transport,
+		provider: gitealike.NewProvider(
+			platform.KindForgejo, host, transport, gitealike.Options{ReadActions: true, Mutations: true},
+		),
 		foregroundTimeout: opts.foregroundTimeout,
 	}, nil
 }

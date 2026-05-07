@@ -95,7 +95,7 @@ func NewClient(host, token string, options ...ClientOption) (*Client, error) {
 		baseURL:           opts.baseURL,
 		api:               api,
 		transport:         transport,
-		provider:          gitealike.NewProvider(platform.KindGitea, host, transport, gitealike.Options{}),
+		provider:          gitealike.NewProvider(platform.KindGitea, host, transport, gitealike.Options{Mutations: true}),
 		foregroundTimeout: opts.foregroundTimeout,
 	}, nil
 }

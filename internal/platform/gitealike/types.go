@@ -28,6 +28,16 @@ type Transport interface {
 	ListStatuses(ctx context.Context, ref platform.RepoRef, sha string, opts PageOptions) ([]StatusDTO, Page, error)
 }
 
+type MutationTransport interface {
+	CreateIssueComment(ctx context.Context, ref platform.RepoRef, number int, body string) (CommentDTO, error)
+	EditIssueComment(ctx context.Context, ref platform.RepoRef, commentID int64, body string) (CommentDTO, error)
+	CreateIssue(ctx context.Context, ref platform.RepoRef, title string, body string) (IssueDTO, error)
+	EditIssue(ctx context.Context, ref platform.RepoRef, number int, opts IssueMutationOptions) (IssueDTO, error)
+	EditPullRequest(ctx context.Context, ref platform.RepoRef, number int, opts PullRequestMutationOptions) (PullRequestDTO, error)
+	MergePullRequest(ctx context.Context, ref platform.RepoRef, number int, opts MergeOptions) (MergeResultDTO, error)
+	CreatePullReview(ctx context.Context, ref platform.RepoRef, number int, body string) (ReviewDTO, error)
+}
+
 type ActionsTransport interface {
 	ListActionRuns(ctx context.Context, ref platform.RepoRef, sha string, opts PageOptions) ([]ActionRunDTO, Page, error)
 }
@@ -162,6 +172,30 @@ type StatusDTO struct {
 	Description string
 	Created     time.Time
 	Updated     time.Time
+}
+
+type IssueMutationOptions struct {
+	Title *string
+	Body  *string
+	State *string
+}
+
+type PullRequestMutationOptions struct {
+	Title *string
+	Body  *string
+	State *string
+}
+
+type MergeOptions struct {
+	CommitTitle   string
+	CommitMessage string
+	Method        string
+}
+
+type MergeResultDTO struct {
+	Merged  bool
+	SHA     string
+	Message string
 }
 
 type ActionRunDTO struct {
