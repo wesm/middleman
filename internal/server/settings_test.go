@@ -1653,8 +1653,9 @@ repo_path = "ForgeOrg/Widget"
 	})
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
+	body := rr.Body.String()
 	var resp repoPreviewResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.NoError(json.NewDecoder(strings.NewReader(body)).Decode(&resp))
 	require.Len(resp.Repos, 1)
 	assert.Equal("forgejo", resp.Provider)
 	assert.Equal("codeberg.example.com", resp.PlatformHost)
@@ -1669,8 +1670,8 @@ repo_path = "ForgeOrg/Widget"
 	assert.True(resp.Repos[0].AlreadyConfigured)
 	require.NotNil(resp.Repos[0].PushedAt)
 	assert.Equal(updatedAt.Format(time.RFC3339), *resp.Repos[0].PushedAt)
-	assert.NotContains(rr.Body.String(), "Widget-Archived")
-	assert.NotContains(rr.Body.String(), "Other")
+	assert.NotContains(body, "Widget-Archived")
+	assert.NotContains(body, "Other")
 }
 
 func TestHandleBulkAddReposPersistsExactRepos(t *testing.T) {
