@@ -1,4 +1,5 @@
 import type {
+  ProviderCapabilities,
   RepoSummary,
   RepoSummaryAuthor,
   RepoSummaryCommitPointResponse,
@@ -27,6 +28,22 @@ export type RepoFilter = "all" | "prs" | "issues" | "stale";
 export type RepoSort = "name" | "open-prs" | "open-issues" | "activity" | "stale";
 
 export const staleReleaseCommitThreshold = 50;
+
+export const defaultProviderCapabilities: ProviderCapabilities = {
+  read_repositories: true,
+  read_merge_requests: true,
+  read_issues: true,
+  read_comments: true,
+  read_releases: true,
+  read_ci: true,
+  comment_mutation: true,
+  state_mutation: true,
+  merge_mutation: true,
+  review_mutation: true,
+  workflow_approval: true,
+  ready_for_review: true,
+  issue_mutation: true,
+};
 
 export function repoKey(summary: {
   platform_host?: string;
@@ -58,9 +75,9 @@ export function shouldShowPlatformHost(summary: {
   platform_host: string;
   default_platform_host?: string | undefined;
 }): boolean {
-  const host = (summary.platform_host || "github.com").toLowerCase();
-  const defaultHost = (summary.default_platform_host || "github.com")
-    .toLowerCase();
+  const host = summary.platform_host.toLowerCase();
+  const defaultHost = summary.default_platform_host?.toLowerCase();
+  if (!defaultHost) return true;
   return host !== defaultHost;
 }
 
@@ -92,12 +109,21 @@ export function isStaleRelease(summary: RepoSummaryCard): boolean {
 export function normalizeSummaries(
   data: RepoSummary[] | null | undefined,
 ): RepoSummaryCard[] {
-  return (data ?? []).map((summary) => ({
-    ...summary,
-    default_platform_host: summary.default_platform_host || "github.com",
-    active_authors: summary.active_authors ?? [],
-    recent_issues: summary.recent_issues ?? [],
-    commit_timeline: summary.commit_timeline ?? [],
-    releases: summary.releases ?? [],
-  }));
+  return (data ?? []).map((summary) => {
+    if (!summary.repo) {
+      throw new Error("repo summary missing provider repo identity");
+    }
+    return {
+      ...summary,
+      repo: {
+        ...summary.repo,
+        capabilities: summary.repo.capabilities ?? defaultProviderCapabilities,
+      },
+      default_platform_host: summary.default_platform_host,
+      active_authors: summary.active_authors ?? [],
+      recent_issues: summary.recent_issues ?? [],
+      commit_timeline: summary.commit_timeline ?? [],
+      releases: summary.releases ?? [],
+    };
+  });
 }

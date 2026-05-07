@@ -76,8 +76,10 @@ name = "widget"
 	waitForRepoSynced(t, database, "acme", "widget", nil)
 
 	status, body = postJSON(t, client, baseURL+"/api/v1/repos", map[string]string{
-		"owner": "other-org",
-		"name":  "other-repo",
+		"provider": "github",
+		"host":     "github.com",
+		"owner":    "other-org",
+		"name":     "other-repo",
 	})
 	require.Equal(http.StatusCreated, status, body)
 
@@ -132,7 +134,7 @@ name = "*"
 
 	status, body = postJSON(
 		t, client,
-		baseURL+"/api/v1/repos/roborev-dev/%2A/refresh",
+		baseURL+"/api/v1/repo/gh/roborev-dev/%2A/refresh",
 		nil,
 	)
 	require.Equal(http.StatusOK, status, body)

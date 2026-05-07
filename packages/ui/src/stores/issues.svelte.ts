@@ -1,14 +1,36 @@
 import type { Issue, IssueDetail, IssuesParams } from "../api/types.js";
+import {
+  providerItemPath,
+  providerRouteParams,
+} from "../api/provider-routes.js";
 import type { MiddlemanClient } from "../types.js";
 
 export type IssueDetailSyncMode = boolean | "background";
 
 export interface IssueSelection {
+  provider: string;
+  platformHost?: string | undefined;
+  owner: string;
+  name: string;
+  repoPath: string;
+  number: number;
+}
+
+export interface IssueDetailRequestOptions {
+  sync?: IssueDetailSyncMode;
+  provider: string;
+  platformHost?: string | undefined;
+  repoPath: string;
+}
+
+type IssueDetailRequestRef = {
   owner: string;
   name: string;
   number: number;
+  provider: string;
   platformHost?: string | undefined;
-}
+  repoPath: string;
+};
 
 export interface IssuesStoreOptions {
   client: MiddlemanClient;
@@ -162,13 +184,17 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     owner: string,
     name: string,
     number: number,
-    platformHost?: string,
+    provider: string,
+    platformHost: string | undefined,
+    repoPath: string,
   ): void {
     selectedIssue = {
+      provider,
+      ...(platformHost && { platformHost }),
       owner,
       name,
+      repoPath,
       number,
-      ...(platformHost && { platformHost }),
     };
   }
   function clearIssueSelection(): void {
@@ -232,18 +258,52 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     return undefined;
   }
 
+  function currentIssueDetailRef(
+    owner: string,
+    name: string,
+    number: number,
+  ): IssueDetailRequestRef {
+    const provider = issueDetail?.repo?.provider ?? selectedIssue?.provider;
+    const repoPath = issueDetail?.repo?.repo_path ?? selectedIssue?.repoPath;
+    if (!provider || !repoPath) {
+      throw new Error("issue detail missing provider repo identity");
+    }
+    return issueDetailRequestRef(owner, name, number, {
+      provider,
+      platformHost:
+        issueDetail?.repo?.platform_host ?? selectedIssue?.platformHost,
+      repoPath,
+    });
+  }
+
+  function issueDetailRequestRef(
+    owner: string,
+    name: string,
+    number: number,
+    options: IssueDetailRequestOptions,
+  ): IssueDetailRequestRef {
+    return {
+      owner,
+      name,
+      number,
+      provider: options.provider,
+      platformHost: options.platformHost,
+      repoPath: options.repoPath,
+    };
+  }
+
   async function loadIssueDetail(
     owner: string,
     name: string,
     number: number,
-    platformHost?: string,
-    options?: { sync?: IssueDetailSyncMode },
+    options: IssueDetailRequestOptions,
   ): Promise<void> {
-    const syncMode = options?.sync ?? true;
+    const requestRef = issueDetailRequestRef(owner, name, number, options);
+    const syncMode = options.sync ?? true;
     // Dedup by item identity only. A second caller with a different
     // sync mode joins the in-flight load and may promote the sync
     // intent if its requested mode is stronger.
-    const key = `${platformHost ?? ""}:${owner}/${name}/${number}`;
+    const key = `${requestRef.provider}:${requestRef.platformHost}:${requestRef.repoPath}/${number}`;
     if (
       detailLoading &&
       activeDetailLoad?.key === key &&
@@ -270,14 +330,12 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     const promise = (async () => {
       try {
         const { data, error: requestError } = await apiClient.GET(
-          "/repos/{owner}/{name}/issues/{number}",
+          providerItemPath("issues", requestRef, ""),
           {
             params: {
-              path: { owner, name, number },
-              query: {
-                ...(platformHost && {
-                  platform_host: platformHost,
-                }),
+              path: {
+                ...providerRouteParams(requestRef),
+                number: requestRef.number,
               },
             },
           },
@@ -305,7 +363,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       // request isn't lost when it joined an in-flight load.
       const finalSyncMode = currentLoad.syncMode;
       if (gen === issueSyncGeneration && finalSyncMode === true) {
-        void syncIssueDetail(owner, name, number, gen, platformHost);
+        void syncIssueDetail(owner, name, number, gen, requestRef);
       } else if (gen === issueSyncGeneration && finalSyncMode === "background") {
         void enqueueBackgroundIssueSync(
           owner,
@@ -313,7 +371,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           number,
           gen,
           issueDetail?.detail_fetched_at,
-          platformHost,
+          requestRef,
         );
       }
     })();
@@ -326,20 +384,18 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     name: string,
     number: number,
     gen: number,
-    previousFetchedAt?: string,
-    platformHost?: string,
+    previousFetchedAt: string | undefined,
+    requestRef: IssueDetailRequestRef,
   ): Promise<void> {
     detailSyncing = true;
     try {
       const { error: requestError } = await apiClient.POST(
-        "/repos/{owner}/{name}/issues/{number}/sync/async",
+        providerItemPath("issues", requestRef, "/sync/async"),
         {
           params: {
-            path: { owner, name, number },
-            query: {
-              ...(platformHost && {
-                platform_host: platformHost,
-              }),
+            path: {
+              ...providerRouteParams(requestRef),
+              number: requestRef.number,
             },
           },
         },
@@ -351,7 +407,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         number,
         gen,
         previousFetchedAt,
-        platformHost,
+        requestRef,
       );
     } finally {
       if (gen === issueSyncGeneration) detailSyncing = false;
@@ -364,13 +420,13 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     name: string,
     number: number,
     gen: number,
-    previousFetchedAt?: string,
-    platformHost?: string,
+    previousFetchedAt: string | undefined,
+    requestRef: IssueDetailRequestRef,
   ): Promise<void> {
     for (const ms of [300, 700, 1_500, 3_000, 5_000]) {
       await delay(ms);
       if (gen !== issueSyncGeneration) return;
-      await refreshIssueDetail(owner, name, number, platformHost, gen);
+      await refreshIssueDetail(owner, name, number, requestRef, gen);
       if (gen !== issueSyncGeneration) return;
       const fetchedAt = issueDetail?.detail_fetched_at;
       if (fetchedAt && fetchedAt !== previousFetchedAt) {
@@ -384,20 +440,15 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     name: string,
     number: number,
     gen: number,
-    platformHost?: string,
+    ref: IssueDetailRequestRef,
   ): Promise<void> {
     detailSyncing = true;
     try {
       const { data, error: requestError } = await apiClient.POST(
-        "/repos/{owner}/{name}/issues/{number}/sync",
+        providerItemPath("issues", ref, "/sync"),
         {
           params: {
-            path: { owner, name, number },
-            query: {
-              ...(platformHost && {
-                platform_host: platformHost,
-              }),
-            },
+            path: { ...providerRouteParams(ref), number: ref.number },
           },
         },
       );
@@ -430,20 +481,15 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     owner: string,
     name: string,
     number: number,
-    platformHost?: string,
+    ref: IssueDetailRequestRef,
     expectedGen: number = issueSyncGeneration,
   ): Promise<void> {
     try {
       const { data } = await apiClient.GET(
-        "/repos/{owner}/{name}/issues/{number}",
+        providerItemPath("issues", ref, ""),
         {
           params: {
-            path: { owner, name, number },
-            query: {
-              ...(platformHost && {
-                platform_host: platformHost,
-              }),
-            },
+            path: { ...providerRouteParams(ref), number: ref.number },
           },
         },
       );
@@ -467,11 +513,12 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     owner: string,
     name: string,
     number: number,
-    platformHost?: string,
+    options: IssueDetailRequestOptions,
   ): void {
+    const requestRef = issueDetailRequestRef(owner, name, number, options);
     stopIssueDetailPolling();
     detailPollHandle = setInterval(() => {
-      void refreshIssueDetail(owner, name, number, platformHost);
+      void refreshIssueDetail(owner, name, number, requestRef);
     }, 60_000);
   }
 
@@ -498,20 +545,17 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     number: number,
     body: string,
   ): Promise<void> {
-    const platformHost = currentIssuePlatformHost(owner, name, number);
+    const ref = currentIssueDetailRef(owner, name, number);
 
     detailError = null;
     try {
       const { error: requestError } = await apiClient.POST(
-        "/repos/{owner}/{name}/issues/{number}/comments",
+        providerItemPath("issues", ref, "/comments"),
         {
-          params: { path: { owner, name, number } },
-          body: {
-            body,
-            ...(platformHost && {
-              platform_host: platformHost,
-            }),
+          params: {
+            path: { ...providerRouteParams(ref), number },
           },
+          body: { body },
         },
       );
       if (requestError) {
@@ -529,11 +573,11 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     detailSyncing = false;
     // Silent refresh: avoid flipping loading flag, which would
     // unmount the detail tree and reset scroll position.
-    await refreshIssueDetail(owner, name, number, platformHost);
+    await refreshIssueDetail(owner, name, number, ref);
     // Pull authoritative state from GitHub so issue row metadata
     // catches up. Skip if the user navigated away mid-refresh.
     if (gen === issueSyncGeneration) {
-      void syncIssueDetail(owner, name, number, gen, platformHost);
+      void syncIssueDetail(owner, name, number, gen, ref);
     }
   }
 
@@ -544,27 +588,21 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     commentID: number,
     body: string,
   ): Promise<boolean> {
-    const platformHost = currentIssuePlatformHost(owner, name, number);
+    const ref = currentIssueDetailRef(owner, name, number);
 
     detailError = null;
     try {
       const { error: requestError } = await apiClient.PATCH(
-        "/repos/{owner}/{name}/issues/{number}/comments/{comment_id}",
+        providerItemPath("issues", ref, "/comments/{comment_id}"),
         {
           params: {
             path: {
-              owner,
-              name,
+              ...providerRouteParams(ref),
               number,
               comment_id: commentID,
             },
           },
-          body: {
-            body,
-            ...(platformHost && {
-              platform_host: platformHost,
-            }),
-          },
+          body: { body },
         },
       );
       if (requestError) {
@@ -576,7 +614,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       detailError = err instanceof Error ? err.message : String(err);
       return false;
     }
-    await refreshIssueDetail(owner, name, number, platformHost);
+    await refreshIssueDetail(owner, name, number, ref);
     return true;
   }
 
@@ -635,7 +673,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       issueDetail.repo_name === name &&
       issueDetail.issue.Number === number
     ) {
-      await loadIssueDetail(owner, name, number, platformHost);
+      await loadIssueDetail(owner, name, number, currentIssueDetailRef(owner, name, number));
     }
   }
 
@@ -663,7 +701,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           owner: first.repo_owner ?? "",
           name: first.repo_name ?? "",
           number: first.Number,
+          provider: first.repo?.provider,
           platformHost: first.platform_host,
+          repoPath: first.repo?.repo_path,
         };
       }
       return;
@@ -683,7 +723,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           owner: next.repo_owner ?? "",
           name: next.repo_name ?? "",
           number: next.Number,
+          provider: next.repo?.provider,
           platformHost: next.platform_host,
+          repoPath: next.repo?.repo_path,
         };
       }
     }
@@ -699,7 +741,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           owner: last.repo_owner ?? "",
           name: last.repo_name ?? "",
           number: last.Number,
+          provider: last.repo?.provider,
           platformHost: last.platform_host,
+          repoPath: last.repo?.repo_path,
         };
       }
       return;
@@ -719,7 +763,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           owner: prev.repo_owner ?? "",
           name: prev.repo_name ?? "",
           number: prev.Number,
+          provider: prev.repo?.provider,
           platformHost: prev.platform_host,
+          repoPath: prev.repo?.repo_path,
         };
       }
     }

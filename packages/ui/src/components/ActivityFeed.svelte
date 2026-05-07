@@ -32,7 +32,9 @@
     owner: string;
     name: string;
     number: number;
+    provider?: string | undefined;
     platformHost?: string | undefined;
+    repoPath?: string | undefined;
   };
 
   let {
@@ -330,8 +332,11 @@
       && selectedItem.owner === item.repo_owner
       && selectedItem.name === item.repo_name
       && selectedItem.number === item.item_number
-      && (item.item_type !== "issue"
-        || !selectedItem.platformHost
+      && (!selectedItem.provider
+        || selectedItem.provider === item.repo?.provider)
+      && (!selectedItem.repoPath
+        || selectedItem.repoPath === item.repo?.repo_path)
+      && (!selectedItem.platformHost
         || selectedItem.platformHost === item.platform_host);
   }
 

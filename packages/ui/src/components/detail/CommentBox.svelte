@@ -20,7 +20,9 @@
     owner: string;
     name: string;
     number: number;
+    provider: string;
     platformHost?: string | undefined;
+    repoPath: string;
     disabled?: boolean;
   }
 
@@ -28,7 +30,9 @@
     owner,
     name,
     number,
+    provider,
     platformHost,
+    repoPath,
     disabled = false,
   }: Props = $props();
 
@@ -119,7 +123,9 @@
       <CommentEditor
         {owner}
         {name}
+        {provider}
         {platformHost}
+        {repoPath}
         value={body}
         disabled={isPostingCurrent || disabled}
         oninput={(nextBody) => {

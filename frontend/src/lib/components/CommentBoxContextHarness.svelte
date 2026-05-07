@@ -22,7 +22,9 @@
   export let owner = "octo";
   export let name = "repo";
   export let number = 1;
-  export let platformHost: string | undefined = undefined;
+  export let provider = "github";
+  export let platformHost: string | undefined = "github.com";
+  export let repoPath = `${owner}/${name}`;
   export let submitComment: (
     owner: string,
     name: string,
@@ -49,10 +51,18 @@
   setContext(API_CLIENT_KEY, {
     GET: async (
       path: string,
-      options?: { params?: { query?: Record<string, unknown> } },
+      options?: {
+        params?: {
+          path?: Record<string, unknown>;
+          query?: Record<string, unknown>;
+        };
+      },
     ) => {
-      if (path === "/repos/{owner}/{name}/comment-autocomplete") {
-        onAutocompleteQuery?.(options?.params?.query);
+      if (
+        path === "/repo/{provider}/{owner}/{name}/comment-autocomplete"
+        || path === "/host/{platform_host}/repo/{provider}/{owner}/{name}/comment-autocomplete"
+      ) {
+        onAutocompleteQuery?.(options?.params);
         return { data: autocompleteResponse };
       }
       return { data: undefined, error: { title: "not mocked" } };
@@ -61,7 +71,7 @@
 </script>
 
 {#if kind === "pull"}
-  <CommentBox {owner} {name} {number} {platformHost} />
+  <CommentBox {provider} {platformHost} {owner} {name} {repoPath} {number} />
 {:else}
-  <IssueCommentBox {owner} {name} {number} {platformHost} />
+  <IssueCommentBox {provider} {platformHost} {owner} {name} {repoPath} {number} />
 {/if}

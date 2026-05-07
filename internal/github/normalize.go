@@ -1,18 +1,15 @@
 package github
 
 import (
-	"crypto/sha1"
-	"encoding/hex"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"net/url"
-	"slices"
 	"strings"
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
 	"github.com/wesm/middleman/internal/db"
+	"github.com/wesm/middleman/internal/platform"
+	platformgithub "github.com/wesm/middleman/internal/platform/github"
 )
 
 // sanitizeURL returns the URL if it uses a safe scheme, or empty string.
@@ -32,8 +29,8 @@ func sanitizeURL(raw string) string {
 }
 
 var (
-	ErrNilPullRequest = errors.New("nil pull request")
-	ErrNilIssue       = errors.New("nil issue")
+	ErrNilPullRequest = platformgithub.ErrNilPullRequest
+	ErrNilIssue       = platformgithub.ErrNilIssue
 )
 
 // NormalizePR converts a GitHub PullRequest to a db.MergeRequest.
@@ -43,19 +40,35 @@ func NormalizePR(repoID int64, ghPR *gh.PullRequest) (*db.MergeRequest, error) {
 	if ghPR == nil {
 		return nil, ErrNilPullRequest
 	}
+	platformMR, err := platformgithub.NormalizePullRequest(platform.RepoRef{}, ghPR)
+	if err != nil {
+		return nil, err
+	}
 	mr := &db.MergeRequest{
-		RepoID:            repoID,
-		PlatformID:        ghPR.GetID(),
-		Number:            ghPR.GetNumber(),
-		URL:               ghPR.GetHTMLURL(),
-		Title:             ghPR.GetTitle(),
-		Author:            loginOrEmpty(ghPR.GetUser()),
-		AuthorDisplayName: nameOrEmpty(ghPR.GetUser()),
-		State:             ghPR.GetState(),
-		IsDraft:           ghPR.GetDraft(),
-		Body:              ghPR.GetBody(),
-		Additions:         ghPR.GetAdditions(),
-		Deletions:         ghPR.GetDeletions(),
+		RepoID:             repoID,
+		PlatformID:         platformMR.PlatformID,
+		PlatformExternalID: platformMR.PlatformExternalID,
+		Number:             platformMR.Number,
+		URL:                platformMR.URL,
+		Title:              platformMR.Title,
+		Author:             platformMR.Author,
+		AuthorDisplayName:  platformMR.AuthorDisplayName,
+		State:              platformMR.State,
+		IsDraft:            platformMR.IsDraft,
+		Body:               platformMR.Body,
+		HeadBranch:         platformMR.HeadBranch,
+		BaseBranch:         platformMR.BaseBranch,
+		PlatformHeadSHA:    platformMR.HeadSHA,
+		PlatformBaseSHA:    platformMR.BaseSHA,
+		Additions:          platformMR.Additions,
+		Deletions:          platformMR.Deletions,
+		ReviewDecision:     platformMR.ReviewDecision,
+		CIStatus:           platformMR.CIStatus,
+		CreatedAt:          platformMR.CreatedAt,
+		UpdatedAt:          platformMR.UpdatedAt,
+		LastActivityAt:     platformMR.LastActivityAt,
+		MergedAt:           platformMR.MergedAt,
+		ClosedAt:           platformMR.ClosedAt,
 	}
 
 	if pullRequestWasMerged(ghPR) {
@@ -78,18 +91,12 @@ func NormalizePR(repoID int64, ghPR *gh.PullRequest) (*db.MergeRequest, error) {
 		mr.ClosedAt = &t
 	}
 	if ghPR.GetHead() != nil {
-		mr.HeadBranch = ghPR.GetHead().GetRef()
-		mr.PlatformHeadSHA = ghPR.GetHead().GetSHA()
 		if ghPR.GetHead().GetRepo() != nil {
 			mr.HeadRepoCloneURL = ghPR.GetHead().GetRepo().GetCloneURL()
 		}
 	}
-	if ghPR.GetBase() != nil {
-		mr.BaseBranch = ghPR.GetBase().GetRef()
-		mr.PlatformBaseSHA = ghPR.GetBase().GetSHA()
-	}
 	mr.MergeableState = ghPR.GetMergeableState()
-	mr.Labels = normalizeLabels(ghPR.Labels, itemLabelUpdatedAt(mr.UpdatedAt, mr.CreatedAt))
+	mr.Labels = dbLabels(platformMR.Labels, itemLabelUpdatedAt(mr.UpdatedAt, mr.CreatedAt))
 
 	return mr, nil
 }
@@ -100,122 +107,51 @@ func pullRequestWasMerged(ghPR *gh.PullRequest) bool {
 
 // NormalizeCommentEvent converts a GitHub IssueComment to a db.MREvent.
 func NormalizeCommentEvent(mrID int64, c *gh.IssueComment) db.MREvent {
-	event := normalizeIssueCommentBase(c)
-	event.MergeRequestID = mrID
-	event.DedupeKey = fmt.Sprintf("comment-%d", c.GetID())
-	return event
+	event := platformgithub.NormalizeCommentEvent(platform.RepoRef{}, 0, c)
+	return dbMREvent(mrID, event)
 }
 
 // NormalizeReviewEvent converts a GitHub PullRequestReview to a db.MREvent.
 func NormalizeReviewEvent(mrID int64, r *gh.PullRequestReview) db.MREvent {
-	event := db.MREvent{
-		MergeRequestID: mrID,
-		EventType:      "review",
-		DedupeKey:      fmt.Sprintf("review-%d", r.GetID()),
-		Author:         loginOrEmpty(r.GetUser()),
-		Body:           r.GetBody(),
-		Summary:        r.GetState(),
-	}
-	ghID := r.GetID()
-	event.PlatformID = &ghID
-	if r.SubmittedAt != nil {
-		event.CreatedAt = r.SubmittedAt.Time
-	}
-	return event
+	event := platformgithub.NormalizeReviewEvent(platform.RepoRef{}, 0, r)
+	return dbMREvent(mrID, event)
 }
 
 // NormalizeCommitEvent converts a GitHub RepositoryCommit to a db.MREvent.
 // Author is taken from the GitHub user login if available, falling back to
 // the git commit author name.
 func NormalizeCommitEvent(mrID int64, c *gh.RepositoryCommit) db.MREvent {
-	sha := c.GetSHA()
-	dedupeKey := sha
-	if len(sha) > 12 {
-		dedupeKey = sha[:12]
-	}
-
-	author := loginOrEmpty(c.GetAuthor())
-	if author == "" && c.GetCommit() != nil && c.GetCommit().GetAuthor() != nil {
-		author = c.GetCommit().GetAuthor().GetName()
-	}
-
-	event := db.MREvent{
-		MergeRequestID: mrID,
-		EventType:      "commit",
-		DedupeKey:      fmt.Sprintf("commit-%s", dedupeKey),
-		Author:         author,
-		Summary:        sha,
-	}
-	if c.GetCommit() != nil {
-		event.Body = c.GetCommit().GetMessage()
-		if c.GetCommit().Author != nil && c.GetCommit().Author.Date != nil {
-			event.CreatedAt = c.GetCommit().Author.Date.UTC()
-		}
-	}
-	return event
-}
-
-type forcePushMetadata struct {
-	BeforeSHA string `json:"before_sha"`
-	AfterSHA  string `json:"after_sha"`
-	Ref       string `json:"ref"`
-}
-
-type crossReferenceMetadata struct {
-	SourceType        string `json:"source_type"`
-	SourceOwner       string `json:"source_owner"`
-	SourceRepo        string `json:"source_repo"`
-	SourceNumber      int    `json:"source_number"`
-	SourceTitle       string `json:"source_title"`
-	SourceURL         string `json:"source_url"`
-	IsCrossRepository bool   `json:"is_cross_repository"`
-	WillCloseTarget   bool   `json:"will_close_target"`
-}
-
-type renamedTitleMetadata struct {
-	PreviousTitle string `json:"previous_title"`
-	CurrentTitle  string `json:"current_title"`
-}
-
-type baseRefChangedMetadata struct {
-	PreviousRefName string `json:"previous_ref_name"`
-	CurrentRefName  string `json:"current_ref_name"`
+	event := platformgithub.NormalizeCommitEvent(platform.RepoRef{}, 0, c)
+	return dbMREvent(mrID, event)
 }
 
 func NormalizeForcePushEvent(mrID int64, fp ForcePushEvent) db.MREvent {
-	metadata, _ := json.Marshal(forcePushMetadata{
+	event := platformgithub.NormalizeForcePushEvent(platform.RepoRef{}, 0, platformgithub.ForcePushEvent{
+		Actor:     fp.Actor,
 		BeforeSHA: fp.BeforeSHA,
 		AfterSHA:  fp.AfterSHA,
 		Ref:       fp.Ref,
+		CreatedAt: fp.CreatedAt,
 	})
-
-	return db.MREvent{
-		MergeRequestID: mrID,
-		EventType:      "force_push",
-		Author:         fp.Actor,
-		Summary:        shortSHA(fp.BeforeSHA) + " -> " + shortSHA(fp.AfterSHA),
-		MetadataJSON:   string(metadata),
-		CreatedAt:      fp.CreatedAt,
-		DedupeKey:      fmt.Sprintf("force-push-%s-%s", fp.BeforeSHA, fp.AfterSHA),
-	}
+	return dbMREvent(mrID, event)
 }
 
 func NormalizeTimelineEvent(mrID int64, event PullRequestTimelineEvent) *db.MREvent {
-	switch event.EventType {
-	case "force_push":
-		normalized := NormalizeForcePushEvent(mrID, ForcePushEvent{
-			Actor:     event.Actor,
-			BeforeSHA: event.BeforeSHA,
-			AfterSHA:  event.AfterSHA,
-			Ref:       event.Ref,
-			CreatedAt: event.CreatedAt,
-		})
-		if event.NodeID != "" {
-			normalized.DedupeKey = timelineDedupeKey(event)
-		}
-		return &normalized
-	case "cross_referenced":
-		metadata, _ := json.Marshal(crossReferenceMetadata{
+	normalized := platformgithub.NormalizeTimelineEvent(
+		platform.RepoRef{},
+		0,
+		platformgithub.PullRequestTimelineEvent{
+			NodeID:            event.NodeID,
+			EventType:         event.EventType,
+			Actor:             event.Actor,
+			CreatedAt:         event.CreatedAt,
+			BeforeSHA:         event.BeforeSHA,
+			AfterSHA:          event.AfterSHA,
+			Ref:               event.Ref,
+			PreviousTitle:     event.PreviousTitle,
+			CurrentTitle:      event.CurrentTitle,
+			PreviousRefName:   event.PreviousRefName,
+			CurrentRefName:    event.CurrentRefName,
 			SourceType:        event.SourceType,
 			SourceOwner:       event.SourceOwner,
 			SourceRepo:        event.SourceRepo,
@@ -224,73 +160,13 @@ func NormalizeTimelineEvent(mrID int64, event PullRequestTimelineEvent) *db.MREv
 			SourceURL:         event.SourceURL,
 			IsCrossRepository: event.IsCrossRepository,
 			WillCloseTarget:   event.WillCloseTarget,
-		})
-		return &db.MREvent{
-			MergeRequestID: mrID,
-			EventType:      "cross_referenced",
-			Author:         event.Actor,
-			Summary:        fmt.Sprintf("Referenced from %s/%s#%d", event.SourceOwner, event.SourceRepo, event.SourceNumber),
-			MetadataJSON:   string(metadata),
-			CreatedAt:      event.CreatedAt,
-			DedupeKey:      timelineDedupeKey(event),
-		}
-	case "renamed_title":
-		metadata, _ := json.Marshal(renamedTitleMetadata{
-			PreviousTitle: event.PreviousTitle,
-			CurrentTitle:  event.CurrentTitle,
-		})
-		return &db.MREvent{
-			MergeRequestID: mrID,
-			EventType:      "renamed_title",
-			Author:         event.Actor,
-			Summary:        fmt.Sprintf("%q -> %q", event.PreviousTitle, event.CurrentTitle),
-			MetadataJSON:   string(metadata),
-			CreatedAt:      event.CreatedAt,
-			DedupeKey:      timelineDedupeKey(event),
-		}
-	case "base_ref_changed":
-		metadata, _ := json.Marshal(baseRefChangedMetadata{
-			PreviousRefName: event.PreviousRefName,
-			CurrentRefName:  event.CurrentRefName,
-		})
-		return &db.MREvent{
-			MergeRequestID: mrID,
-			EventType:      "base_ref_changed",
-			Author:         event.Actor,
-			Summary:        event.PreviousRefName + " -> " + event.CurrentRefName,
-			MetadataJSON:   string(metadata),
-			CreatedAt:      event.CreatedAt,
-			DedupeKey:      timelineDedupeKey(event),
-		}
-	default:
+		},
+	)
+	if normalized == nil {
 		return nil
 	}
-}
-
-func timelineDedupeKey(event PullRequestTimelineEvent) string {
-	if event.NodeID != "" {
-		return "timeline-" + event.NodeID
-	}
-	raw := strings.Join([]string{
-		event.EventType,
-		event.CreatedAt.UTC().Format(time.RFC3339Nano),
-		event.Actor,
-		event.BeforeSHA,
-		event.AfterSHA,
-		event.Ref,
-		event.PreviousTitle,
-		event.CurrentTitle,
-		event.PreviousRefName,
-		event.CurrentRefName,
-		event.SourceType,
-		event.SourceOwner,
-		event.SourceRepo,
-		fmt.Sprint(event.SourceNumber),
-		event.SourceURL,
-		fmt.Sprint(event.IsCrossRepository),
-		fmt.Sprint(event.WillCloseTarget),
-	}, "\x00")
-	return "timeline-" + shortHash(raw)
+	eventDB := dbMREvent(mrID, *normalized)
+	return &eventDB
 }
 
 // DeriveOverallCIStatus computes an aggregate CI status from check runs
@@ -303,26 +179,8 @@ func DeriveOverallCIStatus(
 	runs []*gh.CheckRun,
 	combined *gh.CombinedStatus,
 ) string {
-	status := deriveCIStatusFromChecks(normalizeCIChecks(
-		runs,
-		combinedStatuses(combined),
-	))
-	if combined == nil || combined.GetTotalCount() == 0 {
-		return status
-	}
-	switch combined.GetState() {
-	case "failure", "error":
-		return "failure"
-	case "pending":
-		if status != "failure" {
-			return "pending"
-		}
-	case "success":
-		if status == "" {
-			return "success"
-		}
-	}
-	return status
+	checks := platformgithub.NormalizeCIChecks(platform.RepoRef{}, runs, combined)
+	return platformgithub.DeriveOverallCIStatus(checks, combined)
 }
 
 // DeriveReviewDecision computes the aggregate review decision from a list of
@@ -390,89 +248,12 @@ func NormalizeCIChecks(
 	return string(b)
 }
 
-type ciCheckCandidate struct {
-	check db.CICheck
-	name  string
-	key   string
-	at    time.Time
-	id    int64
-	order int
-}
-
 func normalizeCIChecks(runs []*gh.CheckRun, statuses []*gh.RepoStatus) []db.CICheck {
-	candidates := make([]ciCheckCandidate, 0, len(runs)+len(statuses))
-	for _, r := range runs {
-		candidates = append(candidates, ciCheckCandidate{
-			check: db.CICheck{
-				Name:       r.GetName(),
-				Status:     r.GetStatus(),
-				Conclusion: r.GetConclusion(),
-				URL:        r.GetHTMLURL(),
-				App:        appName(r),
-			},
-			name:  r.GetName(),
-			key:   checkRunDedupeKey(r),
-			at:    checkRunRecency(r),
-			id:    r.GetID(),
-			order: len(candidates),
-		})
-	}
-	for _, s := range statuses {
-		candidates = append(candidates, ciCheckCandidate{
-			check: db.CICheck{
-				Name:       s.GetContext(),
-				Status:     repoStatusCheckState(s),
-				Conclusion: repoStatusConclusion(s),
-				URL:        sanitizeURL(s.GetTargetURL()),
-				App:        s.GetContext(),
-			},
-			name:  s.GetContext(),
-			key:   repoStatusDedupeKey(s),
-			at:    repoStatusRecency(s),
-			id:    s.GetID(),
-			order: len(candidates),
-		})
-	}
-	if len(candidates) == 0 {
-		return nil
-	}
-
-	byName := make(map[string]ciCheckCandidate, len(candidates))
-	orderedKeys := make([]string, 0, len(candidates))
-	checks := make([]db.CICheck, 0, len(candidates))
-	for _, candidate := range candidates {
-		if candidate.key == "" {
-			checks = append(checks, candidate.check)
-			continue
-		}
-		existing, ok := byName[candidate.key]
-		if !ok {
-			orderedKeys = append(orderedKeys, candidate.key)
-			byName[candidate.key] = candidate
-			continue
-		}
-		if ciCheckCandidateIsNewer(existing, candidate) {
-			byName[candidate.key] = candidate
-		}
-	}
-	for _, key := range orderedKeys {
-		checks = append(checks, byName[key].check)
-	}
-	sortCIChecksByName(checks)
-	return checks
-}
-
-func ciCheckCandidateIsNewer(existing, candidate ciCheckCandidate) bool {
-	if existing.at.IsZero() != candidate.at.IsZero() {
-		return existing.at.IsZero()
-	}
-	if !existing.at.Equal(candidate.at) {
-		return candidate.at.After(existing.at)
-	}
-	if existing.id != candidate.id {
-		return candidate.id > existing.id
-	}
-	return candidate.order > existing.order
+	return dbCIChecks(platformgithub.NormalizeCIChecks(
+		platform.RepoRef{},
+		runs,
+		&gh.CombinedStatus{Statuses: statuses},
+	))
 }
 
 func combinedStatuses(combined *gh.CombinedStatus) []*gh.RepoStatus {
@@ -482,125 +263,31 @@ func combinedStatuses(combined *gh.CombinedStatus) []*gh.RepoStatus {
 	return combined.Statuses
 }
 
-func checkRunRecency(r *gh.CheckRun) time.Time {
-	completedAt := timestampTime(r.CompletedAt)
-	if !completedAt.IsZero() {
-		return completedAt
-	}
-	startedAt := timestampTime(r.StartedAt)
-	if !startedAt.IsZero() {
-		return startedAt
-	}
-	if suite := r.GetCheckSuite(); suite != nil {
-		return timestampTime(suite.CreatedAt)
-	}
-	return time.Time{}
-}
-
-func checkRunDedupeKey(r *gh.CheckRun) string {
-	name := r.GetName()
-	if name == "" {
-		return ""
-	}
-	return "check-run\x00" + appName(r) + "\x00" + name
-}
-
-func repoStatusDedupeKey(s *gh.RepoStatus) string {
-	context := s.GetContext()
-	if context == "" {
-		return ""
-	}
-	return "status\x00" + context
-}
-
-func repoStatusRecency(s *gh.RepoStatus) time.Time {
-	updatedAt := timestampTime(s.UpdatedAt)
-	if !updatedAt.IsZero() {
-		return updatedAt
-	}
-	return timestampTime(s.CreatedAt)
-}
-
-func timestampTime(t *gh.Timestamp) time.Time {
-	if t == nil {
-		return time.Time{}
-	}
-	return t.Time
-}
-
-func repoStatusCheckState(s *gh.RepoStatus) string {
-	switch s.GetState() {
-	case "pending", "expected":
-		return "in_progress"
-	default:
-		return "completed"
-	}
-}
-
-func repoStatusConclusion(s *gh.RepoStatus) string {
-	switch s.GetState() {
-	case "pending", "expected":
-		return ""
-	case "failure", "error":
-		return "failure"
-	default:
-		return s.GetState()
-	}
-}
-
-func sortCIChecksByName(checks []db.CICheck) {
-	slices.SortStableFunc(checks, db.CICheck.Compare)
-}
-
-func shortSHA(sha string) string {
-	if len(sha) > 7 {
-		return sha[:7]
-	}
-	return sha
-}
-
-func shortHash(value string) string {
-	sum := sha1.Sum([]byte(value))
-	return hex.EncodeToString(sum[:])[:12]
-}
-
-func appName(r *gh.CheckRun) string {
-	if r.GetApp() != nil {
-		return r.GetApp().GetName()
-	}
-	return ""
-}
-
 // --- Issues ---
 
 // NormalizeIssue converts a GitHub Issue to a db.Issue.
 func NormalizeIssue(repoID int64, ghIssue *gh.Issue) (*db.Issue, error) {
-	if ghIssue == nil {
-		return nil, ErrNilIssue
+	platformIssue, err := platformgithub.NormalizeIssue(platform.RepoRef{}, ghIssue)
+	if err != nil {
+		return nil, err
 	}
 	issue := &db.Issue{
-		RepoID:       repoID,
-		PlatformID:   ghIssue.GetID(),
-		Number:       ghIssue.GetNumber(),
-		URL:          ghIssue.GetHTMLURL(),
-		Title:        ghIssue.GetTitle(),
-		Author:       loginOrEmpty(ghIssue.GetUser()),
-		State:        ghIssue.GetState(),
-		Body:         ghIssue.GetBody(),
-		CommentCount: ghIssue.GetComments(),
+		RepoID:             repoID,
+		PlatformID:         platformIssue.PlatformID,
+		PlatformExternalID: platformIssue.PlatformExternalID,
+		Number:             platformIssue.Number,
+		URL:                platformIssue.URL,
+		Title:              platformIssue.Title,
+		Author:             platformIssue.Author,
+		State:              platformIssue.State,
+		Body:               platformIssue.Body,
+		CommentCount:       platformIssue.CommentCount,
+		CreatedAt:          platformIssue.CreatedAt,
+		UpdatedAt:          platformIssue.UpdatedAt,
+		LastActivityAt:     platformIssue.LastActivityAt,
+		ClosedAt:           platformIssue.ClosedAt,
 	}
-	if ghIssue.CreatedAt != nil {
-		issue.CreatedAt = ghIssue.CreatedAt.Time
-	}
-	if ghIssue.UpdatedAt != nil {
-		issue.UpdatedAt = ghIssue.UpdatedAt.Time
-		issue.LastActivityAt = ghIssue.UpdatedAt.Time
-	}
-	if ghIssue.ClosedAt != nil {
-		t := ghIssue.ClosedAt.Time
-		issue.ClosedAt = &t
-	}
-	issue.Labels = normalizeLabels(ghIssue.Labels, itemLabelUpdatedAt(issue.UpdatedAt, issue.CreatedAt))
+	issue.Labels = dbLabels(platformIssue.Labels, itemLabelUpdatedAt(issue.UpdatedAt, issue.CreatedAt))
 	return issue, nil
 }
 
@@ -611,61 +298,84 @@ func itemLabelUpdatedAt(updatedAt, createdAt time.Time) time.Time {
 	return createdAt
 }
 
-func normalizeLabels(labels []*gh.Label, updatedAt time.Time) []db.Label {
+func dbMREvent(mrID int64, event platform.MergeRequestEvent) db.MREvent {
+	dbEvent := db.MREvent{
+		MergeRequestID:     mrID,
+		PlatformExternalID: event.PlatformExternalID,
+		EventType:          event.EventType,
+		Author:             event.Author,
+		Summary:            event.Summary,
+		Body:               event.Body,
+		MetadataJSON:       event.MetadataJSON,
+		CreatedAt:          event.CreatedAt,
+		DedupeKey:          event.DedupeKey,
+	}
+	if event.PlatformID != 0 || event.EventType == "issue_comment" || event.EventType == "review" {
+		platformID := event.PlatformID
+		dbEvent.PlatformID = &platformID
+	}
+	return dbEvent
+}
+
+func dbIssueEvent(issueID int64, event platform.IssueEvent) db.IssueEvent {
+	dbEvent := db.IssueEvent{
+		IssueID:            issueID,
+		PlatformExternalID: event.PlatformExternalID,
+		EventType:          event.EventType,
+		Author:             event.Author,
+		Summary:            event.Summary,
+		Body:               event.Body,
+		MetadataJSON:       event.MetadataJSON,
+		CreatedAt:          event.CreatedAt,
+		DedupeKey:          event.DedupeKey,
+	}
+	if event.PlatformID != 0 || event.EventType == "issue_comment" {
+		platformID := event.PlatformID
+		dbEvent.PlatformID = &platformID
+	}
+	return dbEvent
+}
+
+func dbLabels(labels []platform.Label, updatedAt time.Time) []db.Label {
 	if len(labels) == 0 {
 		return nil
 	}
 	out := make([]db.Label, 0, len(labels))
-	for _, l := range labels {
-		if l == nil {
-			continue
-		}
-		name := strings.TrimSpace(l.GetName())
-		if name == "" {
-			continue
-		}
+	for _, label := range labels {
 		out = append(out, db.Label{
-			PlatformID:  l.GetID(),
-			Name:        name,
-			Description: l.GetDescription(),
-			Color:       l.GetColor(),
-			IsDefault:   l.GetDefault(),
-			UpdatedAt:   updatedAt,
+			PlatformID:         label.PlatformID,
+			PlatformExternalID: label.PlatformExternalID,
+			Name:               label.Name,
+			Description:        label.Description,
+			Color:              label.Color,
+			IsDefault:          label.IsDefault,
+			UpdatedAt:          updatedAt,
 		})
 	}
-	if len(out) == 0 {
+	return out
+}
+
+func dbCIChecks(checks []platform.CICheck) []db.CICheck {
+	if len(checks) == 0 {
 		return nil
+	}
+	out := make([]db.CICheck, 0, len(checks))
+	for _, check := range checks {
+		out = append(out, db.CICheck{
+			Name:       check.Name,
+			Status:     check.Status,
+			Conclusion: check.Conclusion,
+			URL:        check.URL,
+			App:        check.App,
+		})
 	}
 	return out
 }
 
 // NormalizeIssueCommentEvent converts a GitHub IssueComment to a db.IssueEvent.
 func NormalizeIssueCommentEvent(issueID int64, c *gh.IssueComment) db.IssueEvent {
-	event := normalizeIssueCommentBase(c)
-	return db.IssueEvent{
-		IssueID:    issueID,
-		PlatformID: event.PlatformID,
-		EventType:  event.EventType,
-		Author:     event.Author,
-		Summary:    event.Summary,
-		Body:       event.Body,
-		CreatedAt:  event.CreatedAt,
-		DedupeKey:  fmt.Sprintf("issue-comment-%d", c.GetID()),
-	}
-}
-
-func normalizeIssueCommentBase(c *gh.IssueComment) db.MREvent {
-	event := db.MREvent{
-		EventType: "issue_comment",
-		Author:    loginOrEmpty(c.GetUser()),
-		Body:      c.GetBody(),
-	}
-	ghID := c.GetID()
-	event.PlatformID = &ghID
-	if c.CreatedAt != nil {
-		event.CreatedAt = c.CreatedAt.Time
-	}
-	return event
+	event := platformgithub.NormalizeIssueCommentEvent(platform.RepoRef{}, 0, c)
+	return dbIssueEvent(issueID, event)
 }
 
 // loginOrEmpty returns the GitHub login for a user, or "" if user is nil.

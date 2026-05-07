@@ -1,0 +1,4 @@
+ARG GITLAB_RUNTIME_IMAGE=middleman/gitlab-ce-fixture-runtime:18.9.5-ce.0
+FROM ${GITLAB_RUNTIME_IMAGE}
+
+COPY fixture-data/ /opt/middleman/gitlab-fixture/data/

@@ -52,6 +52,29 @@ function currentLocationPath(): string {
   return window.location.pathname + window.location.search;
 }
 
+function parseProviderNumberedRef(search: string): NumberedItemRef | undefined {
+  const sp = new URLSearchParams(search);
+  const provider = sp.get("provider")?.trim();
+  const repoPath = sp.get("repo_path")?.replace(/^\/+|\/+$/g, "");
+  const numberText = sp.get("number");
+  if (!provider || !repoPath || !numberText) return undefined;
+
+  const number = parseInt(numberText, 10);
+  const pathParts = repoPath.split("/").filter(Boolean);
+  if (!Number.isFinite(number) || number <= 0 || pathParts.length < 2) return undefined;
+
+  const platformHost = sp.get("platform_host") ?? undefined;
+  const ref: NumberedItemRef = {
+    provider,
+    owner: pathParts.slice(0, -1).join("/"),
+    name: pathParts[pathParts.length - 1]!,
+    number,
+    repoPath,
+    ...(platformHost && { platformHost }),
+  };
+  return ref;
+}
+
 function parseRoute(fullPath: string): Route {
   const qIdx = fullPath.indexOf("?");
   const pathname = qIdx >= 0 ? fullPath.slice(0, qIdx) : fullPath;
@@ -72,32 +95,25 @@ function parseRoute(fullPath: string): Route {
       if (repo) r.repo = repo;
       return r;
     }
-    const prMatch = path.match(
-      /^\/focus\/pr\/([^/]+)\/([^/]+)\/(\d+)$/,
-    );
-    if (prMatch) {
-      return {
-        page: "focus",
-        itemType: "pr",
-        owner: prMatch[1]!,
-        name: prMatch[2]!,
-        number: parseInt(prMatch[3]!, 10),
-      };
+    if (path === "/focus/pr") {
+      const selected = parseProviderNumberedRef(search);
+      if (selected) {
+        return {
+          page: "focus",
+          itemType: "pr",
+          ...selected,
+        };
+      }
     }
-    const issueMatch = path.match(
-      /^\/focus\/issue\/([^/]+)\/([^/]+)\/(\d+)$/,
-    );
-    if (issueMatch) {
-      const sp = new URLSearchParams(search);
-      const platformHost = sp.get("platform_host") ?? undefined;
-      return {
-        page: "focus",
-        itemType: "issue",
-        owner: issueMatch[1]!,
-        name: issueMatch[2]!,
-        number: parseInt(issueMatch[3]!, 10),
-        ...(platformHost && { platformHost }),
-      };
+    if (path === "/focus/issue") {
+      const selected = parseProviderNumberedRef(search);
+      if (selected) {
+        return {
+          page: "focus",
+          itemType: "issue",
+          ...selected,
+        };
+      }
     }
   }
   if (path === "/design-system") {
@@ -105,28 +121,18 @@ function parseRoute(fullPath: string): Route {
   }
   if (path.startsWith("/pulls")) {
     const rest = path.slice("/pulls".length);
+    if (rest === "/detail" || rest === "/detail/files") {
+      const selected = parseProviderNumberedRef(search);
+      if (selected) {
+        return {
+          page: "pulls",
+          view: "list",
+          selected,
+          ...(rest === "/detail/files" && { tab: "files" as const }),
+        };
+      }
+    }
     if (rest === "/board") return { page: "pulls", view: "board" };
-    const filesMatch = rest.match(/^\/([^/]+)\/([^/]+)\/(\d+)\/files$/);
-    if (filesMatch) {
-      return {
-        page: "pulls",
-        view: "list",
-        selected: {
-          owner: filesMatch[1]!,
-          name: filesMatch[2]!,
-          number: parseInt(filesMatch[3]!, 10),
-        },
-        tab: "files",
-      };
-    }
-    const match = rest.match(/^\/([^/]+)\/([^/]+)\/(\d+)$/);
-    if (match) {
-      return {
-        page: "pulls",
-        view: "list",
-        selected: { owner: match[1]!, name: match[2]!, number: parseInt(match[3]!, 10) },
-      };
-    }
     return { page: "pulls", view: "list" };
   }
   if (path === "/repos") {
@@ -134,19 +140,14 @@ function parseRoute(fullPath: string): Route {
   }
   if (path === "/settings" && !isEmbedded()) return { page: "settings" };
   if (path.startsWith("/issues")) {
-    const match = path.slice("/issues".length).match(/^\/([^/]+)\/([^/]+)\/(\d+)$/);
-    if (match) {
-      const sp = new URLSearchParams(search);
-      const platformHost = sp.get("platform_host") ?? undefined;
-      return {
-        page: "issues",
-        selected: {
-          owner: match[1]!,
-          name: match[2]!,
-          number: parseInt(match[3]!, 10),
-          ...(platformHost && { platformHost }),
-        },
-      };
+    if (path === "/issues/detail") {
+      const selected = parseProviderNumberedRef(search);
+      if (selected) {
+        return {
+          page: "issues",
+          selected,
+        };
+      }
     }
     return { page: "issues" };
   }
@@ -197,23 +198,8 @@ export function isFocusMode(): boolean {
   return route.page === "focus";
 }
 
-export function buildItemRoute(
-  type: "pr" | "issue",
-  owner: string,
-  name: string,
-  number: number,
-  platformHost?: string,
-): string {
-  return buildRoutedItemRoute(
-    {
-      itemType: type,
-      owner,
-      name,
-      number,
-      ...(platformHost && { platformHost }),
-    },
-    { focus: isFocusMode() },
-  );
+export function buildItemRoute(ref: RoutableItemRef): string {
+  return buildRoutedItemRoute(ref, { focus: isFocusMode() });
 }
 
 export function navigate(path: string, state?: Record<string, unknown>): void {

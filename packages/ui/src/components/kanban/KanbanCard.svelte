@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PullRequest } from "../../api/types.js";
   import { timeAgo } from "../../utils/time.js";
+  import { kanbanDragPayloadFromPull } from "./drag.js";
 
   interface Props {
     pr: PullRequest;
@@ -10,20 +11,14 @@
   const { pr, onclick }: Props = $props();
 
   const ago = $derived(timeAgo(pr.LastActivityAt));
-  const repoLabel = $derived(
-    pr.repo_owner && pr.repo_name
-      ? `${pr.repo_name}`
-      : `#${pr.Number}`
-  );
+  const repoLabel = $derived(pr.repo.name);
 
   function handleDragStart(e: DragEvent): void {
     if (!e.dataTransfer) return;
     e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", JSON.stringify({
-      owner: pr.repo_owner ?? "",
-      name: pr.repo_name ?? "",
-      number: pr.Number,
-    }));
+    e.dataTransfer.setData("text/plain", JSON.stringify(
+      kanbanDragPayloadFromPull(pr),
+    ));
   }
 </script>
 

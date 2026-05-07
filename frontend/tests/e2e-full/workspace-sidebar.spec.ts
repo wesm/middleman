@@ -104,11 +104,9 @@ test.describe("workspace sidebar full-stack", () => {
       });
 
       const createResponse = await api.post(
-        "/api/v1/repos/acme/widgets/issues/10/workspace",
+        "/api/v1/issues/github/acme/widgets/10/workspace",
         {
-          data: {
-            platform_host: "github.com",
-          },
+          data: {},
         },
       );
       expect(createResponse.status()).toBe(202);
@@ -160,11 +158,9 @@ test.describe("workspace sidebar full-stack", () => {
       expect(settingsResponse.status()).toBe(200);
 
       const createResponse = await api.post(
-        "/api/v1/repos/acme/widgets/issues/10/workspace",
+        "/api/v1/issues/github/acme/widgets/10/workspace",
         {
-          data: {
-            platform_host: "github.com",
-          },
+          data: {},
         },
       );
       expect(createResponse.status()).toBe(202);

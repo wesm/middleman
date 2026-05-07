@@ -1,0 +1,339 @@
+package gitlab
+
+import (
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/wesm/middleman/internal/platform"
+	gitlab "gitlab.com/gitlab-org/api/client-go"
+)
+
+func TestNormalizeProjectPreservesGitLabIdentity(t *testing.T) {
+	assert := assert.New(t)
+	createdAt := time.Date(2026, 4, 1, 10, 0, 0, 0, time.UTC)
+	updatedAt := createdAt.Add(time.Hour)
+
+	repo, err := NormalizeProject("gitlab.example.com", &gitlab.Project{
+		ID:                42,
+		Description:       "project description",
+		Path:              "project",
+		PathWithNamespace: "Group/SubGroup/Project",
+		DefaultBranch:     "main",
+		WebURL:            "https://gitlab.example.com/Group/SubGroup/Project",
+		HTTPURLToRepo:     "https://gitlab.example.com/Group/SubGroup/Project.git",
+		Visibility:        gitlab.PrivateVisibility,
+		Archived:          true,
+		CreatedAt:         &createdAt,
+		UpdatedAt:         &updatedAt,
+	})
+	require.NoError(t, err)
+
+	assert.Equal(platform.KindGitLab, repo.Ref.Platform)
+	assert.Equal("gitlab.example.com", repo.Ref.Host)
+	assert.Equal("Group/SubGroup/Project", repo.Ref.RepoPath)
+	assert.Equal("Group/SubGroup", repo.Ref.Owner)
+	assert.Equal("project", repo.Ref.Name)
+	assert.Equal(int64(42), repo.Ref.PlatformID)
+	assert.Equal("42", repo.Ref.PlatformExternalID)
+	assert.True(repo.Private)
+	assert.True(repo.Archived)
+	assert.Equal(createdAt, repo.CreatedAt)
+	assert.Equal(updatedAt, repo.UpdatedAt)
+}
+
+func TestNormalizeProjectRejectsUnsafePathWithNamespace(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		repoName string
+	}{
+		{name: "parent traversal", path: "group/../../outside/project", repoName: "project"},
+		{name: "dot segment", path: "group/./project", repoName: "project"},
+		{name: "empty segment", path: "group//project", repoName: "project"},
+		{name: "absolute", path: "/group/project", repoName: "project"},
+		{name: "backslash", path: `group\project`, repoName: "project"},
+		{name: "separator in name", path: "group/project", repoName: "nested/project"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NormalizeProject("gitlab.example.com", &gitlab.Project{
+				ID:                42,
+				Path:              tt.repoName,
+				PathWithNamespace: tt.path,
+			})
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "unsafe GitLab project path")
+		})
+	}
+}
+
+func TestNormalizeMergeRequestUsesIIDAndPipelineStatus(t *testing.T) {
+	assert := assert.New(t)
+	createdAt := time.Date(2026, 4, 2, 10, 0, 0, 0, time.UTC)
+	updatedAt := createdAt.Add(time.Hour)
+	mergedAt := updatedAt.Add(time.Hour)
+
+	mr := NormalizeMergeRequest(testGitLabRepoRef(), &gitlab.BasicMergeRequest{
+		ID:                  1001,
+		IID:                 7,
+		ProjectID:           42,
+		Title:               "Ship GitLab",
+		State:               "merged",
+		Description:         "body",
+		SourceBranch:        "feature",
+		TargetBranch:        "main",
+		SHA:                 "abc123",
+		UserNotesCount:      4,
+		Draft:               true,
+		WebURL:              "https://gitlab.example.com/group/project/-/merge_requests/7",
+		Author:              &gitlab.BasicUser{Username: "alice", Name: "Alice A."},
+		CreatedAt:           &createdAt,
+		UpdatedAt:           &updatedAt,
+		MergedAt:            &mergedAt,
+		Labels:              gitlab.Labels{"bug"},
+		DetailedMergeStatus: "mergeable",
+	}, &gitlab.PipelineInfo{ID: 501, Status: "scheduled"})
+
+	assert.Equal(int64(1001), mr.PlatformID)
+	assert.Equal("1001", mr.PlatformExternalID)
+	assert.Equal(7, mr.Number)
+	assert.Equal("alice", mr.Author)
+	assert.Equal("Alice A.", mr.AuthorDisplayName)
+	assert.Equal("merged", mr.State)
+	assert.True(mr.IsDraft)
+	assert.Equal("feature", mr.HeadBranch)
+	assert.Equal("main", mr.BaseBranch)
+	assert.Equal("abc123", mr.HeadSHA)
+	assert.Equal(4, mr.CommentCount)
+	assert.Equal("mergeable", mr.ReviewDecision)
+	assert.Equal("pending", mr.CIStatus)
+	assert.Equal(createdAt, mr.CreatedAt)
+	assert.Equal(updatedAt, mr.LastActivityAt)
+	require.NotNil(t, mr.MergedAt)
+	assert.Equal(mergedAt, *mr.MergedAt)
+	require.Len(t, mr.Labels, 1)
+	assert.Equal("bug", mr.Labels[0].Name)
+}
+
+func TestNormalizeMergeRequestMapsGitLabStates(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "opened", input: "opened", want: "open"},
+		{name: "closed", input: "closed", want: "closed"},
+		{name: "merged", input: "merged", want: "merged"},
+		{name: "unknown", input: "locked", want: "locked"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mr := NormalizeMergeRequest(testGitLabRepoRef(), &gitlab.BasicMergeRequest{
+				ID:    1001,
+				IID:   7,
+				State: tt.input,
+			}, nil)
+
+			assert.Equal(t, tt.want, mr.State)
+		})
+	}
+}
+
+func TestNormalizeIssueUsesIIDAndLabels(t *testing.T) {
+	assert := assert.New(t)
+	closedAt := time.Date(2026, 4, 3, 10, 0, 0, 0, time.UTC)
+
+	issue := NormalizeIssue(testGitLabRepoRef(), &gitlab.Issue{
+		ID:             2001,
+		IID:            5,
+		Title:          "Fix issue",
+		State:          "closed",
+		Description:    "details",
+		WebURL:         "https://gitlab.example.com/group/project/-/issues/5",
+		Author:         &gitlab.IssueAuthor{Username: "bob"},
+		UserNotesCount: 2,
+		ClosedAt:       &closedAt,
+		Labels:         gitlab.Labels{"bug", "p1"},
+	})
+
+	assert.Equal(int64(2001), issue.PlatformID)
+	assert.Equal("2001", issue.PlatformExternalID)
+	assert.Equal(5, issue.Number)
+	assert.Equal("bob", issue.Author)
+	assert.Equal("closed", issue.State)
+	assert.Equal(2, issue.CommentCount)
+	require.NotNil(t, issue.ClosedAt)
+	assert.Equal(closedAt, *issue.ClosedAt)
+	assert.Equal([]string{"bug", "p1"}, []string{issue.Labels[0].Name, issue.Labels[1].Name})
+}
+
+func TestNormalizeIssueMapsGitLabStates(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "opened", input: "opened", want: "open"},
+		{name: "closed", input: "closed", want: "closed"},
+		{name: "unknown", input: "reopened", want: "reopened"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			issue := NormalizeIssue(testGitLabRepoRef(), &gitlab.Issue{
+				ID:    2001,
+				IID:   5,
+				State: tt.input,
+			})
+
+			assert.Equal(t, tt.want, issue.State)
+		})
+	}
+}
+
+func TestNormalizeNotesDropsSystemNotes(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	createdAt := time.Date(2026, 4, 4, 10, 0, 0, 0, time.UTC)
+	notes := []*gitlab.Note{
+		{ID: 1, Body: "visible", System: false, Author: gitlab.NoteAuthor{Username: "alice"}, CreatedAt: &createdAt},
+		{ID: 2, Body: "assigned", System: true, Author: gitlab.NoteAuthor{Username: "root"}, CreatedAt: &createdAt},
+	}
+
+	mrEvents := NormalizeMergeRequestNotes(testGitLabRepoRef(), 7, notes)
+	require.Len(mrEvents, 1)
+	assert.Equal("issue_comment", mrEvents[0].EventType)
+	assert.Equal("visible", mrEvents[0].Body)
+	assert.Equal("gitlab:gitlab.example.com:group/project:mr:7:note:1", mrEvents[0].DedupeKey)
+
+	issueEvents := NormalizeIssueNotes(testGitLabRepoRef(), 5, notes)
+	require.Len(issueEvents, 1)
+	assert.Equal("issue_comment", issueEvents[0].EventType)
+	assert.Equal("visible", issueEvents[0].Body)
+	assert.Equal("gitlab:gitlab.example.com:group/project:issue:5:note:1", issueEvents[0].DedupeKey)
+}
+
+func TestNormalizeNotesDedupeKeyIncludesRepositoryAndParent(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	notes := []*gitlab.Note{
+		{ID: 1, Body: "same note id", Author: gitlab.NoteAuthor{Username: "alice"}},
+	}
+	otherRepo := testGitLabRepoRef()
+	otherRepo.PlatformID = 43
+	otherRepo.RepoPath = "other/project"
+
+	firstMR := NormalizeMergeRequestNotes(testGitLabRepoRef(), 7, notes)
+	secondMR := NormalizeMergeRequestNotes(otherRepo, 7, notes)
+	require.Len(firstMR, 1)
+	require.Len(secondMR, 1)
+	assert.NotEqual(firstMR[0].DedupeKey, secondMR[0].DedupeKey)
+
+	firstIssue := NormalizeIssueNotes(testGitLabRepoRef(), 5, notes)
+	secondIssue := NormalizeIssueNotes(testGitLabRepoRef(), 6, notes)
+	require.Len(firstIssue, 1)
+	require.Len(secondIssue, 1)
+	assert.NotEqual(firstIssue[0].DedupeKey, secondIssue[0].DedupeKey)
+}
+
+func TestNormalizeCommitReleaseTagAndPipeline(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	createdAt := time.Date(2026, 4, 5, 10, 0, 0, 0, time.UTC)
+	ref := testGitLabRepoRef()
+
+	commitEvent := NormalizeCommitEvent(ref, 7, &gitlab.Commit{
+		ID:         "abcdef123456",
+		Title:      "first line",
+		Message:    "first line\n\nbody",
+		AuthorName: "Alice",
+		CreatedAt:  &createdAt,
+	})
+	assert.Equal("commit", commitEvent.EventType)
+	assert.Equal("abcdef123456", commitEvent.Summary)
+	assert.Equal("first line\n\nbody", commitEvent.Body)
+	assert.Equal("gitlab-commit-abcdef123456", commitEvent.DedupeKey)
+
+	publishedAt := createdAt.Add(time.Hour)
+	release := NormalizeRelease(ref, &gitlab.Release{
+		TagName:    "v1.0.0",
+		Name:       "One",
+		CreatedAt:  &createdAt,
+		ReleasedAt: &publishedAt,
+		Commit:     gitlab.Commit{ID: "abcdef"},
+	})
+	assert.Equal("v1.0.0", release.TagName)
+	assert.Equal("abcdef", release.TargetCommitish)
+	require.NotNil(release.PublishedAt)
+	assert.Equal(publishedAt, *release.PublishedAt)
+
+	tag := NormalizeTag(ref, &gitlab.Tag{
+		Name:   "v1.0.0",
+		Target: "abcdef",
+		Commit: &gitlab.Commit{WebURL: "https://gitlab.example.com/group/project/-/commit/abcdef"},
+	})
+	assert.Equal("v1.0.0", tag.Name)
+	assert.Equal("abcdef", tag.SHA)
+	assert.Equal("https://gitlab.example.com/group/project/-/commit/abcdef", tag.URL)
+
+	check := NormalizePipeline(ref, &gitlab.PipelineInfo{
+		ID:     501,
+		Status: "failed",
+		WebURL: "https://gitlab.example.com/group/project/-/pipelines/501",
+	})
+	assert.Equal("GitLab Pipeline", check.Name)
+	assert.Equal("completed", check.Status)
+	assert.Equal("failure", check.Conclusion)
+	assert.Equal("gitlab", check.App)
+}
+
+func TestGitLabCIStatusMappingTable(t *testing.T) {
+	tests := []struct {
+		name       string
+		gitlab     string
+		status     string
+		conclusion string
+		overall    string
+	}{
+		{name: "created", gitlab: "created", status: "in_progress", overall: "pending"},
+		{name: "waiting for resource", gitlab: "waiting_for_resource", status: "in_progress", overall: "pending"},
+		{name: "preparing", gitlab: "preparing", status: "in_progress", overall: "pending"},
+		{name: "pending", gitlab: "pending", status: "in_progress", overall: "pending"},
+		{name: "running", gitlab: "running", status: "in_progress", overall: "pending"},
+		{name: "success", gitlab: "success", status: "completed", conclusion: "success", overall: "success"},
+		{name: "failed", gitlab: "failed", status: "completed", conclusion: "failure", overall: "failure"},
+		{name: "canceled", gitlab: "canceled", status: "completed", conclusion: "cancelled", overall: "failure"},
+		{name: "cancelled", gitlab: "cancelled", status: "completed", conclusion: "cancelled", overall: "failure"},
+		{name: "skipped", gitlab: "skipped", status: "completed", conclusion: "skipped", overall: "success"},
+		{name: "manual", gitlab: "manual", status: "queued", overall: "pending"},
+		{name: "scheduled", gitlab: "scheduled", status: "queued", overall: "pending"},
+		{name: "unknown", gitlab: "archived", status: "completed", conclusion: "neutral", overall: "neutral"},
+		{name: "empty", gitlab: "", status: "", conclusion: "", overall: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			check := NormalizePipeline(testGitLabRepoRef(), &gitlab.PipelineInfo{ID: 1, Status: tt.gitlab})
+
+			assert.Equal(t, tt.status, check.Status)
+			assert.Equal(t, tt.conclusion, check.Conclusion)
+			assert.Equal(t, tt.overall, NormalizePipelineStatus(tt.gitlab))
+		})
+	}
+}
+
+func testGitLabRepoRef() platform.RepoRef {
+	return platform.RepoRef{
+		Platform:   platform.KindGitLab,
+		Host:       "gitlab.example.com",
+		Owner:      "group",
+		Name:       "project",
+		RepoPath:   "group/project",
+		PlatformID: 42,
+	}
+}

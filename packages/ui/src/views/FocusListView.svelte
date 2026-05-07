@@ -100,18 +100,23 @@
 
   function routeRefForPull(pr: PullRequest): PullRequestRouteRef {
     return {
-      owner: pr.repo_owner ?? "",
-      name: pr.repo_name ?? "",
+      provider: pr.repo.provider,
+      platformHost: pr.repo.platform_host,
+      owner: pr.repo.owner,
+      name: pr.repo.name,
+      repoPath: pr.repo.repo_path,
       number: pr.Number,
     };
   }
 
   function routeRefForIssue(issue: Issue): IssueRouteRef {
     return {
-      owner: issue.repo_owner ?? "",
-      name: issue.repo_name ?? "",
+      provider: issue.repo.provider,
+      platformHost: issue.repo.platform_host,
+      owner: issue.repo.owner,
+      name: issue.repo.name,
+      repoPath: issue.repo.repo_path,
       number: issue.Number,
-      platformHost: issue.platform_host,
     };
   }
 

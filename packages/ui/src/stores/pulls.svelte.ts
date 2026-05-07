@@ -1,10 +1,24 @@
 import type { KanbanStatus, PullRequest } from "../api/types.js";
+import {
+  providerItemPath,
+  providerRouteParams,
+  type ProviderRouteRef,
+} from "../api/provider-routes.js";
 import type { MiddlemanClient } from "../types.js";
 
 export type FetchPullResult =
   | { status: "found"; pull: PullRequest }
   | { status: "not-found" }
   | { status: "error"; message: string };
+
+export interface PullSelection {
+  provider: string;
+  platformHost?: string | undefined;
+  owner: string;
+  name: string;
+  repoPath: string;
+  number: number;
+}
 
 type PullsParams = {
   repo?: string;
@@ -45,9 +59,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
   let filterStarred = $state(false);
   let filterState = $state<string>("open");
   let searchQuery = $state<string | undefined>(undefined);
-  let selectedPR = $state<
-    { owner: string; name: string; number: number } | null
-  >(null);
+  let selectedPR = $state<PullSelection | null>(null);
 
   // --- reads ---
 
@@ -63,11 +75,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     return storeError;
   }
 
-  function getSelectedPR(): {
-    owner: string;
-    name: string;
-    number: number;
-  } | null {
+  function getSelectedPR(): PullSelection | null {
     return selectedPR;
   }
 
@@ -131,11 +139,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     if (sel === null) {
       const first = list[0];
       if (first !== undefined) {
-        selectPR(
-          first.repo_owner ?? "",
-          first.repo_name ?? "",
-          first.Number,
-        );
+        selectPRFromPull(first);
       }
       return;
     }
@@ -145,14 +149,10 @@ export function createPullsStore(opts: PullsStoreOptions) {
         (pr.repo_name ?? "") === sel.name &&
         pr.Number === sel.number,
     );
-    const next = list[idx + 1];
-    if (next !== undefined) {
-      selectPR(
-        next.repo_owner ?? "",
-        next.repo_name ?? "",
-        next.Number,
-      );
-    }
+      const next = list[idx + 1];
+      if (next !== undefined) {
+        selectPRFromPull(next);
+      }
   }
 
   function selectPrevPR(): void {
@@ -162,11 +162,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     if (sel === null) {
       const last = list[list.length - 1];
       if (last !== undefined) {
-        selectPR(
-          last.repo_owner ?? "",
-          last.repo_name ?? "",
-          last.Number,
-        );
+        selectPRFromPull(last);
       }
       return;
     }
@@ -179,11 +175,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     if (idx > 0) {
       const prev = list[idx - 1];
       if (prev !== undefined) {
-        selectPR(
-          prev.repo_owner ?? "",
-          prev.repo_name ?? "",
-          prev.Number,
-        );
+        selectPRFromPull(prev);
       }
     }
   }
@@ -208,8 +200,29 @@ export function createPullsStore(opts: PullsStoreOptions) {
     owner: string,
     name: string,
     number: number,
+    provider: string,
+    platformHost: string | undefined,
+    repoPath: string,
   ): void {
-    selectedPR = { owner, name, number };
+    selectedPR = {
+      provider,
+      ...(platformHost && { platformHost }),
+      owner,
+      name,
+      repoPath,
+      number,
+    };
+  }
+
+  function selectPRFromPull(pr: PullRequest): void {
+    selectPR(
+      pr.repo.owner,
+      pr.repo.name,
+      pr.Number,
+      pr.repo.provider,
+      pr.repo.platform_host,
+      pr.repo.repo_path,
+    );
   }
 
   function clearSelection(): void {
@@ -295,13 +308,15 @@ export function createPullsStore(opts: PullsStoreOptions) {
     owner: string,
     name: string,
     number: number,
+    identity: ProviderRouteRef,
   ): Promise<FetchPullResult> {
+    const ref = identity;
     try {
       const { data, error, response } = await apiClient.GET(
-        "/repos/{owner}/{name}/pulls/{number}",
+        providerItemPath("pulls", ref, ""),
         {
           params: {
-            path: { owner, name, number },
+            path: { ...providerRouteParams(ref), number },
           },
         },
       );
@@ -319,7 +334,8 @@ export function createPullsStore(opts: PullsStoreOptions) {
         status: "found",
         pull: {
           ...mr,
-          platform_host: "",
+          repo: data.repo,
+          platform_host: data.platform_host,
           repo_owner: data.repo_owner,
           repo_name: data.repo_name,
           detail_loaded: data.detail_loaded,

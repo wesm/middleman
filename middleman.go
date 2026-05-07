@@ -285,15 +285,16 @@ func NewWithContext(
 		map[string]*ghclient.RateTracker, len(hosts),
 	)
 	for _, host := range hosts {
-		rt := ghclient.NewRateTracker(database, host, "rest")
-		rateTrackers[host] = rt
+		rateKey := ghclient.RateBucketKey("github", host)
+		rt := ghclient.NewPlatformRateTracker(database, "github", host, "rest")
+		rateTrackers[rateKey] = rt
 		if budgetPerHour > 0 {
-			budgets[host] = ghclient.NewSyncBudget(
+			budgets[rateKey] = ghclient.NewSyncBudget(
 				budgetPerHour,
 			)
 		}
 		gh, cErr := ghclient.NewClient(
-			hostTokens[host], host, rt, budgets[host],
+			hostTokens[host], host, rt, budgets[rateKey],
 		)
 		if cErr != nil {
 			database.Close()
@@ -336,11 +337,12 @@ func NewWithContext(
 		map[string]*ghclient.GraphQLFetcher, len(hosts),
 	)
 	for _, host := range hosts {
-		gqlRT := ghclient.NewRateTracker(
-			database, host, "graphql",
+		rateKey := ghclient.RateBucketKey("github", host)
+		gqlRT := ghclient.NewPlatformRateTracker(
+			database, "github", host, "graphql",
 		)
 		fetchers[host] = ghclient.NewGraphQLFetcher(
-			hostTokens[host], host, gqlRT, budgets[host],
+			hostTokens[host], host, gqlRT, budgets[rateKey],
 		)
 	}
 	syncer.SetFetchers(fetchers)

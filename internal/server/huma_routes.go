@@ -19,6 +19,7 @@ import (
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
+	"github.com/wesm/middleman/internal/platform"
 	"github.com/wesm/middleman/internal/workspace"
 	"github.com/wesm/middleman/internal/workspace/localruntime"
 )
@@ -36,20 +37,38 @@ type listPullsInput struct {
 type listPullsOutput = bodyOutput[[]mergeRequestResponse]
 
 type repoNumberInput struct {
-	Owner  string `path:"owner"`
-	Name   string `path:"name"`
-	Number int    `path:"number"`
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
 }
 
 type getPullOutput = bodyOutput[mergeRequestDetailResponse]
 
+func providerRouteLookupError(err error) error {
+	if errors.Is(err, errRepoPathRequired) {
+		return huma.Error400BadRequest(err.Error())
+	}
+	if errors.Is(err, errRepoNotFound) {
+		return huma.Error404NotFound("repo not found")
+	}
+	if strings.Contains(err.Error(), "platform_host is required") ||
+		strings.Contains(err.Error(), "unsupported platform") {
+		return huma.Error400BadRequest(err.Error())
+	}
+	return huma.Error500InternalServerError("get repo failed")
+}
+
 type getMRImportMetadataOutput = bodyOutput[mrImportMetadataResponse]
 
 type setKanbanStateInput struct {
-	Owner  string `path:"owner"`
-	Name   string `path:"name"`
-	Number int    `path:"number"`
-	Body   struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Body         struct {
 		Status string `json:"status"`
 	}
 }
@@ -57,10 +76,12 @@ type setKanbanStateInput struct {
 type statusOnlyOutput = okStatusOutput
 
 type postCommentInput struct {
-	Owner  string `path:"owner"`
-	Name   string `path:"name"`
-	Number int    `path:"number"`
-	Body   struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Body         struct {
 		Body string `json:"body"`
 	}
 }
@@ -68,11 +89,13 @@ type postCommentInput struct {
 type postCommentOutput = createdOutput[db.MREvent]
 
 type editCommentInput struct {
-	Owner     string `path:"owner"`
-	Name      string `path:"name"`
-	Number    int    `path:"number"`
-	CommentID int64  `path:"comment_id"`
-	Body      struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	CommentID    int64  `path:"comment_id"`
+	Body         struct {
 		Body string `json:"body"`
 	}
 }
@@ -91,46 +114,50 @@ type listIssuesInput struct {
 type listIssuesOutput = bodyOutput[[]issueResponse]
 
 type issueRepoNumberInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
 	Owner        string `path:"owner"`
 	Name         string `path:"name"`
 	Number       int    `path:"number"`
-	PlatformHost string `query:"platform_host"`
 }
 
 type getIssueOutput = bodyOutput[issueDetailResponse]
 
 type postIssueCommentInput struct {
-	Owner  string `path:"owner"`
-	Name   string `path:"name"`
-	Number int    `path:"number"`
-	Body   struct {
-		Body         string `json:"body"`
-		PlatformHost string `json:"platform_host,omitempty"`
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Body         struct {
+		Body string `json:"body"`
 	}
 }
 
 type postIssueCommentOutput = createdOutput[db.IssueEvent]
 
 type editIssueCommentInput struct {
-	Owner     string `path:"owner"`
-	Name      string `path:"name"`
-	Number    int    `path:"number"`
-	CommentID int64  `path:"comment_id"`
-	Body      struct {
-		Body         string `json:"body"`
-		PlatformHost string `json:"platform_host,omitempty"`
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	CommentID    int64  `path:"comment_id"`
+	Body         struct {
+		Body string `json:"body"`
 	}
 }
 
 type editIssueCommentOutput = bodyOutput[db.IssueEvent]
 
 type createIssueInput struct {
-	Owner string `path:"owner"`
-	Name  string `path:"name"`
-	Body  struct {
-		Title        string `json:"title"`
-		Body         string `json:"body"`
-		PlatformHost string `json:"platform_host,omitempty"`
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Body         struct {
+		Title string `json:"title"`
+		Body  string `json:"body"`
 	}
 }
 
@@ -141,16 +168,19 @@ type starredInput struct {
 }
 
 type getRepoInput struct {
-	Owner string `path:"owner"`
-	Name  string `path:"name"`
-}
-
-type getRepoOutput = bodyOutput[db.Repo]
-
-type commentAutocompleteInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
 	Owner        string `path:"owner"`
 	Name         string `path:"name"`
-	PlatformHost string `query:"platform_host"`
+}
+
+type getRepoOutput = bodyOutput[repoResponse]
+
+type commentAutocompleteInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
 	Trigger      string `query:"trigger"`
 	Q            string `query:"q"`
 	Limit        int    `query:"limit"`
@@ -159,10 +189,12 @@ type commentAutocompleteInput struct {
 type commentAutocompleteOutput = bodyOutput[commentAutocompleteResponse]
 
 type approvePRInput struct {
-	Owner  string `path:"owner"`
-	Name   string `path:"name"`
-	Number int    `path:"number"`
-	Body   struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Body         struct {
 		Body string `json:"body"`
 	}
 }
@@ -175,10 +207,12 @@ type actionStatusBody struct {
 type actionStatusOutput = bodyOutput[actionStatusBody]
 
 type mergePRInput struct {
-	Owner  string `path:"owner"`
-	Name   string `path:"name"`
-	Number int    `path:"number"`
-	Body   struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Body         struct {
 		CommitTitle   string `json:"commit_title"`
 		CommitMessage string `json:"commit_message"`
 		Method        string `json:"method"`
@@ -194,10 +228,12 @@ type mergePRBody struct {
 type mergePROutput = bodyOutput[mergePRBody]
 
 type editPRContentInput struct {
-	Owner  string `path:"owner"`
-	Name   string `path:"name"`
-	Number int    `path:"number"`
-	Body   struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Body         struct {
 		Title *string `json:"title,omitempty"`
 		Body  *string `json:"body,omitempty"`
 	}
@@ -206,12 +242,13 @@ type editPRContentInput struct {
 type editPRContentOutput = bodyOutput[mergeRequestDetailResponse]
 
 type githubStateInput struct {
-	Owner  string `path:"owner"`
-	Name   string `path:"name"`
-	Number int    `path:"number"`
-	Body   struct {
-		State        string `json:"state"`
-		PlatformHost string `json:"platform_host,omitempty"`
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Body         struct {
+		State string `json:"state"`
 	}
 }
 
@@ -221,7 +258,7 @@ type githubStateOutputBody struct {
 
 type githubStateOutput = bodyOutput[githubStateOutputBody]
 
-type listReposOutput = bodyOutput[[]db.Repo]
+type listReposOutput = bodyOutput[[]repoResponse]
 
 type listRepoSummariesOutput = bodyOutput[[]repoSummaryResponse]
 
@@ -255,11 +292,12 @@ type createWorkspaceInput struct {
 }
 
 type createIssueWorkspaceInput struct {
-	Owner  string `path:"owner"`
-	Name   string `path:"name"`
-	Number int    `path:"number"`
-	Body   struct {
-		PlatformHost        string  `json:"platform_host"`
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Body         struct {
 		GitHeadRef          *string `json:"git_head_ref,omitempty"`
 		ReuseExistingBranch bool    `json:"reuse_existing_branch,omitempty"`
 	}
@@ -362,55 +400,8 @@ func (s *Server) registerAPI(api huma.API) {
 
 	huma.Get(api, "/activity", s.listActivity)
 	huma.Get(api, "/pulls", s.listPulls)
-	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}", s.getPull)
-	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/import-metadata", s.getMRImportMetadata)
-	huma.Register(api, huma.Operation{
-		OperationID:   "set-kanban-state",
-		Method:        http.MethodPut,
-		Path:          "/repos/{owner}/{name}/pulls/{number}/state",
-		DefaultStatus: http.StatusOK,
-	}, s.setKanbanState)
-	huma.Register(api, huma.Operation{
-		OperationID:   "edit-pr-content",
-		Method:        http.MethodPatch,
-		Path:          "/repos/{owner}/{name}/pulls/{number}",
-		DefaultStatus: http.StatusOK,
-	}, s.editPRContent)
-	huma.Register(api, huma.Operation{
-		OperationID:   "post-pr-comment",
-		Method:        http.MethodPost,
-		Path:          "/repos/{owner}/{name}/pulls/{number}/comments",
-		DefaultStatus: http.StatusCreated,
-	}, s.postComment)
-	huma.Register(api, huma.Operation{
-		OperationID:   "edit-pr-comment",
-		Method:        http.MethodPatch,
-		Path:          "/repos/{owner}/{name}/pulls/{number}/comments/{comment_id}",
-		DefaultStatus: http.StatusOK,
-	}, s.editComment)
-
 	huma.Get(api, "/issues", s.listIssues)
-	huma.Register(api, huma.Operation{
-		OperationID:   "create-issue",
-		Method:        http.MethodPost,
-		Path:          "/repos/{owner}/{name}/issues",
-		DefaultStatus: http.StatusCreated,
-	}, s.createIssue)
-	huma.Get(api, "/repos/{owner}/{name}/issues/{number}", s.getIssue)
-	huma.Register(api, huma.Operation{
-		OperationID:   "post-issue-comment",
-		Method:        http.MethodPost,
-		Path:          "/repos/{owner}/{name}/issues/{number}/comments",
-		DefaultStatus: http.StatusCreated,
-	}, s.postIssueComment)
-	huma.Register(api, huma.Operation{
-		OperationID:   "edit-issue-comment",
-		Method:        http.MethodPatch,
-		Path:          "/repos/{owner}/{name}/issues/{number}/comments/{comment_id}",
-		DefaultStatus: http.StatusOK,
-	}, s.editIssueComment)
-
-	huma.Post(api, "/repos/{owner}/{name}/items/{number}/resolve", s.resolveItem)
+	s.registerProviderRepoAPI(api)
 
 	huma.Register(api, huma.Operation{
 		OperationID:   "list-repo-summaries",
@@ -444,39 +435,7 @@ func (s *Server) registerAPI(api huma.API) {
 		Path:          "/repos/bulk",
 		DefaultStatus: http.StatusCreated,
 	}, s.bulkAddRepos)
-	huma.Get(api, "/repos/{owner}/{name}", s.getRepo)
-	huma.Get(api, "/repos/{owner}/{name}/comment-autocomplete", s.getCommentAutocomplete)
 	s.registerSettingsAPI(api)
-	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/approve", s.approvePR)
-	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/approve-workflows", s.approveWorkflows)
-	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/ready-for-review", s.readyForReview)
-	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/merge", s.mergePR)
-	huma.Post(api, "/repos/{owner}/{name}/pulls/{number}/sync", s.syncPR)
-	huma.Register(api, huma.Operation{
-		OperationID:   "enqueue-pr-sync",
-		Method:        http.MethodPost,
-		Path:          "/repos/{owner}/{name}/pulls/{number}/sync/async",
-		DefaultStatus: http.StatusAccepted,
-	}, s.enqueuePRSync)
-	huma.Post(api, "/repos/{owner}/{name}/issues/{number}/sync", s.syncIssue)
-	huma.Register(api, huma.Operation{
-		OperationID:   "enqueue-issue-sync",
-		Method:        http.MethodPost,
-		Path:          "/repos/{owner}/{name}/issues/{number}/sync/async",
-		DefaultStatus: http.StatusAccepted,
-	}, s.enqueueIssueSync)
-	huma.Register(api, huma.Operation{
-		OperationID:   "set-pr-github-state",
-		Method:        http.MethodPost,
-		Path:          "/repos/{owner}/{name}/pulls/{number}/github-state",
-		DefaultStatus: http.StatusOK,
-	}, s.setPRGitHubState)
-	huma.Register(api, huma.Operation{
-		OperationID:   "set-issue-github-state",
-		Method:        http.MethodPost,
-		Path:          "/repos/{owner}/{name}/issues/{number}/github-state",
-		DefaultStatus: http.StatusOK,
-	}, s.setIssueGitHubState)
 	huma.Register(api, huma.Operation{
 		OperationID:   "trigger-sync",
 		Method:        http.MethodPost,
@@ -503,12 +462,8 @@ func (s *Server) registerAPI(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/roborev/status",
 	}, s.getRoborevStatus)
-	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/commits", s.getCommits)
-	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/diff", s.getDiff)
-	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/files", s.getFiles)
-	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/file-preview", s.getFilePreview)
+
 	huma.Get(api, "/stacks", s.listStacks)
-	huma.Get(api, "/repos/{owner}/{name}/pulls/{number}/stack", s.getStackForPR)
 
 	huma.Register(api, huma.Operation{
 		OperationID:   "create-workspace",
@@ -516,12 +471,6 @@ func (s *Server) registerAPI(api huma.API) {
 		Path:          "/workspaces",
 		DefaultStatus: http.StatusAccepted,
 	}, s.createWorkspace)
-	huma.Register(api, huma.Operation{
-		OperationID:   "create-issue-workspace",
-		Method:        http.MethodPost,
-		Path:          "/repos/{owner}/{name}/issues/{number}/workspace",
-		DefaultStatus: http.StatusAccepted,
-	}, s.createIssueWorkspace)
 	huma.Get(api, "/workspaces", s.listWorkspaces)
 	huma.Get(api, "/workspaces/{id}", s.getWorkspace)
 	huma.Get(api, "/workspaces/{id}/diff", s.getWorkspaceDiff)
@@ -559,6 +508,82 @@ func (s *Server) registerAPI(api huma.API) {
 		Path:          "/workspaces/{id}",
 		DefaultStatus: http.StatusNoContent,
 	}, s.deleteWorkspace)
+}
+
+func (s *Server) registerProviderRepoAPI(api huma.API) {
+	repoPath := "/repo/{provider}/{owner}/{name}"
+	hostRepoPath := "/host/{platform_host}/repo/{provider}/{owner}/{name}"
+	pullRepoPath := "/pulls/{provider}/{owner}/{name}"
+	hostPullRepoPath := "/host/{platform_host}/pulls/{provider}/{owner}/{name}"
+	pullPath := pullRepoPath + "/{number}"
+	hostPullPath := hostPullRepoPath + "/{number}"
+	issueRepoPath := "/issues/{provider}/{owner}/{name}"
+	hostIssueRepoPath := "/host/{platform_host}/issues/{provider}/{owner}/{name}"
+	issuePath := issueRepoPath + "/{number}"
+	hostIssuePath := hostIssueRepoPath + "/{number}"
+
+	huma.Get(api, pullPath, s.getPull)
+	huma.Get(api, hostPullPath, s.getPullOnHost)
+	huma.Get(api, pullPath+"/import-metadata", s.getMRImportMetadata)
+	huma.Get(api, hostPullPath+"/import-metadata", s.getMRImportMetadataOnHost)
+	huma.Register(api, huma.Operation{OperationID: "set-kanban-state", Method: http.MethodPut, Path: pullPath + "/state", DefaultStatus: http.StatusOK}, s.setKanbanState)
+	huma.Register(api, huma.Operation{OperationID: "set-kanban-state-on-host", Method: http.MethodPut, Path: hostPullPath + "/state", DefaultStatus: http.StatusOK}, s.setKanbanStateOnHost)
+	huma.Register(api, huma.Operation{OperationID: "edit-pr-content", Method: http.MethodPatch, Path: pullPath, DefaultStatus: http.StatusOK}, s.editPRContent)
+	huma.Register(api, huma.Operation{OperationID: "edit-pr-content-on-host", Method: http.MethodPatch, Path: hostPullPath, DefaultStatus: http.StatusOK}, s.editPRContentOnHost)
+	huma.Register(api, huma.Operation{OperationID: "post-pr-comment", Method: http.MethodPost, Path: pullPath + "/comments", DefaultStatus: http.StatusCreated}, s.postComment)
+	huma.Register(api, huma.Operation{OperationID: "post-pr-comment-on-host", Method: http.MethodPost, Path: hostPullPath + "/comments", DefaultStatus: http.StatusCreated}, s.postCommentOnHost)
+	huma.Register(api, huma.Operation{OperationID: "edit-pr-comment", Method: http.MethodPatch, Path: pullPath + "/comments/{comment_id}", DefaultStatus: http.StatusOK}, s.editComment)
+	huma.Register(api, huma.Operation{OperationID: "edit-pr-comment-on-host", Method: http.MethodPatch, Path: hostPullPath + "/comments/{comment_id}", DefaultStatus: http.StatusOK}, s.editCommentOnHost)
+
+	huma.Register(api, huma.Operation{OperationID: "create-issue", Method: http.MethodPost, Path: issueRepoPath, DefaultStatus: http.StatusCreated}, s.createIssue)
+	huma.Register(api, huma.Operation{OperationID: "create-issue-on-host", Method: http.MethodPost, Path: hostIssueRepoPath, DefaultStatus: http.StatusCreated}, s.createIssueOnHost)
+	huma.Get(api, issuePath, s.getIssue)
+	huma.Get(api, hostIssuePath, s.getIssueOnHost)
+	huma.Register(api, huma.Operation{OperationID: "post-issue-comment", Method: http.MethodPost, Path: issuePath + "/comments", DefaultStatus: http.StatusCreated}, s.postIssueComment)
+	huma.Register(api, huma.Operation{OperationID: "post-issue-comment-on-host", Method: http.MethodPost, Path: hostIssuePath + "/comments", DefaultStatus: http.StatusCreated}, s.postIssueCommentOnHost)
+	huma.Register(api, huma.Operation{OperationID: "edit-issue-comment", Method: http.MethodPatch, Path: issuePath + "/comments/{comment_id}", DefaultStatus: http.StatusOK}, s.editIssueComment)
+	huma.Register(api, huma.Operation{OperationID: "edit-issue-comment-on-host", Method: http.MethodPatch, Path: hostIssuePath + "/comments/{comment_id}", DefaultStatus: http.StatusOK}, s.editIssueCommentOnHost)
+
+	huma.Post(api, repoPath+"/resolve/{number}", s.resolveItem)
+	huma.Post(api, hostRepoPath+"/resolve/{number}", s.resolveItemOnHost)
+	huma.Get(api, repoPath, s.getRepo)
+	huma.Get(api, hostRepoPath, s.getRepoOnHost)
+	huma.Get(api, repoPath+"/comment-autocomplete", s.getCommentAutocomplete)
+	huma.Get(api, hostRepoPath+"/comment-autocomplete", s.getCommentAutocompleteOnHost)
+
+	huma.Post(api, pullPath+"/approve", s.approvePR)
+	huma.Post(api, hostPullPath+"/approve", s.approvePROnHost)
+	huma.Post(api, pullPath+"/approve-workflows", s.approveWorkflows)
+	huma.Post(api, hostPullPath+"/approve-workflows", s.approveWorkflowsOnHost)
+	huma.Post(api, pullPath+"/ready-for-review", s.readyForReview)
+	huma.Post(api, hostPullPath+"/ready-for-review", s.readyForReviewOnHost)
+	huma.Post(api, pullPath+"/merge", s.mergePR)
+	huma.Post(api, hostPullPath+"/merge", s.mergePROnHost)
+	huma.Post(api, pullPath+"/sync", s.syncPR)
+	huma.Post(api, hostPullPath+"/sync", s.syncPROnHost)
+	huma.Register(api, huma.Operation{OperationID: "enqueue-pr-sync", Method: http.MethodPost, Path: pullPath + "/sync/async", DefaultStatus: http.StatusAccepted}, s.enqueuePRSync)
+	huma.Register(api, huma.Operation{OperationID: "enqueue-pr-sync-on-host", Method: http.MethodPost, Path: hostPullPath + "/sync/async", DefaultStatus: http.StatusAccepted}, s.enqueuePRSyncOnHost)
+	huma.Post(api, issuePath+"/sync", s.syncIssue)
+	huma.Post(api, hostIssuePath+"/sync", s.syncIssueOnHost)
+	huma.Register(api, huma.Operation{OperationID: "enqueue-issue-sync", Method: http.MethodPost, Path: issuePath + "/sync/async", DefaultStatus: http.StatusAccepted}, s.enqueueIssueSync)
+	huma.Register(api, huma.Operation{OperationID: "enqueue-issue-sync-on-host", Method: http.MethodPost, Path: hostIssuePath + "/sync/async", DefaultStatus: http.StatusAccepted}, s.enqueueIssueSyncOnHost)
+	huma.Register(api, huma.Operation{OperationID: "set-pr-github-state", Method: http.MethodPost, Path: pullPath + "/github-state", DefaultStatus: http.StatusOK}, s.setPRGitHubState)
+	huma.Register(api, huma.Operation{OperationID: "set-pr-github-state-on-host", Method: http.MethodPost, Path: hostPullPath + "/github-state", DefaultStatus: http.StatusOK}, s.setPRGitHubStateOnHost)
+	huma.Register(api, huma.Operation{OperationID: "set-issue-github-state", Method: http.MethodPost, Path: issuePath + "/github-state", DefaultStatus: http.StatusOK}, s.setIssueGitHubState)
+	huma.Register(api, huma.Operation{OperationID: "set-issue-github-state-on-host", Method: http.MethodPost, Path: hostIssuePath + "/github-state", DefaultStatus: http.StatusOK}, s.setIssueGitHubStateOnHost)
+
+	huma.Get(api, pullPath+"/commits", s.getCommits)
+	huma.Get(api, hostPullPath+"/commits", s.getCommitsOnHost)
+	huma.Get(api, pullPath+"/diff", s.getDiff)
+	huma.Get(api, hostPullPath+"/diff", s.getDiffOnHost)
+	huma.Get(api, pullPath+"/files", s.getFiles)
+	huma.Get(api, hostPullPath+"/files", s.getFilesOnHost)
+	huma.Get(api, pullPath+"/file-preview", s.getFilePreview)
+	huma.Get(api, hostPullPath+"/file-preview", s.getFilePreviewOnHost)
+	huma.Get(api, pullPath+"/stack", s.getStackForPR)
+	huma.Get(api, hostPullPath+"/stack", s.getStackForPROnHost)
+	huma.Register(api, huma.Operation{OperationID: "create-issue-workspace", Method: http.MethodPost, Path: issuePath + "/workspace", DefaultStatus: http.StatusAccepted}, s.createIssueWorkspace)
+	huma.Register(api, huma.Operation{OperationID: "create-issue-workspace-on-host", Method: http.MethodPost, Path: hostIssuePath + "/workspace", DefaultStatus: http.StatusAccepted}, s.createIssueWorkspaceOnHost)
 }
 
 func NewOpenAPI() *huma.OpenAPI {
@@ -627,6 +652,7 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 		}
 		resp := mergeRequestResponse{
 			MergeRequest:  mr,
+			Repo:          s.repoRefFromRepo(rp),
 			RepoOwner:     rp.Owner,
 			RepoName:      rp.Name,
 			PlatformHost:  rp.PlatformHost,
@@ -643,7 +669,13 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 }
 
 func (s *Server) getPull(ctx context.Context, input *repoNumberInput) (*getPullOutput, error) {
-	mr, err := s.db.GetMergeRequest(ctx, input.Owner, input.Name, input.Number)
+	repo, err := s.lookupRepoByProviderRoute(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
+	)
+	if err != nil {
+		return nil, providerRouteLookupError(err)
+	}
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("get pull request failed")
 	}
@@ -688,6 +720,7 @@ func (s *Server) buildPullDetailResponse(
 	resp := mergeRequestDetailResponse{
 		MergeRequest:     mr,
 		Events:           events,
+		Repo:             s.repoRefFromRepo(*repo),
 		RepoOwner:        repo.Owner,
 		RepoName:         repo.Name,
 		PlatformHost:     repo.PlatformHost,
@@ -827,7 +860,13 @@ func (s *Server) workflowApprovalState(
 func (s *Server) getMRImportMetadata(
 	ctx context.Context, input *repoNumberInput,
 ) (*getMRImportMetadataOutput, error) {
-	mr, err := s.db.GetMergeRequest(ctx, input.Owner, input.Name, input.Number)
+	repo, err := s.lookupRepoByProviderRoute(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
+	)
+	if err != nil {
+		return nil, providerRouteLookupError(err)
+	}
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(
 			"failed to query merge request",
@@ -854,7 +893,18 @@ func (s *Server) setKanbanState(ctx context.Context, input *setKanbanStateInput)
 		return nil, huma.Error400BadRequest("status must be one of: new, reviewing, waiting, awaiting_merge")
 	}
 
-	ref := repoNumberPathRef{owner: input.Owner, name: input.Name, number: input.Number}
+	repo, err := s.lookupRepoByProviderRoute(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
+	)
+	if err != nil {
+		return nil, providerRouteLookupError(err)
+	}
+	ref := repoNumberPathRef{
+		owner:        repo.Owner,
+		name:         repo.Name,
+		number:       input.Number,
+		platformHost: repo.PlatformHost,
+	}
 	mrID, err := s.lookupMRID(ctx, ref)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
@@ -878,14 +928,23 @@ func (s *Server) editPRContent(
 		return nil, huma.Error400BadRequest("title must not be blank")
 	}
 
-	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	repo, err := s.requireRepoRouteCapability(
+		ctx,
+		input.Provider, input.PlatformHost, input.Owner, input.Name,
+		capabilityStateMutation,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	mutator, err := s.syncer.MergeRequestContentMutator(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	mr, err := s.db.GetMergeRequest(
-		ctx, input.Owner, input.Name, input.Number,
-	)
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(
 			"get pull request failed",
@@ -895,39 +954,30 @@ func (s *Server) editPRContent(
 		return nil, huma.Error404NotFound("pull request not found")
 	}
 
-	opts := ghclient.EditPullRequestOpts{
-		Title: input.Body.Title,
-		Body:  input.Body.Body,
-	}
-	ghPR, err := client.EditPullRequest(
-		ctx, input.Owner, input.Name, input.Number, opts,
+	updatedMR, err := mutator.EditMergeRequestContent(
+		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Title, input.Body.Body,
 	)
 	if err != nil {
 		return nil, huma.Error502BadGateway(
-			"GitHub API error: " + err.Error(),
-		)
-	}
-	if ghPR == nil {
-		return nil, huma.Error502BadGateway(
-			"GitHub API returned no pull request",
+			"provider API error: " + err.Error(),
 		)
 	}
 
 	newTitle := mr.Title
-	if ghPR.Title != nil {
-		newTitle = ghPR.GetTitle()
+	if updatedMR.Title != "" {
+		newTitle = updatedMR.Title
 	} else if input.Body.Title != nil {
 		newTitle = *input.Body.Title
 	}
 	newBody := mr.Body
-	if ghPR.Body != nil {
-		newBody = ghPR.GetBody()
+	if updatedMR.Body != "" {
+		newBody = updatedMR.Body
 	} else if input.Body.Body != nil {
 		newBody = *input.Body.Body
 	}
 	updatedAt := s.now().UTC()
-	if ghPR.UpdatedAt != nil {
-		updatedAt = ghPR.UpdatedAt.UTC()
+	if !updatedMR.UpdatedAt.IsZero() {
+		updatedAt = updatedMR.UpdatedAt.UTC()
 	}
 	if err := s.db.UpdateMRTitleBody(
 		ctx, mr.ID, newTitle, newBody, updatedAt,
@@ -937,9 +987,7 @@ func (s *Server) editPRContent(
 		)
 	}
 
-	mr, err = s.db.GetMergeRequest(
-		ctx, input.Owner, input.Name, input.Number,
-	)
+	mr, err = s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil || mr == nil {
 		return nil, huma.Error500InternalServerError(
 			"re-read pull request failed",
@@ -961,23 +1009,41 @@ func (s *Server) postComment(ctx context.Context, input *postCommentInput) (*pos
 		return nil, huma.Error400BadRequest("comment body must not be empty")
 	}
 
-	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	repo, err := s.requireRepoRouteCapability(
+		ctx,
+		input.Provider, input.PlatformHost, input.Owner, input.Name,
+		capabilityCommentMutation,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	mutator, err := s.syncer.CommentMutator(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	comment, err := client.CreateIssueComment(ctx, input.Owner, input.Name, input.Number, input.Body.Body)
+	platformEvent, err := mutator.CreateMergeRequestComment(
+		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Body,
+	)
 	if err != nil {
-		return nil, huma.Error502BadGateway("create comment on GitHub failed")
+		return nil, huma.Error502BadGateway("create comment on provider failed")
 	}
 
-	ref := repoNumberPathRef{owner: input.Owner, name: input.Name, number: input.Number}
+	ref := repoNumberPathRef{
+		owner:        repo.Owner,
+		name:         repo.Name,
+		number:       input.Number,
+		platformHost: repo.PlatformHost,
+	}
 	mrID, err := s.lookupMRID(ctx, ref)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	event := ghclient.NormalizeCommentEvent(mrID, comment)
+	event := platform.DBMREvent(mrID, platformEvent)
 	if err := s.db.UpsertMREvents(ctx, []db.MREvent{event}); err != nil {
 		_ = err
 	}
@@ -990,12 +1056,28 @@ func (s *Server) editComment(ctx context.Context, input *editCommentInput) (*edi
 		return nil, huma.Error400BadRequest("comment body must not be empty")
 	}
 
-	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	repo, err := s.requireRepoRouteCapability(
+		ctx,
+		input.Provider, input.PlatformHost, input.Owner, input.Name,
+		capabilityCommentMutation,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	mutator, err := s.syncer.CommentMutator(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	ref := repoNumberPathRef{owner: input.Owner, name: input.Name, number: input.Number}
+	ref := repoNumberPathRef{
+		owner:        repo.Owner,
+		name:         repo.Name,
+		number:       input.Number,
+		platformHost: repo.PlatformHost,
+	}
 	mrID, err := s.lookupMRID(ctx, ref)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
@@ -1009,14 +1091,15 @@ func (s *Server) editComment(ctx context.Context, input *editCommentInput) (*edi
 		return nil, huma.Error404NotFound("comment not found for pull request")
 	}
 
-	comment, err := client.EditIssueComment(
-		ctx, input.Owner, input.Name, input.CommentID, input.Body.Body,
+	platformEvent, err := mutator.EditMergeRequestComment(
+		ctx, platformRepoRefFromDB(*repo), input.CommentID, input.Body.Body,
 	)
 	if err != nil {
-		return nil, huma.Error502BadGateway("edit comment on GitHub failed")
+		return nil, huma.Error502BadGateway("edit comment on provider failed")
 	}
+	platformEvent.MergeRequestNumber = input.Number
 
-	event := ghclient.NormalizeCommentEvent(mrID, comment)
+	event := platform.DBMREvent(mrID, platformEvent)
 	if err := s.db.UpsertMREvents(ctx, []db.MREvent{event}); err != nil {
 		return nil, huma.Error500InternalServerError("persist edited comment failed")
 	}
@@ -1067,6 +1150,7 @@ func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listI
 		}
 		resp := issueResponse{
 			Issue:        issue,
+			Repo:         s.repoRefFromRepo(rp),
 			PlatformHost: rp.PlatformHost,
 			RepoOwner:    rp.Owner,
 			RepoName:     rp.Name,
@@ -1089,60 +1173,33 @@ func (s *Server) createIssue(
 		return nil, huma.Error400BadRequest("issue title must not be empty")
 	}
 
-	platformHost := strings.TrimSpace(input.Body.PlatformHost)
-
-	if platformHost == "" {
-		repos, err := s.db.ListRepos(ctx)
-		if err != nil {
-			return nil, huma.Error500InternalServerError("repo lookup failed")
-		}
-		matches := 0
-		for _, candidate := range repos {
-			if strings.EqualFold(candidate.Owner, input.Owner) &&
-				strings.EqualFold(candidate.Name, input.Name) {
-				matches++
-			}
-		}
-		if matches > 1 {
-			return nil, huma.Error400BadRequest(
-				"platform_host is required for ambiguous repo",
-			)
-		}
-	}
-
-	repo, err := s.lookupRepo(ctx, input.Owner, input.Name, platformHost)
+	repo, err := s.lookupRepoByProviderRoute(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
+	)
 	if err != nil {
-		if errors.Is(err, errRepoNotFound) {
-			return nil, huma.Error404NotFound("repo not found")
-		}
-		return nil, huma.Error500InternalServerError("get repo failed")
+		return nil, providerRouteLookupError(err)
+	}
+	if !capabilityEnabled(s.capabilitiesForRepo(*repo), capabilityIssueMutation) {
+		return nil, unsupportedCapabilityProblem(*repo, capabilityIssueMutation)
 	}
 
-	client, err := s.syncer.ClientForHost(repo.PlatformHost)
+	mutator, err := s.syncer.IssueMutator(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	ghIssue, err := client.CreateIssue(
-		ctx, input.Owner, input.Name, title, input.Body.Body,
+	platformIssue, err := mutator.CreateIssue(
+		ctx, platformRepoRefFromDB(*repo), title, input.Body.Body,
 	)
 	if err != nil {
 		return nil, huma.Error502BadGateway(
-			"GitHub API error: " + err.Error(),
-		)
-	}
-	if ghIssue == nil {
-		return nil, huma.Error502BadGateway(
-			"GitHub API returned no issue",
+			"provider API error: " + err.Error(),
 		)
 	}
 
-	issue, err := ghclient.NormalizeIssue(repo.ID, ghIssue)
-	if err != nil {
-		return nil, huma.Error502BadGateway(
-			"normalize issue failed: " + err.Error(),
-		)
-	}
+	issue := platform.DBIssue(repo.ID, platformIssue)
 	issueID, err := s.db.UpsertIssue(ctx, issue)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(
@@ -1167,6 +1224,7 @@ func (s *Server) createIssue(
 
 	out := issueResponse{
 		Issue:        *savedIssue,
+		Repo:         s.repoRefFromRepo(*repo),
 		PlatformHost: repo.PlatformHost,
 		RepoOwner:    repo.Owner,
 		RepoName:     repo.Name,
@@ -1183,22 +1241,35 @@ func (s *Server) createIssue(
 }
 
 func (s *Server) getIssue(ctx context.Context, input *issueRepoNumberInput) (*getIssueOutput, error) {
-	repo, issue, err := s.lookupIssue(ctx, repoNumberPathRef{
-		owner:        input.Owner,
-		name:         input.Name,
-		number:       input.Number,
-		platformHost: input.PlatformHost,
-	})
+	repo, err := s.lookupRepoByProviderRoute(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
+	)
 	if err != nil {
-		if errors.Is(err, errRepoNotFound) || strings.Contains(err.Error(), "not found") {
-			return nil, huma.Error404NotFound("issue not found")
-		}
+		return nil, providerRouteLookupError(err)
+	}
+	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	if err != nil {
 		return nil, huma.Error500InternalServerError("get issue failed")
 	}
+	if issue == nil {
+		return nil, huma.Error404NotFound("issue not found")
+	}
 
+	issueResp, err := s.buildIssueDetailResponse(ctx, repo, issue)
+	if err != nil {
+		return nil, err
+	}
+	return &getIssueOutput{Body: issueResp}, nil
+}
+
+func (s *Server) buildIssueDetailResponse(
+	ctx context.Context,
+	repo *db.Repo,
+	issue *db.Issue,
+) (issueDetailResponse, error) {
 	events, err := s.db.ListIssueEvents(ctx, issue.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("list issue events failed")
+		return issueDetailResponse{}, huma.Error500InternalServerError("list issue events failed")
 	}
 	if events == nil {
 		events = []db.IssueEvent{}
@@ -1207,6 +1278,7 @@ func (s *Server) getIssue(ctx context.Context, input *issueRepoNumberInput) (*ge
 	issueResp := issueDetailResponse{
 		Issue:        issue,
 		Events:       events,
+		Repo:         s.repoRefFromRepo(*repo),
 		PlatformHost: repo.PlatformHost,
 		RepoOwner:    repo.Owner,
 		RepoName:     repo.Name,
@@ -1226,7 +1298,7 @@ func (s *Server) getIssue(ctx context.Context, input *issueRepoNumberInput) (*ge
 			}
 		}
 	}
-	return &getIssueOutput{Body: issueResp}, nil
+	return issueResp, nil
 }
 
 func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentInput) (*postIssueCommentOutput, error) {
@@ -1234,26 +1306,28 @@ func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentIn
 		return nil, huma.Error400BadRequest("comment body must not be empty")
 	}
 
-	repo, err := s.lookupRepo(
-		ctx, input.Owner, input.Name, input.Body.PlatformHost,
+	repo, err := s.lookupRepoByProviderRoute(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
 	if err != nil {
-		if errors.Is(err, errRepoNotFound) {
-			return nil, huma.Error404NotFound(err.Error())
-		}
-		return nil, huma.Error500InternalServerError("repo lookup failed")
+		return nil, providerRouteLookupError(err)
+	}
+	if !capabilityEnabled(s.capabilitiesForRepo(*repo), capabilityCommentMutation) {
+		return nil, unsupportedCapabilityProblem(*repo, capabilityCommentMutation)
 	}
 
-	client, err := s.syncer.ClientForHost(repo.PlatformHost)
+	mutator, err := s.syncer.CommentMutator(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	comment, err := client.CreateIssueComment(
-		ctx, input.Owner, input.Name, input.Number, input.Body.Body,
+	platformEvent, err := mutator.CreateIssueComment(
+		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Body,
 	)
 	if err != nil {
-		return nil, huma.Error502BadGateway("create comment on GitHub failed")
+		return nil, huma.Error502BadGateway("create comment on provider failed")
 	}
 
 	ref := repoNumberPathRef{
@@ -1267,7 +1341,7 @@ func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentIn
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	event := ghclient.NormalizeIssueCommentEvent(issueID, comment)
+	event := platform.DBIssueEvent(issueID, platformEvent)
 	if err := s.db.UpsertIssueEvents(ctx, []db.IssueEvent{event}); err != nil {
 		_ = err
 	}
@@ -1280,17 +1354,19 @@ func (s *Server) editIssueComment(ctx context.Context, input *editIssueCommentIn
 		return nil, huma.Error400BadRequest("comment body must not be empty")
 	}
 
-	repo, err := s.lookupRepo(
-		ctx, input.Owner, input.Name, input.Body.PlatformHost,
+	repo, err := s.lookupRepoByProviderRoute(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
 	if err != nil {
-		if errors.Is(err, errRepoNotFound) {
-			return nil, huma.Error404NotFound(err.Error())
-		}
-		return nil, huma.Error500InternalServerError("repo lookup failed")
+		return nil, providerRouteLookupError(err)
+	}
+	if !capabilityEnabled(s.capabilitiesForRepo(*repo), capabilityCommentMutation) {
+		return nil, unsupportedCapabilityProblem(*repo, capabilityCommentMutation)
 	}
 
-	client, err := s.syncer.ClientForHost(repo.PlatformHost)
+	mutator, err := s.syncer.CommentMutator(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
@@ -1314,14 +1390,15 @@ func (s *Server) editIssueComment(ctx context.Context, input *editIssueCommentIn
 		return nil, huma.Error404NotFound("comment not found for issue")
 	}
 
-	comment, err := client.EditIssueComment(
-		ctx, input.Owner, input.Name, input.CommentID, input.Body.Body,
+	platformEvent, err := mutator.EditIssueComment(
+		ctx, platformRepoRefFromDB(*repo), input.CommentID, input.Body.Body,
 	)
 	if err != nil {
-		return nil, huma.Error502BadGateway("edit comment on GitHub failed")
+		return nil, huma.Error502BadGateway("edit comment on provider failed")
 	}
+	platformEvent.IssueNumber = input.Number
 
-	event := ghclient.NormalizeIssueCommentEvent(issueID, comment)
+	event := platform.DBIssueEvent(issueID, platformEvent)
 	if err := s.db.UpsertIssueEvents(ctx, []db.IssueEvent{event}); err != nil {
 		return nil, huma.Error500InternalServerError("persist edited comment failed")
 	}
@@ -1352,20 +1429,24 @@ func (s *Server) unsetStarred(ctx context.Context, input *starredInput) (*status
 }
 
 func (s *Server) getRepo(ctx context.Context, input *getRepoInput) (*getRepoOutput, error) {
-	repo, err := s.lookupRepo(ctx, input.Owner, input.Name, "")
+	repo, err := s.lookupRepoByProviderRoute(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
+	)
 	if err != nil {
-		return nil, huma.Error404NotFound("repo not found")
+		return nil, providerRouteLookupError(err)
 	}
-	return &getRepoOutput{Body: *repo}, nil
+	return &getRepoOutput{Body: s.repoResponse(*repo)}, nil
 }
 
 func (s *Server) getCommentAutocomplete(
 	ctx context.Context,
 	input *commentAutocompleteInput,
 ) (*commentAutocompleteOutput, error) {
-	repo, err := s.lookupRepo(ctx, input.Owner, input.Name, input.PlatformHost)
+	repo, err := s.lookupRepoByProviderRoute(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
+	)
 	if err != nil {
-		return nil, huma.Error404NotFound("repo not found")
+		return nil, providerRouteLookupError(err)
 	}
 
 	limit := input.Limit
@@ -1409,20 +1490,38 @@ func (s *Server) getCommentAutocomplete(
 }
 
 func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionStatusOutput, error) {
-	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	repo, err := s.requireRepoRouteCapability(
+		ctx,
+		input.Provider, input.PlatformHost, input.Owner, input.Name,
+		capabilityReviewMutation,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	mutator, err := s.syncer.ReviewMutator(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	review, err := client.CreateReview(ctx, input.Owner, input.Name, input.Number, "APPROVE", input.Body.Body)
+	platformEvent, err := mutator.ApproveMergeRequest(
+		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Body,
+	)
 	if err != nil {
-		return nil, huma.Error502BadGateway("GitHub API error")
+		return nil, huma.Error502BadGateway("provider API error")
 	}
 
-	ref := repoNumberPathRef{owner: input.Owner, name: input.Name, number: input.Number}
+	ref := repoNumberPathRef{
+		owner:        repo.Owner,
+		name:         repo.Name,
+		number:       input.Number,
+		platformHost: repo.PlatformHost,
+	}
 	mrID, lookupErr := s.lookupMRID(ctx, ref)
 	if lookupErr == nil {
-		event := ghclient.NormalizeReviewEvent(mrID, review)
+		event := platform.DBMREvent(mrID, platformEvent)
 		_ = s.db.UpsertMREvents(ctx, []db.MREvent{event})
 	}
 
@@ -1430,7 +1529,16 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 }
 
 func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (*actionStatusOutput, error) {
-	mr, err := s.db.GetMergeRequest(ctx, input.Owner, input.Name, input.Number)
+	repo, err := s.requireRepoRouteCapability(
+		ctx,
+		input.Provider, input.PlatformHost, input.Owner, input.Name,
+		capabilityWorkflowApproval,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("get pull request failed")
 	}
@@ -1438,7 +1546,13 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 		return nil, huma.Error404NotFound("pull request not found")
 	}
 
-	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	client, err := s.syncer.ClientForHost(repo.PlatformHost)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+	mutator, err := s.syncer.WorkflowApprovalMutator(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
@@ -1469,9 +1583,15 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 
 	approvedCount := 0
 	for _, run := range pending {
-		if err := client.ApproveWorkflowRun(ctx, input.Owner, input.Name, run.GetID()); err != nil {
+		if err := mutator.ApproveWorkflow(
+			ctx, platformRepoRefFromDB(*repo), strconv.FormatInt(run.GetID(), 10),
+		); err != nil {
 			if approvedCount > 0 {
-				if syncErr := s.syncer.SyncMR(context.WithoutCancel(ctx), input.Owner, input.Name, input.Number); syncErr != nil {
+				if syncErr := s.syncer.SyncMROnProvider(
+					context.WithoutCancel(ctx),
+					repoProviderKind(*repo), repoProviderHost(*repo),
+					repo.Owner, repo.Name, input.Number,
+				); syncErr != nil {
 					slog.Warn("sync after workflow approval failure", "err", syncErr)
 				}
 			}
@@ -1480,7 +1600,11 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 		approvedCount++
 	}
 
-	if syncErr := s.syncer.SyncMR(context.WithoutCancel(ctx), input.Owner, input.Name, input.Number); syncErr != nil {
+	if syncErr := s.syncer.SyncMROnProvider(
+		context.WithoutCancel(ctx),
+		repoProviderKind(*repo), repoProviderHost(*repo),
+		repo.Owner, repo.Name, input.Number,
+	); syncErr != nil {
 		slog.Warn("sync after workflow approval", "err", syncErr)
 	}
 
@@ -1491,12 +1615,23 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 }
 
 func (s *Server) readyForReview(ctx context.Context, input *repoNumberInput) (*actionStatusOutput, error) {
-	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	repo, err := s.requireRepoRouteCapability(
+		ctx,
+		input.Provider, input.PlatformHost, input.Owner, input.Name,
+		capabilityReadyForReview,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	mutator, err := s.syncer.ReadyForReviewMutator(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	pr, err := client.MarkPullRequestReadyForReview(ctx, input.Owner, input.Name, input.Number)
+	pr, err := mutator.MarkReadyForReview(ctx, platformRepoRefFromDB(*repo), input.Number)
 	if err != nil {
 		type readyForReviewFailure interface {
 			StatusCode() int
@@ -1510,7 +1645,11 @@ func (s *Server) readyForReview(ctx context.Context, input *repoNumberInput) (*a
 			staleState = errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil && ghErr.Response.StatusCode == http.StatusNotFound
 		}
 		if staleState {
-			if syncErr := s.syncer.SyncMR(context.WithoutCancel(ctx), input.Owner, input.Name, input.Number); syncErr != nil {
+			if syncErr := s.syncer.SyncMROnProvider(
+				context.WithoutCancel(ctx),
+				repoProviderKind(*repo), repoProviderHost(*repo),
+				repo.Owner, repo.Name, input.Number,
+			); syncErr != nil {
 				slog.Warn(
 					"sync after ready for review stale state failed",
 					"owner", input.Owner,
@@ -1531,19 +1670,14 @@ func (s *Server) readyForReview(ctx context.Context, input *repoNumberInput) (*a
 		)
 		return nil, huma.Error502BadGateway(err.Error())
 	}
-	if pr == nil {
-		// No PR payload means we cannot verify GitHub accepted the
-		// transition, so don't claim success or poison the cache.
-		return nil, huma.Error502BadGateway("GitHub API returned no pull request")
+	if pr.Number == 0 {
+		return nil, huma.Error502BadGateway("provider API returned no pull request")
 	}
 
-	repoObj, err := s.db.GetRepoByOwnerName(ctx, input.Owner, input.Name)
-	if err == nil && repoObj != nil {
-		normalized, normalizeErr := ghclient.NormalizePR(repoObj.ID, pr)
-		if normalizeErr == nil {
-			if mrID, upsertErr := s.db.UpsertMergeRequest(ctx, normalized); upsertErr == nil {
-				_ = s.db.EnsureKanbanState(ctx, mrID)
-			}
+	if repo != nil {
+		normalized := platform.DBMergeRequest(repo.ID, pr)
+		if mrID, upsertErr := s.db.UpsertMergeRequest(ctx, normalized); upsertErr == nil {
+			_ = s.db.EnsureKanbanState(ctx, mrID)
 		}
 	}
 
@@ -1556,15 +1690,25 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 		return nil, huma.Error400BadRequest("invalid merge method: must be merge, squash, or rebase")
 	}
 
-	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	repo, err := s.requireRepoRouteCapability(
+		ctx,
+		input.Provider, input.PlatformHost, input.Owner, input.Name,
+		capabilityMergeMutation,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	mutator, err := s.syncer.MergeMutator(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	result, err := client.MergePullRequest(
+	result, err := mutator.MergeMergeRequest(
 		ctx,
-		input.Owner,
-		input.Name,
+		platformRepoRefFromDB(*repo),
 		input.Number,
 		input.Body.CommitTitle,
 		input.Body.CommitMessage,
@@ -1584,8 +1728,10 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 			if ghErr.Response.StatusCode == http.StatusMethodNotAllowed ||
 				ghErr.Response.StatusCode == http.StatusConflict {
 				s.runBackground(func(bgCtx context.Context) {
-					if syncErr := s.syncer.SyncMR(
-						bgCtx, input.Owner, input.Name, input.Number,
+					if syncErr := s.syncer.SyncMROnProvider(
+						bgCtx,
+						repoProviderKind(*repo), repoProviderHost(*repo),
+						repo.Owner, repo.Name, input.Number,
 					); syncErr != nil {
 						slog.Warn("background sync after merge failure", "err", syncErr)
 					}
@@ -1607,17 +1753,14 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 		return nil, huma.Error502BadGateway("GitHub merge error: " + err.Error())
 	}
 
-	repoObj, _ := s.db.GetRepoByOwnerName(ctx, input.Owner, input.Name)
-	if repoObj != nil {
-		now := s.now().UTC()
-		_ = s.db.UpdateMRState(ctx, repoObj.ID, input.Number, "merged", &now, &now)
-	}
+	now := s.now().UTC()
+	_ = s.db.UpdateMRState(ctx, repo.ID, input.Number, "merged", &now, &now)
 
 	return &mergePROutput{
 		Body: mergePRBody{
-			Merged:  result.GetMerged(),
-			SHA:     result.GetSHA(),
-			Message: result.GetMessage(),
+			Merged:  result.Merged,
+			SHA:     result.SHA,
+			Message: result.Message,
 		},
 	}, nil
 }
@@ -1673,14 +1816,23 @@ func (s *Server) setPRGitHubState(
 		)
 	}
 
-	client, err := s.syncer.ClientForRepo(input.Owner, input.Name)
+	repo, err := s.requireRepoRouteCapability(
+		ctx,
+		input.Provider, input.PlatformHost, input.Owner, input.Name,
+		capabilityStateMutation,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	mutator, err := s.syncer.StateMutator(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	mr, err := s.db.GetMergeRequest(
-		ctx, input.Owner, input.Name, input.Number,
-	)
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(
 			"get pull request: " + err.Error(),
@@ -1695,18 +1847,19 @@ func (s *Server) setPRGitHubState(
 		)
 	}
 
-	if _, err := client.EditPullRequest(
-		ctx, input.Owner, input.Name,
-		input.Number, ghclient.EditPullRequestOpts{State: &input.Body.State},
+	if _, err := mutator.SetMergeRequestState(
+		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.State,
 	); err != nil {
 		var ghErr *gh.ErrorResponse
 		if errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil &&
 			ghErr.Response.StatusCode == http.StatusUnprocessableEntity {
 			// Re-fetch to sync local state and determine the real cause.
-			repoID, repoErr := s.lookupRepoID(
-				ctx, input.Owner, input.Name,
-			)
-			if repoErr == nil {
+			repoID := repo.ID
+			{
+				client, clientErr := s.syncer.ClientForHost(repo.PlatformHost)
+				if clientErr != nil {
+					return nil, huma.Error404NotFound(clientErr.Error())
+				}
 				ghPR, fetchErr := client.GetPullRequest(
 					ctx, input.Owner, input.Name, input.Number,
 				)
@@ -1738,12 +1891,7 @@ func (s *Server) setPRGitHubState(
 		)
 	}
 
-	repoID, err := s.lookupRepoID(ctx, input.Owner, input.Name)
-	if err != nil {
-		return nil, huma.Error500InternalServerError(
-			"get repo: " + err.Error(),
-		)
-	}
+	repoID := repo.ID
 
 	var closedAt *time.Time
 	if input.Body.State == "closed" {
@@ -1773,35 +1921,41 @@ func (s *Server) setIssueGitHubState(
 		)
 	}
 
-	repo, issue, err := s.lookupIssue(ctx, repoNumberPathRef{
-		owner:        input.Owner,
-		name:         input.Name,
-		number:       input.Number,
-		platformHost: input.Body.PlatformHost,
-	})
+	repo, err := s.requireRepoRouteCapability(
+		ctx,
+		input.Provider, input.PlatformHost, input.Owner, input.Name,
+		capabilityStateMutation,
+	)
 	if err != nil {
-		if errors.Is(err, errRepoNotFound) || strings.Contains(err.Error(), "not found") {
-			return nil, huma.Error404NotFound("issue not found")
-		}
-		return nil, huma.Error500InternalServerError(
-			"get issue: " + err.Error(),
-		)
+		return nil, err
+	}
+	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("get issue: " + err.Error())
+	}
+	if issue == nil {
+		return nil, huma.Error404NotFound("issue not found")
 	}
 
-	client, err := s.syncer.ClientForHost(repo.PlatformHost)
+	mutator, err := s.syncer.StateMutator(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	if _, err := client.EditIssue(
-		ctx, input.Owner, input.Name,
-		input.Number, input.Body.State,
+	if _, err := mutator.SetIssueState(
+		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.State,
 	); err != nil {
 		var ghErr *gh.ErrorResponse
 		if errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil &&
 			ghErr.Response.StatusCode == http.StatusUnprocessableEntity {
 			// Re-fetch to sync local state. If already in the
 			// requested state (concurrent edit), treat as success.
+			client, clientErr := s.syncer.ClientForHost(repo.PlatformHost)
+			if clientErr != nil {
+				return nil, huma.Error404NotFound(clientErr.Error())
+			}
 			ghIssue, fetchErr := client.GetIssue(
 				ctx, input.Owner, input.Name, input.Number,
 			)
@@ -1859,7 +2013,12 @@ func (s *Server) listRepos(ctx context.Context, _ *struct{}) (*listReposOutput, 
 		repos = s.filterConfiguredRepos(repos)
 	}
 
-	return &listReposOutput{Body: repos}, nil
+	out := make([]repoResponse, 0, len(repos))
+	for _, repo := range repos {
+		out = append(out, s.repoResponse(repo))
+	}
+
+	return &listReposOutput{Body: out}, nil
 }
 
 func (s *Server) listRepoSummaries(
@@ -1878,7 +2037,7 @@ func (s *Server) listRepoSummaries(
 	defaultPlatformHost := s.defaultPlatformHost()
 	out := make([]repoSummaryResponse, 0, len(summaries))
 	for _, summary := range summaries {
-		out = append(out, toRepoSummaryResponse(
+		out = append(out, s.toRepoSummaryResponse(
 			summary, defaultPlatformHost,
 		))
 	}
@@ -1902,12 +2061,14 @@ func (s *Server) getRateLimits(
 	gqlTrackers := s.syncer.GQLRateTrackers()
 	budgets := s.syncer.Budgets()
 	hosts := make(map[string]rateLimitHostStatus, len(trackers))
-	for host, rt := range trackers {
+	for key, rt := range trackers {
 		resetStr := ""
 		if resetAt := rt.ResetAt(); resetAt != nil {
 			resetStr = formatUTCRFC3339(*resetAt)
 		}
 		status := rateLimitHostStatus{
+			Provider:           rt.Provider(),
+			PlatformHost:       rt.PlatformHost(),
 			RequestsHour:       rt.RequestsThisHour(),
 			RateRemaining:      rt.Remaining(),
 			RateLimit:          rt.RateLimit(),
@@ -1920,7 +2081,7 @@ func (s *Server) getRateLimits(
 			GQLRemaining:       -1,
 			GQLLimit:           -1,
 		}
-		if gqlRT := gqlTrackers[host]; gqlRT != nil {
+		if gqlRT := gqlTrackers[key]; gqlRT != nil {
 			status.GQLRemaining = gqlRT.Remaining()
 			status.GQLLimit = gqlRT.RateLimit()
 			status.GQLKnown = gqlRT.Known()
@@ -1928,12 +2089,12 @@ func (s *Server) getRateLimits(
 				status.GQLResetAt = resetAt.UTC().Format(time.RFC3339)
 			}
 		}
-		if b := budgets[host]; b != nil {
+		if b := budgets[key]; b != nil {
 			status.BudgetLimit = b.Limit()
 			status.BudgetSpent = b.Spent()
 			status.BudgetRemaining = b.Remaining()
 		}
-		hosts[host] = status
+		hosts[key] = status
 	}
 	return &rateLimitsOutput{
 		Body: rateLimitsResponse{Hosts: hosts},
@@ -1941,13 +2102,22 @@ func (s *Server) getRateLimits(
 }
 
 func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROutput, error) {
+	repo, err := s.lookupRepoByProviderRoute(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
+	)
+	if err != nil {
+		return nil, providerRouteLookupError(err)
+	}
 	// SyncMR distinguishes a non-fatal diff failure from a hard sync failure
 	// via DiffSyncError. The PR row, timeline, and CI status are all current
 	// in either case, so degrade gracefully: keep the response, but report
 	// the diff problem as a warning so the UI can explain why the diff view
 	// is stale or empty.
 	var diffErr *ghclient.DiffSyncError
-	syncErr := s.syncer.SyncMR(ctx, input.Owner, input.Name, input.Number)
+	syncErr := s.syncer.SyncMROnProvider(
+		ctx, repoProviderKind(*repo), repoProviderHost(*repo),
+		repo.Owner, repo.Name, input.Number,
+	)
 	if syncErr != nil && !errors.As(syncErr, &diffErr) {
 		if strings.Contains(syncErr.Error(), "is not tracked") {
 			return nil, huma.Error403Forbidden(syncErr.Error())
@@ -1955,7 +2125,7 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 		return nil, huma.Error502BadGateway("sync PR: " + syncErr.Error())
 	}
 
-	mr, err := s.db.GetMergeRequest(ctx, input.Owner, input.Name, input.Number)
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("get pull request: " + err.Error())
 	}
@@ -1984,32 +2154,48 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 	return &syncPROutput{Body: body}, nil
 }
 
-func (s *Server) enqueuePRSync(_ context.Context, input *repoNumberInput) (*acceptedOutput, error) {
-	key := "pr:github.com:" + input.Owner + "/" + input.Name + "#" + strconv.Itoa(input.Number)
+func (s *Server) enqueuePRSync(ctx context.Context, input *repoNumberInput) (*acceptedOutput, error) {
+	repo, err := s.lookupRepoByProviderRoute(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
+	)
+	if err != nil {
+		return nil, providerRouteLookupError(err)
+	}
+	kind := repoProviderKind(*repo)
+	host := repoProviderHost(*repo)
+	key := "pr:" + string(kind) + ":" + host + ":" + repo.RepoPath +
+		"#" + strconv.Itoa(input.Number)
 	s.enqueueDetailSync(
 		key,
 		[]any{
 			"type", "pr",
-			"owner", input.Owner,
-			"name", input.Name,
+			"provider", string(kind),
+			"platform_host", host,
+			"repo_path", repo.RepoPath,
+			"owner", repo.Owner,
+			"name", repo.Name,
 			"number", input.Number,
 		},
 		func(ctx context.Context) error {
-			return s.syncer.SyncMR(ctx, input.Owner, input.Name, input.Number)
+			return s.syncer.SyncMROnProvider(
+				ctx, kind, host, repo.Owner, repo.Name, input.Number,
+			)
 		},
 	)
 	return &acceptedOutput{Status: http.StatusAccepted}, nil
 }
 
 func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*syncIssueOutput, error) {
-	var err error
-	if input.PlatformHost != "" {
-		err = s.syncer.SyncIssueOnHost(
-			ctx, input.PlatformHost, input.Owner, input.Name, input.Number,
-		)
-	} else {
-		err = s.syncer.SyncIssue(ctx, input.Owner, input.Name, input.Number)
+	repo, err := s.lookupRepoByProviderRoute(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
+	)
+	if err != nil {
+		return nil, providerRouteLookupError(err)
 	}
+	err = s.syncer.SyncIssueOnProvider(
+		ctx, repoProviderKind(*repo), repoProviderHost(*repo),
+		repo.Owner, repo.Name, input.Number,
+	)
 	if err != nil {
 		if strings.Contains(err.Error(), "is not tracked") {
 			return nil, huma.Error403Forbidden(err.Error())
@@ -2017,17 +2203,12 @@ func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*s
 		return nil, huma.Error502BadGateway("sync issue: " + err.Error())
 	}
 
-	repo, issue, err := s.lookupIssue(ctx, repoNumberPathRef{
-		owner:        input.Owner,
-		name:         input.Name,
-		number:       input.Number,
-		platformHost: input.PlatformHost,
-	})
+	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		if errors.Is(err, errRepoNotFound) || strings.Contains(err.Error(), "not found") {
-			return nil, huma.Error404NotFound("issue not found after sync")
-		}
 		return nil, huma.Error500InternalServerError("get issue: " + err.Error())
+	}
+	if issue == nil {
+		return nil, huma.Error404NotFound("issue not found after sync")
 	}
 
 	events, err := s.db.ListIssueEvents(ctx, issue.ID)
@@ -2041,6 +2222,7 @@ func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*s
 	syncIssueResp := issueDetailResponse{
 		Issue:        issue,
 		Events:       events,
+		Repo:         s.repoRefFromRepo(*repo),
 		PlatformHost: repo.PlatformHost,
 		RepoOwner:    repo.Owner,
 		RepoName:     repo.Name,
@@ -2063,28 +2245,32 @@ func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*s
 	return &syncIssueOutput{Body: syncIssueResp}, nil
 }
 
-func (s *Server) enqueueIssueSync(_ context.Context, input *issueRepoNumberInput) (*acceptedOutput, error) {
-	host := input.PlatformHost
-	if host == "" {
-		host = "github.com"
+func (s *Server) enqueueIssueSync(ctx context.Context, input *issueRepoNumberInput) (*acceptedOutput, error) {
+	repo, err := s.lookupRepoByProviderRoute(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
+	)
+	if err != nil {
+		return nil, providerRouteLookupError(err)
 	}
-	key := "issue:" + host + ":" + input.Owner + "/" + input.Name + "#" + strconv.Itoa(input.Number)
+	kind := repoProviderKind(*repo)
+	host := repoProviderHost(*repo)
+	key := "issue:" + string(kind) + ":" + host + ":" + repo.RepoPath +
+		"#" + strconv.Itoa(input.Number)
 	s.enqueueDetailSync(
 		key,
 		[]any{
 			"type", "issue",
+			"provider", string(kind),
 			"platform_host", host,
-			"owner", input.Owner,
-			"name", input.Name,
+			"repo_path", repo.RepoPath,
+			"owner", repo.Owner,
+			"name", repo.Name,
 			"number", input.Number,
 		},
 		func(ctx context.Context) error {
-			if input.PlatformHost != "" {
-				return s.syncer.SyncIssueOnHost(
-					ctx, input.PlatformHost, input.Owner, input.Name, input.Number,
-				)
-			}
-			return s.syncer.SyncIssue(ctx, input.Owner, input.Name, input.Number)
+			return s.syncer.SyncIssueOnProvider(
+				ctx, kind, host, repo.Owner, repo.Name, input.Number,
+			)
 		},
 	)
 	return &acceptedOutput{Status: http.StatusAccepted}, nil
@@ -2127,9 +2313,19 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 	}
 
 	if s.cfg != nil {
+		tracked := make(map[string]struct{})
+		for _, repo := range s.syncer.TrackedRepos() {
+			tracked[trackedRepoKey(repo)] = struct{}{}
+		}
 		filtered := make([]db.ActivityItem, 0, len(items))
 		for _, it := range items {
-			if s.syncer.IsTrackedRepo(it.RepoOwner, it.RepoName) {
+			key := trackedRepoKey(ghclient.RepoRef{
+				Platform:     platform.Kind(it.Platform),
+				PlatformHost: it.PlatformHost,
+				Owner:        it.RepoOwner,
+				Name:         it.RepoName,
+			})
+			if _, ok := tracked[key]; ok {
 				filtered = append(filtered, it)
 			}
 		}
@@ -2147,6 +2343,9 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 			ID:           it.Source + ":" + strconv.FormatInt(it.SourceID, 10),
 			Cursor:       db.EncodeCursor(it.CreatedAt, it.Source, it.SourceID),
 			ActivityType: it.ActivityType,
+			Repo: s.repoRefFromParts(
+				it.Platform, it.PlatformHost, it.RepoOwner, it.RepoName,
+			),
 			PlatformHost: it.PlatformHost,
 			RepoOwner:    it.RepoOwner,
 			RepoName:     it.RepoName,
@@ -2169,9 +2368,11 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 func (s *Server) resolveItem(
 	ctx context.Context, input *repoNumberInput,
 ) (*resolveItemOutput, error) {
-	owner, name, number := input.Owner, input.Name, input.Number
-
-	if !s.syncer.IsTrackedRepo(owner, name) {
+	number := input.Number
+	repo, err := s.lookupRepoByProviderRoute(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
+	)
+	if errors.Is(err, errRepoNotFound) {
 		return &resolveItemOutput{
 			Body: resolveItemResponse{
 				Number:      number,
@@ -2179,35 +2380,39 @@ func (s *Server) resolveItem(
 			},
 		}, nil
 	}
-
-	repo, err := s.db.GetRepoByOwnerName(ctx, owner, name)
+	if err != nil {
+		return nil, providerRouteLookupError(err)
+	}
+	if !s.syncer.IsTrackedRepoOnHost(repo.Owner, repo.Name, repoProviderHost(*repo)) {
+		return &resolveItemOutput{
+			Body: resolveItemResponse{
+				Number:      number,
+				RepoTracked: false,
+			},
+		}, nil
+	}
+	itemType, found, err := s.db.ResolveItemNumber(ctx, repo.ID, number)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(
-			"get repo: " + err.Error(),
+			"resolve item: " + err.Error(),
 		)
 	}
-	if repo != nil {
-		itemType, found, err := s.db.ResolveItemNumber(
-			ctx, repo.ID, number,
-		)
-		if err != nil {
-			return nil, huma.Error500InternalServerError(
-				"resolve item: " + err.Error(),
-			)
-		}
-		if found {
-			return &resolveItemOutput{
-				Body: resolveItemResponse{
-					ItemType:    itemType,
-					Number:      number,
-					RepoTracked: true,
-				},
-			}, nil
-		}
+	if found {
+		return &resolveItemOutput{
+			Body: resolveItemResponse{
+				ItemType:    itemType,
+				Number:      number,
+				RepoTracked: true,
+			},
+		}, nil
 	}
 
-	itemType, err := s.syncer.SyncItemByNumber(
-		ctx, owner, name, number,
+	if repoProviderKind(*repo) != platform.KindGitHub {
+		return nil, huma.Error404NotFound("item not found")
+	}
+
+	itemType, err = s.syncer.SyncItemByNumber(
+		ctx, repo.Owner, repo.Name, number,
 	)
 	// A DiffSyncError means the PR row was upserted but the diff
 	// computation failed. Resolution doesn't need diff data, so treat
@@ -2235,8 +2440,8 @@ func (s *Server) resolveItem(
 	}
 	if diffErr != nil {
 		slog.Warn("resolve item: diff sync failed but PR row was synced",
-			"owner", owner,
-			"name", name,
+			"owner", repo.Owner,
+			"name", repo.Name,
 			"number", number,
 			"err", err,
 		)
@@ -2286,7 +2491,13 @@ func (s *Server) getCommits(ctx context.Context, input *repoNumberInput) (*getCo
 		return nil, huma.Error503ServiceUnavailable("commits not available: clone manager not configured")
 	}
 
-	shas, err := s.db.GetDiffSHAs(ctx, input.Owner, input.Name, input.Number)
+	repo, err := s.lookupRepoByProviderRoute(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
+	)
+	if err != nil {
+		return nil, providerRouteLookupError(err)
+	}
+	shas, err := s.db.GetDiffSHAsByRepoID(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to look up PR")
 	}
@@ -2297,8 +2508,8 @@ func (s *Server) getCommits(ctx context.Context, input *repoNumberInput) (*getCo
 		return nil, huma.Error404NotFound("commits not available for this pull request")
 	}
 
-	host := s.syncer.HostForRepo(input.Owner, input.Name)
-	commits, err := s.clones.ListCommits(ctx, host, input.Owner, input.Name, shas.MergeBaseSHA, shas.DiffHeadSHA)
+	host := repoProviderHost(*repo)
+	commits, err := s.clones.ListCommits(ctx, host, repo.Owner, repo.Name, shas.MergeBaseSHA, shas.DiffHeadSHA)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
 			return nil, huma.Error404NotFound("commits not available: referenced commit not found")
@@ -2321,19 +2532,23 @@ func (s *Server) getCommits(ctx context.Context, input *repoNumberInput) (*getCo
 // --- Diff ---
 
 type getDiffInput struct {
-	Owner      string `path:"owner"`
-	Name       string `path:"name"`
-	Number     int    `path:"number"`
-	Whitespace string `query:"whitespace"`
-	Commit     string `query:"commit" doc:"Scope to a single commit SHA"`
-	From       string `query:"from"   doc:"Start SHA for range diff (inclusive)"`
-	To         string `query:"to"     doc:"End SHA for range diff (inclusive)"`
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Whitespace   string `query:"whitespace"`
+	Commit       string `query:"commit" doc:"Scope to a single commit SHA"`
+	From         string `query:"from"   doc:"Start SHA for range diff (inclusive)"`
+	To           string `query:"to"     doc:"End SHA for range diff (inclusive)"`
 }
 
 type getDiffOutput = bodyOutput[diffResponse]
 
 type resolvedDiffRange struct {
 	host     string
+	owner    string
+	name     string
 	fromSHA  string
 	toSHA    string
 	diffSHAs *db.DiffSHAs
@@ -2343,7 +2558,13 @@ func (s *Server) resolveDiffRange(
 	ctx context.Context,
 	input *getDiffInput,
 ) (*resolvedDiffRange, error) {
-	shas, err := s.db.GetDiffSHAs(ctx, input.Owner, input.Name, input.Number)
+	repo, err := s.lookupRepoByProviderRoute(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
+	)
+	if err != nil {
+		return nil, providerRouteLookupError(err)
+	}
+	shas, err := s.db.GetDiffSHAsByRepoID(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to look up PR")
 	}
@@ -2354,7 +2575,7 @@ func (s *Server) resolveDiffRange(
 		return nil, huma.Error404NotFound("diff not available for this pull request")
 	}
 
-	host := s.syncer.HostForRepo(input.Owner, input.Name)
+	host := repoProviderHost(*repo)
 	diffFrom := shas.MergeBaseSHA
 	diffTo := shas.DiffHeadSHA
 
@@ -2370,7 +2591,7 @@ func (s *Server) resolveDiffRange(
 		if _, err := s.validateSHAs(ctx, host, input, shas, input.Commit); err != nil {
 			return nil, err
 		}
-		parent, err := s.clones.ParentOf(ctx, host, input.Owner, input.Name, input.Commit)
+		parent, err := s.clones.ParentOf(ctx, host, repo.Owner, repo.Name, input.Commit)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to resolve parent: " + err.Error())
 		}
@@ -2386,7 +2607,7 @@ func (s *Server) resolveDiffRange(
 		if indexMap[input.From] <= indexMap[input.To] {
 			return nil, huma.Error400BadRequest("invalid range: 'from' must be older than 'to'")
 		}
-		parent, err := s.clones.ParentOf(ctx, host, input.Owner, input.Name, input.From)
+		parent, err := s.clones.ParentOf(ctx, host, repo.Owner, repo.Name, input.From)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to resolve parent: " + err.Error())
 		}
@@ -2399,6 +2620,8 @@ func (s *Server) resolveDiffRange(
 
 	return &resolvedDiffRange{
 		host:     host,
+		owner:    repo.Owner,
+		name:     repo.Name,
 		fromSHA:  diffFrom,
 		toSHA:    diffTo,
 		diffSHAs: shas,
@@ -2416,7 +2639,7 @@ func (s *Server) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutp
 	}
 
 	hideWhitespace := input.Whitespace == "hide"
-	result, err := s.clones.Diff(ctx, resolved.host, input.Owner, input.Name, resolved.fromSHA, resolved.toSHA, hideWhitespace)
+	result, err := s.clones.Diff(ctx, resolved.host, resolved.owner, resolved.name, resolved.fromSHA, resolved.toSHA, hideWhitespace)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
 			return nil, huma.Error404NotFound("diff not available: referenced commit not found")
@@ -2439,13 +2662,15 @@ func (s *Server) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutp
 const maxFilePreviewBytes int64 = 4 * 1024 * 1024
 
 type getFilePreviewInput struct {
-	Owner  string `path:"owner"`
-	Name   string `path:"name"`
-	Number int    `path:"number"`
-	Path   string `query:"path" doc:"Changed file path to preview"`
-	Commit string `query:"commit" doc:"Scope to a single commit SHA"`
-	From   string `query:"from"   doc:"Start SHA for range diff (inclusive)"`
-	To     string `query:"to"     doc:"End SHA for range diff (inclusive)"`
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Path         string `query:"path" doc:"Changed file path to preview"`
+	Commit       string `query:"commit" doc:"Scope to a single commit SHA"`
+	From         string `query:"from"   doc:"Start SHA for range diff (inclusive)"`
+	To           string `query:"to"     doc:"End SHA for range diff (inclusive)"`
 }
 
 type getFilePreviewOutput = bodyOutput[filePreviewResponse]
@@ -2459,12 +2684,14 @@ func (s *Server) getFilePreview(ctx context.Context, input *getFilePreviewInput)
 	}
 
 	resolved, err := s.resolveDiffRange(ctx, &getDiffInput{
-		Owner:  input.Owner,
-		Name:   input.Name,
-		Number: input.Number,
-		Commit: input.Commit,
-		From:   input.From,
-		To:     input.To,
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        input.Owner,
+		Name:         input.Name,
+		Number:       input.Number,
+		Commit:       input.Commit,
+		From:         input.From,
+		To:           input.To,
 	})
 	if err != nil {
 		return nil, err
@@ -2475,8 +2702,8 @@ func (s *Server) getFilePreview(ctx context.Context, input *getFilePreviewInput)
 	files, err := s.clones.DiffFiles(
 		ctx,
 		resolved.host,
-		input.Owner,
-		input.Name,
+		resolved.owner,
+		resolved.name,
 		resolved.fromSHA,
 		resolved.toSHA,
 	)
@@ -2509,8 +2736,8 @@ func (s *Server) getFilePreview(ctx context.Context, input *getFilePreviewInput)
 	content, err := s.clones.FileContent(
 		ctx,
 		resolved.host,
-		input.Owner,
-		input.Name,
+		resolved.owner,
+		resolved.name,
 		previewRef,
 		previewPath,
 		maxFilePreviewBytes,
@@ -2559,9 +2786,11 @@ func previewMediaType(path string, data []byte) string {
 // --- Files (lightweight) ---
 
 type getFilesInput struct {
-	Owner  string `path:"owner"`
-	Name   string `path:"name"`
-	Number int    `path:"number"`
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
 }
 
 type getFilesOutput = bodyOutput[filesResponse]
@@ -2571,7 +2800,13 @@ func (s *Server) getFiles(ctx context.Context, input *getFilesInput) (*getFilesO
 		return nil, huma.Error503ServiceUnavailable("files view not available: clone manager not configured")
 	}
 
-	shas, err := s.db.GetDiffSHAs(ctx, input.Owner, input.Name, input.Number)
+	repo, err := s.lookupRepoByProviderRoute(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
+	)
+	if err != nil {
+		return nil, providerRouteLookupError(err)
+	}
+	shas, err := s.db.GetDiffSHAsByRepoID(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to look up PR")
 	}
@@ -2582,8 +2817,8 @@ func (s *Server) getFiles(ctx context.Context, input *getFilesInput) (*getFilesO
 		return nil, huma.Error404NotFound("file list not available for this pull request")
 	}
 
-	host := s.syncer.HostForRepo(input.Owner, input.Name)
-	files, err := s.clones.DiffFiles(ctx, host, input.Owner, input.Name, shas.MergeBaseSHA, shas.DiffHeadSHA)
+	host := repoProviderHost(*repo)
+	files, err := s.clones.DiffFiles(ctx, host, repo.Owner, repo.Name, shas.MergeBaseSHA, shas.DiffHeadSHA)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
 			return nil, huma.Error404NotFound("file list not available: referenced commit not found")
@@ -2657,7 +2892,13 @@ func (s *Server) listStacks(ctx context.Context, input *listStacksInput) (*listS
 }
 
 func (s *Server) getStackForPR(ctx context.Context, input *repoNumberInput) (*getStackForPROutput, error) {
-	stack, members, err := s.db.GetStackForPR(ctx, input.Owner, input.Name, input.Number)
+	repo, err := s.lookupRepoByProviderRoute(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
+	)
+	if err != nil {
+		return nil, providerRouteLookupError(err)
+	}
+	stack, members, err := s.db.GetStackForPRByRepoID(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("get stack for pr failed")
 	}
@@ -2787,7 +3028,7 @@ func (s *Server) runWorkspaceSetup(ws *workspace.Workspace) {
 				if summary != nil {
 					s.hub.Broadcast(Event{
 						Type: "workspace_status",
-						Data: toWorkspaceResponse(summary),
+						Data: s.toWorkspaceResponse(bgCtx, summary),
 					})
 				}
 				return
@@ -2831,12 +3072,18 @@ func (s *Server) createIssueWorkspace(
 			"workspace manager not configured",
 		)
 	}
+	repo, err := s.lookupRepoByProviderRoute(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
+	)
+	if err != nil {
+		return nil, providerRouteLookupError(err)
+	}
 
 	existing, err := s.workspaces.GetByIssue(
 		ctx,
-		input.Body.PlatformHost,
-		input.Owner,
-		input.Name,
+		repo.PlatformHost,
+		repo.Owner,
+		repo.Name,
 		input.Number,
 	)
 	if err != nil {
@@ -2864,9 +3111,9 @@ func (s *Server) createIssueWorkspace(
 
 	ws, err := s.workspaces.CreateIssue(
 		ctx,
-		input.Body.PlatformHost,
-		input.Owner,
-		input.Name,
+		repo.PlatformHost,
+		repo.Owner,
+		repo.Name,
 		input.Number,
 		workspace.CreateIssueOptions{
 			GitHeadRef:          strings.TrimSpace(derefString(input.Body.GitHeadRef)),
@@ -2909,9 +3156,9 @@ func (s *Server) createIssueWorkspace(
 		if strings.Contains(msg, "UNIQUE constraint") {
 			existing, getErr := s.workspaces.GetByIssue(
 				ctx,
-				input.Body.PlatformHost,
-				input.Owner,
-				input.Name,
+				repo.PlatformHost,
+				repo.Owner,
+				repo.Name,
 				input.Number,
 			)
 			if getErr == nil && existing != nil {
@@ -3344,6 +3591,9 @@ func (s *Server) toWorkspaceResponse(
 	summary *db.WorkspaceSummary,
 ) workspaceResponse {
 	resp := toWorkspaceResponse(summary)
+	resp.Repo = s.repoRefFromParts(
+		summary.Platform, summary.PlatformHost, summary.RepoOwner, summary.RepoName,
+	)
 	if s.workspaces == nil ||
 		summary.Status != "ready" {
 		return resp

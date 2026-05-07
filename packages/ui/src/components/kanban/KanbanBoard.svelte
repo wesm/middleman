@@ -1,6 +1,11 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import type { PullRequest, KanbanStatus } from "../../api/types.js";
+  import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
+  import {
+    providerRouteRefFromKanbanDragPayload,
+    type KanbanDragPayload,
+  } from "./drag.js";
   import { getStores, getClient, getNavigate, getSidebar } from "../../context.js";
   import DetailDrawer from "../DetailDrawer.svelte";
   import KanbanColumn from "./KanbanColumn.svelte";
@@ -34,12 +39,22 @@
   ] as const;
 
   // --- Drawer state ---
-  let drawerPR = $state<{ owner: string; name: string; number: number } | null>(null);
+  let drawerPR = $state<{
+    provider: string;
+    platformHost: string;
+    owner: string;
+    name: string;
+    repoPath: string;
+    number: number;
+  } | null>(null);
 
   function handleSelect(pr: PullRequest): void {
     drawerPR = {
-      owner: pr.repo_owner ?? "",
-      name: pr.repo_name ?? "",
+      provider: pr.repo.provider,
+      platformHost: pr.repo.platform_host,
+      owner: pr.repo.owner,
+      name: pr.repo.name,
+      repoPath: pr.repo.repo_path,
       number: pr.Number,
     };
   }
@@ -51,14 +66,13 @@
 
   // --- Drag and drop ---
   async function handleDrop(
-    owner: string,
-    name: string,
-    number: number,
+    payload: KanbanDragPayload,
     status: KanbanStatus,
   ): Promise<void> {
+    const ref = providerRouteRefFromKanbanDragPayload(payload);
     try {
-      const { error } = await client.PUT("/repos/{owner}/{name}/pulls/{number}/state", {
-        params: { path: { owner, name, number } },
+      const { error } = await client.PUT(providerItemPath("pulls", ref, "/state"), {
+        params: { path: { ...providerRouteParams(ref), number: payload.number } },
         body: { status },
       });
       if (error) {
@@ -94,8 +108,11 @@
   {#if drawerPR !== null}
     <DetailDrawer
       itemType="pr"
+      provider={drawerPR.provider}
+      platformHost={drawerPR.platformHost}
       owner={drawerPR.owner}
       name={drawerPR.name}
+      repoPath={drawerPR.repoPath}
       number={drawerPR.number}
       onClose={closeDrawer}
       onPullsRefresh={() => pulls.loadPulls({ state: "open" })}

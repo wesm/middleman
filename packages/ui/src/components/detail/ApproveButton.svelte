@@ -1,5 +1,6 @@
 <script lang="ts">
   import CheckIcon from "@lucide/svelte/icons/check";
+  import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
   import { getClient, getStores } from "../../context.js";
   import ActionButton from "../shared/ActionButton.svelte";
 
@@ -10,6 +11,9 @@
     owner: string;
     name: string;
     number: number;
+    provider: string;
+    platformHost?: string | undefined;
+    repoPath: string;
     size?: "sm" | "md";
     disabled?: boolean;
   }
@@ -18,6 +22,9 @@
     owner,
     name,
     number,
+    provider,
+    platformHost,
+    repoPath,
     size = "md",
     disabled = false,
   }: Props = $props();
@@ -43,8 +50,9 @@
     submitting = true;
     error = null;
     try {
-      const { error } = await client.POST("/repos/{owner}/{name}/pulls/{number}/approve", {
-        params: { path: { owner, name, number } },
+      const ref = { provider, platformHost, owner, name, repoPath };
+      const { error } = await client.POST(providerItemPath("pulls", ref, "/approve"), {
+        params: { path: { ...providerRouteParams(ref), number } },
         body: { body: body.trim() },
       });
       if (error) {
@@ -52,7 +60,7 @@
       }
       body = "";
       expanded = false;
-      await detail.loadDetail(owner, name, number);
+      await detail.loadDetail(owner, name, number, { provider, platformHost, repoPath });
       await pulls.loadPulls();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);

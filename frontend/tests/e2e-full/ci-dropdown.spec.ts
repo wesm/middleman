@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 test.describe("CI dropdown", () => {
   test("detail chips use the shared centered chip layout", async ({ page }) => {
-    await page.goto("/pulls/acme/widgets/1");
+    await page.goto("/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1");
 
     const chips = page.locator(".pull-detail .chips-row .chip");
     await expect(chips.first()).toBeVisible();
@@ -29,7 +29,7 @@ test.describe("CI dropdown", () => {
   });
 
   test("expanded CI checks stay below chip without stretching sibling chips", async ({ page }) => {
-    await page.goto("/pulls/acme/widgets/1");
+    await page.goto("/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1");
 
     const detail = page.locator(".pull-detail");
     const chip = detail.getByRole("button", { name: /CI:\s*(success|pending)/i });

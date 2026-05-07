@@ -1,8 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// Seed data repos: acme/widgets (most items) and acme/tools (fewer items).
+// Seed data repos: acme/widgets, acme/tools, and a GitLab group/project issue.
 // Open PRs (8): widgets#1, #2, #6, #7, tools#1, #10, #11, #12 -> widgets 4, tools 4
-// Open issues (4): widgets#10, #11, #13, tools#5 -> widgets 3, tools 1
+// Open issues (5): widgets#10, #11, #13, tools#5, group/project#11
 
 async function waitForPullList(page: Page): Promise<void> {
   await page.locator(".pull-item").first()
@@ -103,29 +103,29 @@ test.describe("collapsible repo groups", () => {
     await waitForIssueList(page);
 
     await expect(widgetsHeader(page)).toHaveAttribute("aria-expanded", "true");
-    // Seed data: widgets has 3 open issues, tools has 1 — total 4.
-    await expect(page.locator(".issue-item")).toHaveCount(4);
+    // Seed data: widgets has 3 open issues; tools and GitLab add 1 each.
+    await expect(page.locator(".issue-item")).toHaveCount(5);
   });
 
   test("issue list — collapse, expand, and persist acme/widgets", async ({ page }) => {
     await page.goto("/issues");
     await waitForIssueList(page);
 
-    // Default: 4 issues total (3 widgets + 1 tools).
-    await expect(page.locator(".issue-item")).toHaveCount(4);
+    // Default: 5 issues total (3 widgets + 1 tools + 1 GitLab).
+    await expect(page.locator(".issue-item")).toHaveCount(5);
 
-    // Collapse widgets: 1 issue remains (tools#5).
+    // Collapse widgets: 2 issues remain (tools#5 and GitLab group/project#11).
     await widgetsHeader(page).click();
     await expect(widgetsHeader(page)).toHaveAttribute("aria-expanded", "false");
     await expect(
       widgetsHeader(page).locator(".repo-header__count"),
     ).toHaveText("3");
-    await expect(page.locator(".issue-item")).toHaveCount(1);
+    await expect(page.locator(".issue-item")).toHaveCount(2);
 
-    // Expand again: back to 4.
+    // Expand again: back to 5.
     await widgetsHeader(page).click();
     await expect(widgetsHeader(page)).toHaveAttribute("aria-expanded", "true");
-    await expect(page.locator(".issue-item")).toHaveCount(4);
+    await expect(page.locator(".issue-item")).toHaveCount(5);
 
     // Collapse again and verify persisted state in a fresh page.
     await widgetsHeader(page).click();
@@ -133,7 +133,7 @@ test.describe("collapsible repo groups", () => {
     await refreshedPage.goto("/issues");
     await waitForIssueList(refreshedPage);
     await expect(widgetsHeader(refreshedPage)).toHaveAttribute("aria-expanded", "false");
-    await expect(refreshedPage.locator(".issue-item")).toHaveCount(1);
+    await expect(refreshedPage.locator(".issue-item")).toHaveCount(2);
 
     await refreshedPage.close();
   });

@@ -1,3 +1,7 @@
+import {
+  providerRepoPath,
+  providerRouteParams,
+} from "@middleman/ui/api/provider-routes";
 import { client } from "../api/runtime.js";
 import { navigate, buildItemRoute } from "../stores/router.svelte.js";
 import { showFlash } from "../stores/flash.svelte.js";
@@ -16,23 +20,26 @@ function findItemRef(target: EventTarget | null): HTMLAnchorElement | null {
 }
 
 async function resolveAndNavigate(
+  provider: string,
+  platformHost: string | undefined,
   owner: string,
   name: string,
+  repoPath: string,
   number: number,
   thisRequestId: number,
 ): Promise<void> {
   try {
+    const ref = { provider, platformHost, owner, name, repoPath };
     const { data, error, response } = await client.POST(
-      "/repos/{owner}/{name}/items/{number}/resolve",
-      { params: { path: { owner, name, number } } },
+      providerRepoPath(ref, "/resolve/{number}"),
+      { params: { path: { ...providerRouteParams(ref), number } } },
     );
 
-    // A newer click superseded this one — discard the result.
     if (thisRequestId !== requestId) return;
 
     if (error) {
       if (response.status === 404) {
-        showFlash(`Item ${owner}/${name}#${number} not found on GitHub.`);
+        showFlash(`Item ${owner}/${name}#${number} not found.`);
       } else {
         showFlash(`Failed to resolve ${owner}/${name}#${number}. Try again later.`);
       }
@@ -46,12 +53,15 @@ async function resolveAndNavigate(
       return;
     }
 
-    const path = buildItemRoute(
-      data.item_type === "pr" ? "pr" : "issue",
+    const path = buildItemRoute({
+      itemType: data.item_type === "pr" ? "pr" : "issue",
+      provider: ref.provider,
+      platformHost: ref.platformHost,
       owner,
       name,
+      repoPath,
       number,
-    );
+    });
     navigate(path);
   } catch {
     if (thisRequestId !== requestId) return;
@@ -60,20 +70,30 @@ async function resolveAndNavigate(
 }
 
 function handleClick(e: MouseEvent): void {
-  // Let browser handle modified clicks (cmd, ctrl, shift, middle).
   if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
 
   const anchor = findItemRef(e.target);
   if (!anchor) return;
 
+  const provider = anchor.dataset.provider;
+  const platformHost = anchor.dataset.platformHost;
   const owner = anchor.dataset.owner;
   const name = anchor.dataset.name;
+  const repoPath = anchor.dataset.repoPath;
   const numberStr = anchor.dataset.number;
-  if (!owner || !name || !numberStr) return;
+  if (!provider || !owner || !name || !repoPath || !numberStr) return;
 
   e.preventDefault();
   requestId++;
-  void resolveAndNavigate(owner, name, parseInt(numberStr, 10), requestId);
+  void resolveAndNavigate(
+    provider,
+    platformHost,
+    owner,
+    name,
+    repoPath,
+    parseInt(numberStr, 10),
+    requestId,
+  );
 }
 
 export function initItemRefHandler(): () => void {

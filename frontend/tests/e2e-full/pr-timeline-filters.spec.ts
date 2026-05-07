@@ -21,7 +21,7 @@ async function gotoWithWebKitRetry(page: Page, url: string): Promise<void> {
 }
 
 async function openPRTimeline(page: Page): Promise<void> {
-  await gotoWithWebKitRetry(page, "/pulls/acme/widgets/1");
+  await gotoWithWebKitRetry(page, "/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1");
   await page.locator(".pull-detail")
     .waitFor({ state: "visible", timeout: 10_000 });
   await expect(page.getByText("feat: add cache store")).toBeVisible();

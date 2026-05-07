@@ -4,6 +4,8 @@ import (
 	"cmp"
 	"slices"
 	"time"
+
+	"github.com/wesm/middleman/internal/platform"
 )
 
 // QueueItemType distinguishes PRs from issues for cost
@@ -19,6 +21,7 @@ const (
 // item that may need a detail fetch.
 type QueueItem struct {
 	Type         QueueItemType
+	Platform     platform.Kind
 	RepoOwner    string
 	RepoName     string
 	Number       int

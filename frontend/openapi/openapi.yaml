@@ -63,6 +63,8 @@ components:
           type: string
         platform_host:
           type: string
+        repo:
+          $ref: "#/components/schemas/RepoRefResponse"
         repo_name:
           type: string
         repo_owner:
@@ -71,6 +73,7 @@ components:
         - id
         - cursor
         - activity_type
+        - repo
         - platform_host
         - repo_owner
         - repo_name
@@ -115,11 +118,18 @@ components:
           format: uri
           readOnly: true
           type: string
+        host:
+          type: string
         name:
           type: string
         owner:
           type: string
+        platform_host:
+          type: string
+        provider:
+          type: string
       required:
+        - provider
         - owner
         - name
       type: object
@@ -143,6 +153,21 @@ components:
         - label
         - command
       type: object
+    ApprovePRHostInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ApprovePRHostInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        body:
+          type: string
+      required:
+        - body
+      type: object
     ApprovePRInputBody:
       additionalProperties: false
       properties:
@@ -161,13 +186,20 @@ components:
     BulkAddRepoRequest:
       additionalProperties: false
       properties:
+        host:
+          type: string
         name:
           type: string
         owner:
           type: string
+        platform_host:
+          type: string
+        provider:
+          type: string
+        repo_path:
+          type: string
       required:
-        - owner
-        - name
+        - provider
       type: object
     BulkAddReposRequest:
       additionalProperties: false
@@ -283,11 +315,38 @@ components:
           type: string
         owner:
           type: string
+        platform_host:
+          type: string
+        provider:
+          type: string
+        repo_path:
+          type: string
       required:
+        - provider
+        - platform_host
         - owner
         - name
+        - repo_path
         - is_glob
         - matched_repo_count
+      type: object
+    CreateIssueHostInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/CreateIssueHostInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        body:
+          type: string
+        title:
+          type: string
+      required:
+        - title
+        - body
       type: object
     CreateIssueInputBody:
       additionalProperties: false
@@ -301,13 +360,26 @@ components:
           type: string
         body:
           type: string
-        platform_host:
-          type: string
         title:
           type: string
       required:
         - title
         - body
+      type: object
+    CreateIssueWorkspaceHostInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/CreateIssueWorkspaceHostInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        git_head_ref:
+          type: string
+        reuse_existing_branch:
+          type: boolean
       type: object
     CreateIssueWorkspaceInputBody:
       additionalProperties: false
@@ -321,12 +393,8 @@ components:
           type: string
         git_head_ref:
           type: string
-        platform_host:
-          type: string
         reuse_existing_branch:
           type: boolean
-      required:
-        - platform_host
       type: object
     CreateWorkspaceInputBody:
       additionalProperties: false
@@ -414,6 +482,21 @@ components:
         - whitespace_only_count
         - files
       type: object
+    EditCommentHostInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/EditCommentHostInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        body:
+          type: string
+      required:
+        - body
+      type: object
     EditCommentInputBody:
       additionalProperties: false
       properties:
@@ -421,6 +504,21 @@ components:
           description: A URL to the JSON Schema for this object.
           examples:
             - /api/v1/schemas/EditCommentInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        body:
+          type: string
+      required:
+        - body
+      type: object
+    EditIssueCommentHostInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/EditIssueCommentHostInputBody.json
           format: uri
           readOnly: true
           type: string
@@ -441,10 +539,23 @@ components:
           type: string
         body:
           type: string
-        platform_host:
-          type: string
       required:
         - body
+      type: object
+    EditPRContentHostInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/EditPRContentHostInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        body:
+          type: string
+        title:
+          type: string
       type: object
     EditPRContentInputBody:
       additionalProperties: false
@@ -574,6 +685,21 @@ components:
         - whitespace_only_count
         - files
       type: object
+    GithubStateHostInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/GithubStateHostInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        state:
+          type: string
+      required:
+        - state
+      type: object
     GithubStateInputBody:
       additionalProperties: false
       properties:
@@ -583,8 +709,6 @@ components:
             - /api/v1/schemas/GithubStateInputBody.json
           format: uri
           readOnly: true
-          type: string
-        platform_host:
           type: string
         state:
           type: string
@@ -668,6 +792,8 @@ components:
         Number:
           format: int64
           type: integer
+        PlatformExternalID:
+          type: string
         PlatformID:
           format: int64
           type: integer
@@ -695,6 +821,7 @@ components:
         - ID
         - RepoID
         - PlatformID
+        - PlatformExternalID
         - Number
         - URL
         - Title
@@ -733,6 +860,8 @@ components:
           $ref: "#/components/schemas/Issue"
         platform_host:
           type: string
+        repo:
+          $ref: "#/components/schemas/RepoRefResponse"
         repo_name:
           type: string
         repo_owner:
@@ -742,6 +871,7 @@ components:
       required:
         - issue
         - events
+        - repo
         - platform_host
         - repo_owner
         - repo_name
@@ -776,6 +906,8 @@ components:
           type: integer
         MetadataJSON:
           type: string
+        PlatformExternalID:
+          type: string
         PlatformID:
           format: int64
           type:
@@ -787,6 +919,7 @@ components:
         - ID
         - IssueID
         - PlatformID
+        - PlatformExternalID
         - EventType
         - Author
         - Summary
@@ -829,6 +962,8 @@ components:
         Number:
           format: int64
           type: integer
+        PlatformExternalID:
+          type: string
         PlatformID:
           format: int64
           type: integer
@@ -858,11 +993,14 @@ components:
             - "null"
         platform_host:
           type: string
+        repo:
+          $ref: "#/components/schemas/RepoRefResponse"
         repo_name:
           type: string
         repo_owner:
           type: string
       required:
+        - repo
         - platform_host
         - repo_owner
         - repo_name
@@ -870,6 +1008,7 @@ components:
         - ID
         - RepoID
         - PlatformID
+        - PlatformExternalID
         - Number
         - URL
         - Title
@@ -1009,6 +1148,8 @@ components:
           type: integer
         MetadataJSON:
           type: string
+        PlatformExternalID:
+          type: string
         PlatformID:
           format: int64
           type:
@@ -1020,6 +1161,7 @@ components:
         - ID
         - MergeRequestID
         - PlatformID
+        - PlatformExternalID
         - EventType
         - Author
         - Summary
@@ -1048,6 +1190,27 @@ components:
         - merged
         - sha
         - message
+      type: object
+    MergePRHostInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/MergePRHostInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        commit_message:
+          type: string
+        commit_title:
+          type: string
+        method:
+          type: string
+      required:
+        - commit_title
+        - commit_message
+        - method
       type: object
     MergePRInputBody:
       additionalProperties: false
@@ -1133,6 +1296,8 @@ components:
         Number:
           format: int64
           type: integer
+        PlatformExternalID:
+          type: string
         PlatformID:
           format: int64
           type: integer
@@ -1162,6 +1327,7 @@ components:
         - ID
         - RepoID
         - PlatformID
+        - PlatformExternalID
         - Number
         - URL
         - Title
@@ -1222,6 +1388,8 @@ components:
           type: string
         platform_host:
           type: string
+        repo:
+          $ref: "#/components/schemas/RepoRefResponse"
         repo_name:
           type: string
         repo_owner:
@@ -1245,6 +1413,7 @@ components:
       required:
         - merge_request
         - events
+        - repo
         - repo_owner
         - repo_name
         - platform_host
@@ -1314,6 +1483,8 @@ components:
         Number:
           format: int64
           type: integer
+        PlatformExternalID:
+          type: string
         PlatformID:
           format: int64
           type: integer
@@ -1345,6 +1516,8 @@ components:
             - "null"
         platform_host:
           type: string
+        repo:
+          $ref: "#/components/schemas/RepoRefResponse"
         repo_name:
           type: string
         repo_owner:
@@ -1356,6 +1529,7 @@ components:
             - array
             - "null"
       required:
+        - repo
         - repo_owner
         - repo_name
         - platform_host
@@ -1364,6 +1538,7 @@ components:
         - ID
         - RepoID
         - PlatformID
+        - PlatformExternalID
         - Number
         - URL
         - Title
@@ -1425,6 +1600,21 @@ components:
         - is_draft
         - title
       type: object
+    PostCommentHostInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/PostCommentHostInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        body:
+          type: string
+      required:
+        - body
+      type: object
     PostCommentInputBody:
       additionalProperties: false
       properties:
@@ -1432,6 +1622,21 @@ components:
           description: A URL to the JSON Schema for this object.
           examples:
             - /api/v1/schemas/PostCommentInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        body:
+          type: string
+      required:
+        - body
+      type: object
+    PostIssueCommentHostInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/PostIssueCommentHostInputBody.json
           format: uri
           readOnly: true
           type: string
@@ -1452,10 +1657,52 @@ components:
           type: string
         body:
           type: string
-        platform_host:
-          type: string
       required:
         - body
+      type: object
+    ProviderCapabilitiesResponse:
+      additionalProperties: false
+      properties:
+        comment_mutation:
+          type: boolean
+        issue_mutation:
+          type: boolean
+        merge_mutation:
+          type: boolean
+        read_ci:
+          type: boolean
+        read_comments:
+          type: boolean
+        read_issues:
+          type: boolean
+        read_merge_requests:
+          type: boolean
+        read_releases:
+          type: boolean
+        read_repositories:
+          type: boolean
+        ready_for_review:
+          type: boolean
+        review_mutation:
+          type: boolean
+        state_mutation:
+          type: boolean
+        workflow_approval:
+          type: boolean
+      required:
+        - read_repositories
+        - read_merge_requests
+        - read_issues
+        - read_comments
+        - read_releases
+        - read_ci
+        - comment_mutation
+        - state_mutation
+        - merge_mutation
+        - review_mutation
+        - workflow_approval
+        - ready_for_review
+        - issue_mutation
       type: object
     RateLimitHostStatus:
       additionalProperties: false
@@ -1483,6 +1730,10 @@ components:
           type: string
         known:
           type: boolean
+        platform_host:
+          type: string
+        provider:
+          type: string
         rate_limit:
           format: int64
           type: integer
@@ -1503,6 +1754,8 @@ components:
           format: int64
           type: integer
       required:
+        - provider
+        - platform_host
         - requests_hour
         - rate_remaining
         - rate_limit
@@ -1537,13 +1790,131 @@ components:
       required:
         - hosts
       type: object
-    Repo:
+    RepoPreviewRequest:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - /api/v1/schemas/Repo.json
+            - /api/v1/schemas/RepoPreviewRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        host:
+          type: string
+        owner:
+          type: string
+        pattern:
+          type: string
+        platform_host:
+          type: string
+        provider:
+          type: string
+      required:
+        - provider
+        - owner
+        - pattern
+      type: object
+    RepoPreviewResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/RepoPreviewResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        owner:
+          type: string
+        pattern:
+          type: string
+        platform_host:
+          type: string
+        provider:
+          type: string
+        repos:
+          items:
+            $ref: "#/components/schemas/RepoPreviewRow"
+          type:
+            - array
+            - "null"
+      required:
+        - provider
+        - platform_host
+        - owner
+        - pattern
+        - repos
+      type: object
+    RepoPreviewRow:
+      additionalProperties: false
+      properties:
+        already_configured:
+          type: boolean
+        description:
+          type:
+            - string
+            - "null"
+        fork:
+          type: boolean
+        name:
+          type: string
+        owner:
+          type: string
+        platform_host:
+          type: string
+        private:
+          type: boolean
+        provider:
+          type: string
+        pushed_at:
+          type:
+            - string
+            - "null"
+        repo_path:
+          type: string
+      required:
+        - provider
+        - platform_host
+        - owner
+        - name
+        - repo_path
+        - description
+        - private
+        - fork
+        - pushed_at
+        - already_configured
+      type: object
+    RepoRefResponse:
+      additionalProperties: false
+      properties:
+        capabilities:
+          $ref: "#/components/schemas/ProviderCapabilitiesResponse"
+        name:
+          type: string
+        owner:
+          type: string
+        platform_host:
+          type: string
+        provider:
+          type: string
+        repo_path:
+          type: string
+      required:
+        - provider
+        - platform_host
+        - repo_path
+        - owner
+        - name
+        - capabilities
+      type: object
+    RepoResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/RepoResponse.json
           format: uri
           readOnly: true
           type: string
@@ -1599,6 +1970,8 @@ components:
           type: string
         PlatformHost:
           type: string
+        capabilities:
+          $ref: "#/components/schemas/ProviderCapabilitiesResponse"
       required:
         - ID
         - Platform
@@ -1618,79 +1991,7 @@ components:
         - BackfillIssueComplete
         - BackfillIssueCompletedAt
         - CreatedAt
-      type: object
-    RepoPreviewRequest:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - /api/v1/schemas/RepoPreviewRequest.json
-          format: uri
-          readOnly: true
-          type: string
-        owner:
-          type: string
-        pattern:
-          type: string
-      required:
-        - owner
-        - pattern
-      type: object
-    RepoPreviewResponse:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - /api/v1/schemas/RepoPreviewResponse.json
-          format: uri
-          readOnly: true
-          type: string
-        owner:
-          type: string
-        pattern:
-          type: string
-        repos:
-          items:
-            $ref: "#/components/schemas/RepoPreviewRow"
-          type:
-            - array
-            - "null"
-      required:
-        - owner
-        - pattern
-        - repos
-      type: object
-    RepoPreviewRow:
-      additionalProperties: false
-      properties:
-        already_configured:
-          type: boolean
-        description:
-          type:
-            - string
-            - "null"
-        fork:
-          type: boolean
-        name:
-          type: string
-        owner:
-          type: string
-        private:
-          type: boolean
-        pushed_at:
-          type:
-            - string
-            - "null"
-      required:
-        - owner
-        - name
-        - description
-        - private
-        - fork
-        - pushed_at
-        - already_configured
+        - capabilities
       type: object
     RepoSummaryAuthorResponse:
       additionalProperties: false
@@ -1827,9 +2128,12 @@ components:
           type:
             - array
             - "null"
+        repo:
+          $ref: "#/components/schemas/RepoRefResponse"
         timeline_updated_at:
           type: string
       required:
+        - repo
         - platform_host
         - default_platform_host
         - owner
@@ -1927,6 +2231,21 @@ components:
         - kind
         - status
         - created_at
+      type: object
+    SetKanbanStateHostInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/SetKanbanStateHostInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        status:
+          type: string
+      required:
+        - status
       type: object
     SetKanbanStateInputBody:
       additionalProperties: false
@@ -2249,6 +2568,8 @@ components:
           type: string
         platform_host:
           type: string
+        repo:
+          $ref: "#/components/schemas/RepoRefResponse"
         repo_name:
           type: string
         repo_owner:
@@ -2271,6 +2592,7 @@ components:
           type: string
       required:
         - id
+        - repo
         - platform_host
         - repo_owner
         - repo_name
@@ -2391,6 +2713,1462 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+  /host/{platform_host}/issues/{provider}/{owner}/{name}:
+    post:
+      operationId: create-issue-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIssueHostInputBody"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueResponse"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}:
+    get:
+      operationId: get-host-by-platform-host-issues-by-provider-by-owner-by-name-by-number
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueDetailResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get host by platform host issues by provider by owner by name by number
+  /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/comments:
+    post:
+      operationId: post-issue-comment-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostIssueCommentHostInputBody"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueEvent"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/comments/{comment_id}:
+    patch:
+      operationId: edit-issue-comment-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - in: path
+          name: comment_id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EditIssueCommentHostInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueEvent"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/github-state:
+    post:
+      operationId: set-issue-github-state-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GithubStateHostInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GithubStateOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/sync:
+    post:
+      operationId: post-host-by-platform-host-issues-by-provider-by-owner-by-name-by-number-sync
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueDetailResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Post host by platform host issues by provider by owner by name by number sync
+  /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/sync/async:
+    post:
+      operationId: enqueue-issue-sync-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "202":
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/workspace:
+    post:
+      operationId: create-issue-workspace-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIssueWorkspaceHostInputBody"
+        required: true
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceResponse"
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}:
+    get:
+      operationId: get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergeRequestDetailResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get host by platform host pulls by provider by owner by name by number
+    patch:
+      operationId: edit-pr-content-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EditPRContentHostInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergeRequestDetailResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/approve:
+    post:
+      operationId: post-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-approve
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovePRHostInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionStatusBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Post host by platform host pulls by provider by owner by name by number approve
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/approve-workflows:
+    post:
+      operationId: post-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-approve-workflows
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionStatusBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Post host by platform host pulls by provider by owner by name by number approve workflows
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/comments:
+    post:
+      operationId: post-pr-comment-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostCommentHostInputBody"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MREvent"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}:
+    patch:
+      operationId: edit-pr-comment-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - in: path
+          name: comment_id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EditCommentHostInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MREvent"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/commits:
+    get:
+      operationId: get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-commits
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommitsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get host by platform host pulls by provider by owner by name by number commits
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/diff:
+    get:
+      operationId: get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-diff
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - explode: false
+          in: query
+          name: whitespace
+          schema:
+            type: string
+        - description: Scope to a single commit SHA
+          explode: false
+          in: query
+          name: commit
+          schema:
+            description: Scope to a single commit SHA
+            type: string
+        - description: Start SHA for range diff (inclusive)
+          explode: false
+          in: query
+          name: from
+          schema:
+            description: Start SHA for range diff (inclusive)
+            type: string
+        - description: End SHA for range diff (inclusive)
+          explode: false
+          in: query
+          name: to
+          schema:
+            description: End SHA for range diff (inclusive)
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiffResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get host by platform host pulls by provider by owner by name by number diff
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/file-preview:
+    get:
+      operationId: get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-file-preview
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - description: Changed file path to preview
+          explode: false
+          in: query
+          name: path
+          schema:
+            description: Changed file path to preview
+            type: string
+        - description: Scope to a single commit SHA
+          explode: false
+          in: query
+          name: commit
+          schema:
+            description: Scope to a single commit SHA
+            type: string
+        - description: Start SHA for range diff (inclusive)
+          explode: false
+          in: query
+          name: from
+          schema:
+            description: Start SHA for range diff (inclusive)
+            type: string
+        - description: End SHA for range diff (inclusive)
+          explode: false
+          in: query
+          name: to
+          schema:
+            description: End SHA for range diff (inclusive)
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FilePreviewResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get host by platform host pulls by provider by owner by name by number file preview
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/files:
+    get:
+      operationId: get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-files
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FilesResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get host by platform host pulls by provider by owner by name by number files
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/github-state:
+    post:
+      operationId: set-pr-github-state-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GithubStateHostInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GithubStateOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/import-metadata:
+    get:
+      operationId: get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-import-metadata
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MrImportMetadataResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get host by platform host pulls by provider by owner by name by number import metadata
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/merge:
+    post:
+      operationId: post-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-merge
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MergePRHostInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergePRBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Post host by platform host pulls by provider by owner by name by number merge
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/ready-for-review:
+    post:
+      operationId: post-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-ready-for-review
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionStatusBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Post host by platform host pulls by provider by owner by name by number ready for review
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/stack:
+    get:
+      operationId: get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-stack
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StackContextResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get host by platform host pulls by provider by owner by name by number stack
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/state:
+    put:
+      operationId: set-kanban-state-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetKanbanStateHostInputBody"
+        required: true
+      responses:
+        "200":
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/sync:
+    post:
+      operationId: post-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-sync
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergeRequestDetailResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Post host by platform host pulls by provider by owner by name by number sync
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/sync/async:
+    post:
+      operationId: enqueue-pr-sync-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "202":
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /host/{platform_host}/repo/{provider}/{owner}/{name}:
+    delete:
+      operationId: delete-repo-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+    get:
+      operationId: get-host-by-platform-host-repo-by-provider-by-owner-by-name
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get host by platform host repo by provider by owner by name
+  /host/{platform_host}/repo/{provider}/{owner}/{name}/comment-autocomplete:
+    get:
+      operationId: get-host-by-platform-host-repo-by-provider-by-owner-by-name-comment-autocomplete
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: trigger
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: q
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommentAutocompleteResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get host by platform host repo by provider by owner by name comment autocomplete
+  /host/{platform_host}/repo/{provider}/{owner}/{name}/refresh:
+    post:
+      operationId: refresh-repo-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /host/{platform_host}/repo/{provider}/{owner}/{name}/resolve/{number}:
+    post:
+      operationId: post-host-by-platform-host-repo-by-provider-by-owner-by-name-resolve-by-number
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResolveItemResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Post host by platform host repo by provider by owner by name resolve by number
   /issues:
     get:
       operationId: list-issues
@@ -2445,6 +4223,338 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: List issues
+  /issues/{provider}/{owner}/{name}:
+    post:
+      operationId: create-issue
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIssueInputBody"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueResponse"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /issues/{provider}/{owner}/{name}/{number}:
+    get:
+      operationId: get-issues-by-provider-by-owner-by-name-by-number
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueDetailResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get issues by provider by owner by name by number
+  /issues/{provider}/{owner}/{name}/{number}/comments:
+    post:
+      operationId: post-issue-comment
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostIssueCommentInputBody"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueEvent"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /issues/{provider}/{owner}/{name}/{number}/comments/{comment_id}:
+    patch:
+      operationId: edit-issue-comment
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - in: path
+          name: comment_id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EditIssueCommentInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueEvent"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /issues/{provider}/{owner}/{name}/{number}/github-state:
+    post:
+      operationId: set-issue-github-state
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GithubStateInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GithubStateOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /issues/{provider}/{owner}/{name}/{number}/sync:
+    post:
+      operationId: post-issues-by-provider-by-owner-by-name-by-number-sync
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueDetailResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Post issues by provider by owner by name by number sync
+  /issues/{provider}/{owner}/{name}/{number}/sync/async:
+    post:
+      operationId: enqueue-issue-sync
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "202":
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /issues/{provider}/{owner}/{name}/{number}/workspace:
+    post:
+      operationId: create-issue-workspace
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIssueWorkspaceInputBody"
+        required: true
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceResponse"
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
   /pulls:
     get:
       operationId: list-pulls
@@ -2504,6 +4614,795 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: List pulls
+  /pulls/{provider}/{owner}/{name}/{number}:
+    get:
+      operationId: get-pulls-by-provider-by-owner-by-name-by-number
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergeRequestDetailResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get pulls by provider by owner by name by number
+    patch:
+      operationId: edit-pr-content
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EditPRContentInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergeRequestDetailResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /pulls/{provider}/{owner}/{name}/{number}/approve:
+    post:
+      operationId: post-pulls-by-provider-by-owner-by-name-by-number-approve
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovePRInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionStatusBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Post pulls by provider by owner by name by number approve
+  /pulls/{provider}/{owner}/{name}/{number}/approve-workflows:
+    post:
+      operationId: post-pulls-by-provider-by-owner-by-name-by-number-approve-workflows
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionStatusBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Post pulls by provider by owner by name by number approve workflows
+  /pulls/{provider}/{owner}/{name}/{number}/comments:
+    post:
+      operationId: post-pr-comment
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostCommentInputBody"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MREvent"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}:
+    patch:
+      operationId: edit-pr-comment
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - in: path
+          name: comment_id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EditCommentInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MREvent"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /pulls/{provider}/{owner}/{name}/{number}/commits:
+    get:
+      operationId: get-pulls-by-provider-by-owner-by-name-by-number-commits
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommitsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get pulls by provider by owner by name by number commits
+  /pulls/{provider}/{owner}/{name}/{number}/diff:
+    get:
+      operationId: get-pulls-by-provider-by-owner-by-name-by-number-diff
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - explode: false
+          in: query
+          name: whitespace
+          schema:
+            type: string
+        - description: Scope to a single commit SHA
+          explode: false
+          in: query
+          name: commit
+          schema:
+            description: Scope to a single commit SHA
+            type: string
+        - description: Start SHA for range diff (inclusive)
+          explode: false
+          in: query
+          name: from
+          schema:
+            description: Start SHA for range diff (inclusive)
+            type: string
+        - description: End SHA for range diff (inclusive)
+          explode: false
+          in: query
+          name: to
+          schema:
+            description: End SHA for range diff (inclusive)
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiffResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get pulls by provider by owner by name by number diff
+  /pulls/{provider}/{owner}/{name}/{number}/file-preview:
+    get:
+      operationId: get-pulls-by-provider-by-owner-by-name-by-number-file-preview
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - description: Changed file path to preview
+          explode: false
+          in: query
+          name: path
+          schema:
+            description: Changed file path to preview
+            type: string
+        - description: Scope to a single commit SHA
+          explode: false
+          in: query
+          name: commit
+          schema:
+            description: Scope to a single commit SHA
+            type: string
+        - description: Start SHA for range diff (inclusive)
+          explode: false
+          in: query
+          name: from
+          schema:
+            description: Start SHA for range diff (inclusive)
+            type: string
+        - description: End SHA for range diff (inclusive)
+          explode: false
+          in: query
+          name: to
+          schema:
+            description: End SHA for range diff (inclusive)
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FilePreviewResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get pulls by provider by owner by name by number file preview
+  /pulls/{provider}/{owner}/{name}/{number}/files:
+    get:
+      operationId: get-pulls-by-provider-by-owner-by-name-by-number-files
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FilesResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get pulls by provider by owner by name by number files
+  /pulls/{provider}/{owner}/{name}/{number}/github-state:
+    post:
+      operationId: set-pr-github-state
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GithubStateInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GithubStateOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /pulls/{provider}/{owner}/{name}/{number}/import-metadata:
+    get:
+      operationId: get-pulls-by-provider-by-owner-by-name-by-number-import-metadata
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MrImportMetadataResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get pulls by provider by owner by name by number import metadata
+  /pulls/{provider}/{owner}/{name}/{number}/merge:
+    post:
+      operationId: post-pulls-by-provider-by-owner-by-name-by-number-merge
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MergePRInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergePRBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Post pulls by provider by owner by name by number merge
+  /pulls/{provider}/{owner}/{name}/{number}/ready-for-review:
+    post:
+      operationId: post-pulls-by-provider-by-owner-by-name-by-number-ready-for-review
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionStatusBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Post pulls by provider by owner by name by number ready for review
+  /pulls/{provider}/{owner}/{name}/{number}/stack:
+    get:
+      operationId: get-pulls-by-provider-by-owner-by-name-by-number-stack
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StackContextResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get pulls by provider by owner by name by number stack
+  /pulls/{provider}/{owner}/{name}/{number}/state:
+    put:
+      operationId: set-kanban-state
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetKanbanStateInputBody"
+        required: true
+      responses:
+        "200":
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /pulls/{provider}/{owner}/{name}/{number}/sync:
+    post:
+      operationId: post-pulls-by-provider-by-owner-by-name-by-number-sync
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergeRequestDetailResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Post pulls by provider by owner by name by number sync
+  /pulls/{provider}/{owner}/{name}/{number}/sync/async:
+    post:
+      operationId: enqueue-pr-sync
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "202":
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
   /rate-limits:
     get:
       operationId: get-rate-limits
@@ -2521,6 +5420,186 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Get rate limits
+  /repo/{provider}/{owner}/{name}:
+    delete:
+      operationId: delete-repo
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+    get:
+      operationId: get-repo-by-provider-by-owner-by-name
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get repo by provider by owner by name
+  /repo/{provider}/{owner}/{name}/comment-autocomplete:
+    get:
+      operationId: get-repo-by-provider-by-owner-by-name-comment-autocomplete
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: trigger
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: q
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommentAutocompleteResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get repo by provider by owner by name comment autocomplete
+  /repo/{provider}/{owner}/{name}/refresh:
+    post:
+      operationId: refresh-repo
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /repo/{provider}/{owner}/{name}/resolve/{number}:
+    post:
+      operationId: post-repo-by-provider-by-owner-by-name-resolve-by-number
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResolveItemResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Post repo by provider by owner by name resolve by number
   /repos:
     get:
       operationId: list-repos
@@ -2530,7 +5609,7 @@ paths:
             application/json:
               schema:
                 items:
-                  $ref: "#/components/schemas/Repo"
+                  $ref: "#/components/schemas/RepoResponse"
                 type:
                   - array
                   - "null"
@@ -2620,1172 +5699,6 @@ paths:
                 type:
                   - array
                   - "null"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-  /repos/{owner}/{name}:
-    delete:
-      operationId: delete-repo
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-      responses:
-        "204":
-          description: No Content
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-    get:
-      operationId: get-repos-by-owner-by-name
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Repo"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Get repos by owner by name
-  /repos/{owner}/{name}/comment-autocomplete:
-    get:
-      operationId: get-repos-by-owner-by-name-comment-autocomplete
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - explode: false
-          in: query
-          name: platform_host
-          schema:
-            type: string
-        - explode: false
-          in: query
-          name: trigger
-          schema:
-            type: string
-        - explode: false
-          in: query
-          name: q
-          schema:
-            type: string
-        - explode: false
-          in: query
-          name: limit
-          schema:
-            format: int64
-            type: integer
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CommentAutocompleteResponse"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Get repos by owner by name comment autocomplete
-  /repos/{owner}/{name}/issues:
-    post:
-      operationId: create-issue
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateIssueInputBody"
-        required: true
-      responses:
-        "201":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/IssueResponse"
-          description: Created
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-  /repos/{owner}/{name}/issues/{number}:
-    get:
-      operationId: get-repos-by-owner-by-name-issues-by-number
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-        - explode: false
-          in: query
-          name: platform_host
-          schema:
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/IssueDetailResponse"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Get repos by owner by name issues by number
-  /repos/{owner}/{name}/issues/{number}/comments:
-    post:
-      operationId: post-issue-comment
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PostIssueCommentInputBody"
-        required: true
-      responses:
-        "201":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/IssueEvent"
-          description: Created
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-  /repos/{owner}/{name}/issues/{number}/comments/{comment_id}:
-    patch:
-      operationId: edit-issue-comment
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-        - in: path
-          name: comment_id
-          required: true
-          schema:
-            format: int64
-            type: integer
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/EditIssueCommentInputBody"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/IssueEvent"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-  /repos/{owner}/{name}/issues/{number}/github-state:
-    post:
-      operationId: set-issue-github-state
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/GithubStateInputBody"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GithubStateOutputBody"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-  /repos/{owner}/{name}/issues/{number}/sync:
-    post:
-      operationId: post-repos-by-owner-by-name-issues-by-number-sync
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-        - explode: false
-          in: query
-          name: platform_host
-          schema:
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/IssueDetailResponse"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Post repos by owner by name issues by number sync
-  /repos/{owner}/{name}/issues/{number}/sync/async:
-    post:
-      operationId: enqueue-issue-sync
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-        - explode: false
-          in: query
-          name: platform_host
-          schema:
-            type: string
-      responses:
-        "202":
-          description: Accepted
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-  /repos/{owner}/{name}/issues/{number}/workspace:
-    post:
-      operationId: create-issue-workspace
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateIssueWorkspaceInputBody"
-        required: true
-      responses:
-        "202":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/WorkspaceResponse"
-          description: Accepted
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-  /repos/{owner}/{name}/items/{number}/resolve:
-    post:
-      operationId: post-repos-by-owner-by-name-items-by-number-resolve
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ResolveItemResponse"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Post repos by owner by name items by number resolve
-  /repos/{owner}/{name}/pulls/{number}:
-    get:
-      operationId: get-repos-by-owner-by-name-pulls-by-number
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MergeRequestDetailResponse"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Get repos by owner by name pulls by number
-    patch:
-      operationId: edit-pr-content
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/EditPRContentInputBody"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MergeRequestDetailResponse"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-  /repos/{owner}/{name}/pulls/{number}/approve:
-    post:
-      operationId: post-repos-by-owner-by-name-pulls-by-number-approve
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ApprovePRInputBody"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ActionStatusBody"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Post repos by owner by name pulls by number approve
-  /repos/{owner}/{name}/pulls/{number}/approve-workflows:
-    post:
-      operationId: post-repos-by-owner-by-name-pulls-by-number-approve-workflows
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ActionStatusBody"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Post repos by owner by name pulls by number approve workflows
-  /repos/{owner}/{name}/pulls/{number}/comments:
-    post:
-      operationId: post-pr-comment
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PostCommentInputBody"
-        required: true
-      responses:
-        "201":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MREvent"
-          description: Created
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-  /repos/{owner}/{name}/pulls/{number}/comments/{comment_id}:
-    patch:
-      operationId: edit-pr-comment
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-        - in: path
-          name: comment_id
-          required: true
-          schema:
-            format: int64
-            type: integer
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/EditCommentInputBody"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MREvent"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-  /repos/{owner}/{name}/pulls/{number}/commits:
-    get:
-      operationId: get-repos-by-owner-by-name-pulls-by-number-commits
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CommitsResponse"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Get repos by owner by name pulls by number commits
-  /repos/{owner}/{name}/pulls/{number}/diff:
-    get:
-      operationId: get-repos-by-owner-by-name-pulls-by-number-diff
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-        - explode: false
-          in: query
-          name: whitespace
-          schema:
-            type: string
-        - description: Scope to a single commit SHA
-          explode: false
-          in: query
-          name: commit
-          schema:
-            description: Scope to a single commit SHA
-            type: string
-        - description: Start SHA for range diff (inclusive)
-          explode: false
-          in: query
-          name: from
-          schema:
-            description: Start SHA for range diff (inclusive)
-            type: string
-        - description: End SHA for range diff (inclusive)
-          explode: false
-          in: query
-          name: to
-          schema:
-            description: End SHA for range diff (inclusive)
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DiffResponse"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Get repos by owner by name pulls by number diff
-  /repos/{owner}/{name}/pulls/{number}/file-preview:
-    get:
-      operationId: get-repos-by-owner-by-name-pulls-by-number-file-preview
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-        - description: Changed file path to preview
-          explode: false
-          in: query
-          name: path
-          schema:
-            description: Changed file path to preview
-            type: string
-        - description: Scope to a single commit SHA
-          explode: false
-          in: query
-          name: commit
-          schema:
-            description: Scope to a single commit SHA
-            type: string
-        - description: Start SHA for range diff (inclusive)
-          explode: false
-          in: query
-          name: from
-          schema:
-            description: Start SHA for range diff (inclusive)
-            type: string
-        - description: End SHA for range diff (inclusive)
-          explode: false
-          in: query
-          name: to
-          schema:
-            description: End SHA for range diff (inclusive)
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FilePreviewResponse"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Get repos by owner by name pulls by number file preview
-  /repos/{owner}/{name}/pulls/{number}/files:
-    get:
-      operationId: get-repos-by-owner-by-name-pulls-by-number-files
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FilesResponse"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Get repos by owner by name pulls by number files
-  /repos/{owner}/{name}/pulls/{number}/github-state:
-    post:
-      operationId: set-pr-github-state
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/GithubStateInputBody"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GithubStateOutputBody"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-  /repos/{owner}/{name}/pulls/{number}/import-metadata:
-    get:
-      operationId: get-repos-by-owner-by-name-pulls-by-number-import-metadata
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MrImportMetadataResponse"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Get repos by owner by name pulls by number import metadata
-  /repos/{owner}/{name}/pulls/{number}/merge:
-    post:
-      operationId: post-repos-by-owner-by-name-pulls-by-number-merge
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/MergePRInputBody"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MergePRBody"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Post repos by owner by name pulls by number merge
-  /repos/{owner}/{name}/pulls/{number}/ready-for-review:
-    post:
-      operationId: post-repos-by-owner-by-name-pulls-by-number-ready-for-review
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ActionStatusBody"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Post repos by owner by name pulls by number ready for review
-  /repos/{owner}/{name}/pulls/{number}/stack:
-    get:
-      operationId: get-repos-by-owner-by-name-pulls-by-number-stack
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/StackContextResponse"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Get repos by owner by name pulls by number stack
-  /repos/{owner}/{name}/pulls/{number}/state:
-    put:
-      operationId: set-kanban-state
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SetKanbanStateInputBody"
-        required: true
-      responses:
-        "200":
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-  /repos/{owner}/{name}/pulls/{number}/sync:
-    post:
-      operationId: post-repos-by-owner-by-name-pulls-by-number-sync
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MergeRequestDetailResponse"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Post repos by owner by name pulls by number sync
-  /repos/{owner}/{name}/pulls/{number}/sync/async:
-    post:
-      operationId: enqueue-pr-sync
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-      responses:
-        "202":
-          description: Accepted
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-  /repos/{owner}/{name}/refresh:
-    post:
-      operationId: refresh-repo
-      parameters:
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SettingsResponse"
           description: OK
         default:
           content:

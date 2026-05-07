@@ -3,8 +3,11 @@ export type SortDirection = "asc" | "desc";
 export type StatusFilter = "all" | "selected" | "unselected" | "already-added";
 
 export interface RepoImportRow {
+  provider: string;
+  platform_host: string;
   owner: string;
   name: string;
+  repo_path: string;
   description: string | null;
   private: boolean;
   fork: boolean;
@@ -22,17 +25,21 @@ export interface RepoVisibilityFilters {
   hidePrivate?: boolean;
 }
 
-export function rowKey(row: Pick<RepoImportRow, "owner" | "name">): string {
-  return `${row.owner.toLowerCase()}/${row.name.toLowerCase()}`;
+export function rowKey(
+  row: Pick<RepoImportRow, "provider" | "platform_host" | "repo_path"> &
+    Partial<Pick<RepoImportRow, "owner" | "name">>,
+): string {
+  return `${row.provider.toLowerCase()}/${row.platform_host.toLowerCase()}/${row.repo_path.toLowerCase()}`;
 }
 
-export function parseImportPattern(input: string): { owner: string; pattern: string } {
+export function parseImportPattern(input: string, allowNestedOwner = false): { owner: string; pattern: string } {
   const trimmed = input.trim();
-  const slashCount = [...trimmed].filter((char) => char === "/").length;
-  if (slashCount !== 1) throw new Error("Format: owner/pattern");
   const parts = trimmed.split("/");
-  const rawOwner = parts[0] ?? "";
-  const rawPattern = parts[1] ?? "";
+  if (parts.length < 2 || (!allowNestedOwner && parts.length !== 2)) {
+    throw new Error("Format: owner/pattern");
+  }
+  const rawPattern = parts.at(-1) ?? "";
+  const rawOwner = parts.slice(0, -1).join("/");
   const owner = rawOwner.trim();
   const pattern = rawPattern.trim();
   if (!owner) throw new Error("owner is required");

@@ -25,7 +25,7 @@ DEV_BACKEND_LOG ?= $(DEV_LOG_DIR)/backend-dev.log
 
 .PHONY: ensure-embed-dir check-air air-install build build-release install \
         frontend-deps frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
-        dev test test-short test-e2e test-e2e-roborev vet lint nilaway testify-helper-check \
+        dev test test-short test-e2e test-e2e-roborev test-gitlab-container gitlab-fixture-bake vet lint nilaway testify-helper-check \
         frontend-api-client-check huma-route-check script-tests guardrail-check tidy svelte-skills svelte-skills-sync clean install-hooks help
 
 # Ensure go:embed has at least one file (no-op if frontend is built)
@@ -173,6 +173,18 @@ test-e2e-roborev:
 	ROBOREV_SRC="$(ROBOREV_SRC)" ROBOREV_REF="$(ROBOREV_REF)" \
 		./scripts/run-roborev-e2e.sh
 
+# Run opt-in GitLab CE container compatibility tests.
+test-gitlab-container: ensure-embed-dir
+	@if [ "$${MIDDLEMAN_GITLAB_CONTAINER_E2E:-}" != "1" ]; then \
+		echo "Set MIDDLEMAN_GITLAB_CONTAINER_E2E=1 to run the GitLab CE container e2e fixture." >&2; \
+		exit 1; \
+	fi
+	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go test ./internal/server -run TestGitLabContainerE2E -shuffle=on -timeout 40m
+
+# Build a reusable GitLab fixture image from the idempotent bootstrap script.
+gitlab-fixture-bake:
+	./scripts/e2e/gitlab/bake-fixture-image.sh
+
 # Vet
 vet: ensure-embed-dir
 	go vet ./...
@@ -249,6 +261,8 @@ help:
 	@echo "  test-short     - Run fast tests only"
 	@echo "  test-e2e       - Run full-stack E2E Playwright tests"
 	@echo "  test-e2e-roborev - Run roborev e2e tests with Docker (ROBOREV_SRC, ROBOREV_REF)"
+	@echo "  test-gitlab-container - Run opt-in GitLab CE container e2e tests"
+	@echo "  gitlab-fixture-bake - Build a reusable GitLab fixture image"
 	@echo "  vet            - Run go vet"
 	@echo "  lint           - Run mise-managed golangci-lint (auto-fix)"
 	@echo "  nilaway        - Run NilAway against first-party Go packages"

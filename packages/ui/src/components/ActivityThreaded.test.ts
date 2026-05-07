@@ -23,6 +23,13 @@ function activityItem(
     platform_host: "github.com",
     repo_owner: "acme",
     repo_name: "widgets-with-a-long-name",
+    repo: {
+      provider: "github",
+      platform_host: "github.com",
+      owner: "acme",
+      name: "widgets-with-a-long-name",
+      repo_path: "acme/widgets-with-a-long-name",
+    },
     ...overrides,
   };
 }

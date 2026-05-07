@@ -9,19 +9,18 @@ function detailResponse(
 ): Promise<Response> {
   return page.waitForResponse((response) => {
     const url = new URL(response.url());
-    return url.pathname === path && response.request().method() === "GET";
+    return url.pathname === path
+      && response.request().method() === "GET";
   });
 }
 
 function issueDetailResponse(
   page: Page,
   path: string,
-  platformHost: string,
 ): Promise<Response> {
   return page.waitForResponse((response) => {
     const url = new URL(response.url());
     return url.pathname === path
-      && url.searchParams.get("platform_host") === platformHost
       && response.request().method() === "GET";
   });
 }
@@ -34,11 +33,13 @@ test.describe("routed item builders through the UI", () => {
 
     const detailLoaded = detailResponse(
       page,
-      "/api/v1/repos/acme/widgets/pulls/1",
+      "/api/v1/pulls/github/acme/widgets/1",
     );
     await page.locator(".pull-item").filter({ hasText: prTitle }).first().click();
 
-    await expect(page).toHaveURL(/\/pulls\/acme\/widgets\/1$/);
+    await expect(page).toHaveURL(
+      /\/pulls\/detail\?provider=github&platform_host=github\.com&repo_path=acme%2Fwidgets&number=1$/,
+    );
     await expect(page.locator(".pull-detail .detail-title")).toContainText(prTitle);
     await expect((await detailLoaded).ok()).toBe(true);
   });
@@ -50,13 +51,12 @@ test.describe("routed item builders through the UI", () => {
 
     const detailLoaded = issueDetailResponse(
       page,
-      "/api/v1/repos/acme/widgets/issues/10",
-      "github.com",
+      "/api/v1/issues/github/acme/widgets/10",
     );
     await page.locator(".issue-item").filter({ hasText: issueTitle }).first().click();
 
     await expect(page).toHaveURL(
-      /\/issues\/acme\/widgets\/10\?platform_host=github\.com$/,
+      /\/issues\/detail\?provider=github&platform_host=github\.com&repo_path=acme%2Fwidgets&number=10$/,
     );
     await expect(page.locator(".issue-detail .detail-title")).toContainText(issueTitle);
     await expect((await detailLoaded).ok()).toBe(true);
@@ -69,11 +69,13 @@ test.describe("routed item builders through the UI", () => {
 
     const detailLoaded = detailResponse(
       page,
-      "/api/v1/repos/acme/widgets/pulls/1",
+      "/api/v1/pulls/github/acme/widgets/1",
     );
     await page.locator(".focus-list .pull-item").filter({ hasText: prTitle }).first().click();
 
-    await expect(page).toHaveURL(/\/focus\/pr\/acme\/widgets\/1$/);
+    await expect(page).toHaveURL(
+      /\/focus\/pr\?provider=github&platform_host=github\.com&repo_path=acme%2Fwidgets&number=1$/,
+    );
     await expect(page.locator(".focus-layout .pull-detail .detail-title"))
       .toContainText(prTitle);
     await expect(page.locator(".app-header")).not.toBeAttached();
@@ -87,13 +89,12 @@ test.describe("routed item builders through the UI", () => {
 
     const detailLoaded = issueDetailResponse(
       page,
-      "/api/v1/repos/acme/widgets/issues/10",
-      "github.com",
+      "/api/v1/issues/github/acme/widgets/10",
     );
     await page.locator(".focus-list .issue-item").filter({ hasText: issueTitle }).first().click();
 
     await expect(page).toHaveURL(
-      /\/focus\/issue\/acme\/widgets\/10\?platform_host=github\.com$/,
+      /\/focus\/issue\?provider=github&platform_host=github\.com&repo_path=acme%2Fwidgets&number=10$/,
     );
     await expect(page.locator(".focus-layout .issue-detail .detail-title"))
       .toContainText(issueTitle);

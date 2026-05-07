@@ -7,22 +7,31 @@ import (
 )
 
 type Label struct {
-	ID          int64     `json:"-"`
-	RepoID      int64     `json:"-"`
-	PlatformID  int64     `json:"-"`
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	Color       string    `json:"color"`
-	IsDefault   bool      `json:"is_default"`
-	UpdatedAt   time.Time `json:"-"`
+	ID                 int64     `json:"-"`
+	RepoID             int64     `json:"-"`
+	PlatformID         int64     `json:"-"`
+	PlatformExternalID string    `json:"-"`
+	Name               string    `json:"name"`
+	Description        string    `json:"description,omitempty"`
+	Color              string    `json:"color"`
+	IsDefault          bool      `json:"is_default"`
+	UpdatedAt          time.Time `json:"-"`
 }
 
 type Repo struct {
 	ID                       int64
 	Platform                 string
 	PlatformHost             string
+	PlatformRepoID           string `json:"-"`
 	Owner                    string
 	Name                     string
+	RepoPath                 string `json:"-"`
+	OwnerKey                 string `json:"-"`
+	NameKey                  string `json:"-"`
+	RepoPathKey              string `json:"-"`
+	WebURL                   string `json:"-"`
+	CloneURL                 string `json:"-"`
+	DefaultBranch            string `json:"-"`
 	LastSyncStartedAt        *time.Time
 	LastSyncCompletedAt      *time.Time
 	LastSyncError            string
@@ -40,6 +49,25 @@ type Repo struct {
 
 func (r Repo) FullName() string {
 	return r.Owner + "/" + r.Name
+}
+
+type RepoIdentity struct {
+	Platform       string
+	PlatformHost   string
+	PlatformRepoID string
+	Owner          string
+	Name           string
+	RepoPath       string
+	OwnerKey       string
+	NameKey        string
+	RepoPathKey    string
+}
+
+type RepoProviderMetadata struct {
+	PlatformRepoID string
+	WebURL         string
+	CloneURL       string
+	DefaultBranch  string
 }
 
 type RepoSummary struct {
@@ -93,42 +121,43 @@ type RepoIssueHeadline struct {
 }
 
 type MergeRequest struct {
-	ID                int64
-	RepoID            int64
-	PlatformID        int64
-	Number            int
-	URL               string
-	Title             string
-	Author            string
-	AuthorDisplayName string
-	State             string
-	IsDraft           bool
-	Body              string
-	HeadBranch        string
-	BaseBranch        string
-	PlatformHeadSHA   string `json:"-"`
-	PlatformBaseSHA   string `json:"-"`
-	DiffHeadSHA       string `json:"-"`
-	DiffBaseSHA       string `json:"-"`
-	MergeBaseSHA      string `json:"-"`
-	HeadRepoCloneURL  string
-	Additions         int
-	Deletions         int
-	CommentCount      int
-	ReviewDecision    string
-	CIStatus          string
-	CIChecksJSON      string
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
-	LastActivityAt    time.Time
-	MergedAt          *time.Time
-	ClosedAt          *time.Time
-	MergeableState    string
-	DetailFetchedAt   *time.Time
-	CIHadPending      bool
-	KanbanStatus      string
-	Starred           bool
-	Labels            []Label `json:"labels,omitempty"`
+	ID                 int64
+	RepoID             int64
+	PlatformID         int64
+	PlatformExternalID string
+	Number             int
+	URL                string
+	Title              string
+	Author             string
+	AuthorDisplayName  string
+	State              string
+	IsDraft            bool
+	Body               string
+	HeadBranch         string
+	BaseBranch         string
+	PlatformHeadSHA    string `json:"-"`
+	PlatformBaseSHA    string `json:"-"`
+	DiffHeadSHA        string `json:"-"`
+	DiffBaseSHA        string `json:"-"`
+	MergeBaseSHA       string `json:"-"`
+	HeadRepoCloneURL   string
+	Additions          int
+	Deletions          int
+	CommentCount       int
+	ReviewDecision     string
+	CIStatus           string
+	CIChecksJSON       string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	LastActivityAt     time.Time
+	MergedAt           *time.Time
+	ClosedAt           *time.Time
+	MergeableState     string
+	DetailFetchedAt    *time.Time
+	CIHadPending       bool
+	KanbanStatus       string
+	Starred            bool
+	Labels             []Label `json:"labels,omitempty"`
 }
 
 func (mr MergeRequest) Compare(other MergeRequest) int {
@@ -154,16 +183,17 @@ func (c CICheck) Compare(other CICheck) int {
 }
 
 type MREvent struct {
-	ID             int64
-	MergeRequestID int64
-	PlatformID     *int64
-	EventType      string
-	Author         string
-	Summary        string
-	Body           string
-	MetadataJSON   string
-	CreatedAt      time.Time
-	DedupeKey      string
+	ID                 int64
+	MergeRequestID     int64
+	PlatformID         *int64
+	PlatformExternalID string
+	EventType          string
+	Author             string
+	Summary            string
+	Body               string
+	MetadataJSON       string
+	CreatedAt          time.Time
+	DedupeKey          string
 }
 
 type KanbanState struct {
@@ -185,37 +215,39 @@ type ListMergeRequestsOpts struct {
 }
 
 type Issue struct {
-	ID              int64
-	RepoID          int64
-	PlatformID      int64
-	Number          int
-	URL             string
-	Title           string
-	Author          string
-	State           string
-	Body            string
-	CommentCount    int
-	LabelsJSON      string `json:"-"`
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	LastActivityAt  time.Time
-	ClosedAt        *time.Time
-	DetailFetchedAt *time.Time
-	Starred         bool
-	Labels          []Label `json:"labels,omitempty"`
+	ID                 int64
+	RepoID             int64
+	PlatformID         int64
+	PlatformExternalID string
+	Number             int
+	URL                string
+	Title              string
+	Author             string
+	State              string
+	Body               string
+	CommentCount       int
+	LabelsJSON         string `json:"-"`
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	LastActivityAt     time.Time
+	ClosedAt           *time.Time
+	DetailFetchedAt    *time.Time
+	Starred            bool
+	Labels             []Label `json:"labels,omitempty"`
 }
 
 type IssueEvent struct {
-	ID           int64
-	IssueID      int64
-	PlatformID   *int64
-	EventType    string
-	Author       string
-	Summary      string
-	Body         string
-	MetadataJSON string
-	CreatedAt    time.Time
-	DedupeKey    string
+	ID                 int64
+	IssueID            int64
+	PlatformID         *int64
+	PlatformExternalID string
+	EventType          string
+	Author             string
+	Summary            string
+	Body               string
+	MetadataJSON       string
+	CreatedAt          time.Time
+	DedupeKey          string
 }
 
 type CommentAutocompleteReference struct {
@@ -256,6 +288,7 @@ type WorktreeLink struct {
 // RateLimit tracks per-host API rate limit state.
 type RateLimit struct {
 	ID            int64
+	Platform      string
 	PlatformHost  string
 	APIType       string
 	RequestsHour  int
@@ -271,6 +304,7 @@ type ActivityItem struct {
 	ActivityType string // new_pr, new_issue, comment, review, commit
 	Source       string // pr, issue, pre, ise
 	SourceID     int64  // PK from the source table
+	Platform     string
 	PlatformHost string
 	RepoOwner    string
 	RepoName     string
@@ -331,6 +365,7 @@ const (
 // pull request or issue.
 type Workspace struct {
 	ID                 string
+	Platform           string
 	PlatformHost       string
 	RepoOwner          string
 	RepoName           string

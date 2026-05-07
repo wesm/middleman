@@ -19,7 +19,10 @@ func (m *Manager) DiffFiles(
 	ctx context.Context,
 	host, owner, name, mergeBase, headSHA string,
 ) ([]DiffFile, error) {
-	clonePath := m.ClonePath(host, owner, name)
+	clonePath, err := m.ClonePath(host, owner, name)
+	if err != nil {
+		return nil, err
+	}
 	rawOut, err := m.git(ctx, host, clonePath,
 		"diff", "--raw", "-z", "-M", "-C", "--find-copies-harder", mergeBase, headSHA,
 	)
@@ -106,7 +109,10 @@ func (m *Manager) Diff(
 	host, owner, name, mergeBase, headSHA string,
 	hideWhitespace bool,
 ) (*DiffResult, error) {
-	clonePath := m.ClonePath(host, owner, name)
+	clonePath, err := m.ClonePath(host, owner, name)
+	if err != nil {
+		return nil, err
+	}
 
 	// Step 1: Compute whitespace-only file count.
 	wsCount, err := m.computeWhitespaceOnlyCount(
@@ -229,7 +235,10 @@ func (m *Manager) FileContent(
 	host, owner, name, ref, filePath string,
 	maxBytes int64,
 ) (*FileContent, error) {
-	clonePath := m.ClonePath(host, owner, name)
+	clonePath, err := m.ClonePath(host, owner, name)
+	if err != nil {
+		return nil, err
+	}
 	object := ref + ":" + filePath
 	sizeOut, err := m.git(ctx, host, clonePath, "cat-file", "-s", object)
 	if err != nil {

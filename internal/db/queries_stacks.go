@@ -105,16 +105,25 @@ func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]St
 	var conds []string
 	var args []any
 	if repoFilter != "" {
-		if strings.Count(repoFilter, "/") != 1 {
+		pathKey := canonicalRepoPathKey(repoFilter)
+		if pathKey == "" || !strings.Contains(pathKey, "/") {
 			return nil, nil, fmt.Errorf("invalid repo filter %q: expected owner/name", repoFilter)
 		}
-		owner, name, _ := strings.Cut(repoFilter, "/")
-		if owner == "" || name == "" {
-			return nil, nil, fmt.Errorf("invalid repo filter %q: expected owner/name", repoFilter)
+		if strings.Count(pathKey, "/") > 1 {
+			var exists int
+			err := d.ro.QueryRowContext(ctx,
+				`SELECT 1 FROM middleman_repos WHERE repo_path_key = ? LIMIT 1`,
+				pathKey,
+			).Scan(&exists)
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, nil, fmt.Errorf("invalid repo filter %q: expected owner/name", repoFilter)
+			}
+			if err != nil {
+				return nil, nil, fmt.Errorf("validate repo filter: %w", err)
+			}
 		}
-		_, owner, name = canonicalRepoIdentifier("", owner, name)
-		conds = append(conds, "r.owner = ? AND r.name = ?")
-		args = append(args, owner, name)
+		conds = append(conds, "r.repo_path_key = ?")
+		args = append(args, pathKey)
 	}
 	conds = append(conds, `EXISTS (
 		SELECT 1 FROM middleman_stack_members sm2
@@ -217,7 +226,25 @@ func (d *DB) DeleteStaleStacks(ctx context.Context, repoID int64, activeStackIDs
 
 // GetStackForPR returns the stack and members for a specific PR, or nil if not in a stack.
 func (d *DB) GetStackForPR(ctx context.Context, owner, name string, number int) (*Stack, []StackMemberWithPR, error) {
-	_, owner, name = canonicalRepoIdentifier("", owner, name)
+	_, owner, name = canonicalRepoLookupIdentifier("", owner, name)
+	return d.getStackForPRWhere(
+		ctx,
+		`WHERE r.owner_key = ? AND r.name_key = ? AND p.number = ?`,
+		owner, name, number,
+	)
+}
+
+// GetStackForPRByRepoID returns the stack and members for a specific PR within
+// one repository, or nil if the PR is not in a stack.
+func (d *DB) GetStackForPRByRepoID(ctx context.Context, repoID int64, number int) (*Stack, []StackMemberWithPR, error) {
+	return d.getStackForPRWhere(
+		ctx,
+		`WHERE p.repo_id = ? AND p.number = ?`,
+		repoID, number,
+	)
+}
+
+func (d *DB) getStackForPRWhere(ctx context.Context, where string, args ...any) (*Stack, []StackMemberWithPR, error) {
 	var stack Stack
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT s.id, s.repo_id, s.base_number, s.name, s.created_at, s.updated_at
@@ -225,8 +252,8 @@ func (d *DB) GetStackForPR(ctx context.Context, owner, name string, number int) 
 		JOIN middleman_stack_members sm ON sm.stack_id = s.id
 		JOIN middleman_merge_requests p ON p.id = sm.merge_request_id
 		JOIN middleman_repos r ON r.id = p.repo_id
-		WHERE r.owner = ? AND r.name = ? AND p.number = ?`,
-		owner, name, number,
+		`+where,
+		args...,
 	).Scan(&stack.ID, &stack.RepoID, &stack.BaseNumber, &stack.Name, &stack.CreatedAt, &stack.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil, nil

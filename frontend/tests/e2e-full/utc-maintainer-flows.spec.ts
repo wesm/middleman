@@ -17,7 +17,7 @@ async function fetchPullDetail(
   pull: PullRef,
 ) {
   return page.evaluate(async ({ owner, repo, number }) => {
-    const response = await fetch(`/api/v1/repos/${owner}/${repo}/pulls/${number}`);
+    const response = await fetch(`/api/v1/pulls/github/${owner}/${repo}/${number}`);
     return response.json();
   }, pull);
 }
@@ -27,7 +27,7 @@ async function fetchIssueDetail(
   issue: IssueRef,
 ) {
   return page.evaluate(async ({ owner, repo, number }) => {
-    const response = await fetch(`/api/v1/repos/${owner}/${repo}/issues/${number}`);
+    const response = await fetch(`/api/v1/issues/github/${owner}/${repo}/${number}`);
     return response.json();
   }, issue);
 }
@@ -96,7 +96,7 @@ test.describe("UTC maintainer flows", () => {
   test("closing and reopening a pull request keeps API timestamps canonical UTC", async ({ page, browserName }) => {
     const pull = closeReopenPullTarget(browserName);
 
-    await page.goto(`/pulls/${pull.owner}/${pull.repo}/${pull.number}`);
+    await page.goto(`/pulls/detail?provider=github&platform_host=github.com&repo_path=${pull.owner}%2F${pull.repo}&number=${pull.number}`);
     await expect(page.locator(".btn--close")).toBeVisible();
 
     await page.locator(".btn--close").click();
@@ -117,7 +117,7 @@ test.describe("UTC maintainer flows", () => {
   test("merging a pull request stores UTC timestamps and updates the detail view", async ({ page, browserName }) => {
     const pull = mergeTarget(browserName);
 
-    await page.goto(`/pulls/${pull.owner}/${pull.repo}/${pull.number}`);
+    await page.goto(`/pulls/detail?provider=github&platform_host=github.com&repo_path=${pull.owner}%2F${pull.repo}&number=${pull.number}`);
     await expect(page.locator(".btn--merge")).toBeVisible();
 
     await page.locator(".btn--merge").click();
@@ -135,7 +135,7 @@ test.describe("UTC maintainer flows", () => {
   test("closing and reopening an issue keeps API timestamps canonical UTC", async ({ page, browserName }) => {
     const issue = closeReopenIssueTarget(browserName);
 
-    await page.goto(`/issues/${issue.owner}/${issue.repo}/${issue.number}`);
+    await page.goto(`/issues/detail?provider=github&platform_host=github.com&repo_path=${issue.owner}%2F${issue.repo}&number=${issue.number}`);
     await expect(page.locator(".btn--close")).toBeVisible();
 
     await page.locator(".btn--close").click();

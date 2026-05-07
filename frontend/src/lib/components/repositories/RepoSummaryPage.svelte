@@ -1,6 +1,10 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { FilterDropdown, getStores } from "@middleman/ui";
+  import {
+    providerCollectionPath,
+    providerRouteParams,
+  } from "@middleman/ui/api/provider-routes";
   import type { RepoSummary } from "@middleman/ui/api/types";
   import { buildIssueRoute } from "@middleman/ui/routes";
 
@@ -207,6 +211,7 @@
   }
 
   function openComposer(summary: RepoSummaryCardData): void {
+    if (!summary.repo.capabilities.issue_mutation) return;
     const key = repoStateKey(summary);
     composerSummary = summary;
     issueErrorByRepo[key] = null;
@@ -239,6 +244,7 @@
   async function submitIssue(
     summary: RepoSummaryCardData,
   ): Promise<void> {
+    if (!summary.repo.capabilities.issue_mutation) return;
     const key = repoStateKey(summary);
     if (issueSubmittingByRepo[key]) return;
 
@@ -251,19 +257,22 @@
     issueSubmittingByRepo[key] = true;
     issueErrorByRepo[key] = null;
 
+    const ref = {
+      provider: summary.repo.provider,
+      platformHost: summary.repo.platform_host,
+      owner: summary.repo.owner,
+      name: summary.repo.name,
+      repoPath: summary.repo.repo_path,
+    };
     const { data, error } = await client.POST(
-      "/repos/{owner}/{name}/issues",
+      providerCollectionPath("issues", ref),
       {
         params: {
-          path: {
-            owner: summary.owner,
-            name: summary.name,
-          },
+          path: providerRouteParams(ref),
         },
         body: {
           title,
           body: issueBodyByRepo[key] ?? "",
-          platform_host: summary.platform_host,
         },
       },
     );
@@ -283,10 +292,12 @@
     setGlobalRepo(repoStateKey(summary));
     navigate(
       buildIssueRoute({
-        owner: summary.owner,
-        name: summary.name,
+        provider: summary.repo.provider,
+        platformHost: summary.repo.platform_host,
+        owner: summary.repo.owner,
+        name: summary.repo.name,
+        repoPath: summary.repo.repo_path,
         number: data.Number,
-        platformHost: summary.platform_host,
       }),
     );
   }
@@ -447,10 +458,12 @@
             filterAndNavigate(
               summary,
               buildIssueRoute({
-                owner: summary.owner,
-                name: summary.name,
+                provider: summary.repo.provider,
+                platformHost: summary.repo.platform_host,
+                owner: summary.repo.owner,
+                name: summary.repo.name,
+                repoPath: summary.repo.repo_path,
                 number,
-                platformHost: summary.platform_host,
               }),
             )}
         />

@@ -28,7 +28,9 @@
     owner: string;
     name: string;
     number: number;
+    provider?: string | undefined;
     platformHost?: string | undefined;
+    repoPath?: string | undefined;
   };
 
   let {
@@ -44,8 +46,10 @@
     itemTitle: string;
     itemUrl: string;
     itemState: string;
+    provider: string;
     repoOwner: string;
     repoName: string;
+    repoPath: string;
     platformHost: string;
     latestTime: string;
     events: ActivityItem[];
@@ -89,15 +93,20 @@
         parseAPITimestamp(b.created_at).getTime() - parseAPITimestamp(a.created_at).getTime());
 
       const first = events[0]!;
+      if (!first.repo) {
+        throw new Error("activity group missing provider repo identity");
+      }
       allItemGroups.push({
         itemType: first.item_type,
         itemNumber: first.item_number,
         itemTitle: first.item_title,
         itemUrl: first.item_url,
         itemState: first.item_state,
-        repoOwner: first.repo_owner,
-        repoName: first.repo_name,
-        platformHost: first.platform_host ?? "",
+        provider: first.repo.provider,
+        repoOwner: first.repo.owner,
+        repoName: first.repo.name,
+        repoPath: first.repo.repo_path,
+        platformHost: first.repo.platform_host,
         latestTime: first.created_at,
         events,
         displayEvents: collapseActivityCommitRuns(events),
@@ -196,6 +205,10 @@
       && selectedItem.owner === group.repoOwner
       && selectedItem.name === group.repoName
       && selectedItem.number === group.itemNumber
+      && (!selectedItem.provider
+        || selectedItem.provider === group.provider)
+      && (!selectedItem.repoPath
+        || selectedItem.repoPath === group.repoPath)
       && (!selectedItem.platformHost
         || group.platformHost === selectedItem.platformHost);
   }

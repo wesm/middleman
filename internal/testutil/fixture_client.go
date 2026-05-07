@@ -136,8 +136,10 @@ func (c *FixtureClient) GetRepository(
 ) (*gh.Repository, error) {
 	t := true
 	archived := repo == "archived"
+	nodeID := "repo-" + owner + "-" + repo
 	return &gh.Repository{
 		Name:             &repo,
+		NodeID:           &nodeID,
 		Owner:            &gh.User{Login: &owner},
 		Archived:         &archived,
 		AllowSquashMerge: &t,

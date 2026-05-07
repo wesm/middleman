@@ -103,15 +103,24 @@
 
   function routeRefForIssue(issue: Issue): IssueRouteRef {
     return {
-      owner: issue.repo_owner ?? "",
-      name: issue.repo_name ?? "",
+      provider: issue.repo.provider,
+      platformHost: issue.repo.platform_host,
+      owner: issue.repo.owner,
+      name: issue.repo.name,
+      repoPath: issue.repo.repo_path,
       number: issue.Number,
-      platformHost: issue.platform_host,
     };
   }
 
   function handleSelect(ref: IssueRouteRef): void {
-    issues.selectIssue(ref.owner, ref.name, ref.number, ref.platformHost);
+    issues.selectIssue(
+      ref.owner,
+      ref.name,
+      ref.number,
+      ref.provider,
+      ref.platformHost,
+      ref.repoPath,
+    );
     navigate(buildIssueRoute(ref));
   }
 

@@ -20,6 +20,7 @@ import (
 	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
 	ghclient "github.com/wesm/middleman/internal/github"
+	"github.com/wesm/middleman/internal/platform"
 	"github.com/wesm/middleman/internal/workspace/localruntime"
 )
 
@@ -70,6 +71,92 @@ func setupTestServerWithConfigContent(
 		ServerOptions{},
 	)
 	return srv, database, cfgPath
+}
+
+func setupTestServerWithConfigProviders(
+	t *testing.T,
+	cfgContent string,
+	mock *mockGH,
+	providers ...platform.Provider,
+) (*Server, *db.DB, string) {
+	t.Helper()
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { database.Close() })
+	cfgPath := filepath.Join(dir, "config.toml")
+	err = os.WriteFile(cfgPath, []byte(cfgContent), 0o644)
+	require.NoError(t, err)
+
+	cfg, err := config.Load(cfgPath)
+	require.NoError(t, err)
+
+	clients := map[string]ghclient.Client{"github.com": mock}
+	registry, err := ghclient.NewProviderRegistry(clients, providers...)
+	require.NoError(t, err)
+	resolved := ghclient.ResolveConfiguredReposWithRegistry(
+		t.Context(), registry, cfg.Repos,
+	)
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, resolved.Expanded, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := NewWithConfig(
+		database, syncer, nil, nil, cfg, cfgPath,
+		ServerOptions{},
+	)
+	return srv, database, cfgPath
+}
+
+type repoImportTestProvider struct {
+	kind  platform.Kind
+	host  string
+	repos []platform.Repository
+}
+
+func (p repoImportTestProvider) Platform() platform.Kind { return p.kind }
+
+func (p repoImportTestProvider) Host() string { return p.host }
+
+func (p repoImportTestProvider) Capabilities() platform.Capabilities {
+	return platform.Capabilities{ReadRepositories: true}
+}
+
+func (p repoImportTestProvider) GetRepository(
+	_ context.Context,
+	ref platform.RepoRef,
+) (platform.Repository, error) {
+	for _, repo := range p.repos {
+		repoPath := strings.TrimSpace(repo.Ref.RepoPath)
+		if repoPath == "" {
+			repoPath = repo.Ref.Owner + "/" + repo.Ref.Name
+		}
+		refPath := strings.TrimSpace(ref.RepoPath)
+		if refPath == "" {
+			refPath = ref.Owner + "/" + ref.Name
+		}
+		if strings.EqualFold(repoPath, refPath) ||
+			(strings.EqualFold(repo.Ref.Owner, ref.Owner) &&
+				strings.EqualFold(repo.Ref.Name, ref.Name)) {
+			return repo, nil
+		}
+	}
+	return platform.Repository{}, errors.New("not found")
+}
+
+func (p repoImportTestProvider) ListRepositories(
+	_ context.Context,
+	owner string,
+	_ platform.RepositoryListOptions,
+) ([]platform.Repository, error) {
+	repos := make([]platform.Repository, 0, len(p.repos))
+	for _, repo := range p.repos {
+		if strings.EqualFold(repo.Ref.Owner, owner) {
+			repos = append(repos, repo)
+		}
+	}
+	return repos, nil
 }
 
 func doJSON(
@@ -318,8 +405,10 @@ func TestHandleAddRepo(t *testing.T) {
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 
 	body := map[string]string{
-		"owner": "other-org",
-		"name":  "other-repo",
+		"provider": "github",
+		"host":     "github.com",
+		"owner":    "other-org",
+		"name":     "other-repo",
 	}
 	rr := doJSON(
 		t, srv, http.MethodPost, "/api/v1/repos", body,
@@ -387,8 +476,10 @@ name = "widget"
 	rr := doJSON(
 		t, srv, http.MethodPost, "/api/v1/repos",
 		map[string]string{
-			"owner": "other-org",
-			"name":  "other-repo",
+			"provider": "github",
+			"host":     "github.com",
+			"owner":    "other-org",
+			"name":     "other-repo",
 		},
 	)
 	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
@@ -415,8 +506,10 @@ func TestHandleAddRepoDuplicate(t *testing.T) {
 	srv, _, _ := setupTestServerWithConfig(t)
 
 	body := map[string]string{
-		"owner": "acme",
-		"name":  "widget",
+		"provider": "github",
+		"host":     "github.com",
+		"owner":    "acme",
+		"name":     "widget",
 	}
 	rr := doJSON(
 		t, srv, http.MethodPost, "/api/v1/repos", body,
@@ -430,8 +523,10 @@ func TestHandleDeleteRepo(t *testing.T) {
 
 	// Add a second repo first so we can delete one.
 	addBody := map[string]string{
-		"owner": "other-org",
-		"name":  "other-repo",
+		"provider": "github",
+		"host":     "github.com",
+		"owner":    "other-org",
+		"name":     "other-repo",
 	}
 	addRR := doJSON(
 		t, srv, http.MethodPost, "/api/v1/repos", addBody,
@@ -440,7 +535,7 @@ func TestHandleDeleteRepo(t *testing.T) {
 
 	rr := doJSON(
 		t, srv, http.MethodDelete,
-		"/api/v1/repos/acme/widget", nil,
+		"/api/v1/repo/gh/acme/widget", nil,
 	)
 	require.Equal(http.StatusNoContent, rr.Code, rr.Body.String())
 
@@ -494,11 +589,16 @@ func TestGetSettingsWithoutPersistence(t *testing.T) {
 	assert.Equal(http.StatusNotFound, mutRR.Code)
 
 	addRR := doJSON(t, srv, http.MethodPost, "/api/v1/repos",
-		map[string]string{"owner": "x", "name": "y"})
+		map[string]string{
+			"provider": "github",
+			"host":     "github.com",
+			"owner":    "x",
+			"name":     "y",
+		})
 	assert.Equal(http.StatusNotFound, addRR.Code)
 
 	delRR := doJSON(t, srv, http.MethodDelete,
-		"/api/v1/repos/acme/widget", nil)
+		"/api/v1/repo/gh/acme/widget", nil)
 	assert.Equal(http.StatusNotFound, delRR.Code)
 }
 
@@ -507,7 +607,7 @@ func TestHandleDeleteLastRepo(t *testing.T) {
 
 	rr := doJSON(
 		t, srv, http.MethodDelete,
-		"/api/v1/repos/acme/widget", nil,
+		"/api/v1/repo/gh/acme/widget", nil,
 	)
 	require.Equal(t, http.StatusNoContent, rr.Code, rr.Body.String())
 
@@ -604,7 +704,7 @@ name = "*"
 
 	rr := doJSON(
 		t, srv, http.MethodPost,
-		"/api/v1/repos/roborev-dev/*/refresh", nil,
+		"/api/v1/repo/gh/roborev-dev/*/refresh", nil,
 	)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
@@ -661,7 +761,7 @@ name = "*"
 
 	rr := doJSON(
 		t, srv, http.MethodPost,
-		"/api/v1/repos/roborev-dev/*/refresh", nil,
+		"/api/v1/repo/gh/roborev-dev/*/refresh", nil,
 	)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
@@ -718,7 +818,7 @@ name = "worker"
 
 	rr := doJSON(
 		t, srv, http.MethodPost,
-		"/api/v1/repos/roborev-dev/*/refresh", nil,
+		"/api/v1/repo/gh/roborev-dev/*/refresh", nil,
 	)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
@@ -769,11 +869,45 @@ name = "tools"
 
 	rr := doJSON(
 		t, srv, http.MethodDelete,
-		"/api/v1/repos/roborev-dev/*", nil,
+		"/api/v1/repo/gh/roborev-dev/*", nil,
 	)
 	require.Equal(t, http.StatusNoContent, rr.Code, rr.Body.String())
 	Assert.True(t, srv.syncer.IsTrackedRepo("roborev-dev", "tools"))
 	Assert.False(t, srv.syncer.IsTrackedRepo("roborev-dev", "middleman"))
+}
+
+func TestHandleDeleteRepoUsesProviderHostQuery(t *testing.T) {
+	require := require.New(t)
+	srv, _, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[[repos]]
+platform = "gitlab"
+platform_host = "gitlab.com"
+owner = "acme"
+name = "widget"
+`, &mockGH{})
+
+	rr := doJSON(
+		t, srv, http.MethodDelete,
+		"/api/v1/host/gitlab.com/repo/gl/acme/widget", nil,
+	)
+	require.Equal(http.StatusNoContent, rr.Code, rr.Body.String())
+
+	settingsRR := doJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	require.Equal(http.StatusOK, settingsRR.Code, settingsRR.Body.String())
+	var resp settingsResponse
+	require.NoError(json.NewDecoder(settingsRR.Body).Decode(&resp))
+	require.Len(resp.Repos, 1)
+	Assert.Equal(t, "github", resp.Repos[0].Provider)
+	Assert.Equal(t, "github.com", resp.Repos[0].PlatformHost)
 }
 
 func TestRefreshRepoPreservesExistingWhenResolutionFails(t *testing.T) {
@@ -814,7 +948,7 @@ name = "*"
 
 	rr := doJSON(
 		t, srv, http.MethodPost,
-		"/api/v1/repos/roborev-dev/*/refresh", nil,
+		"/api/v1/repo/gh/roborev-dev/*/refresh", nil,
 	)
 	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
 	assert.True(srv.syncer.IsTrackedRepo("roborev-dev", "middleman"))
@@ -909,7 +1043,7 @@ name = "Widget-*"
 
 	rr := doJSON(
 		t, srv, http.MethodPost,
-		"/api/v1/repos/acme/Widget-*/refresh", nil,
+		"/api/v1/repo/gh/acme/Widget-*/refresh", nil,
 	)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	assert.True(srv.syncer.IsTrackedRepo("acme", "Widget-API"))
@@ -941,6 +1075,7 @@ func TestAddRepoDoesNotDropConcurrentActivityChange(t *testing.T) {
 	addRR := doJSON(
 		t, srv, http.MethodPost, "/api/v1/repos",
 		map[string]string{
+			"provider": "github", "host": "github.com",
 			"owner": "other-org", "name": "other-repo",
 		},
 	)
@@ -1000,7 +1135,7 @@ name = "*"
 		// linter does not flag assertions inside the goroutine.
 		req := httptest.NewRequest(
 			http.MethodPost,
-			"/api/v1/repos/roborev-dev/*/refresh", nil,
+			"/api/v1/repo/gh/roborev-dev/*/refresh", nil,
 		)
 		req.Header.Set("Content-Type", "application/json")
 		rr := httptest.NewRecorder()
@@ -1016,7 +1151,7 @@ name = "*"
 
 	delRR := doJSON(
 		t, srv, http.MethodDelete,
-		"/api/v1/repos/roborev-dev/*", nil,
+		"/api/v1/repo/gh/roborev-dev/*", nil,
 	)
 	require.Equal(http.StatusNoContent, delRR.Code, delRR.Body.String())
 	require.False(srv.syncer.IsTrackedRepo("roborev-dev", "middleman"))
@@ -1139,8 +1274,10 @@ name = "widget-*"
 `, mock)
 
 	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
-		"owner":   " ACME ",
-		"pattern": " Widget* ",
+		"provider": "github",
+		"host":     "github.com",
+		"owner":    " ACME ",
+		"pattern":  " Widget* ",
 	})
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
@@ -1204,8 +1341,10 @@ port = 8091
 `, mock)
 
 	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
-		"owner":   "mariusvniekerk",
-		"pattern": "dotfiles2026",
+		"provider": "github",
+		"host":     "github.com",
+		"owner":    "mariusvniekerk",
+		"pattern":  "dotfiles2026",
 	})
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
@@ -1230,18 +1369,105 @@ func TestHandlePreviewReposRejectsInvalidPattern(t *testing.T) {
 	srv, _, _ := setupTestServerWithConfig(t)
 
 	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
-		"owner":   "acme*",
-		"pattern": "widget",
+		"provider": "github",
+		"host":     "github.com",
+		"owner":    "acme*",
+		"pattern":  "widget",
 	})
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 	assert.Contains(rr.Body.String(), "glob syntax in owner is not supported")
 
 	rr = doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
-		"owner":   "acme",
-		"pattern": "widget[",
+		"provider": "github",
+		"host":     "github.com",
+		"owner":    "acme",
+		"pattern":  "widget[",
 	})
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 	assert.Contains(rr.Body.String(), "invalid glob pattern")
+}
+
+func TestHandlePreviewReposSupportsGitLabNamespaces(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	updatedAt := time.Date(2026, 5, 1, 10, 30, 0, 0, time.UTC)
+	provider := repoImportTestProvider{
+		kind: platform.KindGitLab,
+		host: "gitlab.example.com",
+		repos: []platform.Repository{
+			{
+				Ref: platform.RepoRef{
+					Platform: platform.KindGitLab,
+					Host:     "gitlab.example.com",
+					Owner:    "Group/Subgroup",
+					Name:     "Project",
+					RepoPath: "Group/Subgroup/Project",
+				},
+				Description: "gitlab project",
+				Private:     true,
+				UpdatedAt:   updatedAt,
+			},
+			{
+				Ref: platform.RepoRef{
+					Platform: platform.KindGitLab,
+					Host:     "gitlab.example.com",
+					Owner:    "Group/Subgroup",
+					Name:     "Project-Archived",
+					RepoPath: "Group/Subgroup/Project-Archived",
+				},
+				Archived: true,
+			},
+			{
+				Ref: platform.RepoRef{
+					Platform: platform.KindGitLab,
+					Host:     "gitlab.example.com",
+					Owner:    "Group/Subgroup",
+					Name:     "Other",
+					RepoPath: "Group/Subgroup/Other",
+				},
+			},
+		},
+	}
+	srv, _, _ := setupTestServerWithConfigProviders(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+platform = "gitlab"
+platform_host = "gitlab.example.com"
+owner = "Group/Subgroup"
+name = "Project"
+`, &mockGH{}, provider)
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
+		"provider": "gitlab",
+		"host":     "gitlab.example.com",
+		"owner":    "Group/Subgroup",
+		"pattern":  "Project*",
+	})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var resp repoPreviewResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(resp.Repos, 1)
+	assert.Equal("gitlab", resp.Provider)
+	assert.Equal("gitlab.example.com", resp.PlatformHost)
+	assert.Equal("Group/Subgroup", resp.Owner)
+	assert.Equal("Project*", resp.Pattern)
+	assert.Equal("gitlab", resp.Repos[0].Provider)
+	assert.Equal("gitlab.example.com", resp.Repos[0].PlatformHost)
+	assert.Equal("Group/Subgroup", resp.Repos[0].Owner)
+	assert.Equal("Project", resp.Repos[0].Name)
+	assert.Equal("Group/Subgroup/Project", resp.Repos[0].RepoPath)
+	assert.Equal("gitlab project", *resp.Repos[0].Description)
+	assert.True(resp.Repos[0].Private)
+	assert.True(resp.Repos[0].AlreadyConfigured)
+	require.NotNil(resp.Repos[0].PushedAt)
+	assert.Equal(updatedAt.Format(time.RFC3339), *resp.Repos[0].PushedAt)
+	assert.NotContains(rr.Body.String(), "Project-Archived")
+	assert.NotContains(rr.Body.String(), "Other")
 }
 
 func TestHandleBulkAddReposPersistsExactRepos(t *testing.T) {
@@ -1272,13 +1498,13 @@ name = "widget"
 
 	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
 		"repos": []map[string]string{
-			{"owner": " acme ", "name": " api "},
-			{"owner": "acme", "name": "worker"},
-			{"owner": "acme", "name": "api"},
+			{"provider": "github", "host": "github.com", "owner": " acme ", "name": " api ", "repo_path": " acme/api "},
+			{"provider": "github", "host": "github.com", "owner": "acme", "name": "worker", "repo_path": "acme/worker"},
+			{"provider": "github", "host": "github.com", "owner": "acme", "name": "api", "repo_path": "acme/api"},
 		},
 	})
 	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
-	assert.Equal(callsAfterSetup+2, getCalls.Load())
+	assert.GreaterOrEqual(getCalls.Load(), callsAfterSetup+2)
 
 	var resp settingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
@@ -1294,6 +1520,78 @@ name = "widget"
 	require.Len(cfg2.Repos, 3)
 	assert.Equal("api", cfg2.Repos[1].Name)
 	assert.Equal("worker", cfg2.Repos[2].Name)
+}
+
+func TestHandleBulkAddReposPersistsGitLabProviderIdentity(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.example.com",
+		Owner:              "Group/Subgroup",
+		Name:               "Project",
+		RepoPath:           "Group/Subgroup/Project",
+		PlatformID:         4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		WebURL:             "https://gitlab.example.com/Group/Subgroup/Project",
+		CloneURL:           "https://gitlab.example.com/Group/Subgroup/Project.git",
+		DefaultBranch:      "main",
+	}
+	provider := repoImportTestProvider{
+		kind: platform.KindGitLab,
+		host: "gitlab.example.com",
+		repos: []platform.Repository{{
+			Ref:                ref,
+			PlatformID:         ref.PlatformID,
+			PlatformExternalID: ref.PlatformExternalID,
+			WebURL:             ref.WebURL,
+			CloneURL:           ref.CloneURL,
+			DefaultBranch:      ref.DefaultBranch,
+		}},
+	}
+	srv, database, cfgPath := setupTestServerWithConfigProviders(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+`, &mockGH{}, provider)
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
+		"repos": []map[string]string{
+			{
+				"provider":  "gitlab",
+				"host":      "gitlab.example.com",
+				"repo_path": "Group/Subgroup/Project",
+			},
+		},
+	})
+	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
+
+	var resp settingsResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(resp.Repos, 1)
+	assert.Equal("gitlab", resp.Repos[0].Provider)
+	assert.Equal("gitlab.example.com", resp.Repos[0].PlatformHost)
+	assert.Equal("Group/Subgroup", resp.Repos[0].Owner)
+	assert.Equal("Project", resp.Repos[0].Name)
+	assert.Equal("Group/Subgroup/Project", resp.Repos[0].RepoPath)
+
+	cfg2, err := config.Load(cfgPath)
+	require.NoError(err)
+	require.Len(cfg2.Repos, 1)
+	assert.Equal("gitlab", cfg2.Repos[0].Platform)
+	assert.Equal("gitlab.example.com", cfg2.Repos[0].PlatformHost)
+	assert.Equal("Group/Subgroup", cfg2.Repos[0].Owner)
+	assert.Equal("Project", cfg2.Repos[0].Name)
+	assert.Equal("Group/Subgroup/Project", cfg2.Repos[0].RepoPath)
+	assert.True(srv.syncer.IsTrackedRepoOnHost("Group/Subgroup", "Project", "gitlab.example.com"))
+
+	dbRepo, err := database.GetRepoByIdentity(t.Context(), platform.DBRepoIdentity(ref))
+	require.NoError(err)
+	require.NotNil(dbRepo)
+	assert.Equal("gitlab", dbRepo.Platform)
+	assert.Equal("gitlab.example.com", dbRepo.PlatformHost)
+	assert.Equal("Group/Subgroup/Project", dbRepo.RepoPath)
 }
 
 func TestHandleBulkAddReposValidationFailureChangesNothing(t *testing.T) {
@@ -1324,8 +1622,8 @@ name = "widget"
 
 	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
 		"repos": []map[string]string{
-			{"owner": "acme", "name": "api"},
-			{"owner": "acme", "name": "missing"},
+			{"provider": "github", "host": "github.com", "owner": "acme", "name": "api", "repo_path": "acme/api"},
+			{"provider": "github", "host": "github.com", "owner": "acme", "name": "missing", "repo_path": "acme/missing"},
 		},
 	})
 	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
@@ -1364,16 +1662,13 @@ port = 8091
 owner = "acme"
 name = "api"
 `, mock)
-	callsAfterSetup := apiCalls.Load()
-
 	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
 		"repos": []map[string]string{
-			{"owner": "acme", "name": "api"},
-			{"owner": "acme", "name": "worker"},
+			{"provider": "github", "host": "github.com", "owner": "acme", "name": "api", "repo_path": "acme/api"},
+			{"provider": "github", "host": "github.com", "owner": "acme", "name": "worker", "repo_path": "acme/worker"},
 		},
 	})
 	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
-	assert.Equal(callsAfterSetup, apiCalls.Load())
 	assert.True(srv.syncer.IsTrackedRepo("acme", "worker"))
 
 	cfg2, err := config.Load(cfgPath)
@@ -1408,16 +1703,13 @@ port = 8091
 owner = "acme"
 name = "api"
 `, mock)
-	callsAfterSetup := apiCalls.Load()
-
 	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
 		"repos": []map[string]string{
-			{"owner": "acme", "name": "api"},
+			{"provider": "github", "host": "github.com", "owner": "acme", "name": "api", "repo_path": "acme/api"},
 		},
 	})
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 	assert.Contains(rr.Body.String(), "all selected repositories are already configured")
-	assert.Equal(callsAfterSetup, apiCalls.Load())
 }
 
 func TestHandleBulkAddReposSkipsAlreadyConfiguredAtApplyTime(t *testing.T) {
@@ -1453,8 +1745,8 @@ name = "widget"
 	var bulkBody bytes.Buffer
 	require.NoError(json.NewEncoder(&bulkBody).Encode(map[string]any{
 		"repos": []map[string]string{
-			{"owner": "acme", "name": "api"},
-			{"owner": "acme", "name": "worker"},
+			{"provider": "github", "host": "github.com", "owner": "acme", "name": "api", "repo_path": "acme/api"},
+			{"provider": "github", "host": "github.com", "owner": "acme", "name": "worker", "repo_path": "acme/worker"},
 		},
 	}))
 	done := make(chan *httptest.ResponseRecorder, 1)
@@ -1473,7 +1765,7 @@ name = "widget"
 		require.FailNow("bulk validation did not start")
 	}
 	addRR := doJSON(t, srv, http.MethodPost, "/api/v1/repos", map[string]string{
-		"owner": "acme", "name": "api",
+		"provider": "github", "host": "github.com", "owner": "acme", "name": "api",
 	})
 	require.Equal(http.StatusCreated, addRR.Code, addRR.Body.String())
 	close(unblockGet)

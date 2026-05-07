@@ -14,14 +14,26 @@ type updateSettingsInput struct {
 
 type addRepoInput struct {
 	Body struct {
-		Owner string `json:"owner"`
-		Name  string `json:"name"`
+		Provider     string `json:"provider"`
+		Host         string `json:"host,omitempty"`
+		PlatformHost string `json:"platform_host,omitempty"`
+		Owner        string `json:"owner"`
+		Name         string `json:"name"`
 	}
 }
 
 type repoConfigInput struct {
-	Owner string `path:"owner"`
-	Name  string `path:"name"`
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+}
+
+type repoConfigHostInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string `path:"platform_host"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
 }
 
 type settingsOutput = bodyOutput[settingsResponse]
@@ -46,12 +58,23 @@ func (s *Server) registerSettingsAPI(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "refresh-repo",
 		Method:      http.MethodPost,
-		Path:        "/repos/{owner}/{name}/refresh",
+		Path:        "/repo/{provider}/{owner}/{name}/refresh",
 	}, s.refreshConfiguredRepo)
+	huma.Register(api, huma.Operation{
+		OperationID: "refresh-repo-on-host",
+		Method:      http.MethodPost,
+		Path:        "/host/{platform_host}/repo/{provider}/{owner}/{name}/refresh",
+	}, s.refreshConfiguredRepoOnHost)
 	huma.Register(api, huma.Operation{
 		OperationID:   "delete-repo",
 		Method:        http.MethodDelete,
-		Path:          "/repos/{owner}/{name}",
+		Path:          "/repo/{provider}/{owner}/{name}",
 		DefaultStatus: http.StatusNoContent,
 	}, s.deleteConfiguredRepo)
+	huma.Register(api, huma.Operation{
+		OperationID:   "delete-repo-on-host",
+		Method:        http.MethodDelete,
+		Path:          "/host/{platform_host}/repo/{provider}/{owner}/{name}",
+		DefaultStatus: http.StatusNoContent,
+	}, s.deleteConfiguredRepoOnHost)
 }

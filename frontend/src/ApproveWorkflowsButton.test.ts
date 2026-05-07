@@ -36,7 +36,7 @@ describe("ApproveWorkflowsButton", () => {
 
   it("renders a count when more than one workflow needs approval", () => {
     render(ApproveWorkflowsButton, {
-      props: { owner: "acme", name: "widget", number: 7, count: 2 },
+      props: { provider: "github", platformHost: "github.com", owner: "acme", name: "widget", repoPath: "acme/widget", number: 7, count: 2 },
     });
 
     expect(
@@ -50,7 +50,7 @@ describe("ApproveWorkflowsButton", () => {
     });
 
     render(ApproveWorkflowsButton, {
-      props: { owner: "acme", name: "widget", number: 7, count: 2 },
+      props: { provider: "github", platformHost: "github.com", owner: "acme", name: "widget", repoPath: "acme/widget", number: 7, count: 2 },
     });
 
     await fireEvent.click(
@@ -58,10 +58,23 @@ describe("ApproveWorkflowsButton", () => {
     );
 
     expect(mockPost).toHaveBeenCalledWith(
-      "/repos/{owner}/{name}/pulls/{number}/approve-workflows",
-      { params: { path: { owner: "acme", name: "widget", number: 7 } } },
+      "/pulls/{provider}/{owner}/{name}/{number}/approve-workflows",
+      {
+        params: {
+          path: {
+            provider: "github",
+            owner: "acme",
+            name: "widget",
+            number: 7,
+          },
+        },
+      },
     );
-    expect(mockRefreshDetailOnly).toHaveBeenCalledWith("acme", "widget", 7);
+    expect(mockRefreshDetailOnly).toHaveBeenCalledWith("acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+    });
     expect(mockLoadPulls).toHaveBeenCalledTimes(1);
   });
 
@@ -71,7 +84,7 @@ describe("ApproveWorkflowsButton", () => {
     });
 
     render(ApproveWorkflowsButton, {
-      props: { owner: "acme", name: "widget", number: 7, count: 1 },
+      props: { provider: "github", platformHost: "github.com", owner: "acme", name: "widget", repoPath: "acme/widget", number: 7, count: 1 },
     });
 
     await fireEvent.click(

@@ -204,14 +204,14 @@ function filesFromDiff(fixture: DiffResult): FilesResult {
 }
 
 async function mockDiffApi(page: Page, fixture: typeof smallDiff): Promise<void> {
-  await page.route("**/api/v1/repos/acme/widgets/pulls/1/files", async (route) => {
+  await page.route("**/api/v1/pulls/github/acme/widgets/1/files", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify(filesFromDiff(fixture)),
     });
   });
-  await page.route("**/api/v1/repos/acme/widgets/pulls/1/diff*", async (route) => {
+  await page.route("**/api/v1/pulls/github/acme/widgets/1/diff*", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -221,7 +221,7 @@ async function mockDiffApi(page: Page, fixture: typeof smallDiff): Promise<void>
 }
 
 async function mockFilePreviewApi(page: Page): Promise<void> {
-  await page.route("**/api/v1/repos/acme/widgets/pulls/1/file-preview**", async (route) => {
+  await page.route("**/api/v1/pulls/github/acme/widgets/1/file-preview**", async (route) => {
     const url = new URL(route.request().url());
     const path = url.searchParams.get("path");
     if (path === "docs/preview.md") {
@@ -259,14 +259,14 @@ async function mockFilePreviewApi(page: Page): Promise<void> {
 }
 
 async function mockDiffApiError(page: Page, status: number, detail: string): Promise<void> {
-  await page.route("**/api/v1/repos/acme/widgets/pulls/1/files", async (route) => {
+  await page.route("**/api/v1/pulls/github/acme/widgets/1/files", async (route) => {
     await route.fulfill({
       status,
       contentType: "application/json",
       body: JSON.stringify({ detail }),
     });
   });
-  await page.route("**/api/v1/repos/acme/widgets/pulls/1/diff*", async (route) => {
+  await page.route("**/api/v1/pulls/github/acme/widgets/1/diff*", async (route) => {
     await route.fulfill({
       status,
       contentType: "application/json",
@@ -276,7 +276,7 @@ async function mockDiffApiError(page: Page, status: number, detail: string): Pro
 }
 
 async function navigateToDiff(page: Page): Promise<void> {
-  await page.goto("/pulls/acme/widgets/1/files");
+  await page.goto("/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1");
 }
 
 async function waitForDiffLoaded(page: Page): Promise<void> {
@@ -395,7 +395,9 @@ test.describe("diff view", () => {
     await page.locator(".detail-tab", {
       hasText: "Conversation",
     }).click();
-    await expect(page).toHaveURL(/\/pulls\/acme\/widgets\/1$/);
+    await expect(page).toHaveURL(
+      /\/pulls\/detail\?provider=github&platform_host=github\.com&repo_path=acme%2Fwidgets&number=1$/,
+    );
   });
 
   test("clicking a file header collapses and expands its content", async ({ page }) => {
@@ -510,14 +512,14 @@ test.describe("diff view", () => {
     let diffFetchCount = 0;
     let previewFetchCount = 0;
 
-    await page.route("**/api/v1/repos/acme/widgets/pulls/1/files", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/1/files", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(filesFromDiff(smallDiff)),
       });
     });
-    await page.route("**/api/v1/repos/acme/widgets/pulls/1/diff*", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/1/diff*", async (route) => {
       diffFetchCount++;
       await route.fulfill({
         status: 200,
@@ -525,7 +527,7 @@ test.describe("diff view", () => {
         body: JSON.stringify(smallDiff),
       });
     });
-    await page.route("**/api/v1/repos/acme/widgets/pulls/1/file-preview**", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/1/file-preview**", async (route) => {
       const content = logoResponses[Math.min(previewFetchCount, logoResponses.length - 1)]!;
       previewFetchCount++;
       await route.fulfill({
@@ -603,14 +605,14 @@ test.describe("diff view", () => {
 
   test("hide whitespace toggle triggers re-fetch", async ({ page }) => {
     let fetchCount = 0;
-    await page.route("**/api/v1/repos/acme/widgets/pulls/1/files", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/1/files", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(filesFromDiff(smallDiff)),
       });
     });
-    await page.route("**/api/v1/repos/acme/widgets/pulls/1/diff*", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/1/diff*", async (route) => {
       fetchCount++;
       const url = new URL(route.request().url());
       const fixture = url.searchParams.get("whitespace") === "hide"
@@ -791,14 +793,14 @@ test.describe("diff view", () => {
     // PR 1: large diff with filter shown.
     await mockDiffApi(page, largeDiff);
     // PR 2: also large so filter UI stays visible after switch.
-    await page.route("**/api/v1/repos/acme/widgets/pulls/2/files", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/2/files", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(filesFromDiff(largeDiff)),
       });
     });
-    await page.route("**/api/v1/repos/acme/widgets/pulls/2/diff*", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/2/diff*", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -816,7 +818,7 @@ test.describe("diff view", () => {
     await expect(page.locator(".diff-file-row")).toHaveCount(11);
 
     // Switch to PR 2.
-    await page.goto("/pulls/acme/widgets/2/files");
+    await page.goto("/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=2");
     await waitForSidebarFilesLoaded(page);
 
     // Filter input is empty and full list shows.
@@ -829,14 +831,14 @@ test.describe("diff view", () => {
     // PR 1: large diff with filter shown.
     await mockDiffApi(page, largeDiff);
     // PR 2: small diff (filter input hidden).
-    await page.route("**/api/v1/repos/acme/widgets/pulls/2/files", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/2/files", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(filesFromDiff(smallDiff)),
       });
     });
-    await page.route("**/api/v1/repos/acme/widgets/pulls/2/diff*", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/2/diff*", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -853,7 +855,7 @@ test.describe("diff view", () => {
     await expect(page.locator(".diff-file-row")).toHaveCount(0);
 
     // Switch to PR 2 (small diff — filter input hidden).
-    await page.goto("/pulls/acme/widgets/2/files");
+    await page.goto("/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=2");
     await waitForSidebarFilesLoaded(page);
 
     // Filter input is hidden and all 4 files show (stale query doesn't apply).
@@ -888,21 +890,21 @@ test.describe("diff view", () => {
   test("commit list resets expand state when switching PRs", async ({ page }) => {
     // Mock diff for PR 1 and PR 2 (same fixture is fine — we care about expand state).
     await mockDiffApi(page, smallDiff);
-    await page.route("**/api/v1/repos/acme/widgets/pulls/2/files", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/2/files", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(filesFromDiff(smallDiff)),
       });
     });
-    await page.route("**/api/v1/repos/acme/widgets/pulls/2/diff*", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/2/diff*", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(smallDiff),
       });
     });
-    await page.route("**/api/v1/repos/acme/widgets/pulls/*/commits", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/*/commits", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -925,7 +927,7 @@ test.describe("diff view", () => {
     await expect(page.locator(".commit-item").first()).toBeVisible();
 
     // Switch to PR 2.
-    await page.goto("/pulls/acme/widgets/2/files");
+    await page.goto("/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=2");
     await waitForSidebarFilesLoaded(page);
 
     // Commit section should be collapsed on new PR (body hidden).
@@ -979,14 +981,14 @@ test.describe("diff view performance", () => {
     // Return fewer files when whitespace=hide so we can distinguish
     // the post-toggle render from the initial one.
     const hiddenDiff = { ...largeDiff, files: largeDiff.files.slice(0, 45) };
-    await page.route("**/api/v1/repos/acme/widgets/pulls/1/files", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/1/files", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(filesFromDiff(largeDiff)),
       });
     });
-    await page.route("**/api/v1/repos/acme/widgets/pulls/1/diff*", async (route) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/1/diff*", async (route) => {
       const url = new URL(route.request().url());
       const fixture = url.searchParams.get("whitespace") === "hide"
         ? hiddenDiff
@@ -1046,7 +1048,7 @@ test.describe("diff view (git-backed)", () => {
   });
 
   test("diff is not marked as stale", async ({ page }) => {
-    await page.goto("/pulls/acme/widgets/1/files");
+    await page.goto("/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1");
     await page.locator(".diff-file").first()
       .waitFor({ state: "visible", timeout: 10_000 });
 
@@ -1054,7 +1056,7 @@ test.describe("diff view (git-backed)", () => {
   });
 
   test("real diff loads and renders all changed files", async ({ page }) => {
-    await page.goto("/pulls/acme/widgets/1/files");
+    await page.goto("/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1");
     await page.locator(".diff-file").first()
       .waitFor({ state: "visible", timeout: 10_000 });
     await page.locator(".diff-file-row").first()
@@ -1073,7 +1075,7 @@ test.describe("diff view (git-backed)", () => {
       );
       expect(response.ok()).toBe(true);
 
-      await page.goto(`${server.info.base_url}/pulls/acme/widgets/1/files`);
+      await page.goto(`${server.info.base_url}/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1`);
       await waitForDiffLoaded(page);
       await waitForSidebarFilesLoaded(page);
 
@@ -1132,7 +1134,7 @@ test.describe("diff view (git-backed)", () => {
       );
       expect(advanceResponse.ok()).toBe(true);
 
-      await page.goto(`${server.info.base_url}/pulls/acme/widgets/1/files`);
+      await page.goto(`${server.info.base_url}/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1`);
       await waitForDiffLoaded(page);
       await waitForSidebarFilesLoaded(page);
 
@@ -1157,7 +1159,7 @@ test.describe("diff view (git-backed)", () => {
         .toContainText("Verify changed-file summaries refresh");
 
       const previewResponse = await page.request.get(
-        `${server.info.base_url}/api/v1/repos/acme/widgets/pulls/1/file-preview?path=internal/cache.go`,
+        `${server.info.base_url}/api/v1/pulls/github/acme/widgets/1/file-preview?path=internal/cache.go`,
       );
       expect(previewResponse.ok()).toBe(true);
       const previewBody = await previewResponse.json();
@@ -1169,7 +1171,7 @@ test.describe("diff view (git-backed)", () => {
   });
 
   test("modified file has multiple hunks with correct content", async ({ page }) => {
-    await page.goto("/pulls/acme/widgets/1/files");
+    await page.goto("/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1");
     await page.locator(".diff-file").first()
       .waitFor({ state: "visible", timeout: 10_000 });
 
@@ -1199,7 +1201,7 @@ test.describe("diff view (git-backed)", () => {
   });
 
   test("added file shows A status in sidebar and only addition lines", async ({ page }) => {
-    await page.goto("/pulls/acme/widgets/1/files");
+    await page.goto("/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1");
     await page.locator(".diff-file").first()
       .waitFor({ state: "visible", timeout: 10_000 });
     await page.locator(".diff-file-row").first()
@@ -1229,7 +1231,7 @@ test.describe("diff view (git-backed)", () => {
   });
 
   test("deleted file shows D status in sidebar and only deletion lines", async ({ page }) => {
-    await page.goto("/pulls/acme/widgets/1/files");
+    await page.goto("/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1");
     await page.locator(".diff-file").first()
       .waitFor({ state: "visible", timeout: 10_000 });
     await page.locator(".diff-file-row").first()
@@ -1258,7 +1260,7 @@ test.describe("diff view (git-backed)", () => {
   });
 
   test("hide whitespace toggle filters whitespace-only files", async ({ page }) => {
-    await page.goto("/pulls/acme/widgets/1/files");
+    await page.goto("/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1");
     await page.locator(".diff-file").first()
       .waitFor({ state: "visible", timeout: 10_000 });
 
@@ -1274,7 +1276,7 @@ test.describe("diff view (git-backed)", () => {
   });
 
   test("collapsed region appears between hunks in modified file", async ({ page }) => {
-    await page.goto("/pulls/acme/widgets/1/files");
+    await page.goto("/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1");
     await page.locator(".diff-file").first()
       .waitFor({ state: "visible", timeout: 10_000 });
 
@@ -1295,13 +1297,13 @@ test.describe("diff view (git-backed)", () => {
       Date.now = () => originalNow() + offsetMs;
     }, 20 * 24 * 60 * 60 * 1000);
 
-    await page.goto("/pulls/acme/widgets/1/files");
+    await page.goto("/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1");
     await page.locator(".commit-section__toggle").click();
     await page.locator(".commit-item").first()
       .waitFor({ state: "visible", timeout: 10_000 });
 
     const payload = await page.evaluate(async () => {
-      const response = await fetch("/api/v1/repos/acme/widgets/pulls/1/commits");
+      const response = await fetch("/api/v1/pulls/github/acme/widgets/1/commits");
       return response.json();
     });
 

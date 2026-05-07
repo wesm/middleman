@@ -61,7 +61,8 @@ func initTestRepo(t *testing.T, dir string) {
 func setupBareClone(t *testing.T, sourceDir, clonesDir, owner, name string) *gitclone.Manager {
 	t.Helper()
 	mgr := gitclone.New(clonesDir, nil)
-	barePath := mgr.ClonePath("github.com", owner, name)
+	barePath, err := mgr.ClonePath("github.com", owner, name)
+	require.NoError(t, err)
 	gitRun(t, "", "clone", "--bare", sourceDir, barePath)
 	gitRun(t, barePath, "config", "--add", "remote.origin.fetch",
 		"+refs/pull/*/head:refs/pull/*/head")
@@ -371,7 +372,8 @@ func TestSyncOpenToMergedTransition(t *testing.T) {
 	postmergeBaseSHA := gitRun(t, sourceDir, "rev-parse", "main")
 
 	// Re-fetch the bare clone to pick up the merge commit.
-	barePath := mgr.ClonePath("github.com", "owner", "repo")
+	barePath, err := mgr.ClonePath("github.com", "owner", "repo")
+	require.NoError(err)
 	gitRun(t, barePath, "fetch", "--prune", "origin")
 
 	closedState := "closed"
@@ -558,7 +560,8 @@ func TestSyncMRWrapsDiffFailureAsDiffSyncError(t *testing.T) {
 	// `git fetch` succeeds but the merge commit never enters the clone.
 	emptyRemote := t.TempDir()
 	initTestRepo(t, emptyRemote)
-	barePath := mgr.ClonePath("github.com", "owner", "repo")
+	barePath, err := mgr.ClonePath("github.com", "owner", "repo")
+	require.NoError(err)
 	gitRun(t, barePath, "remote", "set-url", "origin", emptyRemote)
 
 	number := 42
@@ -592,7 +595,7 @@ func TestSyncMRWrapsDiffFailureAsDiffSyncError(t *testing.T) {
 		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
 		time.Minute, nil, nil)
 
-	err := syncer.SyncMR(ctx, "owner", "repo", number)
+	err = syncer.SyncMR(ctx, "owner", "repo", number)
 	require.Error(err)
 	var diffErr *DiffSyncError
 	require.ErrorAs(err, &diffErr)
@@ -659,7 +662,8 @@ func TestSyncItemByNumberReturnsTypeOnDiffSyncError(t *testing.T) {
 	// reach it via fetch.
 	emptyRemote := t.TempDir()
 	initTestRepo(t, emptyRemote)
-	barePath := mgr.ClonePath("github.com", "owner", "repo")
+	barePath, err := mgr.ClonePath("github.com", "owner", "repo")
+	require.NoError(err)
 	gitRun(t, barePath, "remote", "set-url", "origin", emptyRemote)
 
 	number := 77

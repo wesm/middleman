@@ -1,5 +1,6 @@
 <script lang="ts">
   import SendHorizontalIcon from "@lucide/svelte/icons/send-horizontal";
+  import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
   import { getClient, getStores } from "../../context.js";
   import ActionButton from "../shared/ActionButton.svelte";
 
@@ -10,6 +11,9 @@
     owner: string;
     name: string;
     number: number;
+    provider: string;
+    platformHost?: string | undefined;
+    repoPath: string;
     size?: "sm" | "md";
     disabled?: boolean;
     oncompleted?: () => void;
@@ -19,6 +23,9 @@
     owner,
     name,
     number,
+    provider,
+    platformHost,
+    repoPath,
     size = "md",
     disabled = false,
     oncompleted,
@@ -36,20 +43,21 @@
     submitting = true;
     error = null;
     try {
-      const { error } = await client.POST("/repos/{owner}/{name}/pulls/{number}/ready-for-review", {
-        params: { path: { owner, name, number } },
+      const ref = { provider, platformHost, owner, name, repoPath };
+      const { error } = await client.POST(providerItemPath("pulls", ref, "/ready-for-review"), {
+        params: { path: { ...providerRouteParams(ref), number } },
       });
       if (error) {
         throw new Error(error.detail ?? error.title ?? "failed to mark pull request ready for review");
       }
-      await detail.loadDetail(owner, name, number);
+      await detail.loadDetail(owner, name, number, { provider, platformHost, repoPath });
       await pulls.loadPulls();
       oncompleted?.();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (shouldRefreshStaleDraftState(message)) {
         try {
-          await detail.loadDetail(owner, name, number);
+          await detail.loadDetail(owner, name, number, { provider, platformHost, repoPath });
           await pulls.loadPulls();
         } catch {
           // Preserve the original mutation error if the stale-state refresh also fails.

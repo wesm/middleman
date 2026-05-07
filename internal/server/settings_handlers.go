@@ -11,7 +11,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/wesm/middleman/internal/config"
+	"github.com/wesm/middleman/internal/db"
 	ghclient "github.com/wesm/middleman/internal/github"
+	"github.com/wesm/middleman/internal/platform"
 	"github.com/wesm/middleman/internal/workspace/localruntime"
 )
 
@@ -65,8 +67,11 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 	)
 	for i, raw := range repos {
 		configured[i] = ghclient.ConfiguredRepoStatus{
+			Provider:         raw.PlatformOrDefault(),
+			PlatformHost:     raw.PlatformHostOrDefault(),
 			Owner:            raw.Owner,
 			Name:             raw.Name,
+			RepoPath:         configRepoPath(raw),
 			IsGlob:           raw.HasNameGlob(),
 			MatchedRepoCount: matchedRepoCount(raw, tracked),
 		}
@@ -83,9 +88,11 @@ func matchedRepoCount(
 	raw config.Repo, tracked []ghclient.RepoRef,
 ) int {
 	host := raw.PlatformHostOrDefault()
+	provider := raw.PlatformOrDefault()
 	count := 0
 	for _, repo := range tracked {
-		if !samePlatformHost(repo.PlatformHost, host) ||
+		if !strings.EqualFold(repoProvider(repo), provider) ||
+			!samePlatformHost(repo.PlatformHost, host) ||
 			!strings.EqualFold(repo.Owner, raw.Owner) {
 			continue
 		}
@@ -97,7 +104,8 @@ func matchedRepoCount(
 			if matched {
 				count++
 			}
-		} else if strings.EqualFold(repo.Name, raw.Name) {
+		} else if strings.EqualFold(trackedRepoPath(repo), configRepoPath(raw)) ||
+			strings.EqualFold(repo.Name, raw.Name) {
 			count++
 		}
 	}
@@ -110,15 +118,10 @@ func (s *Server) mergeTrackedRepos(add []ghclient.RepoRef) {
 	current := s.syncer.TrackedRepos()
 	seen := make(map[string]struct{}, len(current))
 	for _, r := range current {
-		key := strings.ToLower(r.PlatformHost) + "\x00" +
-			strings.ToLower(r.Owner) + "\x00" +
-			strings.ToLower(r.Name)
-		seen[key] = struct{}{}
+		seen[trackedRepoKey(r)] = struct{}{}
 	}
 	for _, r := range add {
-		key := strings.ToLower(r.PlatformHost) + "\x00" +
-			strings.ToLower(r.Owner) + "\x00" +
-			strings.ToLower(r.Name)
+		key := trackedRepoKey(r)
 		if _, ok := seen[key]; ok {
 			continue
 		}
@@ -187,19 +190,20 @@ func repoMatchesOtherConfig(
 }
 
 func sameConfiguredRepo(left, right config.Repo) bool {
-	return samePlatformHost(
-		left.PlatformHostOrDefault(),
-		right.PlatformHostOrDefault(),
-	) &&
-		strings.EqualFold(left.Owner, right.Owner) &&
-		strings.EqualFold(left.Name, right.Name)
+	return strings.EqualFold(left.PlatformOrDefault(), right.PlatformOrDefault()) &&
+		samePlatformHost(
+			left.PlatformHostOrDefault(),
+			right.PlatformHostOrDefault(),
+		) &&
+		strings.EqualFold(configRepoPath(left), configRepoPath(right))
 }
 
 func repoMatchesConfig(
 	repo ghclient.RepoRef, raw config.Repo,
 ) bool {
 	host := raw.PlatformHostOrDefault()
-	if !samePlatformHost(repo.PlatformHost, host) ||
+	if !strings.EqualFold(repoProvider(repo), raw.PlatformOrDefault()) ||
+		!samePlatformHost(repo.PlatformHost, host) ||
 		!strings.EqualFold(repo.Owner, raw.Owner) {
 		return false
 	}
@@ -210,7 +214,22 @@ func repoMatchesConfig(
 		)
 		return matched
 	}
-	return strings.EqualFold(repo.Name, raw.Name)
+	return strings.EqualFold(trackedRepoPath(repo), configRepoPath(raw)) ||
+		strings.EqualFold(repo.Name, raw.Name)
+}
+
+func configRepoPath(raw config.Repo) string {
+	if strings.TrimSpace(raw.RepoPath) != "" {
+		return strings.TrimSpace(raw.RepoPath)
+	}
+	return raw.Owner + "/" + raw.Name
+}
+
+func trackedRepoPath(repo ghclient.RepoRef) string {
+	if strings.TrimSpace(repo.RepoPath) != "" {
+		return strings.TrimSpace(repo.RepoPath)
+	}
+	return repo.Owner + "/" + repo.Name
 }
 
 func appendTrackedRepo(
@@ -218,14 +237,27 @@ func appendTrackedRepo(
 	seen map[string]struct{},
 	repo ghclient.RepoRef,
 ) {
-	key := strings.ToLower(repo.PlatformHost) + "\x00" +
-		strings.ToLower(repo.Owner) + "\x00" +
-		strings.ToLower(repo.Name)
+	key := trackedRepoKey(repo)
 	if _, ok := seen[key]; ok {
 		return
 	}
 	seen[key] = struct{}{}
 	*dst = append(*dst, repo)
+}
+
+func repoProvider(repo ghclient.RepoRef) string {
+	provider := string(repo.Platform)
+	if provider == "" {
+		return "github"
+	}
+	return strings.ToLower(provider)
+}
+
+func trackedRepoKey(repo ghclient.RepoRef) string {
+	return repoProvider(repo) + "\x00" +
+		strings.ToLower(repo.PlatformHost) + "\x00" +
+		strings.ToLower(repo.Owner) + "\x00" +
+		strings.ToLower(repo.Name)
 }
 
 func (s *Server) persistResolvedRepos(
@@ -234,7 +266,13 @@ func (s *Server) persistResolvedRepos(
 ) error {
 	for _, repo := range repos {
 		if _, err := s.db.UpsertRepo(
-			ctx, repo.PlatformHost, repo.Owner, repo.Name,
+			ctx, db.RepoIdentity{
+				Platform:     repoProvider(repo),
+				PlatformHost: repo.PlatformHost,
+				Owner:        repo.Owner,
+				Name:         repo.Name,
+				RepoPath:     repo.RepoPath,
+			},
 		); err != nil {
 			return fmt.Errorf(
 				"upsert resolved repo %s/%s: %w",
@@ -367,7 +405,16 @@ func (s *Server) addConfiguredRepo(
 		return nil, huma.Error400BadRequest("owner and name are required")
 	}
 
-	newRepo := config.Repo{Owner: input.Body.Owner, Name: input.Body.Name}
+	provider, err := normalizeRouteProvider(input.Body.Provider)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	newRepo := config.Repo{
+		Platform:     provider,
+		PlatformHost: importRequestHost(input.Body.Host, input.Body.PlatformHost),
+		Owner:        input.Body.Owner,
+		Name:         input.Body.Name,
+	}
 
 	// Pre-check (racy but gives a fast 400 before the GitHub call).
 	s.cfgMu.Lock()
@@ -429,6 +476,16 @@ func (s *Server) refreshConfiguredRepo(
 
 	owner := input.Owner
 	name := input.Name
+	provider, err := normalizeRouteProvider(input.Provider)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	targetRef := config.Repo{
+		Platform:     provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        owner,
+		Name:         name,
+	}
 
 	s.cfgMu.Lock()
 	repos := slices.Clone(s.cfg.Repos)
@@ -438,7 +495,7 @@ func (s *Server) refreshConfiguredRepo(
 	for i := range repos {
 		if sameConfiguredRepo(
 			repos[i],
-			config.Repo{Owner: owner, Name: name},
+			targetRef,
 		) {
 			target = &repos[i]
 			break
@@ -472,7 +529,7 @@ func (s *Server) refreshConfiguredRepo(
 	for _, rp := range currentRepos {
 		if sameConfiguredRepo(
 			rp,
-			config.Repo{Owner: owner, Name: name},
+			targetRef,
 		) {
 			stillExists = true
 			break
@@ -495,6 +552,17 @@ func (s *Server) refreshConfiguredRepo(
 	return &settingsOutput{Body: s.buildLocalSettingsResponse()}, nil
 }
 
+func (s *Server) refreshConfiguredRepoOnHost(
+	ctx context.Context, input *repoConfigHostInput,
+) (*settingsOutput, error) {
+	return s.refreshConfiguredRepo(ctx, &repoConfigInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        input.Owner,
+		Name:         input.Name,
+	})
+}
+
 func (s *Server) deleteConfiguredRepo(
 	_ context.Context, input *repoConfigInput,
 ) (*struct{}, error) {
@@ -504,13 +572,23 @@ func (s *Server) deleteConfiguredRepo(
 
 	owner := input.Owner
 	name := input.Name
+	provider, err := normalizeRouteProvider(input.Provider)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	targetRef := config.Repo{
+		Platform:     provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        owner,
+		Name:         name,
+	}
 
 	s.cfgMu.Lock()
 	idx := -1
 	for i, rp := range s.cfg.Repos {
 		if sameConfiguredRepo(
 			rp,
-			config.Repo{Owner: owner, Name: name},
+			targetRef,
 		) {
 			idx = i
 			break
@@ -536,4 +614,26 @@ func (s *Server) deleteConfiguredRepo(
 	s.cfgMu.Unlock()
 
 	return nil, nil
+}
+
+func normalizeRouteProvider(raw string) (string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return "", errors.New("provider is required")
+	}
+	kind, err := platform.NormalizeKind(raw)
+	if err != nil {
+		return "", err
+	}
+	return string(kind), nil
+}
+
+func (s *Server) deleteConfiguredRepoOnHost(
+	ctx context.Context, input *repoConfigHostInput,
+) (*struct{}, error) {
+	return s.deleteConfiguredRepo(ctx, &repoConfigInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        input.Owner,
+		Name:         input.Name,
+	})
 }

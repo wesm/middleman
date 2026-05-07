@@ -1,11 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// Seeded issues (5 total):
+// Seeded issues (6 total):
 //   acme/widgets#10: open, eve, "Widget rendering broken on Safari"
 //   acme/widgets#11: open, alice, "Add dark mode support"
 //   acme/widgets#12: closed, bob, "Crash on empty input"
 //   acme/widgets#13: open, dependabot[bot], "Security advisory: prototype pollution"
 //   acme/tools#5: open, dave, "Support config file loading"
+//   group/project#11: open, ada, "GitLab read-only issue"
 
 async function waitForIssueList(page: Page): Promise<void> {
   await page
@@ -48,14 +49,14 @@ test.describe("issue list view", () => {
 
   test("renders open issues by default", async ({ page }) => {
     const countBadge = page.locator(".filter-bar .list-count-chip");
-    await expect(countBadge).toHaveText(/^4 issues$/);
+    await expect(countBadge).toHaveText(/^5 issues$/);
   });
 
   test("sidebar issue pills use the shared chip component", async ({
     page,
   }) => {
     await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(
-      /^4 issues$/,
+      /^5 issues$/,
     );
 
     await selectIssueGrouping(page, "All");

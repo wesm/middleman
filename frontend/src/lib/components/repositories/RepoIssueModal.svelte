@@ -111,9 +111,11 @@
         <div class="issue-modal__field">
           <span>Body</span>
           <CommentEditor
-            owner={summary.owner}
-            name={summary.name}
-            platformHost={summary.platform_host}
+            provider={summary.repo.provider}
+            platformHost={summary.repo.platform_host}
+            owner={summary.repo.owner}
+            name={summary.repo.name}
+            repoPath={summary.repo.repo_path}
             value={body}
             disabled={submitting}
             placeholder="Describe the problem, context, or follow-up work"

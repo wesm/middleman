@@ -106,6 +106,9 @@ name = "repo"
 	assert.Equal("127.0.0.1", cfg.Host)
 	assert.Equal(8091, cfg.Port)
 	assert.Equal("github.com", cfg.DefaultPlatformHost)
+	require.Len(t, cfg.Repos, 1)
+	assert.Equal("github", cfg.Repos[0].Platform)
+	assert.Equal("github.com", cfg.Repos[0].PlatformHostOrDefault())
 }
 
 func TestLoadNormalizesDefaultPlatformHost(t *testing.T) {
@@ -120,6 +123,30 @@ name = "repo"
 
 	assert.Equal("ghe.example.com", cfg.DefaultPlatformHost)
 	assert.Equal("ghe.example.com", cfg2.DefaultPlatformHost)
+}
+
+func TestLoadAppliesDefaultPlatformHostToLegacyGitHubRepos(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+default_platform_host = "ghe.example.com"
+github_token_env = "GHE_TOKEN"
+
+[[repos]]
+owner = "Acme"
+name = "Widgets"
+`)
+	t.Setenv("GHE_TOKEN", "ghe-secret")
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Repos, 1)
+	assert.Equal("github", cfg.Repos[0].Platform)
+	assert.Equal("ghe.example.com", cfg.Repos[0].PlatformHost)
+	assert.Equal("ghe.example.com", cfg.Repos[0].PlatformHostOrDefault())
+	assert.Equal(
+		"ghe-secret",
+		cfg.TokenForPlatformHost("github", cfg.Repos[0].PlatformHost, ""),
+	)
 }
 
 func TestLoadNoRepos(t *testing.T) {
@@ -421,10 +448,10 @@ func TestLoadNormalizesRepoNames(t *testing.T) {
 			wantName:  "arrow",
 		},
 		{
-			name:      "SSH URI-style non-github host",
-			owner:     "myorg",
+			name:      "omitted platform GitLab SSH URL not parsed",
+			owner:     "ignored",
 			repoName:  "ssh://git@gitlab.com/apache/arrow.git",
-			wantOwner: "myorg",
+			wantOwner: "ignored",
 			wantName:  "ssh://git@gitlab.com/apache/arrow",
 		},
 		{
@@ -513,6 +540,23 @@ name = %q
 			assert.Equal(tt.wantName, got.Repos[0].Name)
 		})
 	}
+}
+
+func TestLoadOmittedPlatformGitLabURLRemainsGitHub(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[[repos]]
+owner = "Ignored"
+name = "https://gitlab.com/MyGroup/SubGroup/MyProject.git"
+`)
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Repos, 1)
+	assert.Equal("github", cfg.Repos[0].Platform)
+	assert.Equal("github.com", cfg.Repos[0].PlatformHostOrDefault())
+	assert.Equal("ignored", cfg.Repos[0].Owner)
+	assert.Equal("https://gitlab.com/mygroup/subgroup/myproject", cfg.Repos[0].Name)
 }
 
 func TestLoadRejectsMalformedGitHubRef(t *testing.T) {
@@ -688,10 +732,231 @@ name = "ibis"
 	cfg, err := Load(path)
 	require.NoError(t, err)
 	require.Len(t, cfg.Repos, 2)
+	assert.Equal("github", cfg.Repos[0].Platform)
 	assert.Equal("github.example.com", cfg.Repos[0].PlatformHost)
 	assert.Equal("GHE_TOKEN", cfg.Repos[0].TokenEnv)
+	assert.Equal("github", cfg.Repos[1].Platform)
 	assert.Empty(cfg.Repos[1].PlatformHost)
+	assert.Equal("github.com", cfg.Repos[1].PlatformHostOrDefault())
 	assert.Empty(cfg.Repos[1].TokenEnv)
+}
+
+func TestLoadPlatformConfigGitLabToken(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[[platforms]]
+type = "gitlab"
+host = "gitlab.com"
+token_env = "MIDDLEMAN_GITLAB_TOKEN"
+
+[[repos]]
+platform = "gitlab"
+platform_host = "gitlab.com"
+owner = "acme"
+name = "widgets"
+`)
+	t.Setenv("MIDDLEMAN_GITLAB_TOKEN", "gitlab-secret")
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Platforms, 1)
+	require.Len(t, cfg.Repos, 1)
+	assert.Equal("gitlab", cfg.Platforms[0].Type)
+	assert.Equal("gitlab.com", cfg.Platforms[0].Host)
+	assert.Equal("MIDDLEMAN_GITLAB_TOKEN", cfg.Platforms[0].TokenEnv)
+	assert.Equal("gitlab", cfg.Repos[0].Platform)
+	assert.Equal("gitlab.com", cfg.Repos[0].PlatformHost)
+	assert.Equal(
+		"gitlab-secret",
+		cfg.TokenForPlatformHost("gitlab", "gitlab.com", ""),
+	)
+}
+
+func TestLoadRejectsDuplicatePlatformConfig(t *testing.T) {
+	path := writeConfig(t, `
+[[platforms]]
+type = "gitlab"
+host = "https://gitlab.example.com/"
+token_env = "GITLAB_TOKEN"
+
+[[platforms]]
+type = "gitlab"
+host = "gitlab.example.com"
+token_env = "GITLAB_TOKEN"
+`)
+
+	_, err := Load(path)
+	require.Error(t, err)
+	Assert.Contains(t, err.Error(), `duplicate platform "gitlab/gitlab.example.com"`)
+}
+
+func TestLoadRejectsConflictingPlatformTokenEnv(t *testing.T) {
+	path := writeConfig(t, `
+[[platforms]]
+type = "gitlab"
+host = "gitlab.example.com"
+token_env = "GITLAB_TOKEN_A"
+
+[[platforms]]
+type = "gitlab"
+host = "https://gitlab.example.com/"
+token_env = "GITLAB_TOKEN_B"
+`)
+
+	_, err := Load(path)
+	require.Error(t, err)
+	Assert.Contains(t, err.Error(), "conflicting token_env")
+}
+
+func TestLoadGitLabNestedNamespaceURL(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[[repos]]
+platform = "gitlab"
+owner = "ignored"
+name = "https://gitlab.com/My-Group/SubGroup/My-Project.git"
+`)
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Repos, 1)
+	assert.Equal("gitlab", cfg.Repos[0].Platform)
+	assert.Equal("gitlab.com", cfg.Repos[0].PlatformHost)
+	assert.Equal("My-Group/SubGroup", cfg.Repos[0].Owner)
+	assert.Equal("My-Project", cfg.Repos[0].Name)
+}
+
+func TestLoadGitLabMergeRequestURL(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[[repos]]
+platform = "gitlab"
+owner = "ignored"
+name = "https://gitlab.com/group/project/-/merge_requests/1"
+`)
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Repos, 1)
+	assert.Equal("gitlab", cfg.Repos[0].Platform)
+	assert.Equal("gitlab.com", cfg.Repos[0].PlatformHost)
+	assert.Equal("group", cfg.Repos[0].Owner)
+	assert.Equal("project", cfg.Repos[0].Name)
+}
+
+func TestLoadPreservesExplicitGitLabOwnerNameCase(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[[repos]]
+platform = "gitlab"
+platform_host = "gitlab.com"
+owner = "My-Group/SubGroup"
+name = "My-Project"
+`)
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Repos, 1)
+	assert.Equal("gitlab", cfg.Repos[0].Platform)
+	assert.Equal("My-Group/SubGroup", cfg.Repos[0].Owner)
+	assert.Equal("My-Project", cfg.Repos[0].Name)
+}
+
+func TestLoadNormalizesSelfHostedGitLabPlatformHost(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[[platforms]]
+type = "gitlab"
+host = "https://gitlab.example.com/"
+token_env = "GITLAB_TOKEN"
+
+[[repos]]
+platform = "gitlab"
+platform_host = "https://gitlab.example.com/"
+owner = "acme"
+name = "widgets"
+`)
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal("gitlab.example.com", cfg.Platforms[0].Host)
+	assert.Equal("gitlab.example.com", cfg.Repos[0].PlatformHost)
+}
+
+func TestLoadPreservesSelfHostedGitLabHostPort(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[[platforms]]
+type = "gitlab"
+host = "https://gitlab.example.com:8443/"
+token_env = "GITLAB_TOKEN"
+
+[[repos]]
+platform = "gitlab"
+platform_host = "gitlab.example.com:8443"
+owner = "acme"
+name = "widgets"
+`)
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal("gitlab.example.com:8443", cfg.Platforms[0].Host)
+	assert.Equal("gitlab.example.com:8443", cfg.Repos[0].PlatformHost)
+}
+
+func TestLoadRejectsGitLabSubpathPlatformHost(t *testing.T) {
+	path := writeConfig(t, `
+[[repos]]
+platform = "gitlab"
+platform_host = "https://example.com/gitlab"
+owner = "acme"
+name = "widgets"
+`)
+
+	_, err := Load(path)
+	require.Error(t, err)
+	Assert.Contains(t, err.Error(), "invalid_repo_ref")
+}
+
+func TestLoadRejectsUnsafePlatformHosts(t *testing.T) {
+	tests := []struct {
+		name string
+		host string
+	}{
+		{"url userinfo", "https://gitlab.com@attacker.example/"},
+		{"bare userinfo", "gitlab.com@attacker.example"},
+		{"malformed port", "gitlab.example.com:bad"},
+		{"control character", "gitlab.example.com\nattacker.example"},
+		{"whitespace", "gitlab.example.com attacker.example"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeConfig(t, fmt.Sprintf(`
+[[repos]]
+platform = "gitlab"
+platform_host = %q
+owner = "acme"
+name = "widgets"
+`, tt.host))
+
+			_, err := Load(path)
+			require.Error(t, err)
+			Assert.Contains(t, err.Error(), "invalid_repo_ref")
+		})
+	}
+}
+
+func TestLoadRejectsAmbiguousGitLabURL(t *testing.T) {
+	path := writeConfig(t, `
+[[repos]]
+platform = "gitlab"
+owner = "ignored"
+name = "https://gitlab.com/acme"
+`)
+
+	_, err := Load(path)
+	require.Error(t, err)
+	Assert.Contains(t, err.Error(), "incomplete GitLab reference")
 }
 
 func TestRepoPlatformHostOrDefault(t *testing.T) {
@@ -735,6 +1000,60 @@ func TestRepoResolveToken(t *testing.T) {
 	})
 }
 
+func TestConfigResolveRepoTokenUsesPlatformToken(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+github_token_env = "GH_TOKEN"
+
+[[platforms]]
+type = "gitlab"
+host = "gitlab.com"
+token_env = "GITLAB_TOKEN"
+
+[[repos]]
+owner = "acme"
+name = "widgets"
+
+[[repos]]
+platform = "gitlab"
+platform_host = "gitlab.com"
+owner = "group"
+name = "project"
+`)
+	t.Setenv("GH_TOKEN", "github-secret")
+	t.Setenv("GITLAB_TOKEN", "gitlab-secret")
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Repos, 2)
+	assert.Equal("github-secret", cfg.ResolveRepoToken(cfg.Repos[0]))
+	assert.Equal("gitlab-secret", cfg.ResolveRepoToken(cfg.Repos[1]))
+}
+
+func TestConfigResolveRepoTokenPrefersRepoTokenEnv(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[[platforms]]
+type = "gitlab"
+host = "gitlab.com"
+token_env = "GITLAB_TOKEN"
+
+[[repos]]
+platform = "gitlab"
+platform_host = "gitlab.com"
+owner = "group"
+name = "project"
+token_env = "REPO_GITLAB_TOKEN"
+`)
+	t.Setenv("GITLAB_TOKEN", "platform-secret")
+	t.Setenv("REPO_GITLAB_TOKEN", "repo-secret")
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Repos, 1)
+	assert.Equal("repo-secret", cfg.ResolveRepoToken(cfg.Repos[0]))
+}
+
 func TestValidateRejectsDuplicateOwnerName(t *testing.T) {
 	path := writeConfig(t, `
 [[repos]]
@@ -748,6 +1067,112 @@ name = "arrow"
 	_, err := Load(path)
 	require.Error(t, err)
 	Assert.Contains(t, err.Error(), "duplicate repo")
+}
+
+func TestValidateAllowsSameOwnerNameAcrossPlatformHosts(t *testing.T) {
+	path := writeConfig(t, `
+[[repos]]
+owner = "apache"
+name = "arrow"
+
+[[repos]]
+platform = "github"
+platform_host = "github.example.com"
+owner = "apache"
+name = "arrow"
+
+[[repos]]
+platform = "gitlab"
+platform_host = "gitlab.com"
+owner = "apache"
+name = "arrow"
+`)
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Repos, 3)
+}
+
+func TestValidateRejectsDuplicateRepoWithinSamePlatformHost(t *testing.T) {
+	path := writeConfig(t, `
+[[repos]]
+platform = "gitlab"
+platform_host = "gitlab.com"
+owner = "Apache"
+name = "Arrow"
+
+[[repos]]
+platform = "gitlab"
+platform_host = "gitlab.com"
+owner = "Apache"
+name = "Arrow"
+`)
+
+	_, err := Load(path)
+	require.Error(t, err)
+	Assert.Contains(t, err.Error(), `duplicate repo "gitlab/gitlab.com/Apache/Arrow"`)
+}
+
+func TestValidateRejectsGitLabDuplicateRepoByCaseWithinSamePlatformHost(t *testing.T) {
+	path := writeConfig(t, `
+[[repos]]
+platform = "gitlab"
+platform_host = "gitlab.com"
+owner = "Apache"
+name = "Arrow"
+
+[[repos]]
+platform = "gitlab"
+platform_host = "gitlab.com"
+owner = "apache"
+name = "arrow"
+`)
+
+	_, err := Load(path)
+	require.Error(t, err)
+	Assert.Contains(t, err.Error(), `duplicate repo "gitlab/gitlab.com/Apache/Arrow"`)
+}
+
+func TestLoadGitLabSSHURIWithPortDoesNotUseSSHPortAsPlatformHost(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[[repos]]
+platform = "gitlab"
+owner = "ignored"
+name = "ssh://git@gitlab.example.com:2222/group/project.git"
+`)
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Repos, 1)
+	assert.Equal("gitlab", cfg.Repos[0].Platform)
+	assert.Equal("gitlab.example.com", cfg.Repos[0].PlatformHost)
+	assert.Equal("group", cfg.Repos[0].Owner)
+	assert.Equal("project", cfg.Repos[0].Name)
+}
+
+func TestLoadGitLabSSHURIWithPortKeepsExplicitPlatformHost(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[[platforms]]
+type = "gitlab"
+host = "gitlab.example.com:8443"
+token_env = "GITLAB_TOKEN"
+
+[[repos]]
+platform = "gitlab"
+platform_host = "gitlab.example.com:8443"
+owner = "ignored"
+name = "ssh://git@gitlab.example.com:2222/group/project.git"
+`)
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Repos, 1)
+	assert.Equal("gitlab", cfg.Repos[0].Platform)
+	assert.Equal("gitlab.example.com:8443", cfg.Repos[0].PlatformHost)
+	assert.Equal("group", cfg.Repos[0].Owner)
+	assert.Equal("project", cfg.Repos[0].Name)
 }
 
 func TestValidateRejectsConflictingTokenEnv(t *testing.T) {
@@ -767,6 +1192,34 @@ token_env = "GHE_TOKEN_B"
 	_, err := Load(path)
 	require.Error(t, err)
 	Assert.Contains(t, err.Error(), "conflicting token_env")
+}
+
+func TestValidateScopesTokenEnvConflictsByPlatformHost(t *testing.T) {
+	path := writeConfig(t, `
+[[repos]]
+platform = "github"
+platform_host = "example.com"
+owner = "org1"
+name = "repo1"
+token_env = "GITHUB_TOKEN"
+
+[[repos]]
+platform = "gitlab"
+platform_host = "example.com"
+owner = "org2"
+name = "repo2"
+token_env = "GITLAB_TOKEN"
+
+[[repos]]
+platform = "gitlab"
+platform_host = "gitlab.example.com"
+owner = "org3"
+name = "repo3"
+token_env = "OTHER_GITLAB_TOKEN"
+`)
+
+	_, err := Load(path)
+	require.NoError(t, err)
 }
 
 func TestSaveRoundTripPlatformHost(t *testing.T) {

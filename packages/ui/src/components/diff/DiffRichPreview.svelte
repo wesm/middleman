@@ -5,13 +5,16 @@
 
   interface Props {
     file: DiffFile;
+    provider: string;
+    platformHost?: string | undefined;
     owner: string;
     name: string;
+    repoPath: string;
     number: number;
     active: boolean;
   }
 
-  const { file, owner, name, number, active }: Props = $props();
+  const { file, provider, platformHost, owner, name, repoPath, number, active }: Props = $props();
   const { diff: diffStore } = getStores();
 
   interface MarkdownComparison {
@@ -116,8 +119,8 @@
       }
     }
     return {
-      oldHtml: renderMarkdown(`${oldLines.join("\n")}\n`, { owner, name }),
-      newHtml: renderMarkdown(`${newLines.join("\n")}\n`, { owner, name }),
+      oldHtml: renderMarkdown(`${oldLines.join("\n")}\n`, { provider, platformHost, owner, name, repoPath }),
+      newHtml: renderMarkdown(`${newLines.join("\n")}\n`, { provider, platformHost, owner, name, repoPath }),
     };
   }
 </script>
@@ -155,7 +158,7 @@
   {:else if preview}
     {#if kind === "markdown"}
       <div class="diff-rich-preview markdown-body">
-        {@html renderMarkdown(text, { owner, name })}
+        {@html renderMarkdown(text, { provider, platformHost, owner, name, repoPath })}
       </div>
     {:else if kind === "image"}
       <div class="diff-image-preview">

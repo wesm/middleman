@@ -40,9 +40,11 @@
   interface Props {
     activeTab: "diff" | "pr" | "issue" | "reviews";
     workspaceID: string;
-    platformHost: string;
+    provider: string;
+    platformHost?: string | undefined;
     repoOwner: string;
     repoName: string;
+    repoPath: string;
     ownerItemType: "pull_request" | "issue";
     ownerItemNumber: number;
     associatedPRNumber: number | null;
@@ -53,9 +55,11 @@
   let {
     activeTab,
     workspaceID,
+    provider,
     platformHost,
     repoOwner,
     repoName,
+    repoPath,
     ownerItemType,
     ownerItemNumber,
     associatedPRNumber,
@@ -276,8 +280,11 @@
   {#if activeTab === "diff"}
     <WorkspaceDiffPanel
       {workspaceID}
+      {provider}
+      {platformHost}
       {repoOwner}
       {repoName}
+      {repoPath}
       itemNumber={ownerItemNumber}
       active={activeTab === "diff"}
     />
@@ -285,8 +292,11 @@
     {#if hasPR}
       <div class="pr-scroll">
         <PullDetail
+          {provider}
+          {platformHost}
           owner={repoOwner}
           name={repoName}
+          {repoPath}
           number={associatedPRNumber ?? 0}
           hideTabs={true}
           hideWorkspaceAction={true}
@@ -299,10 +309,12 @@
     {#if hasIssue}
       <div class="pr-scroll">
         <IssueDetail
+          {provider}
+          {platformHost}
           owner={repoOwner}
           name={repoName}
+          {repoPath}
           number={ownerItemNumber}
-          {platformHost}
         />
       </div>
     {:else}

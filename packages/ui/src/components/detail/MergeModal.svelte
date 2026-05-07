@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
   import { getClient } from "../../context.js";
   import ActionButton from "../shared/ActionButton.svelte";
 
@@ -8,6 +9,9 @@
     owner: string;
     name: string;
     number: number;
+    provider: string;
+    platformHost?: string | undefined;
+    repoPath: string;
     prTitle: string;
     prBody: string;
     prAuthor: string;
@@ -20,7 +24,7 @@
   }
 
   const {
-    owner, name, number, prTitle, prBody,
+    owner, name, number, provider, platformHost, repoPath, prTitle, prBody,
     prAuthor, prAuthorDisplayName,
     allowSquash, allowMerge, allowRebase,
     onclose, onmerged,
@@ -85,8 +89,9 @@
         commit_message: commitMessage,
         method: selectedMethod,
       };
-      const { error } = await client.POST("/repos/{owner}/{name}/pulls/{number}/merge", {
-        params: { path: { owner, name, number } },
+      const ref = { provider, platformHost, owner, name, repoPath };
+      const { error } = await client.POST(providerItemPath("pulls", ref, "/merge"), {
+        params: { path: { ...providerRouteParams(ref), number } },
         body: params,
       });
       if (error) {

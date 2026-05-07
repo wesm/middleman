@@ -28,6 +28,13 @@
     platform_host: string;
     repo_owner: string;
     repo_name: string;
+    repo: {
+      provider: string;
+      platform_host?: string | undefined;
+      owner: string;
+      name: string;
+      repo_path: string;
+    };
     item_type: "pull_request" | "issue";
     item_number: number;
     git_head_ref: string;
@@ -1146,9 +1153,11 @@
               <WorkspaceRightSidebar
                 activeTab={sidebarTab}
                 workspaceID={workspace.id}
-                platformHost={workspace.platform_host}
-                repoOwner={workspace.repo_owner}
-                repoName={workspace.repo_name}
+                provider={workspace.repo.provider}
+                platformHost={workspace.repo.platform_host}
+                repoOwner={workspace.repo.owner}
+                repoName={workspace.repo.name}
+                repoPath={workspace.repo.repo_path}
                 ownerItemType={workspace.item_type}
                 ownerItemNumber={workspace.item_number}
                 associatedPRNumber={getWorkspacePRNumber(workspace)}

@@ -1275,7 +1275,8 @@ func TestWorkspaceSetupFailureRollbackCleansWorktreeViaAPI(t *testing.T) {
 		t, script,
 	)
 	ctx := t.Context()
-	clonePath := srv.clones.ClonePath("github.com", "acme", "widget")
+	clonePath, err := srv.clones.ClonePath("github.com", "acme", "widget")
+	require.NoError(err)
 	featureSHA := testGitSHA(t, clonePath, "refs/heads/feature")
 
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(

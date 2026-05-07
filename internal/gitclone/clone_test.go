@@ -98,7 +98,8 @@ func TestEnsureCloneInstallsBothRefspecs(t *testing.T) {
 	require.NoError(mgr.EnsureClone(
 		t.Context(), "github.com", "testowner", "testrepo", remote))
 
-	clonePath := mgr.ClonePath("github.com", "testowner", "testrepo")
+	clonePath, err := mgr.ClonePath("github.com", "testowner", "testrepo")
+	require.NoError(err)
 	refspecs := getFetchRefspecs(t, clonePath)
 	assert.Contains(refspecs, remoteTrackingRefspec)
 	assert.Contains(refspecs, pullRefspec)
@@ -151,7 +152,8 @@ func TestEnsureCloneMigratesBrokenClone(t *testing.T) {
 	// Simulate a pre-fix clone: unset all fetch refspecs, then add only
 	// the pull refspec back. This matches the state created by the old
 	// cloneBare which never installed a branch refspec.
-	clonePath := mgr.ClonePath("github.com", "testowner", "testrepo")
+	clonePath, err := mgr.ClonePath("github.com", "testowner", "testrepo")
+	require.NoError(err)
 	run(t, clonePath, "git", "config", "--unset-all", "remote.origin.fetch")
 	run(t, clonePath, "git", "config", "--add",
 		"remote.origin.fetch", "+refs/pull/*/head:refs/pull/*/head")
@@ -193,7 +195,8 @@ func TestEnsureCloneRemovesLegacyBranchRefspec(t *testing.T) {
 	require.NoError(mgr.EnsureClone(
 		ctx, "github.com", "testowner", "testrepo", remote))
 
-	clonePath := mgr.ClonePath("github.com", "testowner", "testrepo")
+	clonePath, err := mgr.ClonePath("github.com", "testowner", "testrepo")
+	require.NoError(err)
 	run(t, clonePath, "git", "config", "--add",
 		"remote.origin.fetch", legacyBranchRefspec)
 	refspecs := getFetchRefspecs(t, clonePath)
@@ -228,7 +231,8 @@ func TestEnsureCloneMigratesCloneWithNoRefspec(t *testing.T) {
 	// Remove every fetch refspec so the key is entirely unset, matching
 	// the state of a clone that was created by an older code path which
 	// did not install any refspec.
-	clonePath := mgr.ClonePath("github.com", "testowner", "testrepo")
+	clonePath, err := mgr.ClonePath("github.com", "testowner", "testrepo")
+	require.NoError(err)
 	run(t, clonePath, "git", "config", "--unset-all", "remote.origin.fetch")
 	refspecs := getFetchRefspecs(t, clonePath)
 	require.Empty(refspecs)
@@ -267,9 +271,10 @@ func TestEnsureCloneRestoresOriginHead(t *testing.T) {
 	require.NoError(mgr.EnsureClone(
 		ctx, "github.com", "testowner", "testrepo", remote))
 
-	clonePath := mgr.ClonePath("github.com", "testowner", "testrepo")
+	clonePath, err := mgr.ClonePath("github.com", "testowner", "testrepo")
+	require.NoError(err)
 	run(t, clonePath, "git", "symbolic-ref", "--delete", "refs/remotes/origin/HEAD")
-	_, err := exec.Command(
+	_, err = exec.Command(
 		"git", "-C", clonePath, "symbolic-ref", "refs/remotes/origin/HEAD",
 	).Output()
 	require.Error(err)
@@ -295,7 +300,8 @@ func TestEnsureCloneRepairsStaleOriginHead(t *testing.T) {
 	require.NoError(mgr.EnsureClone(
 		ctx, "github.com", "testowner", "testrepo", remote))
 
-	clonePath := mgr.ClonePath("github.com", "testowner", "testrepo")
+	clonePath, err := mgr.ClonePath("github.com", "testowner", "testrepo")
+	require.NoError(err)
 	run(t, clonePath, "git", "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/master")
 	assert.Equal("refs/remotes/origin/master", gitSymbolicRef(
 		t, clonePath, "refs/remotes/origin/HEAD",
@@ -402,7 +408,8 @@ func TestMergeBase(t *testing.T) {
 		ctx, "github.com", "testowner", "testrepo", remote))
 
 	// Get the HEAD SHA.
-	clonePath := mgr.ClonePath("github.com", "testowner", "testrepo")
+	clonePath, err := mgr.ClonePath("github.com", "testowner", "testrepo")
+	require.NoError(err)
 	cmd := exec.Command("git", "-C", clonePath, "rev-parse", "HEAD")
 	cmd.Env = filteredGitTestEnv()
 	out, err := cmd.Output()
@@ -414,20 +421,4 @@ func TestMergeBase(t *testing.T) {
 		ctx, "github.com", "testowner", "testrepo", headSHA, headSHA)
 	require.NoError(err)
 	assert.Equal(headSHA, mb)
-}
-
-func TestClonePathIncludesHost(t *testing.T) {
-	mgr := New("/tmp/clones", nil)
-
-	path := mgr.ClonePath("github.com", "owner", "repo")
-	assert.Equal(t,
-		filepath.Join("/tmp/clones", "github.com", "owner", "repo.git"),
-		path)
-
-	// Different host produces a different path.
-	ghePath := mgr.ClonePath("github.example.com", "owner", "repo")
-	assert.Equal(t,
-		filepath.Join("/tmp/clones", "github.example.com", "owner", "repo.git"),
-		ghePath)
-	assert.NotEqual(t, path, ghePath)
 }

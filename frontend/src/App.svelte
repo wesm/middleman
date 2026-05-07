@@ -183,6 +183,9 @@
           route.selected.owner,
           route.selected.name,
           route.selected.number,
+          route.selected.provider,
+          route.selected.platformHost,
+          route.selected.repoPath,
         );
       } else {
         stores.pulls.clearSelection();
@@ -196,7 +199,9 @@
           route.selected.owner,
           route.selected.name,
           route.selected.number,
+          route.selected.provider,
           route.selected.platformHost,
+          route.selected.repoPath,
         );
       } else {
         stores.issues.clearIssueSelection();
@@ -217,7 +222,9 @@
     if (left === right) return true;
     if (left === null || right === null) return false;
     return left.itemType === right.itemType
+      && left.provider === right.provider
       && left.platformHost === right.platformHost
+      && left.repoPath === right.repoPath
       && left.owner === right.owner
       && left.name === right.name
       && left.number === right.number
@@ -239,13 +246,18 @@
   function handleActivitySelect(
     item: ActivityItem,
   ): void {
+    if (!item.repo) {
+      throw new Error("activity item missing provider repo identity");
+    }
     const itemType =
       item.item_type === "issue" ? "issue" : "pr";
     drawerItem = {
       itemType,
-      platformHost: item.platform_host,
-      owner: item.repo_owner,
-      name: item.repo_name,
+      provider: item.repo.provider,
+      platformHost: item.repo.platform_host,
+      repoPath: item.repo.repo_path,
+      owner: item.repo.owner,
+      name: item.repo.name,
       number: item.item_number,
       detailTab: "conversation",
     };
@@ -481,6 +493,9 @@
               owner: r.owner,
               name: r.name,
               number: r.number,
+              provider: r.provider,
+              platformHost: r.platformHost,
+              repoPath: r.repoPath,
             }}
             detailTab="conversation"
             isSidebarCollapsed={true}
@@ -492,7 +507,9 @@
               owner: r.owner,
               name: r.name,
               number: r.number,
+              provider: r.provider,
               platformHost: r.platformHost,
+              repoPath: r.repoPath,
             }}
             isSidebarCollapsed={true}
             hideSidebar={true}

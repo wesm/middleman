@@ -8,40 +8,49 @@ import {
   getPage,
 } from "./router.svelte.js";
 
-describe("router /pulls/.../files route", () => {
+const prRoute = "/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42";
+const prFilesRoute = "/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42";
+const prRef = {
+  provider: "github",
+  platformHost: "github.com",
+  owner: "acme",
+  name: "widgets",
+  repoPath: "acme/widgets",
+  number: 42,
+};
+
+describe("router /pulls/detail files route", () => {
   beforeEach(() => {
-    // Reset to a known state.
     navigate("/pulls");
   });
 
-  it("parses /pulls/:owner/:name/:number/files as list view with files tab", () => {
-    navigate("/pulls/acme/widgets/42/files");
-    const route = getRoute();
-    expect(route).toEqual({
+  it("parses provider pull files route as list view with files tab", () => {
+    navigate(prFilesRoute);
+    expect(getRoute()).toEqual({
       page: "pulls",
       view: "list",
-      selected: { owner: "acme", name: "widgets", number: 42 },
+      selected: prRef,
       tab: "files",
     });
   });
 
-  it("getDetailTab returns files for /files route", () => {
-    navigate("/pulls/acme/widgets/42/files");
+  it("getDetailTab returns files for files route", () => {
+    navigate(prFilesRoute);
     expect(getDetailTab()).toBe("files");
   });
 
   it("getDetailTab returns conversation for non-files PR route", () => {
-    navigate("/pulls/acme/widgets/42");
+    navigate(prRoute);
     expect(getDetailTab()).toBe("conversation");
   });
 
-  it("isDiffView returns true for /files route", () => {
-    navigate("/pulls/acme/widgets/42/files");
+  it("isDiffView returns true for files route", () => {
+    navigate(prFilesRoute);
     expect(isDiffView()).toBe(true);
   });
 
   it("isDiffView returns false for conversation route", () => {
-    navigate("/pulls/acme/widgets/42");
+    navigate(prRoute);
     expect(isDiffView()).toBe(false);
   });
 
@@ -50,22 +59,14 @@ describe("router /pulls/.../files route", () => {
     expect(isDiffView()).toBe(false);
   });
 
-  it("getSelectedPRFromRoute returns PR for /files route", () => {
-    navigate("/pulls/acme/widgets/42/files");
-    expect(getSelectedPRFromRoute()).toEqual({
-      owner: "acme",
-      name: "widgets",
-      number: 42,
-    });
+  it("getSelectedPRFromRoute returns PR for files route", () => {
+    navigate(prFilesRoute);
+    expect(getSelectedPRFromRoute()).toEqual(prRef);
   });
 
   it("getSelectedPRFromRoute returns PR for conversation route", () => {
-    navigate("/pulls/acme/widgets/42");
-    expect(getSelectedPRFromRoute()).toEqual({
-      owner: "acme",
-      name: "widgets",
-      number: 42,
-    });
+    navigate(prRoute);
+    expect(getSelectedPRFromRoute()).toEqual(prRef);
   });
 
   it("getSelectedPRFromRoute returns null for pull list without selection", () => {
@@ -73,8 +74,8 @@ describe("router /pulls/.../files route", () => {
     expect(getSelectedPRFromRoute()).toBeNull();
   });
 
-  it("getPage returns pulls for /files route", () => {
-    navigate("/pulls/acme/widgets/42/files");
+  it("getPage returns pulls for files route", () => {
+    navigate(prFilesRoute);
     expect(getPage()).toBe("pulls");
   });
 });
@@ -96,13 +97,47 @@ describe("router basic routes", () => {
     expect(getRoute()).toEqual({ page: "pulls", view: "board" });
   });
 
-  it("parses /pulls/:owner/:name/:number as conversation", () => {
+  it("does not parse legacy pull detail routes", () => {
     navigate("/pulls/org/repo/7");
-    const route = getRoute();
-    expect(route).toEqual({
+    expect(getRoute()).toEqual({ page: "pulls", view: "list" });
+  });
+
+  it("parses provider pull routes with escaped nested repo paths", () => {
+    navigate(
+      "/pulls/detail?provider=gitlab&platform_host=gitlab.example.com%3A8443&repo_path=Group%2FSubGroup%2FSubGroup%202%2FMy_Project.v2&number=12",
+    );
+
+    expect(getRoute()).toEqual({
       page: "pulls",
       view: "list",
-      selected: { owner: "org", name: "repo", number: 7 },
+      selected: {
+        owner: "Group/SubGroup/SubGroup 2",
+        name: "My_Project.v2",
+        provider: "gitlab",
+        platformHost: "gitlab.example.com:8443",
+        repoPath: "Group/SubGroup/SubGroup 2/My_Project.v2",
+        number: 12,
+      },
+    });
+  });
+
+  it("parses provider pull files routes with escaped nested repo paths", () => {
+    navigate(
+      "/pulls/detail/files?provider=gitlab&platform_host=gitlab.example.com%3A8443&repo_path=Group%2FSubGroup%2FSubGroup%202%2FMy_Project.v2&number=12",
+    );
+
+    expect(getRoute()).toEqual({
+      page: "pulls",
+      view: "list",
+      selected: {
+        owner: "Group/SubGroup/SubGroup 2",
+        name: "My_Project.v2",
+        provider: "gitlab",
+        platformHost: "gitlab.example.com:8443",
+        repoPath: "Group/SubGroup/SubGroup 2/My_Project.v2",
+        number: 12,
+      },
+      tab: "files",
     });
   });
 
@@ -121,28 +156,30 @@ describe("router basic routes", () => {
     expect(getRoute()).toEqual({ page: "repos" });
   });
 
-  it("parses /issues/:owner/:name/:number", () => {
+  it("does not parse legacy issue detail routes", () => {
     navigate("/issues/org/repo/3");
-    expect(getRoute()).toEqual({
-      page: "issues",
-      selected: { owner: "org", name: "repo", number: 3 },
-    });
+    expect(getRoute()).toEqual({ page: "issues" });
   });
 
-  it("preserves issue platform_host query state", () => {
-    navigate("/issues/org/repo/3?platform_host=ghe.example.com");
+  it("parses provider issue routes with special characters in repo paths", () => {
+    navigate(
+      "/issues/detail?provider=gitlab&platform_host=gitlab.example.test%3A8443&repo_path=Team%20One%2FSub%20Team%2Fproject%2B%231&number=7",
+    );
+
     expect(getRoute()).toEqual({
       page: "issues",
       selected: {
-        owner: "org",
-        name: "repo",
-        number: 3,
-        platformHost: "ghe.example.com",
+        owner: "Team One/Sub Team",
+        name: "project+#1",
+        provider: "gitlab",
+        platformHost: "gitlab.example.test:8443",
+        repoPath: "Team One/Sub Team/project+#1",
+        number: 7,
       },
     });
   });
 
-  it("treats legacy /workspaces/panel routes as the workspaces page", () => {
+  it("treats legacy /workspaces/panel routes as workspaces page", () => {
     navigate("/workspaces/panel/github.com/acme/widgets/42");
     expect(getRoute()).toEqual({ page: "workspaces" });
     expect(getPage()).toBe("workspaces");
@@ -166,11 +203,11 @@ describe("router navigation events", () => {
       .__middleman_notify_config_changed?.();
   }
 
-  it("fires onNavigate with pull payload for /files route", () => {
+  it("fires onNavigate with pull payload for files route", () => {
     const spy = vi.fn();
     installOnNavigate(spy);
 
-    navigate("/pulls/acme/widgets/42/files");
+    navigate(prFilesRoute);
 
     expect(spy).toHaveBeenCalled();
     const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
@@ -185,7 +222,7 @@ describe("router navigation events", () => {
     const spy = vi.fn();
     installOnNavigate(spy);
 
-    navigate("/pulls/acme/widgets/42");
+    navigate(prRoute);
 
     const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
     expect(payload.type).toBe("pull");

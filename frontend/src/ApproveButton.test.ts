@@ -18,7 +18,7 @@ describe("ApproveButton tooltips", () => {
 
   it("collapsed button title describes opening the form, not submitting", () => {
     render(ApproveButton, {
-      props: { owner: "acme", name: "widget", number: 1 },
+      props: { provider: "github", platformHost: "github.com", owner: "acme", name: "widget", repoPath: "acme/widget", number: 1 },
     });
 
     const trigger = screen.getByRole("button", { name: /approve/i });
@@ -29,7 +29,7 @@ describe("ApproveButton tooltips", () => {
 
   it("expanded submit button carries the actual submit-review tooltip", async () => {
     render(ApproveButton, {
-      props: { owner: "acme", name: "widget", number: 1 },
+      props: { provider: "github", platformHost: "github.com", owner: "acme", name: "widget", repoPath: "acme/widget", number: 1 },
     });
 
     await fireEvent.click(screen.getByRole("button", { name: /approve/i }));
@@ -42,7 +42,7 @@ describe("ApproveButton tooltips", () => {
 
   it("collapses and clears the draft when the PR identity changes", async () => {
     const { rerender } = render(ApproveButton, {
-      props: { owner: "acme", name: "widget", number: 1 },
+      props: { provider: "github", platformHost: "github.com", owner: "acme", name: "widget", repoPath: "acme/widget", number: 1 },
     });
 
     await fireEvent.click(screen.getByRole("button", { name: /approve/i }));

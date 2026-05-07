@@ -1,5 +1,6 @@
 <script lang="ts">
   import WorkflowIcon from "@lucide/svelte/icons/workflow";
+  import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
   import { getClient, getStores } from "../../context.js";
   import ActionButton from "../shared/ActionButton.svelte";
 
@@ -10,6 +11,9 @@
     owner: string;
     name: string;
     number: number;
+    provider: string;
+    platformHost?: string | undefined;
+    repoPath: string;
     count: number;
     size?: "sm" | "md";
     disabled?: boolean;
@@ -20,6 +24,9 @@
     owner,
     name,
     number,
+    provider,
+    platformHost,
+    repoPath,
     count,
     size = "md",
     disabled = false,
@@ -43,10 +50,11 @@
     submitting = true;
     error = null;
     try {
+      const ref = { provider, platformHost, owner, name, repoPath };
       const { error: requestError } = await client.POST(
-        "/repos/{owner}/{name}/pulls/{number}/approve-workflows",
+        providerItemPath("pulls", ref, "/approve-workflows"),
         {
-          params: { path: { owner, name, number } },
+          params: { path: { ...providerRouteParams(ref), number } },
         },
       );
       if (requestError) {
@@ -56,7 +64,11 @@
             "failed to approve workflows",
         );
       }
-      await detail.refreshDetailOnly(owner, name, number);
+      await detail.refreshDetailOnly(owner, name, number, {
+        provider,
+        platformHost,
+        repoPath,
+      });
       await pulls.loadPulls();
       oncompleted?.();
     } catch (err) {

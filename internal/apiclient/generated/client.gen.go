@@ -35,20 +35,21 @@ type Activity struct {
 
 // ActivityItemResponse defines model for ActivityItemResponse.
 type ActivityItemResponse struct {
-	ActivityType string `json:"activity_type"`
-	Author       string `json:"author"`
-	BodyPreview  string `json:"body_preview"`
-	CreatedAt    string `json:"created_at"`
-	Cursor       string `json:"cursor"`
-	Id           string `json:"id"`
-	ItemNumber   int64  `json:"item_number"`
-	ItemState    string `json:"item_state"`
-	ItemTitle    string `json:"item_title"`
-	ItemType     string `json:"item_type"`
-	ItemUrl      string `json:"item_url"`
-	PlatformHost string `json:"platform_host"`
-	RepoName     string `json:"repo_name"`
-	RepoOwner    string `json:"repo_owner"`
+	ActivityType string          `json:"activity_type"`
+	Author       string          `json:"author"`
+	BodyPreview  string          `json:"body_preview"`
+	CreatedAt    string          `json:"created_at"`
+	Cursor       string          `json:"cursor"`
+	Id           string          `json:"id"`
+	ItemNumber   int64           `json:"item_number"`
+	ItemState    string          `json:"item_state"`
+	ItemTitle    string          `json:"item_title"`
+	ItemType     string          `json:"item_type"`
+	ItemUrl      string          `json:"item_url"`
+	PlatformHost string          `json:"platform_host"`
+	Repo         RepoRefResponse `json:"repo"`
+	RepoName     string          `json:"repo_name"`
+	RepoOwner    string          `json:"repo_owner"`
 }
 
 // ActivityResponse defines model for ActivityResponse.
@@ -62,9 +63,12 @@ type ActivityResponse struct {
 // AddRepoInputBody defines model for AddRepoInputBody.
 type AddRepoInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema *string `json:"$schema,omitempty"`
-	Name   string  `json:"name"`
-	Owner  string  `json:"owner"`
+	Schema       *string `json:"$schema,omitempty"`
+	Host         *string `json:"host,omitempty"`
+	Name         string  `json:"name"`
+	Owner        string  `json:"owner"`
+	PlatformHost *string `json:"platform_host,omitempty"`
+	Provider     string  `json:"provider"`
 }
 
 // Agent defines model for Agent.
@@ -73,6 +77,13 @@ type Agent struct {
 	Enabled *bool     `json:"enabled,omitempty"`
 	Key     string    `json:"key"`
 	Label   string    `json:"label"`
+}
+
+// ApprovePRHostInputBody defines model for ApprovePRHostInputBody.
+type ApprovePRHostInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Body   string  `json:"body"`
 }
 
 // ApprovePRInputBody defines model for ApprovePRInputBody.
@@ -84,8 +95,12 @@ type ApprovePRInputBody struct {
 
 // BulkAddRepoRequest defines model for BulkAddRepoRequest.
 type BulkAddRepoRequest struct {
-	Name  string `json:"name"`
-	Owner string `json:"owner"`
+	Host         *string `json:"host,omitempty"`
+	Name         *string `json:"name,omitempty"`
+	Owner        *string `json:"owner,omitempty"`
+	PlatformHost *string `json:"platform_host,omitempty"`
+	Provider     string  `json:"provider"`
+	RepoPath     *string `json:"repo_path,omitempty"`
 }
 
 // BulkAddReposRequest defines model for BulkAddReposRequest.
@@ -141,15 +156,33 @@ type ConfiguredRepoStatus struct {
 	MatchedRepoCount int64  `json:"matched_repo_count"`
 	Name             string `json:"name"`
 	Owner            string `json:"owner"`
+	PlatformHost     string `json:"platform_host"`
+	Provider         string `json:"provider"`
+	RepoPath         string `json:"repo_path"`
+}
+
+// CreateIssueHostInputBody defines model for CreateIssueHostInputBody.
+type CreateIssueHostInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Body   string  `json:"body"`
+	Title  string  `json:"title"`
 }
 
 // CreateIssueInputBody defines model for CreateIssueInputBody.
 type CreateIssueInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema       *string `json:"$schema,omitempty"`
-	Body         string  `json:"body"`
-	PlatformHost *string `json:"platform_host,omitempty"`
-	Title        string  `json:"title"`
+	Schema *string `json:"$schema,omitempty"`
+	Body   string  `json:"body"`
+	Title  string  `json:"title"`
+}
+
+// CreateIssueWorkspaceHostInputBody defines model for CreateIssueWorkspaceHostInputBody.
+type CreateIssueWorkspaceHostInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema              *string `json:"$schema,omitempty"`
+	GitHeadRef          *string `json:"git_head_ref,omitempty"`
+	ReuseExistingBranch *bool   `json:"reuse_existing_branch,omitempty"`
 }
 
 // CreateIssueWorkspaceInputBody defines model for CreateIssueWorkspaceInputBody.
@@ -157,7 +190,6 @@ type CreateIssueWorkspaceInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema              *string `json:"$schema,omitempty"`
 	GitHeadRef          *string `json:"git_head_ref,omitempty"`
-	PlatformHost        string  `json:"platform_host"`
 	ReuseExistingBranch *bool   `json:"reuse_existing_branch,omitempty"`
 }
 
@@ -192,8 +224,22 @@ type DiffResponse struct {
 	WhitespaceOnlyCount int64       `json:"whitespace_only_count"`
 }
 
+// EditCommentHostInputBody defines model for EditCommentHostInputBody.
+type EditCommentHostInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Body   string  `json:"body"`
+}
+
 // EditCommentInputBody defines model for EditCommentInputBody.
 type EditCommentInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Body   string  `json:"body"`
+}
+
+// EditIssueCommentHostInputBody defines model for EditIssueCommentHostInputBody.
+type EditIssueCommentHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string `json:"$schema,omitempty"`
 	Body   string  `json:"body"`
@@ -202,9 +248,16 @@ type EditCommentInputBody struct {
 // EditIssueCommentInputBody defines model for EditIssueCommentInputBody.
 type EditIssueCommentInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema       *string `json:"$schema,omitempty"`
-	Body         string  `json:"body"`
-	PlatformHost *string `json:"platform_host,omitempty"`
+	Schema *string `json:"$schema,omitempty"`
+	Body   string  `json:"body"`
+}
+
+// EditPRContentHostInputBody defines model for EditPRContentHostInputBody.
+type EditPRContentHostInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Body   *string `json:"body,omitempty"`
+	Title  *string `json:"title,omitempty"`
 }
 
 // EditPRContentInputBody defines model for EditPRContentInputBody.
@@ -271,12 +324,18 @@ type FilesResponse struct {
 	WhitespaceOnlyCount int64       `json:"whitespace_only_count"`
 }
 
+// GithubStateHostInputBody defines model for GithubStateHostInputBody.
+type GithubStateHostInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	State  string  `json:"state"`
+}
+
 // GithubStateInputBody defines model for GithubStateInputBody.
 type GithubStateInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema       *string `json:"$schema,omitempty"`
-	PlatformHost *string `json:"platform_host,omitempty"`
-	State        string  `json:"state"`
+	Schema *string `json:"$schema,omitempty"`
+	State  string  `json:"state"`
 }
 
 // GithubStateOutputBody defines model for GithubStateOutputBody.
@@ -298,80 +357,85 @@ type Hunk struct {
 
 // Issue defines model for Issue.
 type Issue struct {
-	Author          string     `json:"Author"`
-	Body            string     `json:"Body"`
-	ClosedAt        *time.Time `json:"ClosedAt"`
-	CommentCount    int64      `json:"CommentCount"`
-	CreatedAt       time.Time  `json:"CreatedAt"`
-	DetailFetchedAt *time.Time `json:"DetailFetchedAt"`
-	ID              int64      `json:"ID"`
-	LastActivityAt  time.Time  `json:"LastActivityAt"`
-	Number          int64      `json:"Number"`
-	PlatformID      int64      `json:"PlatformID"`
-	RepoID          int64      `json:"RepoID"`
-	Starred         bool       `json:"Starred"`
-	State           string     `json:"State"`
-	Title           string     `json:"Title"`
-	URL             string     `json:"URL"`
-	UpdatedAt       time.Time  `json:"UpdatedAt"`
-	Labels          *[]Label   `json:"labels,omitempty"`
+	Author             string     `json:"Author"`
+	Body               string     `json:"Body"`
+	ClosedAt           *time.Time `json:"ClosedAt"`
+	CommentCount       int64      `json:"CommentCount"`
+	CreatedAt          time.Time  `json:"CreatedAt"`
+	DetailFetchedAt    *time.Time `json:"DetailFetchedAt"`
+	ID                 int64      `json:"ID"`
+	LastActivityAt     time.Time  `json:"LastActivityAt"`
+	Number             int64      `json:"Number"`
+	PlatformExternalID string     `json:"PlatformExternalID"`
+	PlatformID         int64      `json:"PlatformID"`
+	RepoID             int64      `json:"RepoID"`
+	Starred            bool       `json:"Starred"`
+	State              string     `json:"State"`
+	Title              string     `json:"Title"`
+	URL                string     `json:"URL"`
+	UpdatedAt          time.Time  `json:"UpdatedAt"`
+	Labels             *[]Label   `json:"labels,omitempty"`
 }
 
 // IssueDetailResponse defines model for IssueDetailResponse.
 type IssueDetailResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema          *string       `json:"$schema,omitempty"`
-	DetailFetchedAt *string       `json:"detail_fetched_at,omitempty"`
-	DetailLoaded    bool          `json:"detail_loaded"`
-	Events          *[]IssueEvent `json:"events"`
-	Issue           Issue         `json:"issue"`
-	PlatformHost    string        `json:"platform_host"`
-	RepoName        string        `json:"repo_name"`
-	RepoOwner       string        `json:"repo_owner"`
-	Workspace       *WorkspaceRef `json:"workspace,omitempty"`
+	Schema          *string         `json:"$schema,omitempty"`
+	DetailFetchedAt *string         `json:"detail_fetched_at,omitempty"`
+	DetailLoaded    bool            `json:"detail_loaded"`
+	Events          *[]IssueEvent   `json:"events"`
+	Issue           Issue           `json:"issue"`
+	PlatformHost    string          `json:"platform_host"`
+	Repo            RepoRefResponse `json:"repo"`
+	RepoName        string          `json:"repo_name"`
+	RepoOwner       string          `json:"repo_owner"`
+	Workspace       *WorkspaceRef   `json:"workspace,omitempty"`
 }
 
 // IssueEvent defines model for IssueEvent.
 type IssueEvent struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema       *string   `json:"$schema,omitempty"`
-	Author       string    `json:"Author"`
-	Body         string    `json:"Body"`
-	CreatedAt    time.Time `json:"CreatedAt"`
-	DedupeKey    string    `json:"DedupeKey"`
-	EventType    string    `json:"EventType"`
-	ID           int64     `json:"ID"`
-	IssueID      int64     `json:"IssueID"`
-	MetadataJSON string    `json:"MetadataJSON"`
-	PlatformID   *int64    `json:"PlatformID"`
-	Summary      string    `json:"Summary"`
+	Schema             *string   `json:"$schema,omitempty"`
+	Author             string    `json:"Author"`
+	Body               string    `json:"Body"`
+	CreatedAt          time.Time `json:"CreatedAt"`
+	DedupeKey          string    `json:"DedupeKey"`
+	EventType          string    `json:"EventType"`
+	ID                 int64     `json:"ID"`
+	IssueID            int64     `json:"IssueID"`
+	MetadataJSON       string    `json:"MetadataJSON"`
+	PlatformExternalID string    `json:"PlatformExternalID"`
+	PlatformID         *int64    `json:"PlatformID"`
+	Summary            string    `json:"Summary"`
 }
 
 // IssueResponse defines model for IssueResponse.
 type IssueResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema          *string    `json:"$schema,omitempty"`
-	Author          string     `json:"Author"`
-	Body            string     `json:"Body"`
-	ClosedAt        *time.Time `json:"ClosedAt"`
-	CommentCount    int64      `json:"CommentCount"`
-	CreatedAt       time.Time  `json:"CreatedAt"`
-	ID              int64      `json:"ID"`
-	LastActivityAt  time.Time  `json:"LastActivityAt"`
-	Number          int64      `json:"Number"`
-	PlatformID      int64      `json:"PlatformID"`
-	RepoID          int64      `json:"RepoID"`
-	Starred         bool       `json:"Starred"`
-	State           string     `json:"State"`
-	Title           string     `json:"Title"`
-	URL             string     `json:"URL"`
-	UpdatedAt       time.Time  `json:"UpdatedAt"`
-	DetailFetchedAt *string    `json:"detail_fetched_at,omitempty"`
-	DetailLoaded    bool       `json:"detail_loaded"`
-	Labels          *[]Label   `json:"labels,omitempty"`
-	PlatformHost    string     `json:"platform_host"`
-	RepoName        string     `json:"repo_name"`
-	RepoOwner       string     `json:"repo_owner"`
+	Schema             *string         `json:"$schema,omitempty"`
+	Author             string          `json:"Author"`
+	Body               string          `json:"Body"`
+	ClosedAt           *time.Time      `json:"ClosedAt"`
+	CommentCount       int64           `json:"CommentCount"`
+	CreatedAt          time.Time       `json:"CreatedAt"`
+	ID                 int64           `json:"ID"`
+	LastActivityAt     time.Time       `json:"LastActivityAt"`
+	Number             int64           `json:"Number"`
+	PlatformExternalID string          `json:"PlatformExternalID"`
+	PlatformID         int64           `json:"PlatformID"`
+	RepoID             int64           `json:"RepoID"`
+	Starred            bool            `json:"Starred"`
+	State              string          `json:"State"`
+	Title              string          `json:"Title"`
+	URL                string          `json:"URL"`
+	UpdatedAt          time.Time       `json:"UpdatedAt"`
+	DetailFetchedAt    *string         `json:"detail_fetched_at,omitempty"`
+	DetailLoaded       bool            `json:"detail_loaded"`
+	Labels             *[]Label        `json:"labels,omitempty"`
+	PlatformHost       string          `json:"platform_host"`
+	Repo               RepoRefResponse `json:"repo"`
+	RepoName           string          `json:"repo_name"`
+	RepoOwner          string          `json:"repo_owner"`
 }
 
 // Label defines model for Label.
@@ -419,17 +483,18 @@ type ListWorkspacesOutputBody struct {
 // MREvent defines model for MREvent.
 type MREvent struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema         *string   `json:"$schema,omitempty"`
-	Author         string    `json:"Author"`
-	Body           string    `json:"Body"`
-	CreatedAt      time.Time `json:"CreatedAt"`
-	DedupeKey      string    `json:"DedupeKey"`
-	EventType      string    `json:"EventType"`
-	ID             int64     `json:"ID"`
-	MergeRequestID int64     `json:"MergeRequestID"`
-	MetadataJSON   string    `json:"MetadataJSON"`
-	PlatformID     *int64    `json:"PlatformID"`
-	Summary        string    `json:"Summary"`
+	Schema             *string   `json:"$schema,omitempty"`
+	Author             string    `json:"Author"`
+	Body               string    `json:"Body"`
+	CreatedAt          time.Time `json:"CreatedAt"`
+	DedupeKey          string    `json:"DedupeKey"`
+	EventType          string    `json:"EventType"`
+	ID                 int64     `json:"ID"`
+	MergeRequestID     int64     `json:"MergeRequestID"`
+	MetadataJSON       string    `json:"MetadataJSON"`
+	PlatformExternalID string    `json:"PlatformExternalID"`
+	PlatformID         *int64    `json:"PlatformID"`
+	Summary            string    `json:"Summary"`
 }
 
 // MergePRBody defines model for MergePRBody.
@@ -439,6 +504,15 @@ type MergePRBody struct {
 	Merged  bool    `json:"merged"`
 	Message string  `json:"message"`
 	Sha     string  `json:"sha"`
+}
+
+// MergePRHostInputBody defines model for MergePRHostInputBody.
+type MergePRHostInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema        *string `json:"$schema,omitempty"`
+	CommitMessage string  `json:"commit_message"`
+	CommitTitle   string  `json:"commit_title"`
+	Method        string  `json:"method"`
 }
 
 // MergePRInputBody defines model for MergePRInputBody.
@@ -452,37 +526,38 @@ type MergePRInputBody struct {
 
 // MergeRequest defines model for MergeRequest.
 type MergeRequest struct {
-	Additions         int64      `json:"Additions"`
-	Author            string     `json:"Author"`
-	AuthorDisplayName string     `json:"AuthorDisplayName"`
-	BaseBranch        string     `json:"BaseBranch"`
-	Body              string     `json:"Body"`
-	CIChecksJSON      string     `json:"CIChecksJSON"`
-	CIHadPending      bool       `json:"CIHadPending"`
-	CIStatus          string     `json:"CIStatus"`
-	ClosedAt          *time.Time `json:"ClosedAt"`
-	CommentCount      int64      `json:"CommentCount"`
-	CreatedAt         time.Time  `json:"CreatedAt"`
-	Deletions         int64      `json:"Deletions"`
-	DetailFetchedAt   *time.Time `json:"DetailFetchedAt"`
-	HeadBranch        string     `json:"HeadBranch"`
-	HeadRepoCloneURL  string     `json:"HeadRepoCloneURL"`
-	ID                int64      `json:"ID"`
-	IsDraft           bool       `json:"IsDraft"`
-	KanbanStatus      string     `json:"KanbanStatus"`
-	LastActivityAt    time.Time  `json:"LastActivityAt"`
-	MergeableState    string     `json:"MergeableState"`
-	MergedAt          *time.Time `json:"MergedAt"`
-	Number            int64      `json:"Number"`
-	PlatformID        int64      `json:"PlatformID"`
-	RepoID            int64      `json:"RepoID"`
-	ReviewDecision    string     `json:"ReviewDecision"`
-	Starred           bool       `json:"Starred"`
-	State             string     `json:"State"`
-	Title             string     `json:"Title"`
-	URL               string     `json:"URL"`
-	UpdatedAt         time.Time  `json:"UpdatedAt"`
-	Labels            *[]Label   `json:"labels,omitempty"`
+	Additions          int64      `json:"Additions"`
+	Author             string     `json:"Author"`
+	AuthorDisplayName  string     `json:"AuthorDisplayName"`
+	BaseBranch         string     `json:"BaseBranch"`
+	Body               string     `json:"Body"`
+	CIChecksJSON       string     `json:"CIChecksJSON"`
+	CIHadPending       bool       `json:"CIHadPending"`
+	CIStatus           string     `json:"CIStatus"`
+	ClosedAt           *time.Time `json:"ClosedAt"`
+	CommentCount       int64      `json:"CommentCount"`
+	CreatedAt          time.Time  `json:"CreatedAt"`
+	Deletions          int64      `json:"Deletions"`
+	DetailFetchedAt    *time.Time `json:"DetailFetchedAt"`
+	HeadBranch         string     `json:"HeadBranch"`
+	HeadRepoCloneURL   string     `json:"HeadRepoCloneURL"`
+	ID                 int64      `json:"ID"`
+	IsDraft            bool       `json:"IsDraft"`
+	KanbanStatus       string     `json:"KanbanStatus"`
+	LastActivityAt     time.Time  `json:"LastActivityAt"`
+	MergeableState     string     `json:"MergeableState"`
+	MergedAt           *time.Time `json:"MergedAt"`
+	Number             int64      `json:"Number"`
+	PlatformExternalID string     `json:"PlatformExternalID"`
+	PlatformID         int64      `json:"PlatformID"`
+	RepoID             int64      `json:"RepoID"`
+	ReviewDecision     string     `json:"ReviewDecision"`
+	Starred            bool       `json:"Starred"`
+	State              string     `json:"State"`
+	Title              string     `json:"Title"`
+	URL                string     `json:"URL"`
+	UpdatedAt          time.Time  `json:"UpdatedAt"`
+	Labels             *[]Label   `json:"labels,omitempty"`
 }
 
 // MergeRequestDetailResponse defines model for MergeRequestDetailResponse.
@@ -498,6 +573,7 @@ type MergeRequestDetailResponse struct {
 	PlatformBaseSha  string                   `json:"platform_base_sha"`
 	PlatformHeadSha  string                   `json:"platform_head_sha"`
 	PlatformHost     string                   `json:"platform_host"`
+	Repo             RepoRefResponse          `json:"repo"`
 	RepoName         string                   `json:"repo_name"`
 	RepoOwner        string                   `json:"repo_owner"`
 	Warnings         *[]string                `json:"warnings,omitempty"`
@@ -508,42 +584,44 @@ type MergeRequestDetailResponse struct {
 
 // MergeRequestResponse defines model for MergeRequestResponse.
 type MergeRequestResponse struct {
-	Additions         int64                   `json:"Additions"`
-	Author            string                  `json:"Author"`
-	AuthorDisplayName string                  `json:"AuthorDisplayName"`
-	BaseBranch        string                  `json:"BaseBranch"`
-	Body              string                  `json:"Body"`
-	CIChecksJSON      string                  `json:"CIChecksJSON"`
-	CIHadPending      bool                    `json:"CIHadPending"`
-	CIStatus          string                  `json:"CIStatus"`
-	ClosedAt          *time.Time              `json:"ClosedAt"`
-	CommentCount      int64                   `json:"CommentCount"`
-	CreatedAt         time.Time               `json:"CreatedAt"`
-	Deletions         int64                   `json:"Deletions"`
-	HeadBranch        string                  `json:"HeadBranch"`
-	HeadRepoCloneURL  string                  `json:"HeadRepoCloneURL"`
-	ID                int64                   `json:"ID"`
-	IsDraft           bool                    `json:"IsDraft"`
-	KanbanStatus      string                  `json:"KanbanStatus"`
-	LastActivityAt    time.Time               `json:"LastActivityAt"`
-	MergeableState    string                  `json:"MergeableState"`
-	MergedAt          *time.Time              `json:"MergedAt"`
-	Number            int64                   `json:"Number"`
-	PlatformID        int64                   `json:"PlatformID"`
-	RepoID            int64                   `json:"RepoID"`
-	ReviewDecision    string                  `json:"ReviewDecision"`
-	Starred           bool                    `json:"Starred"`
-	State             string                  `json:"State"`
-	Title             string                  `json:"Title"`
-	URL               string                  `json:"URL"`
-	UpdatedAt         time.Time               `json:"UpdatedAt"`
-	DetailFetchedAt   *string                 `json:"detail_fetched_at,omitempty"`
-	DetailLoaded      bool                    `json:"detail_loaded"`
-	Labels            *[]Label                `json:"labels,omitempty"`
-	PlatformHost      string                  `json:"platform_host"`
-	RepoName          string                  `json:"repo_name"`
-	RepoOwner         string                  `json:"repo_owner"`
-	WorktreeLinks     *[]WorktreeLinkResponse `json:"worktree_links"`
+	Additions          int64                   `json:"Additions"`
+	Author             string                  `json:"Author"`
+	AuthorDisplayName  string                  `json:"AuthorDisplayName"`
+	BaseBranch         string                  `json:"BaseBranch"`
+	Body               string                  `json:"Body"`
+	CIChecksJSON       string                  `json:"CIChecksJSON"`
+	CIHadPending       bool                    `json:"CIHadPending"`
+	CIStatus           string                  `json:"CIStatus"`
+	ClosedAt           *time.Time              `json:"ClosedAt"`
+	CommentCount       int64                   `json:"CommentCount"`
+	CreatedAt          time.Time               `json:"CreatedAt"`
+	Deletions          int64                   `json:"Deletions"`
+	HeadBranch         string                  `json:"HeadBranch"`
+	HeadRepoCloneURL   string                  `json:"HeadRepoCloneURL"`
+	ID                 int64                   `json:"ID"`
+	IsDraft            bool                    `json:"IsDraft"`
+	KanbanStatus       string                  `json:"KanbanStatus"`
+	LastActivityAt     time.Time               `json:"LastActivityAt"`
+	MergeableState     string                  `json:"MergeableState"`
+	MergedAt           *time.Time              `json:"MergedAt"`
+	Number             int64                   `json:"Number"`
+	PlatformExternalID string                  `json:"PlatformExternalID"`
+	PlatformID         int64                   `json:"PlatformID"`
+	RepoID             int64                   `json:"RepoID"`
+	ReviewDecision     string                  `json:"ReviewDecision"`
+	Starred            bool                    `json:"Starred"`
+	State              string                  `json:"State"`
+	Title              string                  `json:"Title"`
+	URL                string                  `json:"URL"`
+	UpdatedAt          time.Time               `json:"UpdatedAt"`
+	DetailFetchedAt    *string                 `json:"detail_fetched_at,omitempty"`
+	DetailLoaded       bool                    `json:"detail_loaded"`
+	Labels             *[]Label                `json:"labels,omitempty"`
+	PlatformHost       string                  `json:"platform_host"`
+	Repo               RepoRefResponse         `json:"repo"`
+	RepoName           string                  `json:"repo_name"`
+	RepoOwner          string                  `json:"repo_owner"`
+	WorktreeLinks      *[]WorktreeLinkResponse `json:"worktree_links"`
 }
 
 // MrImportMetadataResponse defines model for MrImportMetadataResponse.
@@ -559,8 +637,22 @@ type MrImportMetadataResponse struct {
 	Title            string  `json:"title"`
 }
 
+// PostCommentHostInputBody defines model for PostCommentHostInputBody.
+type PostCommentHostInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Body   string  `json:"body"`
+}
+
 // PostCommentInputBody defines model for PostCommentInputBody.
 type PostCommentInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Body   string  `json:"body"`
+}
+
+// PostIssueCommentHostInputBody defines model for PostIssueCommentHostInputBody.
+type PostIssueCommentHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string `json:"$schema,omitempty"`
 	Body   string  `json:"body"`
@@ -569,9 +661,25 @@ type PostCommentInputBody struct {
 // PostIssueCommentInputBody defines model for PostIssueCommentInputBody.
 type PostIssueCommentInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema       *string `json:"$schema,omitempty"`
-	Body         string  `json:"body"`
-	PlatformHost *string `json:"platform_host,omitempty"`
+	Schema *string `json:"$schema,omitempty"`
+	Body   string  `json:"body"`
+}
+
+// ProviderCapabilitiesResponse defines model for ProviderCapabilitiesResponse.
+type ProviderCapabilitiesResponse struct {
+	CommentMutation   bool `json:"comment_mutation"`
+	IssueMutation     bool `json:"issue_mutation"`
+	MergeMutation     bool `json:"merge_mutation"`
+	ReadCi            bool `json:"read_ci"`
+	ReadComments      bool `json:"read_comments"`
+	ReadIssues        bool `json:"read_issues"`
+	ReadMergeRequests bool `json:"read_merge_requests"`
+	ReadReleases      bool `json:"read_releases"`
+	ReadRepositories  bool `json:"read_repositories"`
+	ReadyForReview    bool `json:"ready_for_review"`
+	ReviewMutation    bool `json:"review_mutation"`
+	StateMutation     bool `json:"state_mutation"`
+	WorkflowApproval  bool `json:"workflow_approval"`
 }
 
 // RateLimitHostStatus defines model for RateLimitHostStatus.
@@ -585,6 +693,8 @@ type RateLimitHostStatus struct {
 	GqlResetAt         string `json:"gql_reset_at"`
 	HourStart          string `json:"hour_start"`
 	Known              bool   `json:"known"`
+	PlatformHost       string `json:"platform_host"`
+	Provider           string `json:"provider"`
 	RateLimit          int64  `json:"rate_limit"`
 	RateRemaining      int64  `json:"rate_remaining"`
 	RateResetAt        string `json:"rate_reset_at"`
@@ -601,45 +711,26 @@ type RateLimitsResponse struct {
 	Hosts  map[string]RateLimitHostStatus `json:"hosts"`
 }
 
-// Repo defines model for Repo.
-type Repo struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema                   *string    `json:"$schema,omitempty"`
-	AllowMergeCommit         bool       `json:"AllowMergeCommit"`
-	AllowRebaseMerge         bool       `json:"AllowRebaseMerge"`
-	AllowSquashMerge         bool       `json:"AllowSquashMerge"`
-	BackfillIssueComplete    bool       `json:"BackfillIssueComplete"`
-	BackfillIssueCompletedAt *time.Time `json:"BackfillIssueCompletedAt"`
-	BackfillIssuePage        int64      `json:"BackfillIssuePage"`
-	BackfillPRComplete       bool       `json:"BackfillPRComplete"`
-	BackfillPRCompletedAt    *time.Time `json:"BackfillPRCompletedAt"`
-	BackfillPRPage           int64      `json:"BackfillPRPage"`
-	CreatedAt                time.Time  `json:"CreatedAt"`
-	ID                       int64      `json:"ID"`
-	LastSyncCompletedAt      *time.Time `json:"LastSyncCompletedAt"`
-	LastSyncError            string     `json:"LastSyncError"`
-	LastSyncStartedAt        *time.Time `json:"LastSyncStartedAt"`
-	Name                     string     `json:"Name"`
-	Owner                    string     `json:"Owner"`
-	Platform                 string     `json:"Platform"`
-	PlatformHost             string     `json:"PlatformHost"`
-}
-
 // RepoPreviewRequest defines model for RepoPreviewRequest.
 type RepoPreviewRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema  *string `json:"$schema,omitempty"`
-	Owner   string  `json:"owner"`
-	Pattern string  `json:"pattern"`
+	Schema       *string `json:"$schema,omitempty"`
+	Host         *string `json:"host,omitempty"`
+	Owner        string  `json:"owner"`
+	Pattern      string  `json:"pattern"`
+	PlatformHost *string `json:"platform_host,omitempty"`
+	Provider     string  `json:"provider"`
 }
 
 // RepoPreviewResponse defines model for RepoPreviewResponse.
 type RepoPreviewResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema  *string           `json:"$schema,omitempty"`
-	Owner   string            `json:"owner"`
-	Pattern string            `json:"pattern"`
-	Repos   *[]RepoPreviewRow `json:"repos"`
+	Schema       *string           `json:"$schema,omitempty"`
+	Owner        string            `json:"owner"`
+	Pattern      string            `json:"pattern"`
+	PlatformHost string            `json:"platform_host"`
+	Provider     string            `json:"provider"`
+	Repos        *[]RepoPreviewRow `json:"repos"`
 }
 
 // RepoPreviewRow defines model for RepoPreviewRow.
@@ -649,8 +740,46 @@ type RepoPreviewRow struct {
 	Fork              bool    `json:"fork"`
 	Name              string  `json:"name"`
 	Owner             string  `json:"owner"`
+	PlatformHost      string  `json:"platform_host"`
 	Private           bool    `json:"private"`
+	Provider          string  `json:"provider"`
 	PushedAt          *string `json:"pushed_at"`
+	RepoPath          string  `json:"repo_path"`
+}
+
+// RepoRefResponse defines model for RepoRefResponse.
+type RepoRefResponse struct {
+	Capabilities ProviderCapabilitiesResponse `json:"capabilities"`
+	Name         string                       `json:"name"`
+	Owner        string                       `json:"owner"`
+	PlatformHost string                       `json:"platform_host"`
+	Provider     string                       `json:"provider"`
+	RepoPath     string                       `json:"repo_path"`
+}
+
+// RepoResponse defines model for RepoResponse.
+type RepoResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema                   *string                      `json:"$schema,omitempty"`
+	AllowMergeCommit         bool                         `json:"AllowMergeCommit"`
+	AllowRebaseMerge         bool                         `json:"AllowRebaseMerge"`
+	AllowSquashMerge         bool                         `json:"AllowSquashMerge"`
+	BackfillIssueComplete    bool                         `json:"BackfillIssueComplete"`
+	BackfillIssueCompletedAt *time.Time                   `json:"BackfillIssueCompletedAt"`
+	BackfillIssuePage        int64                        `json:"BackfillIssuePage"`
+	BackfillPRComplete       bool                         `json:"BackfillPRComplete"`
+	BackfillPRCompletedAt    *time.Time                   `json:"BackfillPRCompletedAt"`
+	BackfillPRPage           int64                        `json:"BackfillPRPage"`
+	CreatedAt                time.Time                    `json:"CreatedAt"`
+	ID                       int64                        `json:"ID"`
+	LastSyncCompletedAt      *time.Time                   `json:"LastSyncCompletedAt"`
+	LastSyncError            string                       `json:"LastSyncError"`
+	LastSyncStartedAt        *time.Time                   `json:"LastSyncStartedAt"`
+	Name                     string                       `json:"Name"`
+	Owner                    string                       `json:"Owner"`
+	Platform                 string                       `json:"Platform"`
+	PlatformHost             string                       `json:"PlatformHost"`
+	Capabilities             ProviderCapabilitiesResponse `json:"capabilities"`
 }
 
 // RepoSummaryAuthorResponse defines model for RepoSummaryAuthorResponse.
@@ -707,6 +836,7 @@ type RepoSummaryResponse struct {
 	PlatformHost         string                            `json:"platform_host"`
 	RecentIssues         *[]RepoSummaryIssueResponse       `json:"recent_issues"`
 	Releases             *[]RepoSummaryReleaseResponse     `json:"releases"`
+	Repo                 RepoRefResponse                   `json:"repo"`
 	TimelineUpdatedAt    *string                           `json:"timeline_updated_at,omitempty"`
 }
 
@@ -743,6 +873,13 @@ type SessionInfo struct {
 	Status      string     `json:"status"`
 	TargetKey   string     `json:"target_key"`
 	WorkspaceId string     `json:"workspace_id"`
+}
+
+// SetKanbanStateHostInputBody defines model for SetKanbanStateHostInputBody.
+type SetKanbanStateHostInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Status string  `json:"status"`
 }
 
 // SetKanbanStateInputBody defines model for SetKanbanStateInputBody.
@@ -857,33 +994,34 @@ type WorkspaceRef struct {
 // WorkspaceResponse defines model for WorkspaceResponse.
 type WorkspaceResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema             *string `json:"$schema,omitempty"`
-	AssociatedPrNumber *int64  `json:"associated_pr_number,omitempty"`
-	CommitsAhead       *int64  `json:"commits_ahead,omitempty"`
-	CommitsBehind      *int64  `json:"commits_behind,omitempty"`
-	CreatedAt          string  `json:"created_at"`
-	ErrorMessage       *string `json:"error_message,omitempty"`
-	GitHeadRef         string  `json:"git_head_ref"`
-	Id                 string  `json:"id"`
-	ItemNumber         int64   `json:"item_number"`
-	ItemType           string  `json:"item_type"`
-	MrAdditions        *int64  `json:"mr_additions,omitempty"`
-	MrCiStatus         *string `json:"mr_ci_status,omitempty"`
-	MrDeletions        *int64  `json:"mr_deletions,omitempty"`
-	MrIsDraft          *bool   `json:"mr_is_draft,omitempty"`
-	MrReviewDecision   *string `json:"mr_review_decision,omitempty"`
-	MrState            *string `json:"mr_state,omitempty"`
-	MrTitle            *string `json:"mr_title,omitempty"`
-	PlatformHost       string  `json:"platform_host"`
-	RepoName           string  `json:"repo_name"`
-	RepoOwner          string  `json:"repo_owner"`
-	Status             string  `json:"status"`
-	TmuxActivitySource string  `json:"tmux_activity_source"`
-	TmuxLastOutputAt   *string `json:"tmux_last_output_at"`
-	TmuxPaneTitle      *string `json:"tmux_pane_title,omitempty"`
-	TmuxSession        string  `json:"tmux_session"`
-	TmuxWorking        bool    `json:"tmux_working"`
-	WorktreePath       string  `json:"worktree_path"`
+	Schema             *string         `json:"$schema,omitempty"`
+	AssociatedPrNumber *int64          `json:"associated_pr_number,omitempty"`
+	CommitsAhead       *int64          `json:"commits_ahead,omitempty"`
+	CommitsBehind      *int64          `json:"commits_behind,omitempty"`
+	CreatedAt          string          `json:"created_at"`
+	ErrorMessage       *string         `json:"error_message,omitempty"`
+	GitHeadRef         string          `json:"git_head_ref"`
+	Id                 string          `json:"id"`
+	ItemNumber         int64           `json:"item_number"`
+	ItemType           string          `json:"item_type"`
+	MrAdditions        *int64          `json:"mr_additions,omitempty"`
+	MrCiStatus         *string         `json:"mr_ci_status,omitempty"`
+	MrDeletions        *int64          `json:"mr_deletions,omitempty"`
+	MrIsDraft          *bool           `json:"mr_is_draft,omitempty"`
+	MrReviewDecision   *string         `json:"mr_review_decision,omitempty"`
+	MrState            *string         `json:"mr_state,omitempty"`
+	MrTitle            *string         `json:"mr_title,omitempty"`
+	PlatformHost       string          `json:"platform_host"`
+	Repo               RepoRefResponse `json:"repo"`
+	RepoName           string          `json:"repo_name"`
+	RepoOwner          string          `json:"repo_owner"`
+	Status             string          `json:"status"`
+	TmuxActivitySource string          `json:"tmux_activity_source"`
+	TmuxLastOutputAt   *string         `json:"tmux_last_output_at"`
+	TmuxPaneTitle      *string         `json:"tmux_pane_title,omitempty"`
+	TmuxSession        string          `json:"tmux_session"`
+	TmuxWorking        bool            `json:"tmux_working"`
+	WorktreePath       string          `json:"worktree_path"`
 }
 
 // WorkspaceRuntimeResponse defines model for WorkspaceRuntimeResponse.
@@ -911,6 +1049,42 @@ type GetActivityParams struct {
 	Since  *string   `form:"since,omitempty" json:"since,omitempty"`
 }
 
+// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffParams defines parameters for GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiff.
+type GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffParams struct {
+	Whitespace *string `form:"whitespace,omitempty" json:"whitespace,omitempty"`
+
+	// Commit Scope to a single commit SHA
+	Commit *string `form:"commit,omitempty" json:"commit,omitempty"`
+
+	// From Start SHA for range diff (inclusive)
+	From *string `form:"from,omitempty" json:"from,omitempty"`
+
+	// To End SHA for range diff (inclusive)
+	To *string `form:"to,omitempty" json:"to,omitempty"`
+}
+
+// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewParams defines parameters for GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreview.
+type GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewParams struct {
+	// Path Changed file path to preview
+	Path *string `form:"path,omitempty" json:"path,omitempty"`
+
+	// Commit Scope to a single commit SHA
+	Commit *string `form:"commit,omitempty" json:"commit,omitempty"`
+
+	// From Start SHA for range diff (inclusive)
+	From *string `form:"from,omitempty" json:"from,omitempty"`
+
+	// To End SHA for range diff (inclusive)
+	To *string `form:"to,omitempty" json:"to,omitempty"`
+}
+
+// GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteParams defines parameters for GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocomplete.
+type GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteParams struct {
+	Trigger *string `form:"trigger,omitempty" json:"trigger,omitempty"`
+	Q       *string `form:"q,omitempty" json:"q,omitempty"`
+	Limit   *int64  `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // ListIssuesParams defines parameters for ListIssues.
 type ListIssuesParams struct {
 	Repo    *string `form:"repo,omitempty" json:"repo,omitempty"`
@@ -932,31 +1106,8 @@ type ListPullsParams struct {
 	Offset  *int64  `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
-// GetReposByOwnerByNameCommentAutocompleteParams defines parameters for GetReposByOwnerByNameCommentAutocomplete.
-type GetReposByOwnerByNameCommentAutocompleteParams struct {
-	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
-	Trigger      *string `form:"trigger,omitempty" json:"trigger,omitempty"`
-	Q            *string `form:"q,omitempty" json:"q,omitempty"`
-	Limit        *int64  `form:"limit,omitempty" json:"limit,omitempty"`
-}
-
-// GetReposByOwnerByNameIssuesByNumberParams defines parameters for GetReposByOwnerByNameIssuesByNumber.
-type GetReposByOwnerByNameIssuesByNumberParams struct {
-	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
-}
-
-// PostReposByOwnerByNameIssuesByNumberSyncParams defines parameters for PostReposByOwnerByNameIssuesByNumberSync.
-type PostReposByOwnerByNameIssuesByNumberSyncParams struct {
-	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
-}
-
-// EnqueueIssueSyncParams defines parameters for EnqueueIssueSync.
-type EnqueueIssueSyncParams struct {
-	PlatformHost *string `form:"platform_host,omitempty" json:"platform_host,omitempty"`
-}
-
-// GetReposByOwnerByNamePullsByNumberDiffParams defines parameters for GetReposByOwnerByNamePullsByNumberDiff.
-type GetReposByOwnerByNamePullsByNumberDiffParams struct {
+// GetPullsByProviderByOwnerByNameByNumberDiffParams defines parameters for GetPullsByProviderByOwnerByNameByNumberDiff.
+type GetPullsByProviderByOwnerByNameByNumberDiffParams struct {
 	Whitespace *string `form:"whitespace,omitempty" json:"whitespace,omitempty"`
 
 	// Commit Scope to a single commit SHA
@@ -969,8 +1120,8 @@ type GetReposByOwnerByNamePullsByNumberDiffParams struct {
 	To *string `form:"to,omitempty" json:"to,omitempty"`
 }
 
-// GetReposByOwnerByNamePullsByNumberFilePreviewParams defines parameters for GetReposByOwnerByNamePullsByNumberFilePreview.
-type GetReposByOwnerByNamePullsByNumberFilePreviewParams struct {
+// GetPullsByProviderByOwnerByNameByNumberFilePreviewParams defines parameters for GetPullsByProviderByOwnerByNameByNumberFilePreview.
+type GetPullsByProviderByOwnerByNameByNumberFilePreviewParams struct {
 	// Path Changed file path to preview
 	Path *string `form:"path,omitempty" json:"path,omitempty"`
 
@@ -982,6 +1133,13 @@ type GetReposByOwnerByNamePullsByNumberFilePreviewParams struct {
 
 	// To End SHA for range diff (inclusive)
 	To *string `form:"to,omitempty" json:"to,omitempty"`
+}
+
+// GetRepoByProviderByOwnerByNameCommentAutocompleteParams defines parameters for GetRepoByProviderByOwnerByNameCommentAutocomplete.
+type GetRepoByProviderByOwnerByNameCommentAutocompleteParams struct {
+	Trigger *string `form:"trigger,omitempty" json:"trigger,omitempty"`
+	Q       *string `form:"q,omitempty" json:"q,omitempty"`
+	Limit   *int64  `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // ListStacksParams defines parameters for ListStacks.
@@ -1015,14 +1173,41 @@ type GetWorkspacesByIdFilesParams struct {
 	Whitespace *string `form:"whitespace,omitempty" json:"whitespace,omitempty"`
 }
 
-// AddRepoJSONRequestBody defines body for AddRepo for application/json ContentType.
-type AddRepoJSONRequestBody = AddRepoInputBody
+// CreateIssueOnHostJSONRequestBody defines body for CreateIssueOnHost for application/json ContentType.
+type CreateIssueOnHostJSONRequestBody = CreateIssueHostInputBody
 
-// BulkAddReposJSONRequestBody defines body for BulkAddRepos for application/json ContentType.
-type BulkAddReposJSONRequestBody = BulkAddReposRequest
+// PostIssueCommentOnHostJSONRequestBody defines body for PostIssueCommentOnHost for application/json ContentType.
+type PostIssueCommentOnHostJSONRequestBody = PostIssueCommentHostInputBody
 
-// PreviewReposJSONRequestBody defines body for PreviewRepos for application/json ContentType.
-type PreviewReposJSONRequestBody = RepoPreviewRequest
+// EditIssueCommentOnHostJSONRequestBody defines body for EditIssueCommentOnHost for application/json ContentType.
+type EditIssueCommentOnHostJSONRequestBody = EditIssueCommentHostInputBody
+
+// SetIssueGithubStateOnHostJSONRequestBody defines body for SetIssueGithubStateOnHost for application/json ContentType.
+type SetIssueGithubStateOnHostJSONRequestBody = GithubStateHostInputBody
+
+// CreateIssueWorkspaceOnHostJSONRequestBody defines body for CreateIssueWorkspaceOnHost for application/json ContentType.
+type CreateIssueWorkspaceOnHostJSONRequestBody = CreateIssueWorkspaceHostInputBody
+
+// EditPrContentOnHostJSONRequestBody defines body for EditPrContentOnHost for application/json ContentType.
+type EditPrContentOnHostJSONRequestBody = EditPRContentHostInputBody
+
+// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody defines body for PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApprove for application/json ContentType.
+type PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody = ApprovePRHostInputBody
+
+// PostPrCommentOnHostJSONRequestBody defines body for PostPrCommentOnHost for application/json ContentType.
+type PostPrCommentOnHostJSONRequestBody = PostCommentHostInputBody
+
+// EditPrCommentOnHostJSONRequestBody defines body for EditPrCommentOnHost for application/json ContentType.
+type EditPrCommentOnHostJSONRequestBody = EditCommentHostInputBody
+
+// SetPrGithubStateOnHostJSONRequestBody defines body for SetPrGithubStateOnHost for application/json ContentType.
+type SetPrGithubStateOnHostJSONRequestBody = GithubStateHostInputBody
+
+// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody defines body for PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMerge for application/json ContentType.
+type PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody = MergePRHostInputBody
+
+// SetKanbanStateOnHostJSONRequestBody defines body for SetKanbanStateOnHost for application/json ContentType.
+type SetKanbanStateOnHostJSONRequestBody = SetKanbanStateHostInputBody
 
 // CreateIssueJSONRequestBody defines body for CreateIssue for application/json ContentType.
 type CreateIssueJSONRequestBody = CreateIssueInputBody
@@ -1042,8 +1227,8 @@ type CreateIssueWorkspaceJSONRequestBody = CreateIssueWorkspaceInputBody
 // EditPrContentJSONRequestBody defines body for EditPrContent for application/json ContentType.
 type EditPrContentJSONRequestBody = EditPRContentInputBody
 
-// PostReposByOwnerByNamePullsByNumberApproveJSONRequestBody defines body for PostReposByOwnerByNamePullsByNumberApprove for application/json ContentType.
-type PostReposByOwnerByNamePullsByNumberApproveJSONRequestBody = ApprovePRInputBody
+// PostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody defines body for PostPullsByProviderByOwnerByNameByNumberApprove for application/json ContentType.
+type PostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody = ApprovePRInputBody
 
 // PostPrCommentJSONRequestBody defines body for PostPrComment for application/json ContentType.
 type PostPrCommentJSONRequestBody = PostCommentInputBody
@@ -1054,11 +1239,20 @@ type EditPrCommentJSONRequestBody = EditCommentInputBody
 // SetPrGithubStateJSONRequestBody defines body for SetPrGithubState for application/json ContentType.
 type SetPrGithubStateJSONRequestBody = GithubStateInputBody
 
-// PostReposByOwnerByNamePullsByNumberMergeJSONRequestBody defines body for PostReposByOwnerByNamePullsByNumberMerge for application/json ContentType.
-type PostReposByOwnerByNamePullsByNumberMergeJSONRequestBody = MergePRInputBody
+// PostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody defines body for PostPullsByProviderByOwnerByNameByNumberMerge for application/json ContentType.
+type PostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody = MergePRInputBody
 
 // SetKanbanStateJSONRequestBody defines body for SetKanbanState for application/json ContentType.
 type SetKanbanStateJSONRequestBody = SetKanbanStateInputBody
+
+// AddRepoJSONRequestBody defines body for AddRepo for application/json ContentType.
+type AddRepoJSONRequestBody = AddRepoInputBody
+
+// BulkAddReposJSONRequestBody defines body for BulkAddRepos for application/json ContentType.
+type BulkAddReposJSONRequestBody = BulkAddReposRequest
+
+// PreviewReposJSONRequestBody defines body for PreviewRepos for application/json ContentType.
+type PreviewReposJSONRequestBody = RepoPreviewRequest
 
 // UpdateSettingsJSONRequestBody defines body for UpdateSettings for application/json ContentType.
 type UpdateSettingsJSONRequestBody = UpdateSettingsRequest
@@ -1154,14 +1348,248 @@ type ClientInterface interface {
 	// StreamEvents request
 	StreamEvents(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// CreateIssueOnHostWithBody request with any body
+	CreateIssueOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateIssueOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, body CreateIssueOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumber request
+	GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumber(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostIssueCommentOnHostWithBody request with any body
+	PostIssueCommentOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PostIssueCommentOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PostIssueCommentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// EditIssueCommentOnHostWithBody request with any body
+	EditIssueCommentOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	EditIssueCommentOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, commentId int64, body EditIssueCommentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetIssueGithubStateOnHostWithBody request with any body
+	SetIssueGithubStateOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SetIssueGithubStateOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetIssueGithubStateOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSync request
+	PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSync(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// EnqueueIssueSyncOnHost request
+	EnqueueIssueSyncOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateIssueWorkspaceOnHostWithBody request with any body
+	CreateIssueWorkspaceOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateIssueWorkspaceOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body CreateIssueWorkspaceOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumber request
+	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumber(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// EditPrContentOnHostWithBody request with any body
+	EditPrContentOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	EditPrContentOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body EditPrContentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWithBody request with any body
+	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApprove(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflows request
+	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflows(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostPrCommentOnHostWithBody request with any body
+	PostPrCommentOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PostPrCommentOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PostPrCommentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// EditPrCommentOnHostWithBody request with any body
+	EditPrCommentOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	EditPrCommentOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, commentId int64, body EditPrCommentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommits request
+	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommits(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiff request
+	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiff(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreview request
+	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreview(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFiles request
+	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFiles(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetPrGithubStateOnHostWithBody request with any body
+	SetPrGithubStateOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SetPrGithubStateOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetPrGithubStateOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadata request
+	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadata(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithBody request with any body
+	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMerge(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReview request
+	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReview(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStack request
+	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStack(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetKanbanStateOnHostWithBody request with any body
+	SetKanbanStateOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SetKanbanStateOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetKanbanStateOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSync request
+	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSync(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// EnqueuePrSyncOnHost request
+	EnqueuePrSyncOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteRepoOnHost request
+	DeleteRepoOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetHostByPlatformHostRepoByProviderByOwnerByName request
+	GetHostByPlatformHostRepoByProviderByOwnerByName(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocomplete request
+	GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocomplete(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RefreshRepoOnHost request
+	RefreshRepoOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumber request
+	PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumber(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListIssues request
 	ListIssues(ctx context.Context, params *ListIssuesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateIssueWithBody request with any body
+	CreateIssueWithBody(ctx context.Context, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateIssue(ctx context.Context, provider string, owner string, name string, body CreateIssueJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetIssuesByProviderByOwnerByNameByNumber request
+	GetIssuesByProviderByOwnerByNameByNumber(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostIssueCommentWithBody request with any body
+	PostIssueCommentWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PostIssueComment(ctx context.Context, provider string, owner string, name string, number int64, body PostIssueCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// EditIssueCommentWithBody request with any body
+	EditIssueCommentWithBody(ctx context.Context, provider string, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	EditIssueComment(ctx context.Context, provider string, owner string, name string, number int64, commentId int64, body EditIssueCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetIssueGithubStateWithBody request with any body
+	SetIssueGithubStateWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SetIssueGithubState(ctx context.Context, provider string, owner string, name string, number int64, body SetIssueGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostIssuesByProviderByOwnerByNameByNumberSync request
+	PostIssuesByProviderByOwnerByNameByNumberSync(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// EnqueueIssueSync request
+	EnqueueIssueSync(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateIssueWorkspaceWithBody request with any body
+	CreateIssueWorkspaceWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateIssueWorkspace(ctx context.Context, provider string, owner string, name string, number int64, body CreateIssueWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListPulls request
 	ListPulls(ctx context.Context, params *ListPullsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetPullsByProviderByOwnerByNameByNumber request
+	GetPullsByProviderByOwnerByNameByNumber(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// EditPrContentWithBody request with any body
+	EditPrContentWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	EditPrContent(ctx context.Context, provider string, owner string, name string, number int64, body EditPrContentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostPullsByProviderByOwnerByNameByNumberApproveWithBody request with any body
+	PostPullsByProviderByOwnerByNameByNumberApproveWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PostPullsByProviderByOwnerByNameByNumberApprove(ctx context.Context, provider string, owner string, name string, number int64, body PostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostPullsByProviderByOwnerByNameByNumberApproveWorkflows request
+	PostPullsByProviderByOwnerByNameByNumberApproveWorkflows(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostPrCommentWithBody request with any body
+	PostPrCommentWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PostPrComment(ctx context.Context, provider string, owner string, name string, number int64, body PostPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// EditPrCommentWithBody request with any body
+	EditPrCommentWithBody(ctx context.Context, provider string, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	EditPrComment(ctx context.Context, provider string, owner string, name string, number int64, commentId int64, body EditPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetPullsByProviderByOwnerByNameByNumberCommits request
+	GetPullsByProviderByOwnerByNameByNumberCommits(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetPullsByProviderByOwnerByNameByNumberDiff request
+	GetPullsByProviderByOwnerByNameByNumberDiff(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullsByProviderByOwnerByNameByNumberDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetPullsByProviderByOwnerByNameByNumberFilePreview request
+	GetPullsByProviderByOwnerByNameByNumberFilePreview(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullsByProviderByOwnerByNameByNumberFilePreviewParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetPullsByProviderByOwnerByNameByNumberFiles request
+	GetPullsByProviderByOwnerByNameByNumberFiles(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetPrGithubStateWithBody request with any body
+	SetPrGithubStateWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SetPrGithubState(ctx context.Context, provider string, owner string, name string, number int64, body SetPrGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetPullsByProviderByOwnerByNameByNumberImportMetadata request
+	GetPullsByProviderByOwnerByNameByNumberImportMetadata(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostPullsByProviderByOwnerByNameByNumberMergeWithBody request with any body
+	PostPullsByProviderByOwnerByNameByNumberMergeWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PostPullsByProviderByOwnerByNameByNumberMerge(ctx context.Context, provider string, owner string, name string, number int64, body PostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostPullsByProviderByOwnerByNameByNumberReadyForReview request
+	PostPullsByProviderByOwnerByNameByNumberReadyForReview(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetPullsByProviderByOwnerByNameByNumberStack request
+	GetPullsByProviderByOwnerByNameByNumberStack(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetKanbanStateWithBody request with any body
+	SetKanbanStateWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SetKanbanState(ctx context.Context, provider string, owner string, name string, number int64, body SetKanbanStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostPullsByProviderByOwnerByNameByNumberSync request
+	PostPullsByProviderByOwnerByNameByNumberSync(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// EnqueuePrSync request
+	EnqueuePrSync(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetRateLimits request
 	GetRateLimits(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteRepo request
+	DeleteRepo(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetRepoByProviderByOwnerByName request
+	GetRepoByProviderByOwnerByName(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetRepoByProviderByOwnerByNameCommentAutocomplete request
+	GetRepoByProviderByOwnerByNameCommentAutocomplete(ctx context.Context, provider string, owner string, name string, params *GetRepoByProviderByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RefreshRepo request
+	RefreshRepo(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostRepoByProviderByOwnerByNameResolveByNumber request
+	PostRepoByProviderByOwnerByNameResolveByNumber(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListRepos request
 	ListRepos(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1183,123 +1611,6 @@ type ClientInterface interface {
 
 	// ListRepoSummaries request
 	ListRepoSummaries(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// DeleteRepo request
-	DeleteRepo(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetReposByOwnerByName request
-	GetReposByOwnerByName(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetReposByOwnerByNameCommentAutocomplete request
-	GetReposByOwnerByNameCommentAutocomplete(ctx context.Context, owner string, name string, params *GetReposByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// CreateIssueWithBody request with any body
-	CreateIssueWithBody(ctx context.Context, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	CreateIssue(ctx context.Context, owner string, name string, body CreateIssueJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetReposByOwnerByNameIssuesByNumber request
-	GetReposByOwnerByNameIssuesByNumber(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNameIssuesByNumberParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PostIssueCommentWithBody request with any body
-	PostIssueCommentWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	PostIssueComment(ctx context.Context, owner string, name string, number int64, body PostIssueCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// EditIssueCommentWithBody request with any body
-	EditIssueCommentWithBody(ctx context.Context, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	EditIssueComment(ctx context.Context, owner string, name string, number int64, commentId int64, body EditIssueCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// SetIssueGithubStateWithBody request with any body
-	SetIssueGithubStateWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	SetIssueGithubState(ctx context.Context, owner string, name string, number int64, body SetIssueGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PostReposByOwnerByNameIssuesByNumberSync request
-	PostReposByOwnerByNameIssuesByNumberSync(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNameIssuesByNumberSyncParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// EnqueueIssueSync request
-	EnqueueIssueSync(ctx context.Context, owner string, name string, number int64, params *EnqueueIssueSyncParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// CreateIssueWorkspaceWithBody request with any body
-	CreateIssueWorkspaceWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	CreateIssueWorkspace(ctx context.Context, owner string, name string, number int64, body CreateIssueWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PostReposByOwnerByNameItemsByNumberResolve request
-	PostReposByOwnerByNameItemsByNumberResolve(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetReposByOwnerByNamePullsByNumber request
-	GetReposByOwnerByNamePullsByNumber(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// EditPrContentWithBody request with any body
-	EditPrContentWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	EditPrContent(ctx context.Context, owner string, name string, number int64, body EditPrContentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PostReposByOwnerByNamePullsByNumberApproveWithBody request with any body
-	PostReposByOwnerByNamePullsByNumberApproveWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	PostReposByOwnerByNamePullsByNumberApprove(ctx context.Context, owner string, name string, number int64, body PostReposByOwnerByNamePullsByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PostReposByOwnerByNamePullsByNumberApproveWorkflows request
-	PostReposByOwnerByNamePullsByNumberApproveWorkflows(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PostPrCommentWithBody request with any body
-	PostPrCommentWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	PostPrComment(ctx context.Context, owner string, name string, number int64, body PostPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// EditPrCommentWithBody request with any body
-	EditPrCommentWithBody(ctx context.Context, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	EditPrComment(ctx context.Context, owner string, name string, number int64, commentId int64, body EditPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetReposByOwnerByNamePullsByNumberCommits request
-	GetReposByOwnerByNamePullsByNumberCommits(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetReposByOwnerByNamePullsByNumberDiff request
-	GetReposByOwnerByNamePullsByNumberDiff(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetReposByOwnerByNamePullsByNumberFilePreview request
-	GetReposByOwnerByNamePullsByNumberFilePreview(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberFilePreviewParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetReposByOwnerByNamePullsByNumberFiles request
-	GetReposByOwnerByNamePullsByNumberFiles(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// SetPrGithubStateWithBody request with any body
-	SetPrGithubStateWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	SetPrGithubState(ctx context.Context, owner string, name string, number int64, body SetPrGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetReposByOwnerByNamePullsByNumberImportMetadata request
-	GetReposByOwnerByNamePullsByNumberImportMetadata(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PostReposByOwnerByNamePullsByNumberMergeWithBody request with any body
-	PostReposByOwnerByNamePullsByNumberMergeWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	PostReposByOwnerByNamePullsByNumberMerge(ctx context.Context, owner string, name string, number int64, body PostReposByOwnerByNamePullsByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PostReposByOwnerByNamePullsByNumberReadyForReview request
-	PostReposByOwnerByNamePullsByNumberReadyForReview(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetReposByOwnerByNamePullsByNumberStack request
-	GetReposByOwnerByNamePullsByNumberStack(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// SetKanbanStateWithBody request with any body
-	SetKanbanStateWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	SetKanbanState(ctx context.Context, owner string, name string, number int64, body SetKanbanStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PostReposByOwnerByNamePullsByNumberSync request
-	PostReposByOwnerByNamePullsByNumberSync(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// EnqueuePrSync request
-	EnqueuePrSync(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// RefreshRepo request
-	RefreshRepo(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetRoborevStatus request
 	GetRoborevStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1396,8 +1707,680 @@ func (c *Client) StreamEvents(ctx context.Context, reqEditors ...RequestEditorFn
 	return c.Client.Do(req)
 }
 
+func (c *Client) CreateIssueOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateIssueOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateIssueOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, body CreateIssueOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateIssueOnHostRequest(c.Server, platformHost, provider, owner, name, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumber(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberRequest(c.Server, platformHost, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostIssueCommentOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostIssueCommentOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostIssueCommentOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PostIssueCommentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostIssueCommentOnHostRequest(c.Server, platformHost, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EditIssueCommentOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditIssueCommentOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, number, commentId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EditIssueCommentOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, commentId int64, body EditIssueCommentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditIssueCommentOnHostRequest(c.Server, platformHost, provider, owner, name, number, commentId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetIssueGithubStateOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetIssueGithubStateOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetIssueGithubStateOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetIssueGithubStateOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetIssueGithubStateOnHostRequest(c.Server, platformHost, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSync(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncRequest(c.Server, platformHost, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EnqueueIssueSyncOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEnqueueIssueSyncOnHostRequest(c.Server, platformHost, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateIssueWorkspaceOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateIssueWorkspaceOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateIssueWorkspaceOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body CreateIssueWorkspaceOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateIssueWorkspaceOnHostRequest(c.Server, platformHost, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumber(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberRequest(c.Server, platformHost, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EditPrContentOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditPrContentOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EditPrContentOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body EditPrContentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditPrContentOnHostRequest(c.Server, platformHost, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveRequestWithBody(c.Server, platformHost, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApprove(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveRequest(c.Server, platformHost, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflows(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsRequest(c.Server, platformHost, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostPrCommentOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostPrCommentOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostPrCommentOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PostPrCommentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostPrCommentOnHostRequest(c.Server, platformHost, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EditPrCommentOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditPrCommentOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, number, commentId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EditPrCommentOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, commentId int64, body EditPrCommentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditPrCommentOnHostRequest(c.Server, platformHost, provider, owner, name, number, commentId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommits(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsRequest(c.Server, platformHost, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiff(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffRequest(c.Server, platformHost, provider, owner, name, number, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreview(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewRequest(c.Server, platformHost, provider, owner, name, number, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFiles(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesRequest(c.Server, platformHost, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetPrGithubStateOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetPrGithubStateOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetPrGithubStateOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetPrGithubStateOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetPrGithubStateOnHostRequest(c.Server, platformHost, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadata(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataRequest(c.Server, platformHost, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeRequestWithBody(c.Server, platformHost, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMerge(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeRequest(c.Server, platformHost, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReview(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewRequest(c.Server, platformHost, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStack(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackRequest(c.Server, platformHost, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetKanbanStateOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetKanbanStateOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetKanbanStateOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetKanbanStateOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetKanbanStateOnHostRequest(c.Server, platformHost, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSync(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncRequest(c.Server, platformHost, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EnqueuePrSyncOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEnqueuePrSyncOnHostRequest(c.Server, platformHost, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteRepoOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteRepoOnHostRequest(c.Server, platformHost, provider, owner, name)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetHostByPlatformHostRepoByProviderByOwnerByName(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetHostByPlatformHostRepoByProviderByOwnerByNameRequest(c.Server, platformHost, provider, owner, name)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocomplete(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteRequest(c.Server, platformHost, provider, owner, name, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RefreshRepoOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRefreshRepoOnHostRequest(c.Server, platformHost, provider, owner, name)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumber(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberRequest(c.Server, platformHost, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) ListIssues(ctx context.Context, params *ListIssuesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListIssuesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateIssueWithBody(ctx context.Context, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateIssueRequestWithBody(c.Server, provider, owner, name, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateIssue(ctx context.Context, provider string, owner string, name string, body CreateIssueJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateIssueRequest(c.Server, provider, owner, name, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetIssuesByProviderByOwnerByNameByNumber(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetIssuesByProviderByOwnerByNameByNumberRequest(c.Server, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostIssueCommentWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostIssueCommentRequestWithBody(c.Server, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostIssueComment(ctx context.Context, provider string, owner string, name string, number int64, body PostIssueCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostIssueCommentRequest(c.Server, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EditIssueCommentWithBody(ctx context.Context, provider string, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditIssueCommentRequestWithBody(c.Server, provider, owner, name, number, commentId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EditIssueComment(ctx context.Context, provider string, owner string, name string, number int64, commentId int64, body EditIssueCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditIssueCommentRequest(c.Server, provider, owner, name, number, commentId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetIssueGithubStateWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetIssueGithubStateRequestWithBody(c.Server, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetIssueGithubState(ctx context.Context, provider string, owner string, name string, number int64, body SetIssueGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetIssueGithubStateRequest(c.Server, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostIssuesByProviderByOwnerByNameByNumberSync(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostIssuesByProviderByOwnerByNameByNumberSyncRequest(c.Server, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EnqueueIssueSync(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEnqueueIssueSyncRequest(c.Server, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateIssueWorkspaceWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateIssueWorkspaceRequestWithBody(c.Server, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateIssueWorkspace(ctx context.Context, provider string, owner string, name string, number int64, body CreateIssueWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateIssueWorkspaceRequest(c.Server, provider, owner, name, number, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1420,8 +2403,368 @@ func (c *Client) ListPulls(ctx context.Context, params *ListPullsParams, reqEdit
 	return c.Client.Do(req)
 }
 
+func (c *Client) GetPullsByProviderByOwnerByNameByNumber(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPullsByProviderByOwnerByNameByNumberRequest(c.Server, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EditPrContentWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditPrContentRequestWithBody(c.Server, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EditPrContent(ctx context.Context, provider string, owner string, name string, number int64, body EditPrContentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditPrContentRequest(c.Server, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostPullsByProviderByOwnerByNameByNumberApproveWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostPullsByProviderByOwnerByNameByNumberApproveRequestWithBody(c.Server, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostPullsByProviderByOwnerByNameByNumberApprove(ctx context.Context, provider string, owner string, name string, number int64, body PostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostPullsByProviderByOwnerByNameByNumberApproveRequest(c.Server, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostPullsByProviderByOwnerByNameByNumberApproveWorkflows(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostPullsByProviderByOwnerByNameByNumberApproveWorkflowsRequest(c.Server, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostPrCommentWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostPrCommentRequestWithBody(c.Server, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostPrComment(ctx context.Context, provider string, owner string, name string, number int64, body PostPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostPrCommentRequest(c.Server, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EditPrCommentWithBody(ctx context.Context, provider string, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditPrCommentRequestWithBody(c.Server, provider, owner, name, number, commentId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EditPrComment(ctx context.Context, provider string, owner string, name string, number int64, commentId int64, body EditPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditPrCommentRequest(c.Server, provider, owner, name, number, commentId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetPullsByProviderByOwnerByNameByNumberCommits(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPullsByProviderByOwnerByNameByNumberCommitsRequest(c.Server, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetPullsByProviderByOwnerByNameByNumberDiff(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullsByProviderByOwnerByNameByNumberDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPullsByProviderByOwnerByNameByNumberDiffRequest(c.Server, provider, owner, name, number, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetPullsByProviderByOwnerByNameByNumberFilePreview(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullsByProviderByOwnerByNameByNumberFilePreviewParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPullsByProviderByOwnerByNameByNumberFilePreviewRequest(c.Server, provider, owner, name, number, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetPullsByProviderByOwnerByNameByNumberFiles(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPullsByProviderByOwnerByNameByNumberFilesRequest(c.Server, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetPrGithubStateWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetPrGithubStateRequestWithBody(c.Server, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetPrGithubState(ctx context.Context, provider string, owner string, name string, number int64, body SetPrGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetPrGithubStateRequest(c.Server, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetPullsByProviderByOwnerByNameByNumberImportMetadata(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPullsByProviderByOwnerByNameByNumberImportMetadataRequest(c.Server, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostPullsByProviderByOwnerByNameByNumberMergeWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostPullsByProviderByOwnerByNameByNumberMergeRequestWithBody(c.Server, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostPullsByProviderByOwnerByNameByNumberMerge(ctx context.Context, provider string, owner string, name string, number int64, body PostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostPullsByProviderByOwnerByNameByNumberMergeRequest(c.Server, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostPullsByProviderByOwnerByNameByNumberReadyForReview(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostPullsByProviderByOwnerByNameByNumberReadyForReviewRequest(c.Server, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetPullsByProviderByOwnerByNameByNumberStack(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPullsByProviderByOwnerByNameByNumberStackRequest(c.Server, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetKanbanStateWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetKanbanStateRequestWithBody(c.Server, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetKanbanState(ctx context.Context, provider string, owner string, name string, number int64, body SetKanbanStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetKanbanStateRequest(c.Server, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostPullsByProviderByOwnerByNameByNumberSync(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostPullsByProviderByOwnerByNameByNumberSyncRequest(c.Server, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EnqueuePrSync(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEnqueuePrSyncRequest(c.Server, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) GetRateLimits(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetRateLimitsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteRepo(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteRepoRequest(c.Server, provider, owner, name)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetRepoByProviderByOwnerByName(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetRepoByProviderByOwnerByNameRequest(c.Server, provider, owner, name)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetRepoByProviderByOwnerByNameCommentAutocomplete(ctx context.Context, provider string, owner string, name string, params *GetRepoByProviderByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetRepoByProviderByOwnerByNameCommentAutocompleteRequest(c.Server, provider, owner, name, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RefreshRepo(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRefreshRepoRequest(c.Server, provider, owner, name)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostRepoByProviderByOwnerByNameResolveByNumber(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostRepoByProviderByOwnerByNameResolveByNumberRequest(c.Server, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -1518,522 +2861,6 @@ func (c *Client) PreviewRepos(ctx context.Context, body PreviewReposJSONRequestB
 
 func (c *Client) ListRepoSummaries(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListRepoSummariesRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) DeleteRepo(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDeleteRepoRequest(c.Server, owner, name)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetReposByOwnerByName(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetReposByOwnerByNameRequest(c.Server, owner, name)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetReposByOwnerByNameCommentAutocomplete(ctx context.Context, owner string, name string, params *GetReposByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetReposByOwnerByNameCommentAutocompleteRequest(c.Server, owner, name, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) CreateIssueWithBody(ctx context.Context, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateIssueRequestWithBody(c.Server, owner, name, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) CreateIssue(ctx context.Context, owner string, name string, body CreateIssueJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateIssueRequest(c.Server, owner, name, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetReposByOwnerByNameIssuesByNumber(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNameIssuesByNumberParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetReposByOwnerByNameIssuesByNumberRequest(c.Server, owner, name, number, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PostIssueCommentWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostIssueCommentRequestWithBody(c.Server, owner, name, number, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PostIssueComment(ctx context.Context, owner string, name string, number int64, body PostIssueCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostIssueCommentRequest(c.Server, owner, name, number, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) EditIssueCommentWithBody(ctx context.Context, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewEditIssueCommentRequestWithBody(c.Server, owner, name, number, commentId, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) EditIssueComment(ctx context.Context, owner string, name string, number int64, commentId int64, body EditIssueCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewEditIssueCommentRequest(c.Server, owner, name, number, commentId, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) SetIssueGithubStateWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSetIssueGithubStateRequestWithBody(c.Server, owner, name, number, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) SetIssueGithubState(ctx context.Context, owner string, name string, number int64, body SetIssueGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSetIssueGithubStateRequest(c.Server, owner, name, number, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PostReposByOwnerByNameIssuesByNumberSync(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNameIssuesByNumberSyncParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostReposByOwnerByNameIssuesByNumberSyncRequest(c.Server, owner, name, number, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) EnqueueIssueSync(ctx context.Context, owner string, name string, number int64, params *EnqueueIssueSyncParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewEnqueueIssueSyncRequest(c.Server, owner, name, number, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) CreateIssueWorkspaceWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateIssueWorkspaceRequestWithBody(c.Server, owner, name, number, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) CreateIssueWorkspace(ctx context.Context, owner string, name string, number int64, body CreateIssueWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateIssueWorkspaceRequest(c.Server, owner, name, number, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PostReposByOwnerByNameItemsByNumberResolve(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostReposByOwnerByNameItemsByNumberResolveRequest(c.Server, owner, name, number)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetReposByOwnerByNamePullsByNumber(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetReposByOwnerByNamePullsByNumberRequest(c.Server, owner, name, number)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) EditPrContentWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewEditPrContentRequestWithBody(c.Server, owner, name, number, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) EditPrContent(ctx context.Context, owner string, name string, number int64, body EditPrContentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewEditPrContentRequest(c.Server, owner, name, number, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PostReposByOwnerByNamePullsByNumberApproveWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostReposByOwnerByNamePullsByNumberApproveRequestWithBody(c.Server, owner, name, number, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PostReposByOwnerByNamePullsByNumberApprove(ctx context.Context, owner string, name string, number int64, body PostReposByOwnerByNamePullsByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostReposByOwnerByNamePullsByNumberApproveRequest(c.Server, owner, name, number, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PostReposByOwnerByNamePullsByNumberApproveWorkflows(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostReposByOwnerByNamePullsByNumberApproveWorkflowsRequest(c.Server, owner, name, number)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PostPrCommentWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostPrCommentRequestWithBody(c.Server, owner, name, number, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PostPrComment(ctx context.Context, owner string, name string, number int64, body PostPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostPrCommentRequest(c.Server, owner, name, number, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) EditPrCommentWithBody(ctx context.Context, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewEditPrCommentRequestWithBody(c.Server, owner, name, number, commentId, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) EditPrComment(ctx context.Context, owner string, name string, number int64, commentId int64, body EditPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewEditPrCommentRequest(c.Server, owner, name, number, commentId, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetReposByOwnerByNamePullsByNumberCommits(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetReposByOwnerByNamePullsByNumberCommitsRequest(c.Server, owner, name, number)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetReposByOwnerByNamePullsByNumberDiff(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetReposByOwnerByNamePullsByNumberDiffRequest(c.Server, owner, name, number, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetReposByOwnerByNamePullsByNumberFilePreview(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberFilePreviewParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetReposByOwnerByNamePullsByNumberFilePreviewRequest(c.Server, owner, name, number, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetReposByOwnerByNamePullsByNumberFiles(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetReposByOwnerByNamePullsByNumberFilesRequest(c.Server, owner, name, number)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) SetPrGithubStateWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSetPrGithubStateRequestWithBody(c.Server, owner, name, number, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) SetPrGithubState(ctx context.Context, owner string, name string, number int64, body SetPrGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSetPrGithubStateRequest(c.Server, owner, name, number, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetReposByOwnerByNamePullsByNumberImportMetadata(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetReposByOwnerByNamePullsByNumberImportMetadataRequest(c.Server, owner, name, number)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PostReposByOwnerByNamePullsByNumberMergeWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostReposByOwnerByNamePullsByNumberMergeRequestWithBody(c.Server, owner, name, number, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PostReposByOwnerByNamePullsByNumberMerge(ctx context.Context, owner string, name string, number int64, body PostReposByOwnerByNamePullsByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostReposByOwnerByNamePullsByNumberMergeRequest(c.Server, owner, name, number, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PostReposByOwnerByNamePullsByNumberReadyForReview(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostReposByOwnerByNamePullsByNumberReadyForReviewRequest(c.Server, owner, name, number)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetReposByOwnerByNamePullsByNumberStack(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetReposByOwnerByNamePullsByNumberStackRequest(c.Server, owner, name, number)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) SetKanbanStateWithBody(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSetKanbanStateRequestWithBody(c.Server, owner, name, number, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) SetKanbanState(ctx context.Context, owner string, name string, number int64, body SetKanbanStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSetKanbanStateRequest(c.Server, owner, name, number, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PostReposByOwnerByNamePullsByNumberSync(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostReposByOwnerByNamePullsByNumberSyncRequest(c.Server, owner, name, number)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) EnqueuePrSync(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewEnqueuePrSyncRequest(c.Server, owner, name, number)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) RefreshRepo(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewRefreshRepoRequest(c.Server, owner, name)
 	if err != nil {
 		return nil, err
 	}
@@ -2484,6 +3311,2257 @@ func NewStreamEventsRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewCreateIssueOnHostRequest calls the generic CreateIssueOnHost builder with application/json body
+func NewCreateIssueOnHostRequest(server string, platformHost string, provider string, owner string, name string, body CreateIssueOnHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateIssueOnHostRequestWithBody(server, platformHost, provider, owner, name, "application/json", bodyReader)
+}
+
+// NewCreateIssueOnHostRequestWithBody generates requests for CreateIssueOnHost with any type of body
+func NewCreateIssueOnHostRequestWithBody(server string, platformHost string, provider string, owner string, name string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/issues/%s/%s/%s", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberRequest generates requests for GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumber
+func NewGetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/issues/%s/%s/%s/%s", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostIssueCommentOnHostRequest calls the generic PostIssueCommentOnHost builder with application/json body
+func NewPostIssueCommentOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, body PostIssueCommentOnHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostIssueCommentOnHostRequestWithBody(server, platformHost, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewPostIssueCommentOnHostRequestWithBody generates requests for PostIssueCommentOnHost with any type of body
+func NewPostIssueCommentOnHostRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/issues/%s/%s/%s/%s/comments", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewEditIssueCommentOnHostRequest calls the generic EditIssueCommentOnHost builder with application/json body
+func NewEditIssueCommentOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, commentId int64, body EditIssueCommentOnHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewEditIssueCommentOnHostRequestWithBody(server, platformHost, provider, owner, name, number, commentId, "application/json", bodyReader)
+}
+
+// NewEditIssueCommentOnHostRequestWithBody generates requests for EditIssueCommentOnHost with any type of body
+func NewEditIssueCommentOnHostRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, commentId int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam5 string
+
+	pathParam5, err = runtime.StyleParamWithOptions("simple", false, "comment_id", commentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/issues/%s/%s/%s/%s/comments/%s", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4, pathParam5)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewSetIssueGithubStateOnHostRequest calls the generic SetIssueGithubStateOnHost builder with application/json body
+func NewSetIssueGithubStateOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, body SetIssueGithubStateOnHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetIssueGithubStateOnHostRequestWithBody(server, platformHost, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewSetIssueGithubStateOnHostRequestWithBody generates requests for SetIssueGithubStateOnHost with any type of body
+func NewSetIssueGithubStateOnHostRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/issues/%s/%s/%s/%s/github-state", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncRequest generates requests for PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSync
+func NewPostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/issues/%s/%s/%s/%s/sync", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewEnqueueIssueSyncOnHostRequest generates requests for EnqueueIssueSyncOnHost
+func NewEnqueueIssueSyncOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/issues/%s/%s/%s/%s/sync/async", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateIssueWorkspaceOnHostRequest calls the generic CreateIssueWorkspaceOnHost builder with application/json body
+func NewCreateIssueWorkspaceOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, body CreateIssueWorkspaceOnHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateIssueWorkspaceOnHostRequestWithBody(server, platformHost, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewCreateIssueWorkspaceOnHostRequestWithBody generates requests for CreateIssueWorkspaceOnHost with any type of body
+func NewCreateIssueWorkspaceOnHostRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/issues/%s/%s/%s/%s/workspace", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberRequest generates requests for GetHostByPlatformHostPullsByProviderByOwnerByNameByNumber
+func NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewEditPrContentOnHostRequest calls the generic EditPrContentOnHost builder with application/json body
+func NewEditPrContentOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, body EditPrContentOnHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewEditPrContentOnHostRequestWithBody(server, platformHost, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewEditPrContentOnHostRequestWithBody generates requests for EditPrContentOnHost with any type of body
+func NewEditPrContentOnHostRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveRequest calls the generic PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApprove builder with application/json body
+func NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveRequest(server string, platformHost string, provider string, owner string, name string, number int64, body PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveRequestWithBody(server, platformHost, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveRequestWithBody generates requests for PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApprove with any type of body
+func NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/approve", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsRequest generates requests for PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflows
+func NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/approve-workflows", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostPrCommentOnHostRequest calls the generic PostPrCommentOnHost builder with application/json body
+func NewPostPrCommentOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, body PostPrCommentOnHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostPrCommentOnHostRequestWithBody(server, platformHost, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewPostPrCommentOnHostRequestWithBody generates requests for PostPrCommentOnHost with any type of body
+func NewPostPrCommentOnHostRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/comments", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewEditPrCommentOnHostRequest calls the generic EditPrCommentOnHost builder with application/json body
+func NewEditPrCommentOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, commentId int64, body EditPrCommentOnHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewEditPrCommentOnHostRequestWithBody(server, platformHost, provider, owner, name, number, commentId, "application/json", bodyReader)
+}
+
+// NewEditPrCommentOnHostRequestWithBody generates requests for EditPrCommentOnHost with any type of body
+func NewEditPrCommentOnHostRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, commentId int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam5 string
+
+	pathParam5, err = runtime.StyleParamWithOptions("simple", false, "comment_id", commentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/comments/%s", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4, pathParam5)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsRequest generates requests for GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommits
+func NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/commits", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffRequest generates requests for GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiff
+func NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffRequest(server string, platformHost string, provider string, owner string, name string, number int64, params *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/diff", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Whitespace != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "whitespace", *params.Whitespace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Commit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "commit", *params.Commit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.From != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "from", *params.From, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.To != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "to", *params.To, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewRequest generates requests for GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreview
+func NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewRequest(server string, platformHost string, provider string, owner string, name string, number int64, params *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/file-preview", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Path != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "path", *params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Commit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "commit", *params.Commit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.From != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "from", *params.From, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.To != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "to", *params.To, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesRequest generates requests for GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFiles
+func NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/files", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSetPrGithubStateOnHostRequest calls the generic SetPrGithubStateOnHost builder with application/json body
+func NewSetPrGithubStateOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, body SetPrGithubStateOnHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetPrGithubStateOnHostRequestWithBody(server, platformHost, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewSetPrGithubStateOnHostRequestWithBody generates requests for SetPrGithubStateOnHost with any type of body
+func NewSetPrGithubStateOnHostRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/github-state", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataRequest generates requests for GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadata
+func NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/import-metadata", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeRequest calls the generic PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMerge builder with application/json body
+func NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeRequest(server string, platformHost string, provider string, owner string, name string, number int64, body PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeRequestWithBody(server, platformHost, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeRequestWithBody generates requests for PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMerge with any type of body
+func NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/merge", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewRequest generates requests for PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReview
+func NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/ready-for-review", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackRequest generates requests for GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStack
+func NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/stack", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSetKanbanStateOnHostRequest calls the generic SetKanbanStateOnHost builder with application/json body
+func NewSetKanbanStateOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, body SetKanbanStateOnHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetKanbanStateOnHostRequestWithBody(server, platformHost, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewSetKanbanStateOnHostRequestWithBody generates requests for SetKanbanStateOnHost with any type of body
+func NewSetKanbanStateOnHostRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/state", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncRequest generates requests for PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSync
+func NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/sync", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewEnqueuePrSyncOnHostRequest generates requests for EnqueuePrSyncOnHost
+func NewEnqueuePrSyncOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/sync/async", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewDeleteRepoOnHostRequest generates requests for DeleteRepoOnHost
+func NewDeleteRepoOnHostRequest(server string, platformHost string, provider string, owner string, name string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/repo/%s/%s/%s", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetHostByPlatformHostRepoByProviderByOwnerByNameRequest generates requests for GetHostByPlatformHostRepoByProviderByOwnerByName
+func NewGetHostByPlatformHostRepoByProviderByOwnerByNameRequest(server string, platformHost string, provider string, owner string, name string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/repo/%s/%s/%s", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteRequest generates requests for GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocomplete
+func NewGetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteRequest(server string, platformHost string, provider string, owner string, name string, params *GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/repo/%s/%s/%s/comment-autocomplete", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Trigger != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "trigger", *params.Trigger, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Q != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "q", *params.Q, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRefreshRepoOnHostRequest generates requests for RefreshRepoOnHost
+func NewRefreshRepoOnHostRequest(server string, platformHost string, provider string, owner string, name string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/repo/%s/%s/%s/refresh", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberRequest generates requests for PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumber
+func NewPostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/repo/%s/%s/%s/resolve/%s", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListIssuesRequest generates requests for ListIssues
 func NewListIssuesRequest(server string, params *ListIssuesParams) (*http.Request, error) {
 	var err error
@@ -2609,6 +5687,511 @@ func NewListIssuesRequest(server string, params *ListIssuesParams) (*http.Reques
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewCreateIssueRequest calls the generic CreateIssue builder with application/json body
+func NewCreateIssueRequest(server string, provider string, owner string, name string, body CreateIssueJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateIssueRequestWithBody(server, provider, owner, name, "application/json", bodyReader)
+}
+
+// NewCreateIssueRequestWithBody generates requests for CreateIssue with any type of body
+func NewCreateIssueRequestWithBody(server string, provider string, owner string, name string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/issues/%s/%s/%s", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetIssuesByProviderByOwnerByNameByNumberRequest generates requests for GetIssuesByProviderByOwnerByNameByNumber
+func NewGetIssuesByProviderByOwnerByNameByNumberRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/issues/%s/%s/%s/%s", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostIssueCommentRequest calls the generic PostIssueComment builder with application/json body
+func NewPostIssueCommentRequest(server string, provider string, owner string, name string, number int64, body PostIssueCommentJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostIssueCommentRequestWithBody(server, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewPostIssueCommentRequestWithBody generates requests for PostIssueComment with any type of body
+func NewPostIssueCommentRequestWithBody(server string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/issues/%s/%s/%s/%s/comments", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewEditIssueCommentRequest calls the generic EditIssueComment builder with application/json body
+func NewEditIssueCommentRequest(server string, provider string, owner string, name string, number int64, commentId int64, body EditIssueCommentJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewEditIssueCommentRequestWithBody(server, provider, owner, name, number, commentId, "application/json", bodyReader)
+}
+
+// NewEditIssueCommentRequestWithBody generates requests for EditIssueComment with any type of body
+func NewEditIssueCommentRequestWithBody(server string, provider string, owner string, name string, number int64, commentId int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "comment_id", commentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/issues/%s/%s/%s/%s/comments/%s", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewSetIssueGithubStateRequest calls the generic SetIssueGithubState builder with application/json body
+func NewSetIssueGithubStateRequest(server string, provider string, owner string, name string, number int64, body SetIssueGithubStateJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetIssueGithubStateRequestWithBody(server, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewSetIssueGithubStateRequestWithBody generates requests for SetIssueGithubState with any type of body
+func NewSetIssueGithubStateRequestWithBody(server string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/issues/%s/%s/%s/%s/github-state", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPostIssuesByProviderByOwnerByNameByNumberSyncRequest generates requests for PostIssuesByProviderByOwnerByNameByNumberSync
+func NewPostIssuesByProviderByOwnerByNameByNumberSyncRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/issues/%s/%s/%s/%s/sync", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewEnqueueIssueSyncRequest generates requests for EnqueueIssueSync
+func NewEnqueueIssueSyncRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/issues/%s/%s/%s/%s/sync/async", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateIssueWorkspaceRequest calls the generic CreateIssueWorkspace builder with application/json body
+func NewCreateIssueWorkspaceRequest(server string, provider string, owner string, name string, number int64, body CreateIssueWorkspaceJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateIssueWorkspaceRequestWithBody(server, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewCreateIssueWorkspaceRequestWithBody generates requests for CreateIssueWorkspace with any type of body
+func NewCreateIssueWorkspaceRequestWithBody(server string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/issues/%s/%s/%s/%s/workspace", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -2758,6 +6341,1234 @@ func NewListPullsRequest(server string, params *ListPullsParams) (*http.Request,
 	return req, nil
 }
 
+// NewGetPullsByProviderByOwnerByNameByNumberRequest generates requests for GetPullsByProviderByOwnerByNameByNumber
+func NewGetPullsByProviderByOwnerByNameByNumberRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewEditPrContentRequest calls the generic EditPrContent builder with application/json body
+func NewEditPrContentRequest(server string, provider string, owner string, name string, number int64, body EditPrContentJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewEditPrContentRequestWithBody(server, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewEditPrContentRequestWithBody generates requests for EditPrContent with any type of body
+func NewEditPrContentRequestWithBody(server string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPostPullsByProviderByOwnerByNameByNumberApproveRequest calls the generic PostPullsByProviderByOwnerByNameByNumberApprove builder with application/json body
+func NewPostPullsByProviderByOwnerByNameByNumberApproveRequest(server string, provider string, owner string, name string, number int64, body PostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostPullsByProviderByOwnerByNameByNumberApproveRequestWithBody(server, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewPostPullsByProviderByOwnerByNameByNumberApproveRequestWithBody generates requests for PostPullsByProviderByOwnerByNameByNumberApprove with any type of body
+func NewPostPullsByProviderByOwnerByNameByNumberApproveRequestWithBody(server string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/approve", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPostPullsByProviderByOwnerByNameByNumberApproveWorkflowsRequest generates requests for PostPullsByProviderByOwnerByNameByNumberApproveWorkflows
+func NewPostPullsByProviderByOwnerByNameByNumberApproveWorkflowsRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/approve-workflows", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostPrCommentRequest calls the generic PostPrComment builder with application/json body
+func NewPostPrCommentRequest(server string, provider string, owner string, name string, number int64, body PostPrCommentJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostPrCommentRequestWithBody(server, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewPostPrCommentRequestWithBody generates requests for PostPrComment with any type of body
+func NewPostPrCommentRequestWithBody(server string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/comments", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewEditPrCommentRequest calls the generic EditPrComment builder with application/json body
+func NewEditPrCommentRequest(server string, provider string, owner string, name string, number int64, commentId int64, body EditPrCommentJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewEditPrCommentRequestWithBody(server, provider, owner, name, number, commentId, "application/json", bodyReader)
+}
+
+// NewEditPrCommentRequestWithBody generates requests for EditPrComment with any type of body
+func NewEditPrCommentRequestWithBody(server string, provider string, owner string, name string, number int64, commentId int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "comment_id", commentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/comments/%s", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetPullsByProviderByOwnerByNameByNumberCommitsRequest generates requests for GetPullsByProviderByOwnerByNameByNumberCommits
+func NewGetPullsByProviderByOwnerByNameByNumberCommitsRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/commits", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetPullsByProviderByOwnerByNameByNumberDiffRequest generates requests for GetPullsByProviderByOwnerByNameByNumberDiff
+func NewGetPullsByProviderByOwnerByNameByNumberDiffRequest(server string, provider string, owner string, name string, number int64, params *GetPullsByProviderByOwnerByNameByNumberDiffParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/diff", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Whitespace != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "whitespace", *params.Whitespace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Commit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "commit", *params.Commit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.From != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "from", *params.From, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.To != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "to", *params.To, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetPullsByProviderByOwnerByNameByNumberFilePreviewRequest generates requests for GetPullsByProviderByOwnerByNameByNumberFilePreview
+func NewGetPullsByProviderByOwnerByNameByNumberFilePreviewRequest(server string, provider string, owner string, name string, number int64, params *GetPullsByProviderByOwnerByNameByNumberFilePreviewParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/file-preview", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Path != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "path", *params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Commit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "commit", *params.Commit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.From != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "from", *params.From, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.To != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "to", *params.To, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetPullsByProviderByOwnerByNameByNumberFilesRequest generates requests for GetPullsByProviderByOwnerByNameByNumberFiles
+func NewGetPullsByProviderByOwnerByNameByNumberFilesRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/files", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSetPrGithubStateRequest calls the generic SetPrGithubState builder with application/json body
+func NewSetPrGithubStateRequest(server string, provider string, owner string, name string, number int64, body SetPrGithubStateJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetPrGithubStateRequestWithBody(server, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewSetPrGithubStateRequestWithBody generates requests for SetPrGithubState with any type of body
+func NewSetPrGithubStateRequestWithBody(server string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/github-state", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetPullsByProviderByOwnerByNameByNumberImportMetadataRequest generates requests for GetPullsByProviderByOwnerByNameByNumberImportMetadata
+func NewGetPullsByProviderByOwnerByNameByNumberImportMetadataRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/import-metadata", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostPullsByProviderByOwnerByNameByNumberMergeRequest calls the generic PostPullsByProviderByOwnerByNameByNumberMerge builder with application/json body
+func NewPostPullsByProviderByOwnerByNameByNumberMergeRequest(server string, provider string, owner string, name string, number int64, body PostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostPullsByProviderByOwnerByNameByNumberMergeRequestWithBody(server, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewPostPullsByProviderByOwnerByNameByNumberMergeRequestWithBody generates requests for PostPullsByProviderByOwnerByNameByNumberMerge with any type of body
+func NewPostPullsByProviderByOwnerByNameByNumberMergeRequestWithBody(server string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/merge", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPostPullsByProviderByOwnerByNameByNumberReadyForReviewRequest generates requests for PostPullsByProviderByOwnerByNameByNumberReadyForReview
+func NewPostPullsByProviderByOwnerByNameByNumberReadyForReviewRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/ready-for-review", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetPullsByProviderByOwnerByNameByNumberStackRequest generates requests for GetPullsByProviderByOwnerByNameByNumberStack
+func NewGetPullsByProviderByOwnerByNameByNumberStackRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/stack", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSetKanbanStateRequest calls the generic SetKanbanState builder with application/json body
+func NewSetKanbanStateRequest(server string, provider string, owner string, name string, number int64, body SetKanbanStateJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetKanbanStateRequestWithBody(server, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewSetKanbanStateRequestWithBody generates requests for SetKanbanState with any type of body
+func NewSetKanbanStateRequestWithBody(server string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/state", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPostPullsByProviderByOwnerByNameByNumberSyncRequest generates requests for PostPullsByProviderByOwnerByNameByNumberSync
+func NewPostPullsByProviderByOwnerByNameByNumberSyncRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/sync", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewEnqueuePrSyncRequest generates requests for EnqueuePrSync
+func NewEnqueuePrSyncRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/sync/async", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetRateLimitsRequest generates requests for GetRateLimits
 func NewGetRateLimitsRequest(server string) (*http.Request, error) {
 	var err error
@@ -2778,6 +7589,307 @@ func NewGetRateLimitsRequest(server string) (*http.Request, error) {
 	}
 
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewDeleteRepoRequest generates requests for DeleteRepo
+func NewDeleteRepoRequest(server string, provider string, owner string, name string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repo/%s/%s/%s", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetRepoByProviderByOwnerByNameRequest generates requests for GetRepoByProviderByOwnerByName
+func NewGetRepoByProviderByOwnerByNameRequest(server string, provider string, owner string, name string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repo/%s/%s/%s", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetRepoByProviderByOwnerByNameCommentAutocompleteRequest generates requests for GetRepoByProviderByOwnerByNameCommentAutocomplete
+func NewGetRepoByProviderByOwnerByNameCommentAutocompleteRequest(server string, provider string, owner string, name string, params *GetRepoByProviderByOwnerByNameCommentAutocompleteParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repo/%s/%s/%s/comment-autocomplete", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Trigger != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "trigger", *params.Trigger, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Q != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "q", *params.Q, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRefreshRepoRequest generates requests for RefreshRepo
+func NewRefreshRepoRequest(server string, provider string, owner string, name string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repo/%s/%s/%s/refresh", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostRepoByProviderByOwnerByNameResolveByNumberRequest generates requests for PostRepoByProviderByOwnerByNameResolveByNumber
+func NewPostRepoByProviderByOwnerByNameResolveByNumberRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repo/%s/%s/%s/resolve/%s", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -2952,1905 +8064,6 @@ func NewListRepoSummariesRequest(server string) (*http.Request, error) {
 	}
 
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewDeleteRepoRequest generates requests for DeleteRepo
-func NewDeleteRepoRequest(server string, owner string, name string) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s", pathParam0, pathParam1)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewGetReposByOwnerByNameRequest generates requests for GetReposByOwnerByName
-func NewGetReposByOwnerByNameRequest(server string, owner string, name string) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s", pathParam0, pathParam1)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewGetReposByOwnerByNameCommentAutocompleteRequest generates requests for GetReposByOwnerByNameCommentAutocomplete
-func NewGetReposByOwnerByNameCommentAutocompleteRequest(server string, owner string, name string, params *GetReposByOwnerByNameCommentAutocompleteParams) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/comment-autocomplete", pathParam0, pathParam1)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		queryValues := queryURL.Query()
-
-		if params.PlatformHost != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.Trigger != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "trigger", *params.Trigger, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.Q != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "q", *params.Q, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.Limit != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		queryURL.RawQuery = queryValues.Encode()
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewCreateIssueRequest calls the generic CreateIssue builder with application/json body
-func NewCreateIssueRequest(server string, owner string, name string, body CreateIssueJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewCreateIssueRequestWithBody(server, owner, name, "application/json", bodyReader)
-}
-
-// NewCreateIssueRequestWithBody generates requests for CreateIssue with any type of body
-func NewCreateIssueRequestWithBody(server string, owner string, name string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/issues", pathParam0, pathParam1)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewGetReposByOwnerByNameIssuesByNumberRequest generates requests for GetReposByOwnerByNameIssuesByNumber
-func NewGetReposByOwnerByNameIssuesByNumberRequest(server string, owner string, name string, number int64, params *GetReposByOwnerByNameIssuesByNumberParams) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam2 string
-
-	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/issues/%s", pathParam0, pathParam1, pathParam2)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		queryValues := queryURL.Query()
-
-		if params.PlatformHost != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		queryURL.RawQuery = queryValues.Encode()
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewPostIssueCommentRequest calls the generic PostIssueComment builder with application/json body
-func NewPostIssueCommentRequest(server string, owner string, name string, number int64, body PostIssueCommentJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewPostIssueCommentRequestWithBody(server, owner, name, number, "application/json", bodyReader)
-}
-
-// NewPostIssueCommentRequestWithBody generates requests for PostIssueComment with any type of body
-func NewPostIssueCommentRequestWithBody(server string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam2 string
-
-	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/issues/%s/comments", pathParam0, pathParam1, pathParam2)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewEditIssueCommentRequest calls the generic EditIssueComment builder with application/json body
-func NewEditIssueCommentRequest(server string, owner string, name string, number int64, commentId int64, body EditIssueCommentJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewEditIssueCommentRequestWithBody(server, owner, name, number, commentId, "application/json", bodyReader)
-}
-
-// NewEditIssueCommentRequestWithBody generates requests for EditIssueComment with any type of body
-func NewEditIssueCommentRequestWithBody(server string, owner string, name string, number int64, commentId int64, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam2 string
-
-	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam3 string
-
-	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "comment_id", commentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/issues/%s/comments/%s", pathParam0, pathParam1, pathParam2, pathParam3)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("PATCH", queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewSetIssueGithubStateRequest calls the generic SetIssueGithubState builder with application/json body
-func NewSetIssueGithubStateRequest(server string, owner string, name string, number int64, body SetIssueGithubStateJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewSetIssueGithubStateRequestWithBody(server, owner, name, number, "application/json", bodyReader)
-}
-
-// NewSetIssueGithubStateRequestWithBody generates requests for SetIssueGithubState with any type of body
-func NewSetIssueGithubStateRequestWithBody(server string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam2 string
-
-	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/issues/%s/github-state", pathParam0, pathParam1, pathParam2)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewPostReposByOwnerByNameIssuesByNumberSyncRequest generates requests for PostReposByOwnerByNameIssuesByNumberSync
-func NewPostReposByOwnerByNameIssuesByNumberSyncRequest(server string, owner string, name string, number int64, params *PostReposByOwnerByNameIssuesByNumberSyncParams) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam2 string
-
-	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/issues/%s/sync", pathParam0, pathParam1, pathParam2)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		queryValues := queryURL.Query()
-
-		if params.PlatformHost != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		queryURL.RawQuery = queryValues.Encode()
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewEnqueueIssueSyncRequest generates requests for EnqueueIssueSync
-func NewEnqueueIssueSyncRequest(server string, owner string, name string, number int64, params *EnqueueIssueSyncParams) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam2 string
-
-	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/issues/%s/sync/async", pathParam0, pathParam1, pathParam2)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		queryValues := queryURL.Query()
-
-		if params.PlatformHost != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "platform_host", *params.PlatformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		queryURL.RawQuery = queryValues.Encode()
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewCreateIssueWorkspaceRequest calls the generic CreateIssueWorkspace builder with application/json body
-func NewCreateIssueWorkspaceRequest(server string, owner string, name string, number int64, body CreateIssueWorkspaceJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewCreateIssueWorkspaceRequestWithBody(server, owner, name, number, "application/json", bodyReader)
-}
-
-// NewCreateIssueWorkspaceRequestWithBody generates requests for CreateIssueWorkspace with any type of body
-func NewCreateIssueWorkspaceRequestWithBody(server string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam2 string
-
-	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/issues/%s/workspace", pathParam0, pathParam1, pathParam2)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewPostReposByOwnerByNameItemsByNumberResolveRequest generates requests for PostReposByOwnerByNameItemsByNumberResolve
-func NewPostReposByOwnerByNameItemsByNumberResolveRequest(server string, owner string, name string, number int64) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam2 string
-
-	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/items/%s/resolve", pathParam0, pathParam1, pathParam2)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewGetReposByOwnerByNamePullsByNumberRequest generates requests for GetReposByOwnerByNamePullsByNumber
-func NewGetReposByOwnerByNamePullsByNumberRequest(server string, owner string, name string, number int64) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam2 string
-
-	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/pulls/%s", pathParam0, pathParam1, pathParam2)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewEditPrContentRequest calls the generic EditPrContent builder with application/json body
-func NewEditPrContentRequest(server string, owner string, name string, number int64, body EditPrContentJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewEditPrContentRequestWithBody(server, owner, name, number, "application/json", bodyReader)
-}
-
-// NewEditPrContentRequestWithBody generates requests for EditPrContent with any type of body
-func NewEditPrContentRequestWithBody(server string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam2 string
-
-	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/pulls/%s", pathParam0, pathParam1, pathParam2)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("PATCH", queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewPostReposByOwnerByNamePullsByNumberApproveRequest calls the generic PostReposByOwnerByNamePullsByNumberApprove builder with application/json body
-func NewPostReposByOwnerByNamePullsByNumberApproveRequest(server string, owner string, name string, number int64, body PostReposByOwnerByNamePullsByNumberApproveJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewPostReposByOwnerByNamePullsByNumberApproveRequestWithBody(server, owner, name, number, "application/json", bodyReader)
-}
-
-// NewPostReposByOwnerByNamePullsByNumberApproveRequestWithBody generates requests for PostReposByOwnerByNamePullsByNumberApprove with any type of body
-func NewPostReposByOwnerByNamePullsByNumberApproveRequestWithBody(server string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam2 string
-
-	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/pulls/%s/approve", pathParam0, pathParam1, pathParam2)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewPostReposByOwnerByNamePullsByNumberApproveWorkflowsRequest generates requests for PostReposByOwnerByNamePullsByNumberApproveWorkflows
-func NewPostReposByOwnerByNamePullsByNumberApproveWorkflowsRequest(server string, owner string, name string, number int64) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam2 string
-
-	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/pulls/%s/approve-workflows", pathParam0, pathParam1, pathParam2)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewPostPrCommentRequest calls the generic PostPrComment builder with application/json body
-func NewPostPrCommentRequest(server string, owner string, name string, number int64, body PostPrCommentJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewPostPrCommentRequestWithBody(server, owner, name, number, "application/json", bodyReader)
-}
-
-// NewPostPrCommentRequestWithBody generates requests for PostPrComment with any type of body
-func NewPostPrCommentRequestWithBody(server string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam2 string
-
-	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/pulls/%s/comments", pathParam0, pathParam1, pathParam2)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewEditPrCommentRequest calls the generic EditPrComment builder with application/json body
-func NewEditPrCommentRequest(server string, owner string, name string, number int64, commentId int64, body EditPrCommentJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewEditPrCommentRequestWithBody(server, owner, name, number, commentId, "application/json", bodyReader)
-}
-
-// NewEditPrCommentRequestWithBody generates requests for EditPrComment with any type of body
-func NewEditPrCommentRequestWithBody(server string, owner string, name string, number int64, commentId int64, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam2 string
-
-	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam3 string
-
-	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "comment_id", commentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/pulls/%s/comments/%s", pathParam0, pathParam1, pathParam2, pathParam3)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("PATCH", queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewGetReposByOwnerByNamePullsByNumberCommitsRequest generates requests for GetReposByOwnerByNamePullsByNumberCommits
-func NewGetReposByOwnerByNamePullsByNumberCommitsRequest(server string, owner string, name string, number int64) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam2 string
-
-	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/pulls/%s/commits", pathParam0, pathParam1, pathParam2)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewGetReposByOwnerByNamePullsByNumberDiffRequest generates requests for GetReposByOwnerByNamePullsByNumberDiff
-func NewGetReposByOwnerByNamePullsByNumberDiffRequest(server string, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberDiffParams) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam2 string
-
-	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/pulls/%s/diff", pathParam0, pathParam1, pathParam2)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		queryValues := queryURL.Query()
-
-		if params.Whitespace != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "whitespace", *params.Whitespace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.Commit != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "commit", *params.Commit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.From != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "from", *params.From, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.To != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "to", *params.To, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		queryURL.RawQuery = queryValues.Encode()
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewGetReposByOwnerByNamePullsByNumberFilePreviewRequest generates requests for GetReposByOwnerByNamePullsByNumberFilePreview
-func NewGetReposByOwnerByNamePullsByNumberFilePreviewRequest(server string, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberFilePreviewParams) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam2 string
-
-	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/pulls/%s/file-preview", pathParam0, pathParam1, pathParam2)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		queryValues := queryURL.Query()
-
-		if params.Path != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "path", *params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.Commit != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "commit", *params.Commit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.From != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "from", *params.From, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.To != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "to", *params.To, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		queryURL.RawQuery = queryValues.Encode()
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewGetReposByOwnerByNamePullsByNumberFilesRequest generates requests for GetReposByOwnerByNamePullsByNumberFiles
-func NewGetReposByOwnerByNamePullsByNumberFilesRequest(server string, owner string, name string, number int64) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam2 string
-
-	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/pulls/%s/files", pathParam0, pathParam1, pathParam2)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewSetPrGithubStateRequest calls the generic SetPrGithubState builder with application/json body
-func NewSetPrGithubStateRequest(server string, owner string, name string, number int64, body SetPrGithubStateJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewSetPrGithubStateRequestWithBody(server, owner, name, number, "application/json", bodyReader)
-}
-
-// NewSetPrGithubStateRequestWithBody generates requests for SetPrGithubState with any type of body
-func NewSetPrGithubStateRequestWithBody(server string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam2 string
-
-	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/pulls/%s/github-state", pathParam0, pathParam1, pathParam2)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewGetReposByOwnerByNamePullsByNumberImportMetadataRequest generates requests for GetReposByOwnerByNamePullsByNumberImportMetadata
-func NewGetReposByOwnerByNamePullsByNumberImportMetadataRequest(server string, owner string, name string, number int64) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam2 string
-
-	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/pulls/%s/import-metadata", pathParam0, pathParam1, pathParam2)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewPostReposByOwnerByNamePullsByNumberMergeRequest calls the generic PostReposByOwnerByNamePullsByNumberMerge builder with application/json body
-func NewPostReposByOwnerByNamePullsByNumberMergeRequest(server string, owner string, name string, number int64, body PostReposByOwnerByNamePullsByNumberMergeJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewPostReposByOwnerByNamePullsByNumberMergeRequestWithBody(server, owner, name, number, "application/json", bodyReader)
-}
-
-// NewPostReposByOwnerByNamePullsByNumberMergeRequestWithBody generates requests for PostReposByOwnerByNamePullsByNumberMerge with any type of body
-func NewPostReposByOwnerByNamePullsByNumberMergeRequestWithBody(server string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam2 string
-
-	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/pulls/%s/merge", pathParam0, pathParam1, pathParam2)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewPostReposByOwnerByNamePullsByNumberReadyForReviewRequest generates requests for PostReposByOwnerByNamePullsByNumberReadyForReview
-func NewPostReposByOwnerByNamePullsByNumberReadyForReviewRequest(server string, owner string, name string, number int64) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam2 string
-
-	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/pulls/%s/ready-for-review", pathParam0, pathParam1, pathParam2)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewGetReposByOwnerByNamePullsByNumberStackRequest generates requests for GetReposByOwnerByNamePullsByNumberStack
-func NewGetReposByOwnerByNamePullsByNumberStackRequest(server string, owner string, name string, number int64) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam2 string
-
-	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/pulls/%s/stack", pathParam0, pathParam1, pathParam2)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewSetKanbanStateRequest calls the generic SetKanbanState builder with application/json body
-func NewSetKanbanStateRequest(server string, owner string, name string, number int64, body SetKanbanStateJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewSetKanbanStateRequestWithBody(server, owner, name, number, "application/json", bodyReader)
-}
-
-// NewSetKanbanStateRequestWithBody generates requests for SetKanbanState with any type of body
-func NewSetKanbanStateRequestWithBody(server string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam2 string
-
-	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/pulls/%s/state", pathParam0, pathParam1, pathParam2)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("PUT", queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewPostReposByOwnerByNamePullsByNumberSyncRequest generates requests for PostReposByOwnerByNamePullsByNumberSync
-func NewPostReposByOwnerByNamePullsByNumberSyncRequest(server string, owner string, name string, number int64) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam2 string
-
-	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/pulls/%s/sync", pathParam0, pathParam1, pathParam2)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewEnqueuePrSyncRequest generates requests for EnqueuePrSync
-func NewEnqueuePrSyncRequest(server string, owner string, name string, number int64) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam2 string
-
-	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/pulls/%s/sync/async", pathParam0, pathParam1, pathParam2)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewRefreshRepoRequest generates requests for RefreshRepo
-func NewRefreshRepoRequest(server string, owner string, name string) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/repos/%s/%s/refresh", pathParam0, pathParam1)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -5715,14 +8928,248 @@ type ClientWithResponsesInterface interface {
 	// GetActivityWithResponse request
 	GetActivityWithResponse(ctx context.Context, params *GetActivityParams, reqEditors ...RequestEditorFn) (*GetActivityResponse, error)
 
+	// CreateIssueOnHostWithBodyWithResponse request with any body
+	CreateIssueOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueOnHostResponse, error)
+
+	CreateIssueOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, body CreateIssueOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIssueOnHostResponse, error)
+
+	// GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberWithResponse request
+	GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse, error)
+
+	// PostIssueCommentOnHostWithBodyWithResponse request with any body
+	PostIssueCommentOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostIssueCommentOnHostResponse, error)
+
+	PostIssueCommentOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PostIssueCommentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*PostIssueCommentOnHostResponse, error)
+
+	// EditIssueCommentOnHostWithBodyWithResponse request with any body
+	EditIssueCommentOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditIssueCommentOnHostResponse, error)
+
+	EditIssueCommentOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, commentId int64, body EditIssueCommentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*EditIssueCommentOnHostResponse, error)
+
+	// SetIssueGithubStateOnHostWithBodyWithResponse request with any body
+	SetIssueGithubStateOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetIssueGithubStateOnHostResponse, error)
+
+	SetIssueGithubStateOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetIssueGithubStateOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*SetIssueGithubStateOnHostResponse, error)
+
+	// PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncWithResponse request
+	PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncResponse, error)
+
+	// EnqueueIssueSyncOnHostWithResponse request
+	EnqueueIssueSyncOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*EnqueueIssueSyncOnHostResponse, error)
+
+	// CreateIssueWorkspaceOnHostWithBodyWithResponse request with any body
+	CreateIssueWorkspaceOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueWorkspaceOnHostResponse, error)
+
+	CreateIssueWorkspaceOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body CreateIssueWorkspaceOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIssueWorkspaceOnHostResponse, error)
+
+	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberWithResponse request
+	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberResponse, error)
+
+	// EditPrContentOnHostWithBodyWithResponse request with any body
+	EditPrContentOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrContentOnHostResponse, error)
+
+	EditPrContentOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body EditPrContentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrContentOnHostResponse, error)
+
+	// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWithBodyWithResponse request with any body
+	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse, error)
+
+	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse, error)
+
+	// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse request
+	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse, error)
+
+	// PostPrCommentOnHostWithBodyWithResponse request with any body
+	PostPrCommentOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostPrCommentOnHostResponse, error)
+
+	PostPrCommentOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PostPrCommentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*PostPrCommentOnHostResponse, error)
+
+	// EditPrCommentOnHostWithBodyWithResponse request with any body
+	EditPrCommentOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrCommentOnHostResponse, error)
+
+	EditPrCommentOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, commentId int64, body EditPrCommentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrCommentOnHostResponse, error)
+
+	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsWithResponse request
+	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsResponse, error)
+
+	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffWithResponse request
+	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffParams, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffResponse, error)
+
+	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewWithResponse request
+	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewParams, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewResponse, error)
+
+	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesWithResponse request
+	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesResponse, error)
+
+	// SetPrGithubStateOnHostWithBodyWithResponse request with any body
+	SetPrGithubStateOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrGithubStateOnHostResponse, error)
+
+	SetPrGithubStateOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetPrGithubStateOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*SetPrGithubStateOnHostResponse, error)
+
+	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataWithResponse request
+	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataResponse, error)
+
+	// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithBodyWithResponse request with any body
+	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse, error)
+
+	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse, error)
+
+	// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse request
+	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse, error)
+
+	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackWithResponse request
+	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackResponse, error)
+
+	// SetKanbanStateOnHostWithBodyWithResponse request with any body
+	SetKanbanStateOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetKanbanStateOnHostResponse, error)
+
+	SetKanbanStateOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetKanbanStateOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*SetKanbanStateOnHostResponse, error)
+
+	// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncWithResponse request
+	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncResponse, error)
+
+	// EnqueuePrSyncOnHostWithResponse request
+	EnqueuePrSyncOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*EnqueuePrSyncOnHostResponse, error)
+
+	// DeleteRepoOnHostWithResponse request
+	DeleteRepoOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*DeleteRepoOnHostResponse, error)
+
+	// GetHostByPlatformHostRepoByProviderByOwnerByNameWithResponse request
+	GetHostByPlatformHostRepoByProviderByOwnerByNameWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostRepoByProviderByOwnerByNameResponse, error)
+
+	// GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteWithResponse request
+	GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteResponse, error)
+
+	// RefreshRepoOnHostWithResponse request
+	RefreshRepoOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*RefreshRepoOnHostResponse, error)
+
+	// PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberWithResponse request
+	PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberResponse, error)
+
 	// ListIssuesWithResponse request
 	ListIssuesWithResponse(ctx context.Context, params *ListIssuesParams, reqEditors ...RequestEditorFn) (*ListIssuesResponse, error)
+
+	// CreateIssueWithBodyWithResponse request with any body
+	CreateIssueWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueResponse, error)
+
+	CreateIssueWithResponse(ctx context.Context, provider string, owner string, name string, body CreateIssueJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIssueResponse, error)
+
+	// GetIssuesByProviderByOwnerByNameByNumberWithResponse request
+	GetIssuesByProviderByOwnerByNameByNumberWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetIssuesByProviderByOwnerByNameByNumberResponse, error)
+
+	// PostIssueCommentWithBodyWithResponse request with any body
+	PostIssueCommentWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostIssueCommentResponse, error)
+
+	PostIssueCommentWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body PostIssueCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*PostIssueCommentResponse, error)
+
+	// EditIssueCommentWithBodyWithResponse request with any body
+	EditIssueCommentWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditIssueCommentResponse, error)
+
+	EditIssueCommentWithResponse(ctx context.Context, provider string, owner string, name string, number int64, commentId int64, body EditIssueCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditIssueCommentResponse, error)
+
+	// SetIssueGithubStateWithBodyWithResponse request with any body
+	SetIssueGithubStateWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetIssueGithubStateResponse, error)
+
+	SetIssueGithubStateWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body SetIssueGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetIssueGithubStateResponse, error)
+
+	// PostIssuesByProviderByOwnerByNameByNumberSyncWithResponse request
+	PostIssuesByProviderByOwnerByNameByNumberSyncWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostIssuesByProviderByOwnerByNameByNumberSyncResponse, error)
+
+	// EnqueueIssueSyncWithResponse request
+	EnqueueIssueSyncWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*EnqueueIssueSyncResponse, error)
+
+	// CreateIssueWorkspaceWithBodyWithResponse request with any body
+	CreateIssueWorkspaceWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueWorkspaceResponse, error)
+
+	CreateIssueWorkspaceWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body CreateIssueWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIssueWorkspaceResponse, error)
 
 	// ListPullsWithResponse request
 	ListPullsWithResponse(ctx context.Context, params *ListPullsParams, reqEditors ...RequestEditorFn) (*ListPullsResponse, error)
 
+	// GetPullsByProviderByOwnerByNameByNumberWithResponse request
+	GetPullsByProviderByOwnerByNameByNumberWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberResponse, error)
+
+	// EditPrContentWithBodyWithResponse request with any body
+	EditPrContentWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrContentResponse, error)
+
+	EditPrContentWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body EditPrContentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrContentResponse, error)
+
+	// PostPullsByProviderByOwnerByNameByNumberApproveWithBodyWithResponse request with any body
+	PostPullsByProviderByOwnerByNameByNumberApproveWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberApproveResponse, error)
+
+	PostPullsByProviderByOwnerByNameByNumberApproveWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body PostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberApproveResponse, error)
+
+	// PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse request
+	PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse, error)
+
+	// PostPrCommentWithBodyWithResponse request with any body
+	PostPrCommentWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostPrCommentResponse, error)
+
+	PostPrCommentWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body PostPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*PostPrCommentResponse, error)
+
+	// EditPrCommentWithBodyWithResponse request with any body
+	EditPrCommentWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrCommentResponse, error)
+
+	EditPrCommentWithResponse(ctx context.Context, provider string, owner string, name string, number int64, commentId int64, body EditPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrCommentResponse, error)
+
+	// GetPullsByProviderByOwnerByNameByNumberCommitsWithResponse request
+	GetPullsByProviderByOwnerByNameByNumberCommitsWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberCommitsResponse, error)
+
+	// GetPullsByProviderByOwnerByNameByNumberDiffWithResponse request
+	GetPullsByProviderByOwnerByNameByNumberDiffWithResponse(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullsByProviderByOwnerByNameByNumberDiffParams, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberDiffResponse, error)
+
+	// GetPullsByProviderByOwnerByNameByNumberFilePreviewWithResponse request
+	GetPullsByProviderByOwnerByNameByNumberFilePreviewWithResponse(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullsByProviderByOwnerByNameByNumberFilePreviewParams, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberFilePreviewResponse, error)
+
+	// GetPullsByProviderByOwnerByNameByNumberFilesWithResponse request
+	GetPullsByProviderByOwnerByNameByNumberFilesWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberFilesResponse, error)
+
+	// SetPrGithubStateWithBodyWithResponse request with any body
+	SetPrGithubStateWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrGithubStateResponse, error)
+
+	SetPrGithubStateWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body SetPrGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetPrGithubStateResponse, error)
+
+	// GetPullsByProviderByOwnerByNameByNumberImportMetadataWithResponse request
+	GetPullsByProviderByOwnerByNameByNumberImportMetadataWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberImportMetadataResponse, error)
+
+	// PostPullsByProviderByOwnerByNameByNumberMergeWithBodyWithResponse request with any body
+	PostPullsByProviderByOwnerByNameByNumberMergeWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberMergeResponse, error)
+
+	PostPullsByProviderByOwnerByNameByNumberMergeWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body PostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberMergeResponse, error)
+
+	// PostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse request
+	PostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse, error)
+
+	// GetPullsByProviderByOwnerByNameByNumberStackWithResponse request
+	GetPullsByProviderByOwnerByNameByNumberStackWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberStackResponse, error)
+
+	// SetKanbanStateWithBodyWithResponse request with any body
+	SetKanbanStateWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetKanbanStateResponse, error)
+
+	SetKanbanStateWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body SetKanbanStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetKanbanStateResponse, error)
+
+	// PostPullsByProviderByOwnerByNameByNumberSyncWithResponse request
+	PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberSyncResponse, error)
+
+	// EnqueuePrSyncWithResponse request
+	EnqueuePrSyncWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*EnqueuePrSyncResponse, error)
+
 	// GetRateLimitsWithResponse request
 	GetRateLimitsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetRateLimitsResponse, error)
+
+	// DeleteRepoWithResponse request
+	DeleteRepoWithResponse(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*DeleteRepoResponse, error)
+
+	// GetRepoByProviderByOwnerByNameWithResponse request
+	GetRepoByProviderByOwnerByNameWithResponse(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*GetRepoByProviderByOwnerByNameResponse, error)
+
+	// GetRepoByProviderByOwnerByNameCommentAutocompleteWithResponse request
+	GetRepoByProviderByOwnerByNameCommentAutocompleteWithResponse(ctx context.Context, provider string, owner string, name string, params *GetRepoByProviderByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*GetRepoByProviderByOwnerByNameCommentAutocompleteResponse, error)
+
+	// RefreshRepoWithResponse request
+	RefreshRepoWithResponse(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*RefreshRepoResponse, error)
+
+	// PostRepoByProviderByOwnerByNameResolveByNumberWithResponse request
+	PostRepoByProviderByOwnerByNameResolveByNumberWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostRepoByProviderByOwnerByNameResolveByNumberResponse, error)
 
 	// ListReposWithResponse request
 	ListReposWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListReposResponse, error)
@@ -5744,123 +9191,6 @@ type ClientWithResponsesInterface interface {
 
 	// ListRepoSummariesWithResponse request
 	ListRepoSummariesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListRepoSummariesResponse, error)
-
-	// DeleteRepoWithResponse request
-	DeleteRepoWithResponse(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*DeleteRepoResponse, error)
-
-	// GetReposByOwnerByNameWithResponse request
-	GetReposByOwnerByNameWithResponse(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNameResponse, error)
-
-	// GetReposByOwnerByNameCommentAutocompleteWithResponse request
-	GetReposByOwnerByNameCommentAutocompleteWithResponse(ctx context.Context, owner string, name string, params *GetReposByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNameCommentAutocompleteResponse, error)
-
-	// CreateIssueWithBodyWithResponse request with any body
-	CreateIssueWithBodyWithResponse(ctx context.Context, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueResponse, error)
-
-	CreateIssueWithResponse(ctx context.Context, owner string, name string, body CreateIssueJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIssueResponse, error)
-
-	// GetReposByOwnerByNameIssuesByNumberWithResponse request
-	GetReposByOwnerByNameIssuesByNumberWithResponse(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNameIssuesByNumberParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNameIssuesByNumberResponse, error)
-
-	// PostIssueCommentWithBodyWithResponse request with any body
-	PostIssueCommentWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostIssueCommentResponse, error)
-
-	PostIssueCommentWithResponse(ctx context.Context, owner string, name string, number int64, body PostIssueCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*PostIssueCommentResponse, error)
-
-	// EditIssueCommentWithBodyWithResponse request with any body
-	EditIssueCommentWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditIssueCommentResponse, error)
-
-	EditIssueCommentWithResponse(ctx context.Context, owner string, name string, number int64, commentId int64, body EditIssueCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditIssueCommentResponse, error)
-
-	// SetIssueGithubStateWithBodyWithResponse request with any body
-	SetIssueGithubStateWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetIssueGithubStateResponse, error)
-
-	SetIssueGithubStateWithResponse(ctx context.Context, owner string, name string, number int64, body SetIssueGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetIssueGithubStateResponse, error)
-
-	// PostReposByOwnerByNameIssuesByNumberSyncWithResponse request
-	PostReposByOwnerByNameIssuesByNumberSyncWithResponse(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNameIssuesByNumberSyncParams, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNameIssuesByNumberSyncResponse, error)
-
-	// EnqueueIssueSyncWithResponse request
-	EnqueueIssueSyncWithResponse(ctx context.Context, owner string, name string, number int64, params *EnqueueIssueSyncParams, reqEditors ...RequestEditorFn) (*EnqueueIssueSyncResponse, error)
-
-	// CreateIssueWorkspaceWithBodyWithResponse request with any body
-	CreateIssueWorkspaceWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueWorkspaceResponse, error)
-
-	CreateIssueWorkspaceWithResponse(ctx context.Context, owner string, name string, number int64, body CreateIssueWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIssueWorkspaceResponse, error)
-
-	// PostReposByOwnerByNameItemsByNumberResolveWithResponse request
-	PostReposByOwnerByNameItemsByNumberResolveWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNameItemsByNumberResolveResponse, error)
-
-	// GetReposByOwnerByNamePullsByNumberWithResponse request
-	GetReposByOwnerByNamePullsByNumberWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberResponse, error)
-
-	// EditPrContentWithBodyWithResponse request with any body
-	EditPrContentWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrContentResponse, error)
-
-	EditPrContentWithResponse(ctx context.Context, owner string, name string, number int64, body EditPrContentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrContentResponse, error)
-
-	// PostReposByOwnerByNamePullsByNumberApproveWithBodyWithResponse request with any body
-	PostReposByOwnerByNamePullsByNumberApproveWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberApproveResponse, error)
-
-	PostReposByOwnerByNamePullsByNumberApproveWithResponse(ctx context.Context, owner string, name string, number int64, body PostReposByOwnerByNamePullsByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberApproveResponse, error)
-
-	// PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse request
-	PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberApproveWorkflowsResponse, error)
-
-	// PostPrCommentWithBodyWithResponse request with any body
-	PostPrCommentWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostPrCommentResponse, error)
-
-	PostPrCommentWithResponse(ctx context.Context, owner string, name string, number int64, body PostPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*PostPrCommentResponse, error)
-
-	// EditPrCommentWithBodyWithResponse request with any body
-	EditPrCommentWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrCommentResponse, error)
-
-	EditPrCommentWithResponse(ctx context.Context, owner string, name string, number int64, commentId int64, body EditPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrCommentResponse, error)
-
-	// GetReposByOwnerByNamePullsByNumberCommitsWithResponse request
-	GetReposByOwnerByNamePullsByNumberCommitsWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberCommitsResponse, error)
-
-	// GetReposByOwnerByNamePullsByNumberDiffWithResponse request
-	GetReposByOwnerByNamePullsByNumberDiffWithResponse(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberDiffParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberDiffResponse, error)
-
-	// GetReposByOwnerByNamePullsByNumberFilePreviewWithResponse request
-	GetReposByOwnerByNamePullsByNumberFilePreviewWithResponse(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberFilePreviewParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberFilePreviewResponse, error)
-
-	// GetReposByOwnerByNamePullsByNumberFilesWithResponse request
-	GetReposByOwnerByNamePullsByNumberFilesWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberFilesResponse, error)
-
-	// SetPrGithubStateWithBodyWithResponse request with any body
-	SetPrGithubStateWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrGithubStateResponse, error)
-
-	SetPrGithubStateWithResponse(ctx context.Context, owner string, name string, number int64, body SetPrGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetPrGithubStateResponse, error)
-
-	// GetReposByOwnerByNamePullsByNumberImportMetadataWithResponse request
-	GetReposByOwnerByNamePullsByNumberImportMetadataWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberImportMetadataResponse, error)
-
-	// PostReposByOwnerByNamePullsByNumberMergeWithBodyWithResponse request with any body
-	PostReposByOwnerByNamePullsByNumberMergeWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberMergeResponse, error)
-
-	PostReposByOwnerByNamePullsByNumberMergeWithResponse(ctx context.Context, owner string, name string, number int64, body PostReposByOwnerByNamePullsByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberMergeResponse, error)
-
-	// PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse request
-	PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberReadyForReviewResponse, error)
-
-	// GetReposByOwnerByNamePullsByNumberStackWithResponse request
-	GetReposByOwnerByNamePullsByNumberStackWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberStackResponse, error)
-
-	// SetKanbanStateWithBodyWithResponse request with any body
-	SetKanbanStateWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetKanbanStateResponse, error)
-
-	SetKanbanStateWithResponse(ctx context.Context, owner string, name string, number int64, body SetKanbanStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetKanbanStateResponse, error)
-
-	// PostReposByOwnerByNamePullsByNumberSyncWithResponse request
-	PostReposByOwnerByNamePullsByNumberSyncWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberSyncResponse, error)
-
-	// EnqueuePrSyncWithResponse request
-	EnqueuePrSyncWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*EnqueuePrSyncResponse, error)
-
-	// RefreshRepoWithResponse request
-	RefreshRepoWithResponse(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*RefreshRepoResponse, error)
 
 	// GetRoborevStatusWithResponse request
 	GetRoborevStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetRoborevStatusResponse, error)
@@ -5956,6 +9286,715 @@ func (r GetActivityResponse) StatusCode() int {
 	return 0
 }
 
+type CreateIssueOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON201                       *IssueResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateIssueOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateIssueOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *IssueDetailResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostIssueCommentOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON201                       *IssueEvent
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PostIssueCommentOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostIssueCommentOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type EditIssueCommentOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *IssueEvent
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r EditIssueCommentOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r EditIssueCommentOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SetIssueGithubStateOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *GithubStateOutputBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r SetIssueGithubStateOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetIssueGithubStateOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *IssueDetailResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type EnqueueIssueSyncOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r EnqueueIssueSyncOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r EnqueueIssueSyncOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateIssueWorkspaceOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON202                       *WorkspaceResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateIssueWorkspaceOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateIssueWorkspaceOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *MergeRequestDetailResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type EditPrContentOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *MergeRequestDetailResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r EditPrContentOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r EditPrContentOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ActionStatusBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ActionStatusBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostPrCommentOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON201                       *MREvent
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PostPrCommentOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostPrCommentOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type EditPrCommentOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *MREvent
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r EditPrCommentOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r EditPrCommentOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *CommitsResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *DiffResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *FilePreviewResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *FilesResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SetPrGithubStateOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *GithubStateOutputBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r SetPrGithubStateOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetPrGithubStateOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *MrImportMetadataResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *MergePRBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ActionStatusBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *StackContextResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SetKanbanStateOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r SetKanbanStateOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetKanbanStateOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *MergeRequestDetailResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type EnqueuePrSyncOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r EnqueuePrSyncOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r EnqueuePrSyncOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeleteRepoOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteRepoOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteRepoOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetHostByPlatformHostRepoByProviderByOwnerByNameResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RepoResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetHostByPlatformHostRepoByProviderByOwnerByNameResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetHostByPlatformHostRepoByProviderByOwnerByNameResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *CommentAutocompleteResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RefreshRepoOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *SettingsResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r RefreshRepoOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RefreshRepoOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ResolveItemResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type ListIssuesResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -5973,6 +10012,189 @@ func (r ListIssuesResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r ListIssuesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateIssueResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON201                       *IssueResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateIssueResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateIssueResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetIssuesByProviderByOwnerByNameByNumberResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *IssueDetailResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetIssuesByProviderByOwnerByNameByNumberResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetIssuesByProviderByOwnerByNameByNumberResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostIssueCommentResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON201                       *IssueEvent
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PostIssueCommentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostIssueCommentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type EditIssueCommentResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *IssueEvent
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r EditIssueCommentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r EditIssueCommentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SetIssueGithubStateResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *GithubStateOutputBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r SetIssueGithubStateResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetIssueGithubStateResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostIssuesByProviderByOwnerByNameByNumberSyncResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *IssueDetailResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PostIssuesByProviderByOwnerByNameByNumberSyncResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostIssuesByProviderByOwnerByNameByNumberSyncResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type EnqueueIssueSyncResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r EnqueueIssueSyncResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r EnqueueIssueSyncResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateIssueWorkspaceResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON202                       *WorkspaceResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateIssueWorkspaceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateIssueWorkspaceResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -6002,6 +10224,418 @@ func (r ListPullsResponse) StatusCode() int {
 	return 0
 }
 
+type GetPullsByProviderByOwnerByNameByNumberResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *MergeRequestDetailResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetPullsByProviderByOwnerByNameByNumberResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetPullsByProviderByOwnerByNameByNumberResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type EditPrContentResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *MergeRequestDetailResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r EditPrContentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r EditPrContentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostPullsByProviderByOwnerByNameByNumberApproveResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ActionStatusBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PostPullsByProviderByOwnerByNameByNumberApproveResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostPullsByProviderByOwnerByNameByNumberApproveResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ActionStatusBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostPrCommentResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON201                       *MREvent
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PostPrCommentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostPrCommentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type EditPrCommentResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *MREvent
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r EditPrCommentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r EditPrCommentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetPullsByProviderByOwnerByNameByNumberCommitsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *CommitsResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetPullsByProviderByOwnerByNameByNumberCommitsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetPullsByProviderByOwnerByNameByNumberCommitsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetPullsByProviderByOwnerByNameByNumberDiffResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *DiffResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetPullsByProviderByOwnerByNameByNumberDiffResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetPullsByProviderByOwnerByNameByNumberDiffResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetPullsByProviderByOwnerByNameByNumberFilePreviewResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *FilePreviewResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetPullsByProviderByOwnerByNameByNumberFilePreviewResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetPullsByProviderByOwnerByNameByNumberFilePreviewResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetPullsByProviderByOwnerByNameByNumberFilesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *FilesResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetPullsByProviderByOwnerByNameByNumberFilesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetPullsByProviderByOwnerByNameByNumberFilesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SetPrGithubStateResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *GithubStateOutputBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r SetPrGithubStateResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetPrGithubStateResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetPullsByProviderByOwnerByNameByNumberImportMetadataResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *MrImportMetadataResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetPullsByProviderByOwnerByNameByNumberImportMetadataResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetPullsByProviderByOwnerByNameByNumberImportMetadataResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostPullsByProviderByOwnerByNameByNumberMergeResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *MergePRBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PostPullsByProviderByOwnerByNameByNumberMergeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostPullsByProviderByOwnerByNameByNumberMergeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ActionStatusBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetPullsByProviderByOwnerByNameByNumberStackResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *StackContextResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetPullsByProviderByOwnerByNameByNumberStackResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetPullsByProviderByOwnerByNameByNumberStackResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SetKanbanStateResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r SetKanbanStateResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetKanbanStateResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostPullsByProviderByOwnerByNameByNumberSyncResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *MergeRequestDetailResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PostPullsByProviderByOwnerByNameByNumberSyncResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostPullsByProviderByOwnerByNameByNumberSyncResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type EnqueuePrSyncResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r EnqueuePrSyncResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r EnqueuePrSyncResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetRateLimitsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -6025,10 +10659,124 @@ func (r GetRateLimitsResponse) StatusCode() int {
 	return 0
 }
 
+type DeleteRepoResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteRepoResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteRepoResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetRepoByProviderByOwnerByNameResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RepoResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetRepoByProviderByOwnerByNameResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetRepoByProviderByOwnerByNameResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetRepoByProviderByOwnerByNameCommentAutocompleteResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *CommentAutocompleteResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetRepoByProviderByOwnerByNameCommentAutocompleteResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetRepoByProviderByOwnerByNameCommentAutocompleteResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RefreshRepoResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *SettingsResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r RefreshRepoResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RefreshRepoResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostRepoByProviderByOwnerByNameResolveByNumberResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ResolveItemResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PostRepoByProviderByOwnerByNameResolveByNumberResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostRepoByProviderByOwnerByNameResolveByNumberResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type ListReposResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *[]Repo
+	JSON200                       *[]RepoResponse
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -6134,715 +10882,6 @@ func (r ListRepoSummariesResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r ListRepoSummariesResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type DeleteRepoResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r DeleteRepoResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r DeleteRepoResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type GetReposByOwnerByNameResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *Repo
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r GetReposByOwnerByNameResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetReposByOwnerByNameResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type GetReposByOwnerByNameCommentAutocompleteResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *CommentAutocompleteResponse
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r GetReposByOwnerByNameCommentAutocompleteResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetReposByOwnerByNameCommentAutocompleteResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type CreateIssueResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON201                       *IssueResponse
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r CreateIssueResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r CreateIssueResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type GetReposByOwnerByNameIssuesByNumberResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *IssueDetailResponse
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r GetReposByOwnerByNameIssuesByNumberResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetReposByOwnerByNameIssuesByNumberResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type PostIssueCommentResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON201                       *IssueEvent
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r PostIssueCommentResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r PostIssueCommentResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type EditIssueCommentResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *IssueEvent
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r EditIssueCommentResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r EditIssueCommentResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type SetIssueGithubStateResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *GithubStateOutputBody
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r SetIssueGithubStateResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r SetIssueGithubStateResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type PostReposByOwnerByNameIssuesByNumberSyncResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *IssueDetailResponse
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r PostReposByOwnerByNameIssuesByNumberSyncResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r PostReposByOwnerByNameIssuesByNumberSyncResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type EnqueueIssueSyncResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r EnqueueIssueSyncResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r EnqueueIssueSyncResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type CreateIssueWorkspaceResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON202                       *WorkspaceResponse
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r CreateIssueWorkspaceResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r CreateIssueWorkspaceResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type PostReposByOwnerByNameItemsByNumberResolveResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *ResolveItemResponse
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r PostReposByOwnerByNameItemsByNumberResolveResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r PostReposByOwnerByNameItemsByNumberResolveResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type GetReposByOwnerByNamePullsByNumberResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *MergeRequestDetailResponse
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r GetReposByOwnerByNamePullsByNumberResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetReposByOwnerByNamePullsByNumberResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type EditPrContentResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *MergeRequestDetailResponse
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r EditPrContentResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r EditPrContentResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type PostReposByOwnerByNamePullsByNumberApproveResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *ActionStatusBody
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r PostReposByOwnerByNamePullsByNumberApproveResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r PostReposByOwnerByNamePullsByNumberApproveResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type PostReposByOwnerByNamePullsByNumberApproveWorkflowsResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *ActionStatusBody
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r PostReposByOwnerByNamePullsByNumberApproveWorkflowsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r PostReposByOwnerByNamePullsByNumberApproveWorkflowsResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type PostPrCommentResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON201                       *MREvent
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r PostPrCommentResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r PostPrCommentResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type EditPrCommentResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *MREvent
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r EditPrCommentResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r EditPrCommentResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type GetReposByOwnerByNamePullsByNumberCommitsResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *CommitsResponse
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r GetReposByOwnerByNamePullsByNumberCommitsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetReposByOwnerByNamePullsByNumberCommitsResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type GetReposByOwnerByNamePullsByNumberDiffResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *DiffResponse
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r GetReposByOwnerByNamePullsByNumberDiffResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetReposByOwnerByNamePullsByNumberDiffResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type GetReposByOwnerByNamePullsByNumberFilePreviewResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *FilePreviewResponse
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r GetReposByOwnerByNamePullsByNumberFilePreviewResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetReposByOwnerByNamePullsByNumberFilePreviewResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type GetReposByOwnerByNamePullsByNumberFilesResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *FilesResponse
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r GetReposByOwnerByNamePullsByNumberFilesResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetReposByOwnerByNamePullsByNumberFilesResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type SetPrGithubStateResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *GithubStateOutputBody
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r SetPrGithubStateResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r SetPrGithubStateResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type GetReposByOwnerByNamePullsByNumberImportMetadataResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *MrImportMetadataResponse
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r GetReposByOwnerByNamePullsByNumberImportMetadataResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetReposByOwnerByNamePullsByNumberImportMetadataResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type PostReposByOwnerByNamePullsByNumberMergeResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *MergePRBody
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r PostReposByOwnerByNamePullsByNumberMergeResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r PostReposByOwnerByNamePullsByNumberMergeResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type PostReposByOwnerByNamePullsByNumberReadyForReviewResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *ActionStatusBody
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r PostReposByOwnerByNamePullsByNumberReadyForReviewResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r PostReposByOwnerByNamePullsByNumberReadyForReviewResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type GetReposByOwnerByNamePullsByNumberStackResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *StackContextResponse
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r GetReposByOwnerByNamePullsByNumberStackResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetReposByOwnerByNamePullsByNumberStackResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type SetKanbanStateResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r SetKanbanStateResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r SetKanbanStateResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type PostReposByOwnerByNamePullsByNumberSyncResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *MergeRequestDetailResponse
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r PostReposByOwnerByNamePullsByNumberSyncResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r PostReposByOwnerByNamePullsByNumberSyncResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type EnqueuePrSyncResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r EnqueuePrSyncResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r EnqueuePrSyncResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type RefreshRepoResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *SettingsResponse
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r RefreshRepoResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r RefreshRepoResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -7313,6 +11352,381 @@ func (c *ClientWithResponses) GetActivityWithResponse(ctx context.Context, param
 	return ParseGetActivityResponse(rsp)
 }
 
+// CreateIssueOnHostWithBodyWithResponse request with arbitrary body returning *CreateIssueOnHostResponse
+func (c *ClientWithResponses) CreateIssueOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueOnHostResponse, error) {
+	rsp, err := c.CreateIssueOnHostWithBody(ctx, platformHost, provider, owner, name, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateIssueOnHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateIssueOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, body CreateIssueOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIssueOnHostResponse, error) {
+	rsp, err := c.CreateIssueOnHost(ctx, platformHost, provider, owner, name, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateIssueOnHostResponse(rsp)
+}
+
+// GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberWithResponse request returning *GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse
+func (c *ClientWithResponses) GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse, error) {
+	rsp, err := c.GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumber(ctx, platformHost, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse(rsp)
+}
+
+// PostIssueCommentOnHostWithBodyWithResponse request with arbitrary body returning *PostIssueCommentOnHostResponse
+func (c *ClientWithResponses) PostIssueCommentOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostIssueCommentOnHostResponse, error) {
+	rsp, err := c.PostIssueCommentOnHostWithBody(ctx, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostIssueCommentOnHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) PostIssueCommentOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PostIssueCommentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*PostIssueCommentOnHostResponse, error) {
+	rsp, err := c.PostIssueCommentOnHost(ctx, platformHost, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostIssueCommentOnHostResponse(rsp)
+}
+
+// EditIssueCommentOnHostWithBodyWithResponse request with arbitrary body returning *EditIssueCommentOnHostResponse
+func (c *ClientWithResponses) EditIssueCommentOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditIssueCommentOnHostResponse, error) {
+	rsp, err := c.EditIssueCommentOnHostWithBody(ctx, platformHost, provider, owner, name, number, commentId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEditIssueCommentOnHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) EditIssueCommentOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, commentId int64, body EditIssueCommentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*EditIssueCommentOnHostResponse, error) {
+	rsp, err := c.EditIssueCommentOnHost(ctx, platformHost, provider, owner, name, number, commentId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEditIssueCommentOnHostResponse(rsp)
+}
+
+// SetIssueGithubStateOnHostWithBodyWithResponse request with arbitrary body returning *SetIssueGithubStateOnHostResponse
+func (c *ClientWithResponses) SetIssueGithubStateOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetIssueGithubStateOnHostResponse, error) {
+	rsp, err := c.SetIssueGithubStateOnHostWithBody(ctx, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetIssueGithubStateOnHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) SetIssueGithubStateOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetIssueGithubStateOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*SetIssueGithubStateOnHostResponse, error) {
+	rsp, err := c.SetIssueGithubStateOnHost(ctx, platformHost, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetIssueGithubStateOnHostResponse(rsp)
+}
+
+// PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncWithResponse request returning *PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncResponse
+func (c *ClientWithResponses) PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncResponse, error) {
+	rsp, err := c.PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSync(ctx, platformHost, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncResponse(rsp)
+}
+
+// EnqueueIssueSyncOnHostWithResponse request returning *EnqueueIssueSyncOnHostResponse
+func (c *ClientWithResponses) EnqueueIssueSyncOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*EnqueueIssueSyncOnHostResponse, error) {
+	rsp, err := c.EnqueueIssueSyncOnHost(ctx, platformHost, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEnqueueIssueSyncOnHostResponse(rsp)
+}
+
+// CreateIssueWorkspaceOnHostWithBodyWithResponse request with arbitrary body returning *CreateIssueWorkspaceOnHostResponse
+func (c *ClientWithResponses) CreateIssueWorkspaceOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueWorkspaceOnHostResponse, error) {
+	rsp, err := c.CreateIssueWorkspaceOnHostWithBody(ctx, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateIssueWorkspaceOnHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateIssueWorkspaceOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body CreateIssueWorkspaceOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIssueWorkspaceOnHostResponse, error) {
+	rsp, err := c.CreateIssueWorkspaceOnHost(ctx, platformHost, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateIssueWorkspaceOnHostResponse(rsp)
+}
+
+// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberWithResponse request returning *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberResponse
+func (c *ClientWithResponses) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberResponse, error) {
+	rsp, err := c.GetHostByPlatformHostPullsByProviderByOwnerByNameByNumber(ctx, platformHost, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberResponse(rsp)
+}
+
+// EditPrContentOnHostWithBodyWithResponse request with arbitrary body returning *EditPrContentOnHostResponse
+func (c *ClientWithResponses) EditPrContentOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrContentOnHostResponse, error) {
+	rsp, err := c.EditPrContentOnHostWithBody(ctx, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEditPrContentOnHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) EditPrContentOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body EditPrContentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrContentOnHostResponse, error) {
+	rsp, err := c.EditPrContentOnHost(ctx, platformHost, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEditPrContentOnHostResponse(rsp)
+}
+
+// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWithBodyWithResponse request with arbitrary body returning *PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse
+func (c *ClientWithResponses) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse, error) {
+	rsp, err := c.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWithBody(ctx, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse(rsp)
+}
+
+func (c *ClientWithResponses) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse, error) {
+	rsp, err := c.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApprove(ctx, platformHost, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse(rsp)
+}
+
+// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse request returning *PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse
+func (c *ClientWithResponses) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse, error) {
+	rsp, err := c.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflows(ctx, platformHost, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse(rsp)
+}
+
+// PostPrCommentOnHostWithBodyWithResponse request with arbitrary body returning *PostPrCommentOnHostResponse
+func (c *ClientWithResponses) PostPrCommentOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostPrCommentOnHostResponse, error) {
+	rsp, err := c.PostPrCommentOnHostWithBody(ctx, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostPrCommentOnHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) PostPrCommentOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PostPrCommentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*PostPrCommentOnHostResponse, error) {
+	rsp, err := c.PostPrCommentOnHost(ctx, platformHost, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostPrCommentOnHostResponse(rsp)
+}
+
+// EditPrCommentOnHostWithBodyWithResponse request with arbitrary body returning *EditPrCommentOnHostResponse
+func (c *ClientWithResponses) EditPrCommentOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrCommentOnHostResponse, error) {
+	rsp, err := c.EditPrCommentOnHostWithBody(ctx, platformHost, provider, owner, name, number, commentId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEditPrCommentOnHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) EditPrCommentOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, commentId int64, body EditPrCommentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrCommentOnHostResponse, error) {
+	rsp, err := c.EditPrCommentOnHost(ctx, platformHost, provider, owner, name, number, commentId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEditPrCommentOnHostResponse(rsp)
+}
+
+// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsWithResponse request returning *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsResponse
+func (c *ClientWithResponses) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsResponse, error) {
+	rsp, err := c.GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommits(ctx, platformHost, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsResponse(rsp)
+}
+
+// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffWithResponse request returning *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffResponse
+func (c *ClientWithResponses) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffParams, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffResponse, error) {
+	rsp, err := c.GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiff(ctx, platformHost, provider, owner, name, number, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffResponse(rsp)
+}
+
+// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewWithResponse request returning *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewResponse
+func (c *ClientWithResponses) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewParams, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewResponse, error) {
+	rsp, err := c.GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreview(ctx, platformHost, provider, owner, name, number, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewResponse(rsp)
+}
+
+// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesWithResponse request returning *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesResponse
+func (c *ClientWithResponses) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesResponse, error) {
+	rsp, err := c.GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFiles(ctx, platformHost, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesResponse(rsp)
+}
+
+// SetPrGithubStateOnHostWithBodyWithResponse request with arbitrary body returning *SetPrGithubStateOnHostResponse
+func (c *ClientWithResponses) SetPrGithubStateOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrGithubStateOnHostResponse, error) {
+	rsp, err := c.SetPrGithubStateOnHostWithBody(ctx, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetPrGithubStateOnHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) SetPrGithubStateOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetPrGithubStateOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*SetPrGithubStateOnHostResponse, error) {
+	rsp, err := c.SetPrGithubStateOnHost(ctx, platformHost, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetPrGithubStateOnHostResponse(rsp)
+}
+
+// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataWithResponse request returning *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataResponse
+func (c *ClientWithResponses) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataResponse, error) {
+	rsp, err := c.GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadata(ctx, platformHost, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataResponse(rsp)
+}
+
+// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithBodyWithResponse request with arbitrary body returning *PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse
+func (c *ClientWithResponses) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse, error) {
+	rsp, err := c.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithBody(ctx, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse(rsp)
+}
+
+func (c *ClientWithResponses) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse, error) {
+	rsp, err := c.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMerge(ctx, platformHost, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse(rsp)
+}
+
+// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse request returning *PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse
+func (c *ClientWithResponses) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse, error) {
+	rsp, err := c.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReview(ctx, platformHost, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse(rsp)
+}
+
+// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackWithResponse request returning *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackResponse
+func (c *ClientWithResponses) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackResponse, error) {
+	rsp, err := c.GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStack(ctx, platformHost, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackResponse(rsp)
+}
+
+// SetKanbanStateOnHostWithBodyWithResponse request with arbitrary body returning *SetKanbanStateOnHostResponse
+func (c *ClientWithResponses) SetKanbanStateOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetKanbanStateOnHostResponse, error) {
+	rsp, err := c.SetKanbanStateOnHostWithBody(ctx, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetKanbanStateOnHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) SetKanbanStateOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetKanbanStateOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*SetKanbanStateOnHostResponse, error) {
+	rsp, err := c.SetKanbanStateOnHost(ctx, platformHost, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetKanbanStateOnHostResponse(rsp)
+}
+
+// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncWithResponse request returning *PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncResponse
+func (c *ClientWithResponses) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncResponse, error) {
+	rsp, err := c.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSync(ctx, platformHost, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncResponse(rsp)
+}
+
+// EnqueuePrSyncOnHostWithResponse request returning *EnqueuePrSyncOnHostResponse
+func (c *ClientWithResponses) EnqueuePrSyncOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*EnqueuePrSyncOnHostResponse, error) {
+	rsp, err := c.EnqueuePrSyncOnHost(ctx, platformHost, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEnqueuePrSyncOnHostResponse(rsp)
+}
+
+// DeleteRepoOnHostWithResponse request returning *DeleteRepoOnHostResponse
+func (c *ClientWithResponses) DeleteRepoOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*DeleteRepoOnHostResponse, error) {
+	rsp, err := c.DeleteRepoOnHost(ctx, platformHost, provider, owner, name, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteRepoOnHostResponse(rsp)
+}
+
+// GetHostByPlatformHostRepoByProviderByOwnerByNameWithResponse request returning *GetHostByPlatformHostRepoByProviderByOwnerByNameResponse
+func (c *ClientWithResponses) GetHostByPlatformHostRepoByProviderByOwnerByNameWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostRepoByProviderByOwnerByNameResponse, error) {
+	rsp, err := c.GetHostByPlatformHostRepoByProviderByOwnerByName(ctx, platformHost, provider, owner, name, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetHostByPlatformHostRepoByProviderByOwnerByNameResponse(rsp)
+}
+
+// GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteWithResponse request returning *GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteResponse
+func (c *ClientWithResponses) GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteResponse, error) {
+	rsp, err := c.GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocomplete(ctx, platformHost, provider, owner, name, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteResponse(rsp)
+}
+
+// RefreshRepoOnHostWithResponse request returning *RefreshRepoOnHostResponse
+func (c *ClientWithResponses) RefreshRepoOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*RefreshRepoOnHostResponse, error) {
+	rsp, err := c.RefreshRepoOnHost(ctx, platformHost, provider, owner, name, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRefreshRepoOnHostResponse(rsp)
+}
+
+// PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberWithResponse request returning *PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberResponse
+func (c *ClientWithResponses) PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberResponse, error) {
+	rsp, err := c.PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumber(ctx, platformHost, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberResponse(rsp)
+}
+
 // ListIssuesWithResponse request returning *ListIssuesResponse
 func (c *ClientWithResponses) ListIssuesWithResponse(ctx context.Context, params *ListIssuesParams, reqEditors ...RequestEditorFn) (*ListIssuesResponse, error) {
 	rsp, err := c.ListIssues(ctx, params, reqEditors...)
@@ -7320,6 +11734,118 @@ func (c *ClientWithResponses) ListIssuesWithResponse(ctx context.Context, params
 		return nil, err
 	}
 	return ParseListIssuesResponse(rsp)
+}
+
+// CreateIssueWithBodyWithResponse request with arbitrary body returning *CreateIssueResponse
+func (c *ClientWithResponses) CreateIssueWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueResponse, error) {
+	rsp, err := c.CreateIssueWithBody(ctx, provider, owner, name, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateIssueResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateIssueWithResponse(ctx context.Context, provider string, owner string, name string, body CreateIssueJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIssueResponse, error) {
+	rsp, err := c.CreateIssue(ctx, provider, owner, name, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateIssueResponse(rsp)
+}
+
+// GetIssuesByProviderByOwnerByNameByNumberWithResponse request returning *GetIssuesByProviderByOwnerByNameByNumberResponse
+func (c *ClientWithResponses) GetIssuesByProviderByOwnerByNameByNumberWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetIssuesByProviderByOwnerByNameByNumberResponse, error) {
+	rsp, err := c.GetIssuesByProviderByOwnerByNameByNumber(ctx, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetIssuesByProviderByOwnerByNameByNumberResponse(rsp)
+}
+
+// PostIssueCommentWithBodyWithResponse request with arbitrary body returning *PostIssueCommentResponse
+func (c *ClientWithResponses) PostIssueCommentWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostIssueCommentResponse, error) {
+	rsp, err := c.PostIssueCommentWithBody(ctx, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostIssueCommentResponse(rsp)
+}
+
+func (c *ClientWithResponses) PostIssueCommentWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body PostIssueCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*PostIssueCommentResponse, error) {
+	rsp, err := c.PostIssueComment(ctx, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostIssueCommentResponse(rsp)
+}
+
+// EditIssueCommentWithBodyWithResponse request with arbitrary body returning *EditIssueCommentResponse
+func (c *ClientWithResponses) EditIssueCommentWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditIssueCommentResponse, error) {
+	rsp, err := c.EditIssueCommentWithBody(ctx, provider, owner, name, number, commentId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEditIssueCommentResponse(rsp)
+}
+
+func (c *ClientWithResponses) EditIssueCommentWithResponse(ctx context.Context, provider string, owner string, name string, number int64, commentId int64, body EditIssueCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditIssueCommentResponse, error) {
+	rsp, err := c.EditIssueComment(ctx, provider, owner, name, number, commentId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEditIssueCommentResponse(rsp)
+}
+
+// SetIssueGithubStateWithBodyWithResponse request with arbitrary body returning *SetIssueGithubStateResponse
+func (c *ClientWithResponses) SetIssueGithubStateWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetIssueGithubStateResponse, error) {
+	rsp, err := c.SetIssueGithubStateWithBody(ctx, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetIssueGithubStateResponse(rsp)
+}
+
+func (c *ClientWithResponses) SetIssueGithubStateWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body SetIssueGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetIssueGithubStateResponse, error) {
+	rsp, err := c.SetIssueGithubState(ctx, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetIssueGithubStateResponse(rsp)
+}
+
+// PostIssuesByProviderByOwnerByNameByNumberSyncWithResponse request returning *PostIssuesByProviderByOwnerByNameByNumberSyncResponse
+func (c *ClientWithResponses) PostIssuesByProviderByOwnerByNameByNumberSyncWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostIssuesByProviderByOwnerByNameByNumberSyncResponse, error) {
+	rsp, err := c.PostIssuesByProviderByOwnerByNameByNumberSync(ctx, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostIssuesByProviderByOwnerByNameByNumberSyncResponse(rsp)
+}
+
+// EnqueueIssueSyncWithResponse request returning *EnqueueIssueSyncResponse
+func (c *ClientWithResponses) EnqueueIssueSyncWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*EnqueueIssueSyncResponse, error) {
+	rsp, err := c.EnqueueIssueSync(ctx, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEnqueueIssueSyncResponse(rsp)
+}
+
+// CreateIssueWorkspaceWithBodyWithResponse request with arbitrary body returning *CreateIssueWorkspaceResponse
+func (c *ClientWithResponses) CreateIssueWorkspaceWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueWorkspaceResponse, error) {
+	rsp, err := c.CreateIssueWorkspaceWithBody(ctx, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateIssueWorkspaceResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateIssueWorkspaceWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body CreateIssueWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIssueWorkspaceResponse, error) {
+	rsp, err := c.CreateIssueWorkspace(ctx, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateIssueWorkspaceResponse(rsp)
 }
 
 // ListPullsWithResponse request returning *ListPullsResponse
@@ -7331,6 +11857,224 @@ func (c *ClientWithResponses) ListPullsWithResponse(ctx context.Context, params 
 	return ParseListPullsResponse(rsp)
 }
 
+// GetPullsByProviderByOwnerByNameByNumberWithResponse request returning *GetPullsByProviderByOwnerByNameByNumberResponse
+func (c *ClientWithResponses) GetPullsByProviderByOwnerByNameByNumberWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberResponse, error) {
+	rsp, err := c.GetPullsByProviderByOwnerByNameByNumber(ctx, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetPullsByProviderByOwnerByNameByNumberResponse(rsp)
+}
+
+// EditPrContentWithBodyWithResponse request with arbitrary body returning *EditPrContentResponse
+func (c *ClientWithResponses) EditPrContentWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrContentResponse, error) {
+	rsp, err := c.EditPrContentWithBody(ctx, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEditPrContentResponse(rsp)
+}
+
+func (c *ClientWithResponses) EditPrContentWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body EditPrContentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrContentResponse, error) {
+	rsp, err := c.EditPrContent(ctx, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEditPrContentResponse(rsp)
+}
+
+// PostPullsByProviderByOwnerByNameByNumberApproveWithBodyWithResponse request with arbitrary body returning *PostPullsByProviderByOwnerByNameByNumberApproveResponse
+func (c *ClientWithResponses) PostPullsByProviderByOwnerByNameByNumberApproveWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberApproveResponse, error) {
+	rsp, err := c.PostPullsByProviderByOwnerByNameByNumberApproveWithBody(ctx, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostPullsByProviderByOwnerByNameByNumberApproveResponse(rsp)
+}
+
+func (c *ClientWithResponses) PostPullsByProviderByOwnerByNameByNumberApproveWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body PostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberApproveResponse, error) {
+	rsp, err := c.PostPullsByProviderByOwnerByNameByNumberApprove(ctx, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostPullsByProviderByOwnerByNameByNumberApproveResponse(rsp)
+}
+
+// PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse request returning *PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse
+func (c *ClientWithResponses) PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse, error) {
+	rsp, err := c.PostPullsByProviderByOwnerByNameByNumberApproveWorkflows(ctx, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse(rsp)
+}
+
+// PostPrCommentWithBodyWithResponse request with arbitrary body returning *PostPrCommentResponse
+func (c *ClientWithResponses) PostPrCommentWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostPrCommentResponse, error) {
+	rsp, err := c.PostPrCommentWithBody(ctx, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostPrCommentResponse(rsp)
+}
+
+func (c *ClientWithResponses) PostPrCommentWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body PostPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*PostPrCommentResponse, error) {
+	rsp, err := c.PostPrComment(ctx, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostPrCommentResponse(rsp)
+}
+
+// EditPrCommentWithBodyWithResponse request with arbitrary body returning *EditPrCommentResponse
+func (c *ClientWithResponses) EditPrCommentWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrCommentResponse, error) {
+	rsp, err := c.EditPrCommentWithBody(ctx, provider, owner, name, number, commentId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEditPrCommentResponse(rsp)
+}
+
+func (c *ClientWithResponses) EditPrCommentWithResponse(ctx context.Context, provider string, owner string, name string, number int64, commentId int64, body EditPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrCommentResponse, error) {
+	rsp, err := c.EditPrComment(ctx, provider, owner, name, number, commentId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEditPrCommentResponse(rsp)
+}
+
+// GetPullsByProviderByOwnerByNameByNumberCommitsWithResponse request returning *GetPullsByProviderByOwnerByNameByNumberCommitsResponse
+func (c *ClientWithResponses) GetPullsByProviderByOwnerByNameByNumberCommitsWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberCommitsResponse, error) {
+	rsp, err := c.GetPullsByProviderByOwnerByNameByNumberCommits(ctx, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetPullsByProviderByOwnerByNameByNumberCommitsResponse(rsp)
+}
+
+// GetPullsByProviderByOwnerByNameByNumberDiffWithResponse request returning *GetPullsByProviderByOwnerByNameByNumberDiffResponse
+func (c *ClientWithResponses) GetPullsByProviderByOwnerByNameByNumberDiffWithResponse(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullsByProviderByOwnerByNameByNumberDiffParams, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberDiffResponse, error) {
+	rsp, err := c.GetPullsByProviderByOwnerByNameByNumberDiff(ctx, provider, owner, name, number, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetPullsByProviderByOwnerByNameByNumberDiffResponse(rsp)
+}
+
+// GetPullsByProviderByOwnerByNameByNumberFilePreviewWithResponse request returning *GetPullsByProviderByOwnerByNameByNumberFilePreviewResponse
+func (c *ClientWithResponses) GetPullsByProviderByOwnerByNameByNumberFilePreviewWithResponse(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullsByProviderByOwnerByNameByNumberFilePreviewParams, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberFilePreviewResponse, error) {
+	rsp, err := c.GetPullsByProviderByOwnerByNameByNumberFilePreview(ctx, provider, owner, name, number, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetPullsByProviderByOwnerByNameByNumberFilePreviewResponse(rsp)
+}
+
+// GetPullsByProviderByOwnerByNameByNumberFilesWithResponse request returning *GetPullsByProviderByOwnerByNameByNumberFilesResponse
+func (c *ClientWithResponses) GetPullsByProviderByOwnerByNameByNumberFilesWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberFilesResponse, error) {
+	rsp, err := c.GetPullsByProviderByOwnerByNameByNumberFiles(ctx, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetPullsByProviderByOwnerByNameByNumberFilesResponse(rsp)
+}
+
+// SetPrGithubStateWithBodyWithResponse request with arbitrary body returning *SetPrGithubStateResponse
+func (c *ClientWithResponses) SetPrGithubStateWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrGithubStateResponse, error) {
+	rsp, err := c.SetPrGithubStateWithBody(ctx, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetPrGithubStateResponse(rsp)
+}
+
+func (c *ClientWithResponses) SetPrGithubStateWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body SetPrGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetPrGithubStateResponse, error) {
+	rsp, err := c.SetPrGithubState(ctx, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetPrGithubStateResponse(rsp)
+}
+
+// GetPullsByProviderByOwnerByNameByNumberImportMetadataWithResponse request returning *GetPullsByProviderByOwnerByNameByNumberImportMetadataResponse
+func (c *ClientWithResponses) GetPullsByProviderByOwnerByNameByNumberImportMetadataWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberImportMetadataResponse, error) {
+	rsp, err := c.GetPullsByProviderByOwnerByNameByNumberImportMetadata(ctx, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetPullsByProviderByOwnerByNameByNumberImportMetadataResponse(rsp)
+}
+
+// PostPullsByProviderByOwnerByNameByNumberMergeWithBodyWithResponse request with arbitrary body returning *PostPullsByProviderByOwnerByNameByNumberMergeResponse
+func (c *ClientWithResponses) PostPullsByProviderByOwnerByNameByNumberMergeWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberMergeResponse, error) {
+	rsp, err := c.PostPullsByProviderByOwnerByNameByNumberMergeWithBody(ctx, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostPullsByProviderByOwnerByNameByNumberMergeResponse(rsp)
+}
+
+func (c *ClientWithResponses) PostPullsByProviderByOwnerByNameByNumberMergeWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body PostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberMergeResponse, error) {
+	rsp, err := c.PostPullsByProviderByOwnerByNameByNumberMerge(ctx, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostPullsByProviderByOwnerByNameByNumberMergeResponse(rsp)
+}
+
+// PostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse request returning *PostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse
+func (c *ClientWithResponses) PostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse, error) {
+	rsp, err := c.PostPullsByProviderByOwnerByNameByNumberReadyForReview(ctx, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse(rsp)
+}
+
+// GetPullsByProviderByOwnerByNameByNumberStackWithResponse request returning *GetPullsByProviderByOwnerByNameByNumberStackResponse
+func (c *ClientWithResponses) GetPullsByProviderByOwnerByNameByNumberStackWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberStackResponse, error) {
+	rsp, err := c.GetPullsByProviderByOwnerByNameByNumberStack(ctx, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetPullsByProviderByOwnerByNameByNumberStackResponse(rsp)
+}
+
+// SetKanbanStateWithBodyWithResponse request with arbitrary body returning *SetKanbanStateResponse
+func (c *ClientWithResponses) SetKanbanStateWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetKanbanStateResponse, error) {
+	rsp, err := c.SetKanbanStateWithBody(ctx, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetKanbanStateResponse(rsp)
+}
+
+func (c *ClientWithResponses) SetKanbanStateWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body SetKanbanStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetKanbanStateResponse, error) {
+	rsp, err := c.SetKanbanState(ctx, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetKanbanStateResponse(rsp)
+}
+
+// PostPullsByProviderByOwnerByNameByNumberSyncWithResponse request returning *PostPullsByProviderByOwnerByNameByNumberSyncResponse
+func (c *ClientWithResponses) PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberSyncResponse, error) {
+	rsp, err := c.PostPullsByProviderByOwnerByNameByNumberSync(ctx, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostPullsByProviderByOwnerByNameByNumberSyncResponse(rsp)
+}
+
+// EnqueuePrSyncWithResponse request returning *EnqueuePrSyncResponse
+func (c *ClientWithResponses) EnqueuePrSyncWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*EnqueuePrSyncResponse, error) {
+	rsp, err := c.EnqueuePrSync(ctx, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEnqueuePrSyncResponse(rsp)
+}
+
 // GetRateLimitsWithResponse request returning *GetRateLimitsResponse
 func (c *ClientWithResponses) GetRateLimitsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetRateLimitsResponse, error) {
 	rsp, err := c.GetRateLimits(ctx, reqEditors...)
@@ -7338,6 +12082,51 @@ func (c *ClientWithResponses) GetRateLimitsWithResponse(ctx context.Context, req
 		return nil, err
 	}
 	return ParseGetRateLimitsResponse(rsp)
+}
+
+// DeleteRepoWithResponse request returning *DeleteRepoResponse
+func (c *ClientWithResponses) DeleteRepoWithResponse(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*DeleteRepoResponse, error) {
+	rsp, err := c.DeleteRepo(ctx, provider, owner, name, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteRepoResponse(rsp)
+}
+
+// GetRepoByProviderByOwnerByNameWithResponse request returning *GetRepoByProviderByOwnerByNameResponse
+func (c *ClientWithResponses) GetRepoByProviderByOwnerByNameWithResponse(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*GetRepoByProviderByOwnerByNameResponse, error) {
+	rsp, err := c.GetRepoByProviderByOwnerByName(ctx, provider, owner, name, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetRepoByProviderByOwnerByNameResponse(rsp)
+}
+
+// GetRepoByProviderByOwnerByNameCommentAutocompleteWithResponse request returning *GetRepoByProviderByOwnerByNameCommentAutocompleteResponse
+func (c *ClientWithResponses) GetRepoByProviderByOwnerByNameCommentAutocompleteWithResponse(ctx context.Context, provider string, owner string, name string, params *GetRepoByProviderByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*GetRepoByProviderByOwnerByNameCommentAutocompleteResponse, error) {
+	rsp, err := c.GetRepoByProviderByOwnerByNameCommentAutocomplete(ctx, provider, owner, name, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetRepoByProviderByOwnerByNameCommentAutocompleteResponse(rsp)
+}
+
+// RefreshRepoWithResponse request returning *RefreshRepoResponse
+func (c *ClientWithResponses) RefreshRepoWithResponse(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*RefreshRepoResponse, error) {
+	rsp, err := c.RefreshRepo(ctx, provider, owner, name, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRefreshRepoResponse(rsp)
+}
+
+// PostRepoByProviderByOwnerByNameResolveByNumberWithResponse request returning *PostRepoByProviderByOwnerByNameResolveByNumberResponse
+func (c *ClientWithResponses) PostRepoByProviderByOwnerByNameResolveByNumberWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostRepoByProviderByOwnerByNameResolveByNumberResponse, error) {
+	rsp, err := c.PostRepoByProviderByOwnerByNameResolveByNumber(ctx, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostRepoByProviderByOwnerByNameResolveByNumberResponse(rsp)
 }
 
 // ListReposWithResponse request returning *ListReposResponse
@@ -7407,381 +12196,6 @@ func (c *ClientWithResponses) ListRepoSummariesWithResponse(ctx context.Context,
 		return nil, err
 	}
 	return ParseListRepoSummariesResponse(rsp)
-}
-
-// DeleteRepoWithResponse request returning *DeleteRepoResponse
-func (c *ClientWithResponses) DeleteRepoWithResponse(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*DeleteRepoResponse, error) {
-	rsp, err := c.DeleteRepo(ctx, owner, name, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseDeleteRepoResponse(rsp)
-}
-
-// GetReposByOwnerByNameWithResponse request returning *GetReposByOwnerByNameResponse
-func (c *ClientWithResponses) GetReposByOwnerByNameWithResponse(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNameResponse, error) {
-	rsp, err := c.GetReposByOwnerByName(ctx, owner, name, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetReposByOwnerByNameResponse(rsp)
-}
-
-// GetReposByOwnerByNameCommentAutocompleteWithResponse request returning *GetReposByOwnerByNameCommentAutocompleteResponse
-func (c *ClientWithResponses) GetReposByOwnerByNameCommentAutocompleteWithResponse(ctx context.Context, owner string, name string, params *GetReposByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNameCommentAutocompleteResponse, error) {
-	rsp, err := c.GetReposByOwnerByNameCommentAutocomplete(ctx, owner, name, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetReposByOwnerByNameCommentAutocompleteResponse(rsp)
-}
-
-// CreateIssueWithBodyWithResponse request with arbitrary body returning *CreateIssueResponse
-func (c *ClientWithResponses) CreateIssueWithBodyWithResponse(ctx context.Context, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueResponse, error) {
-	rsp, err := c.CreateIssueWithBody(ctx, owner, name, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseCreateIssueResponse(rsp)
-}
-
-func (c *ClientWithResponses) CreateIssueWithResponse(ctx context.Context, owner string, name string, body CreateIssueJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIssueResponse, error) {
-	rsp, err := c.CreateIssue(ctx, owner, name, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseCreateIssueResponse(rsp)
-}
-
-// GetReposByOwnerByNameIssuesByNumberWithResponse request returning *GetReposByOwnerByNameIssuesByNumberResponse
-func (c *ClientWithResponses) GetReposByOwnerByNameIssuesByNumberWithResponse(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNameIssuesByNumberParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNameIssuesByNumberResponse, error) {
-	rsp, err := c.GetReposByOwnerByNameIssuesByNumber(ctx, owner, name, number, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetReposByOwnerByNameIssuesByNumberResponse(rsp)
-}
-
-// PostIssueCommentWithBodyWithResponse request with arbitrary body returning *PostIssueCommentResponse
-func (c *ClientWithResponses) PostIssueCommentWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostIssueCommentResponse, error) {
-	rsp, err := c.PostIssueCommentWithBody(ctx, owner, name, number, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostIssueCommentResponse(rsp)
-}
-
-func (c *ClientWithResponses) PostIssueCommentWithResponse(ctx context.Context, owner string, name string, number int64, body PostIssueCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*PostIssueCommentResponse, error) {
-	rsp, err := c.PostIssueComment(ctx, owner, name, number, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostIssueCommentResponse(rsp)
-}
-
-// EditIssueCommentWithBodyWithResponse request with arbitrary body returning *EditIssueCommentResponse
-func (c *ClientWithResponses) EditIssueCommentWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditIssueCommentResponse, error) {
-	rsp, err := c.EditIssueCommentWithBody(ctx, owner, name, number, commentId, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseEditIssueCommentResponse(rsp)
-}
-
-func (c *ClientWithResponses) EditIssueCommentWithResponse(ctx context.Context, owner string, name string, number int64, commentId int64, body EditIssueCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditIssueCommentResponse, error) {
-	rsp, err := c.EditIssueComment(ctx, owner, name, number, commentId, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseEditIssueCommentResponse(rsp)
-}
-
-// SetIssueGithubStateWithBodyWithResponse request with arbitrary body returning *SetIssueGithubStateResponse
-func (c *ClientWithResponses) SetIssueGithubStateWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetIssueGithubStateResponse, error) {
-	rsp, err := c.SetIssueGithubStateWithBody(ctx, owner, name, number, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseSetIssueGithubStateResponse(rsp)
-}
-
-func (c *ClientWithResponses) SetIssueGithubStateWithResponse(ctx context.Context, owner string, name string, number int64, body SetIssueGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetIssueGithubStateResponse, error) {
-	rsp, err := c.SetIssueGithubState(ctx, owner, name, number, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseSetIssueGithubStateResponse(rsp)
-}
-
-// PostReposByOwnerByNameIssuesByNumberSyncWithResponse request returning *PostReposByOwnerByNameIssuesByNumberSyncResponse
-func (c *ClientWithResponses) PostReposByOwnerByNameIssuesByNumberSyncWithResponse(ctx context.Context, owner string, name string, number int64, params *PostReposByOwnerByNameIssuesByNumberSyncParams, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNameIssuesByNumberSyncResponse, error) {
-	rsp, err := c.PostReposByOwnerByNameIssuesByNumberSync(ctx, owner, name, number, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostReposByOwnerByNameIssuesByNumberSyncResponse(rsp)
-}
-
-// EnqueueIssueSyncWithResponse request returning *EnqueueIssueSyncResponse
-func (c *ClientWithResponses) EnqueueIssueSyncWithResponse(ctx context.Context, owner string, name string, number int64, params *EnqueueIssueSyncParams, reqEditors ...RequestEditorFn) (*EnqueueIssueSyncResponse, error) {
-	rsp, err := c.EnqueueIssueSync(ctx, owner, name, number, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseEnqueueIssueSyncResponse(rsp)
-}
-
-// CreateIssueWorkspaceWithBodyWithResponse request with arbitrary body returning *CreateIssueWorkspaceResponse
-func (c *ClientWithResponses) CreateIssueWorkspaceWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueWorkspaceResponse, error) {
-	rsp, err := c.CreateIssueWorkspaceWithBody(ctx, owner, name, number, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseCreateIssueWorkspaceResponse(rsp)
-}
-
-func (c *ClientWithResponses) CreateIssueWorkspaceWithResponse(ctx context.Context, owner string, name string, number int64, body CreateIssueWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIssueWorkspaceResponse, error) {
-	rsp, err := c.CreateIssueWorkspace(ctx, owner, name, number, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseCreateIssueWorkspaceResponse(rsp)
-}
-
-// PostReposByOwnerByNameItemsByNumberResolveWithResponse request returning *PostReposByOwnerByNameItemsByNumberResolveResponse
-func (c *ClientWithResponses) PostReposByOwnerByNameItemsByNumberResolveWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNameItemsByNumberResolveResponse, error) {
-	rsp, err := c.PostReposByOwnerByNameItemsByNumberResolve(ctx, owner, name, number, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostReposByOwnerByNameItemsByNumberResolveResponse(rsp)
-}
-
-// GetReposByOwnerByNamePullsByNumberWithResponse request returning *GetReposByOwnerByNamePullsByNumberResponse
-func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberResponse, error) {
-	rsp, err := c.GetReposByOwnerByNamePullsByNumber(ctx, owner, name, number, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetReposByOwnerByNamePullsByNumberResponse(rsp)
-}
-
-// EditPrContentWithBodyWithResponse request with arbitrary body returning *EditPrContentResponse
-func (c *ClientWithResponses) EditPrContentWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrContentResponse, error) {
-	rsp, err := c.EditPrContentWithBody(ctx, owner, name, number, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseEditPrContentResponse(rsp)
-}
-
-func (c *ClientWithResponses) EditPrContentWithResponse(ctx context.Context, owner string, name string, number int64, body EditPrContentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrContentResponse, error) {
-	rsp, err := c.EditPrContent(ctx, owner, name, number, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseEditPrContentResponse(rsp)
-}
-
-// PostReposByOwnerByNamePullsByNumberApproveWithBodyWithResponse request with arbitrary body returning *PostReposByOwnerByNamePullsByNumberApproveResponse
-func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberApproveWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberApproveResponse, error) {
-	rsp, err := c.PostReposByOwnerByNamePullsByNumberApproveWithBody(ctx, owner, name, number, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostReposByOwnerByNamePullsByNumberApproveResponse(rsp)
-}
-
-func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberApproveWithResponse(ctx context.Context, owner string, name string, number int64, body PostReposByOwnerByNamePullsByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberApproveResponse, error) {
-	rsp, err := c.PostReposByOwnerByNamePullsByNumberApprove(ctx, owner, name, number, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostReposByOwnerByNamePullsByNumberApproveResponse(rsp)
-}
-
-// PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse request returning *PostReposByOwnerByNamePullsByNumberApproveWorkflowsResponse
-func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberApproveWorkflowsResponse, error) {
-	rsp, err := c.PostReposByOwnerByNamePullsByNumberApproveWorkflows(ctx, owner, name, number, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostReposByOwnerByNamePullsByNumberApproveWorkflowsResponse(rsp)
-}
-
-// PostPrCommentWithBodyWithResponse request with arbitrary body returning *PostPrCommentResponse
-func (c *ClientWithResponses) PostPrCommentWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostPrCommentResponse, error) {
-	rsp, err := c.PostPrCommentWithBody(ctx, owner, name, number, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostPrCommentResponse(rsp)
-}
-
-func (c *ClientWithResponses) PostPrCommentWithResponse(ctx context.Context, owner string, name string, number int64, body PostPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*PostPrCommentResponse, error) {
-	rsp, err := c.PostPrComment(ctx, owner, name, number, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostPrCommentResponse(rsp)
-}
-
-// EditPrCommentWithBodyWithResponse request with arbitrary body returning *EditPrCommentResponse
-func (c *ClientWithResponses) EditPrCommentWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, commentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrCommentResponse, error) {
-	rsp, err := c.EditPrCommentWithBody(ctx, owner, name, number, commentId, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseEditPrCommentResponse(rsp)
-}
-
-func (c *ClientWithResponses) EditPrCommentWithResponse(ctx context.Context, owner string, name string, number int64, commentId int64, body EditPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrCommentResponse, error) {
-	rsp, err := c.EditPrComment(ctx, owner, name, number, commentId, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseEditPrCommentResponse(rsp)
-}
-
-// GetReposByOwnerByNamePullsByNumberCommitsWithResponse request returning *GetReposByOwnerByNamePullsByNumberCommitsResponse
-func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberCommitsWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberCommitsResponse, error) {
-	rsp, err := c.GetReposByOwnerByNamePullsByNumberCommits(ctx, owner, name, number, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetReposByOwnerByNamePullsByNumberCommitsResponse(rsp)
-}
-
-// GetReposByOwnerByNamePullsByNumberDiffWithResponse request returning *GetReposByOwnerByNamePullsByNumberDiffResponse
-func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberDiffWithResponse(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberDiffParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberDiffResponse, error) {
-	rsp, err := c.GetReposByOwnerByNamePullsByNumberDiff(ctx, owner, name, number, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetReposByOwnerByNamePullsByNumberDiffResponse(rsp)
-}
-
-// GetReposByOwnerByNamePullsByNumberFilePreviewWithResponse request returning *GetReposByOwnerByNamePullsByNumberFilePreviewResponse
-func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberFilePreviewWithResponse(ctx context.Context, owner string, name string, number int64, params *GetReposByOwnerByNamePullsByNumberFilePreviewParams, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberFilePreviewResponse, error) {
-	rsp, err := c.GetReposByOwnerByNamePullsByNumberFilePreview(ctx, owner, name, number, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetReposByOwnerByNamePullsByNumberFilePreviewResponse(rsp)
-}
-
-// GetReposByOwnerByNamePullsByNumberFilesWithResponse request returning *GetReposByOwnerByNamePullsByNumberFilesResponse
-func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberFilesWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberFilesResponse, error) {
-	rsp, err := c.GetReposByOwnerByNamePullsByNumberFiles(ctx, owner, name, number, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetReposByOwnerByNamePullsByNumberFilesResponse(rsp)
-}
-
-// SetPrGithubStateWithBodyWithResponse request with arbitrary body returning *SetPrGithubStateResponse
-func (c *ClientWithResponses) SetPrGithubStateWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrGithubStateResponse, error) {
-	rsp, err := c.SetPrGithubStateWithBody(ctx, owner, name, number, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseSetPrGithubStateResponse(rsp)
-}
-
-func (c *ClientWithResponses) SetPrGithubStateWithResponse(ctx context.Context, owner string, name string, number int64, body SetPrGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetPrGithubStateResponse, error) {
-	rsp, err := c.SetPrGithubState(ctx, owner, name, number, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseSetPrGithubStateResponse(rsp)
-}
-
-// GetReposByOwnerByNamePullsByNumberImportMetadataWithResponse request returning *GetReposByOwnerByNamePullsByNumberImportMetadataResponse
-func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberImportMetadataWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberImportMetadataResponse, error) {
-	rsp, err := c.GetReposByOwnerByNamePullsByNumberImportMetadata(ctx, owner, name, number, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetReposByOwnerByNamePullsByNumberImportMetadataResponse(rsp)
-}
-
-// PostReposByOwnerByNamePullsByNumberMergeWithBodyWithResponse request with arbitrary body returning *PostReposByOwnerByNamePullsByNumberMergeResponse
-func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberMergeWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberMergeResponse, error) {
-	rsp, err := c.PostReposByOwnerByNamePullsByNumberMergeWithBody(ctx, owner, name, number, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostReposByOwnerByNamePullsByNumberMergeResponse(rsp)
-}
-
-func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberMergeWithResponse(ctx context.Context, owner string, name string, number int64, body PostReposByOwnerByNamePullsByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberMergeResponse, error) {
-	rsp, err := c.PostReposByOwnerByNamePullsByNumberMerge(ctx, owner, name, number, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostReposByOwnerByNamePullsByNumberMergeResponse(rsp)
-}
-
-// PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse request returning *PostReposByOwnerByNamePullsByNumberReadyForReviewResponse
-func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberReadyForReviewResponse, error) {
-	rsp, err := c.PostReposByOwnerByNamePullsByNumberReadyForReview(ctx, owner, name, number, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostReposByOwnerByNamePullsByNumberReadyForReviewResponse(rsp)
-}
-
-// GetReposByOwnerByNamePullsByNumberStackWithResponse request returning *GetReposByOwnerByNamePullsByNumberStackResponse
-func (c *ClientWithResponses) GetReposByOwnerByNamePullsByNumberStackWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetReposByOwnerByNamePullsByNumberStackResponse, error) {
-	rsp, err := c.GetReposByOwnerByNamePullsByNumberStack(ctx, owner, name, number, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetReposByOwnerByNamePullsByNumberStackResponse(rsp)
-}
-
-// SetKanbanStateWithBodyWithResponse request with arbitrary body returning *SetKanbanStateResponse
-func (c *ClientWithResponses) SetKanbanStateWithBodyWithResponse(ctx context.Context, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetKanbanStateResponse, error) {
-	rsp, err := c.SetKanbanStateWithBody(ctx, owner, name, number, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseSetKanbanStateResponse(rsp)
-}
-
-func (c *ClientWithResponses) SetKanbanStateWithResponse(ctx context.Context, owner string, name string, number int64, body SetKanbanStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetKanbanStateResponse, error) {
-	rsp, err := c.SetKanbanState(ctx, owner, name, number, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseSetKanbanStateResponse(rsp)
-}
-
-// PostReposByOwnerByNamePullsByNumberSyncWithResponse request returning *PostReposByOwnerByNamePullsByNumberSyncResponse
-func (c *ClientWithResponses) PostReposByOwnerByNamePullsByNumberSyncWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostReposByOwnerByNamePullsByNumberSyncResponse, error) {
-	rsp, err := c.PostReposByOwnerByNamePullsByNumberSync(ctx, owner, name, number, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostReposByOwnerByNamePullsByNumberSyncResponse(rsp)
-}
-
-// EnqueuePrSyncWithResponse request returning *EnqueuePrSyncResponse
-func (c *ClientWithResponses) EnqueuePrSyncWithResponse(ctx context.Context, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*EnqueuePrSyncResponse, error) {
-	rsp, err := c.EnqueuePrSync(ctx, owner, name, number, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseEnqueuePrSyncResponse(rsp)
-}
-
-// RefreshRepoWithResponse request returning *RefreshRepoResponse
-func (c *ClientWithResponses) RefreshRepoWithResponse(ctx context.Context, owner string, name string, reqEditors ...RequestEditorFn) (*RefreshRepoResponse, error) {
-	rsp, err := c.RefreshRepo(ctx, owner, name, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseRefreshRepoResponse(rsp)
 }
 
 // GetRoborevStatusWithResponse request returning *GetRoborevStatusResponse
@@ -8037,6 +12451,1001 @@ func ParseGetActivityResponse(rsp *http.Response) (*GetActivityResponse, error) 
 	return response, nil
 }
 
+// ParseCreateIssueOnHostResponse parses an HTTP response from a CreateIssueOnHostWithResponse call
+func ParseCreateIssueOnHostResponse(rsp *http.Response) (*CreateIssueOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateIssueOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest IssueResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse parses an HTTP response from a GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberWithResponse call
+func ParseGetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse(rsp *http.Response) (*GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IssueDetailResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostIssueCommentOnHostResponse parses an HTTP response from a PostIssueCommentOnHostWithResponse call
+func ParsePostIssueCommentOnHostResponse(rsp *http.Response) (*PostIssueCommentOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostIssueCommentOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest IssueEvent
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseEditIssueCommentOnHostResponse parses an HTTP response from a EditIssueCommentOnHostWithResponse call
+func ParseEditIssueCommentOnHostResponse(rsp *http.Response) (*EditIssueCommentOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &EditIssueCommentOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IssueEvent
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetIssueGithubStateOnHostResponse parses an HTTP response from a SetIssueGithubStateOnHostWithResponse call
+func ParseSetIssueGithubStateOnHostResponse(rsp *http.Response) (*SetIssueGithubStateOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetIssueGithubStateOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest GithubStateOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncResponse parses an HTTP response from a PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncWithResponse call
+func ParsePostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncResponse(rsp *http.Response) (*PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IssueDetailResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseEnqueueIssueSyncOnHostResponse parses an HTTP response from a EnqueueIssueSyncOnHostWithResponse call
+func ParseEnqueueIssueSyncOnHostResponse(rsp *http.Response) (*EnqueueIssueSyncOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &EnqueueIssueSyncOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateIssueWorkspaceOnHostResponse parses an HTTP response from a CreateIssueWorkspaceOnHostWithResponse call
+func ParseCreateIssueWorkspaceOnHostResponse(rsp *http.Response) (*CreateIssueWorkspaceOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateIssueWorkspaceOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest WorkspaceResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberResponse parses an HTTP response from a GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberWithResponse call
+func ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberResponse(rsp *http.Response) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MergeRequestDetailResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseEditPrContentOnHostResponse parses an HTTP response from a EditPrContentOnHostWithResponse call
+func ParseEditPrContentOnHostResponse(rsp *http.Response) (*EditPrContentOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &EditPrContentOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MergeRequestDetailResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse parses an HTTP response from a PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWithResponse call
+func ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse(rsp *http.Response) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ActionStatusBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse parses an HTTP response from a PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse call
+func ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse(rsp *http.Response) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ActionStatusBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostPrCommentOnHostResponse parses an HTTP response from a PostPrCommentOnHostWithResponse call
+func ParsePostPrCommentOnHostResponse(rsp *http.Response) (*PostPrCommentOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostPrCommentOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest MREvent
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseEditPrCommentOnHostResponse parses an HTTP response from a EditPrCommentOnHostWithResponse call
+func ParseEditPrCommentOnHostResponse(rsp *http.Response) (*EditPrCommentOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &EditPrCommentOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MREvent
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsResponse parses an HTTP response from a GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsWithResponse call
+func ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsResponse(rsp *http.Response) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CommitsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffResponse parses an HTTP response from a GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffWithResponse call
+func ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffResponse(rsp *http.Response) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DiffResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewResponse parses an HTTP response from a GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewWithResponse call
+func ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewResponse(rsp *http.Response) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FilePreviewResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesResponse parses an HTTP response from a GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesWithResponse call
+func ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesResponse(rsp *http.Response) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FilesResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetPrGithubStateOnHostResponse parses an HTTP response from a SetPrGithubStateOnHostWithResponse call
+func ParseSetPrGithubStateOnHostResponse(rsp *http.Response) (*SetPrGithubStateOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetPrGithubStateOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest GithubStateOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataResponse parses an HTTP response from a GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataWithResponse call
+func ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataResponse(rsp *http.Response) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MrImportMetadataResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse parses an HTTP response from a PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithResponse call
+func ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse(rsp *http.Response) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MergePRBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse parses an HTTP response from a PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse call
+func ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse(rsp *http.Response) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ActionStatusBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackResponse parses an HTTP response from a GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackWithResponse call
+func ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackResponse(rsp *http.Response) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest StackContextResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetKanbanStateOnHostResponse parses an HTTP response from a SetKanbanStateOnHostWithResponse call
+func ParseSetKanbanStateOnHostResponse(rsp *http.Response) (*SetKanbanStateOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetKanbanStateOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncResponse parses an HTTP response from a PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncWithResponse call
+func ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncResponse(rsp *http.Response) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MergeRequestDetailResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseEnqueuePrSyncOnHostResponse parses an HTTP response from a EnqueuePrSyncOnHostWithResponse call
+func ParseEnqueuePrSyncOnHostResponse(rsp *http.Response) (*EnqueuePrSyncOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &EnqueuePrSyncOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteRepoOnHostResponse parses an HTTP response from a DeleteRepoOnHostWithResponse call
+func ParseDeleteRepoOnHostResponse(rsp *http.Response) (*DeleteRepoOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteRepoOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetHostByPlatformHostRepoByProviderByOwnerByNameResponse parses an HTTP response from a GetHostByPlatformHostRepoByProviderByOwnerByNameWithResponse call
+func ParseGetHostByPlatformHostRepoByProviderByOwnerByNameResponse(rsp *http.Response) (*GetHostByPlatformHostRepoByProviderByOwnerByNameResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetHostByPlatformHostRepoByProviderByOwnerByNameResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RepoResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteResponse parses an HTTP response from a GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteWithResponse call
+func ParseGetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteResponse(rsp *http.Response) (*GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CommentAutocompleteResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRefreshRepoOnHostResponse parses an HTTP response from a RefreshRepoOnHostWithResponse call
+func ParseRefreshRepoOnHostResponse(rsp *http.Response) (*RefreshRepoOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RefreshRepoOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SettingsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberResponse parses an HTTP response from a PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberWithResponse call
+func ParsePostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberResponse(rsp *http.Response) (*PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ResolveItemResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListIssuesResponse parses an HTTP response from a ListIssuesWithResponse call
 func ParseListIssuesResponse(rsp *http.Response) (*ListIssuesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -8057,6 +13466,263 @@ func ParseListIssuesResponse(rsp *http.Response) (*ListIssuesResponse, error) {
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateIssueResponse parses an HTTP response from a CreateIssueWithResponse call
+func ParseCreateIssueResponse(rsp *http.Response) (*CreateIssueResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateIssueResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest IssueResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetIssuesByProviderByOwnerByNameByNumberResponse parses an HTTP response from a GetIssuesByProviderByOwnerByNameByNumberWithResponse call
+func ParseGetIssuesByProviderByOwnerByNameByNumberResponse(rsp *http.Response) (*GetIssuesByProviderByOwnerByNameByNumberResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetIssuesByProviderByOwnerByNameByNumberResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IssueDetailResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostIssueCommentResponse parses an HTTP response from a PostIssueCommentWithResponse call
+func ParsePostIssueCommentResponse(rsp *http.Response) (*PostIssueCommentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostIssueCommentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest IssueEvent
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseEditIssueCommentResponse parses an HTTP response from a EditIssueCommentWithResponse call
+func ParseEditIssueCommentResponse(rsp *http.Response) (*EditIssueCommentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &EditIssueCommentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IssueEvent
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetIssueGithubStateResponse parses an HTTP response from a SetIssueGithubStateWithResponse call
+func ParseSetIssueGithubStateResponse(rsp *http.Response) (*SetIssueGithubStateResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetIssueGithubStateResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest GithubStateOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostIssuesByProviderByOwnerByNameByNumberSyncResponse parses an HTTP response from a PostIssuesByProviderByOwnerByNameByNumberSyncWithResponse call
+func ParsePostIssuesByProviderByOwnerByNameByNumberSyncResponse(rsp *http.Response) (*PostIssuesByProviderByOwnerByNameByNumberSyncResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostIssuesByProviderByOwnerByNameByNumberSyncResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IssueDetailResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseEnqueueIssueSyncResponse parses an HTTP response from a EnqueueIssueSyncWithResponse call
+func ParseEnqueueIssueSyncResponse(rsp *http.Response) (*EnqueueIssueSyncResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &EnqueueIssueSyncResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateIssueWorkspaceResponse parses an HTTP response from a CreateIssueWorkspaceWithResponse call
+func ParseCreateIssueWorkspaceResponse(rsp *http.Response) (*CreateIssueWorkspaceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateIssueWorkspaceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest WorkspaceResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorModel
@@ -8103,6 +13769,586 @@ func ParseListPullsResponse(rsp *http.Response) (*ListPullsResponse, error) {
 	return response, nil
 }
 
+// ParseGetPullsByProviderByOwnerByNameByNumberResponse parses an HTTP response from a GetPullsByProviderByOwnerByNameByNumberWithResponse call
+func ParseGetPullsByProviderByOwnerByNameByNumberResponse(rsp *http.Response) (*GetPullsByProviderByOwnerByNameByNumberResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetPullsByProviderByOwnerByNameByNumberResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MergeRequestDetailResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseEditPrContentResponse parses an HTTP response from a EditPrContentWithResponse call
+func ParseEditPrContentResponse(rsp *http.Response) (*EditPrContentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &EditPrContentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MergeRequestDetailResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostPullsByProviderByOwnerByNameByNumberApproveResponse parses an HTTP response from a PostPullsByProviderByOwnerByNameByNumberApproveWithResponse call
+func ParsePostPullsByProviderByOwnerByNameByNumberApproveResponse(rsp *http.Response) (*PostPullsByProviderByOwnerByNameByNumberApproveResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostPullsByProviderByOwnerByNameByNumberApproveResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ActionStatusBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse parses an HTTP response from a PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse call
+func ParsePostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse(rsp *http.Response) (*PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ActionStatusBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostPrCommentResponse parses an HTTP response from a PostPrCommentWithResponse call
+func ParsePostPrCommentResponse(rsp *http.Response) (*PostPrCommentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostPrCommentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest MREvent
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseEditPrCommentResponse parses an HTTP response from a EditPrCommentWithResponse call
+func ParseEditPrCommentResponse(rsp *http.Response) (*EditPrCommentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &EditPrCommentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MREvent
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetPullsByProviderByOwnerByNameByNumberCommitsResponse parses an HTTP response from a GetPullsByProviderByOwnerByNameByNumberCommitsWithResponse call
+func ParseGetPullsByProviderByOwnerByNameByNumberCommitsResponse(rsp *http.Response) (*GetPullsByProviderByOwnerByNameByNumberCommitsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetPullsByProviderByOwnerByNameByNumberCommitsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CommitsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetPullsByProviderByOwnerByNameByNumberDiffResponse parses an HTTP response from a GetPullsByProviderByOwnerByNameByNumberDiffWithResponse call
+func ParseGetPullsByProviderByOwnerByNameByNumberDiffResponse(rsp *http.Response) (*GetPullsByProviderByOwnerByNameByNumberDiffResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetPullsByProviderByOwnerByNameByNumberDiffResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DiffResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetPullsByProviderByOwnerByNameByNumberFilePreviewResponse parses an HTTP response from a GetPullsByProviderByOwnerByNameByNumberFilePreviewWithResponse call
+func ParseGetPullsByProviderByOwnerByNameByNumberFilePreviewResponse(rsp *http.Response) (*GetPullsByProviderByOwnerByNameByNumberFilePreviewResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetPullsByProviderByOwnerByNameByNumberFilePreviewResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FilePreviewResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetPullsByProviderByOwnerByNameByNumberFilesResponse parses an HTTP response from a GetPullsByProviderByOwnerByNameByNumberFilesWithResponse call
+func ParseGetPullsByProviderByOwnerByNameByNumberFilesResponse(rsp *http.Response) (*GetPullsByProviderByOwnerByNameByNumberFilesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetPullsByProviderByOwnerByNameByNumberFilesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FilesResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetPrGithubStateResponse parses an HTTP response from a SetPrGithubStateWithResponse call
+func ParseSetPrGithubStateResponse(rsp *http.Response) (*SetPrGithubStateResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetPrGithubStateResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest GithubStateOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetPullsByProviderByOwnerByNameByNumberImportMetadataResponse parses an HTTP response from a GetPullsByProviderByOwnerByNameByNumberImportMetadataWithResponse call
+func ParseGetPullsByProviderByOwnerByNameByNumberImportMetadataResponse(rsp *http.Response) (*GetPullsByProviderByOwnerByNameByNumberImportMetadataResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetPullsByProviderByOwnerByNameByNumberImportMetadataResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MrImportMetadataResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostPullsByProviderByOwnerByNameByNumberMergeResponse parses an HTTP response from a PostPullsByProviderByOwnerByNameByNumberMergeWithResponse call
+func ParsePostPullsByProviderByOwnerByNameByNumberMergeResponse(rsp *http.Response) (*PostPullsByProviderByOwnerByNameByNumberMergeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostPullsByProviderByOwnerByNameByNumberMergeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MergePRBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse parses an HTTP response from a PostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse call
+func ParsePostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse(rsp *http.Response) (*PostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ActionStatusBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetPullsByProviderByOwnerByNameByNumberStackResponse parses an HTTP response from a GetPullsByProviderByOwnerByNameByNumberStackWithResponse call
+func ParseGetPullsByProviderByOwnerByNameByNumberStackResponse(rsp *http.Response) (*GetPullsByProviderByOwnerByNameByNumberStackResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetPullsByProviderByOwnerByNameByNumberStackResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest StackContextResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetKanbanStateResponse parses an HTTP response from a SetKanbanStateWithResponse call
+func ParseSetKanbanStateResponse(rsp *http.Response) (*SetKanbanStateResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetKanbanStateResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostPullsByProviderByOwnerByNameByNumberSyncResponse parses an HTTP response from a PostPullsByProviderByOwnerByNameByNumberSyncWithResponse call
+func ParsePostPullsByProviderByOwnerByNameByNumberSyncResponse(rsp *http.Response) (*PostPullsByProviderByOwnerByNameByNumberSyncResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostPullsByProviderByOwnerByNameByNumberSyncResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MergeRequestDetailResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseEnqueuePrSyncResponse parses an HTTP response from a EnqueuePrSyncWithResponse call
+func ParseEnqueuePrSyncResponse(rsp *http.Response) (*EnqueuePrSyncResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &EnqueuePrSyncResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetRateLimitsResponse parses an HTTP response from a GetRateLimitsWithResponse call
 func ParseGetRateLimitsResponse(rsp *http.Response) (*GetRateLimitsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -8136,6 +14382,164 @@ func ParseGetRateLimitsResponse(rsp *http.Response) (*GetRateLimitsResponse, err
 	return response, nil
 }
 
+// ParseDeleteRepoResponse parses an HTTP response from a DeleteRepoWithResponse call
+func ParseDeleteRepoResponse(rsp *http.Response) (*DeleteRepoResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteRepoResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetRepoByProviderByOwnerByNameResponse parses an HTTP response from a GetRepoByProviderByOwnerByNameWithResponse call
+func ParseGetRepoByProviderByOwnerByNameResponse(rsp *http.Response) (*GetRepoByProviderByOwnerByNameResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetRepoByProviderByOwnerByNameResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RepoResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetRepoByProviderByOwnerByNameCommentAutocompleteResponse parses an HTTP response from a GetRepoByProviderByOwnerByNameCommentAutocompleteWithResponse call
+func ParseGetRepoByProviderByOwnerByNameCommentAutocompleteResponse(rsp *http.Response) (*GetRepoByProviderByOwnerByNameCommentAutocompleteResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetRepoByProviderByOwnerByNameCommentAutocompleteResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CommentAutocompleteResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRefreshRepoResponse parses an HTTP response from a RefreshRepoWithResponse call
+func ParseRefreshRepoResponse(rsp *http.Response) (*RefreshRepoResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RefreshRepoResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SettingsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostRepoByProviderByOwnerByNameResolveByNumberResponse parses an HTTP response from a PostRepoByProviderByOwnerByNameResolveByNumberWithResponse call
+func ParsePostRepoByProviderByOwnerByNameResolveByNumberResponse(rsp *http.Response) (*PostRepoByProviderByOwnerByNameResolveByNumberResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostRepoByProviderByOwnerByNameResolveByNumberResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ResolveItemResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListReposResponse parses an HTTP response from a ListReposWithResponse call
 func ParseListReposResponse(rsp *http.Response) (*ListReposResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -8151,7 +14555,7 @@ func ParseListReposResponse(rsp *http.Response) (*ListReposResponse, error) {
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []Repo
+		var dest []RepoResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -8284,1001 +14688,6 @@ func ParseListRepoSummariesResponse(rsp *http.Response) (*ListRepoSummariesRespo
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest []RepoSummaryResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseDeleteRepoResponse parses an HTTP response from a DeleteRepoWithResponse call
-func ParseDeleteRepoResponse(rsp *http.Response) (*DeleteRepoResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &DeleteRepoResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetReposByOwnerByNameResponse parses an HTTP response from a GetReposByOwnerByNameWithResponse call
-func ParseGetReposByOwnerByNameResponse(rsp *http.Response) (*GetReposByOwnerByNameResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetReposByOwnerByNameResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest Repo
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetReposByOwnerByNameCommentAutocompleteResponse parses an HTTP response from a GetReposByOwnerByNameCommentAutocompleteWithResponse call
-func ParseGetReposByOwnerByNameCommentAutocompleteResponse(rsp *http.Response) (*GetReposByOwnerByNameCommentAutocompleteResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetReposByOwnerByNameCommentAutocompleteResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest CommentAutocompleteResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseCreateIssueResponse parses an HTTP response from a CreateIssueWithResponse call
-func ParseCreateIssueResponse(rsp *http.Response) (*CreateIssueResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &CreateIssueResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
-		var dest IssueResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON201 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetReposByOwnerByNameIssuesByNumberResponse parses an HTTP response from a GetReposByOwnerByNameIssuesByNumberWithResponse call
-func ParseGetReposByOwnerByNameIssuesByNumberResponse(rsp *http.Response) (*GetReposByOwnerByNameIssuesByNumberResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetReposByOwnerByNameIssuesByNumberResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest IssueDetailResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParsePostIssueCommentResponse parses an HTTP response from a PostIssueCommentWithResponse call
-func ParsePostIssueCommentResponse(rsp *http.Response) (*PostIssueCommentResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &PostIssueCommentResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
-		var dest IssueEvent
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON201 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseEditIssueCommentResponse parses an HTTP response from a EditIssueCommentWithResponse call
-func ParseEditIssueCommentResponse(rsp *http.Response) (*EditIssueCommentResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &EditIssueCommentResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest IssueEvent
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseSetIssueGithubStateResponse parses an HTTP response from a SetIssueGithubStateWithResponse call
-func ParseSetIssueGithubStateResponse(rsp *http.Response) (*SetIssueGithubStateResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &SetIssueGithubStateResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest GithubStateOutputBody
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParsePostReposByOwnerByNameIssuesByNumberSyncResponse parses an HTTP response from a PostReposByOwnerByNameIssuesByNumberSyncWithResponse call
-func ParsePostReposByOwnerByNameIssuesByNumberSyncResponse(rsp *http.Response) (*PostReposByOwnerByNameIssuesByNumberSyncResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &PostReposByOwnerByNameIssuesByNumberSyncResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest IssueDetailResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseEnqueueIssueSyncResponse parses an HTTP response from a EnqueueIssueSyncWithResponse call
-func ParseEnqueueIssueSyncResponse(rsp *http.Response) (*EnqueueIssueSyncResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &EnqueueIssueSyncResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseCreateIssueWorkspaceResponse parses an HTTP response from a CreateIssueWorkspaceWithResponse call
-func ParseCreateIssueWorkspaceResponse(rsp *http.Response) (*CreateIssueWorkspaceResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &CreateIssueWorkspaceResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
-		var dest WorkspaceResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON202 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParsePostReposByOwnerByNameItemsByNumberResolveResponse parses an HTTP response from a PostReposByOwnerByNameItemsByNumberResolveWithResponse call
-func ParsePostReposByOwnerByNameItemsByNumberResolveResponse(rsp *http.Response) (*PostReposByOwnerByNameItemsByNumberResolveResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &PostReposByOwnerByNameItemsByNumberResolveResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest ResolveItemResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetReposByOwnerByNamePullsByNumberResponse parses an HTTP response from a GetReposByOwnerByNamePullsByNumberWithResponse call
-func ParseGetReposByOwnerByNamePullsByNumberResponse(rsp *http.Response) (*GetReposByOwnerByNamePullsByNumberResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetReposByOwnerByNamePullsByNumberResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest MergeRequestDetailResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseEditPrContentResponse parses an HTTP response from a EditPrContentWithResponse call
-func ParseEditPrContentResponse(rsp *http.Response) (*EditPrContentResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &EditPrContentResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest MergeRequestDetailResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParsePostReposByOwnerByNamePullsByNumberApproveResponse parses an HTTP response from a PostReposByOwnerByNamePullsByNumberApproveWithResponse call
-func ParsePostReposByOwnerByNamePullsByNumberApproveResponse(rsp *http.Response) (*PostReposByOwnerByNamePullsByNumberApproveResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &PostReposByOwnerByNamePullsByNumberApproveResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest ActionStatusBody
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParsePostReposByOwnerByNamePullsByNumberApproveWorkflowsResponse parses an HTTP response from a PostReposByOwnerByNamePullsByNumberApproveWorkflowsWithResponse call
-func ParsePostReposByOwnerByNamePullsByNumberApproveWorkflowsResponse(rsp *http.Response) (*PostReposByOwnerByNamePullsByNumberApproveWorkflowsResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &PostReposByOwnerByNamePullsByNumberApproveWorkflowsResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest ActionStatusBody
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParsePostPrCommentResponse parses an HTTP response from a PostPrCommentWithResponse call
-func ParsePostPrCommentResponse(rsp *http.Response) (*PostPrCommentResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &PostPrCommentResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
-		var dest MREvent
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON201 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseEditPrCommentResponse parses an HTTP response from a EditPrCommentWithResponse call
-func ParseEditPrCommentResponse(rsp *http.Response) (*EditPrCommentResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &EditPrCommentResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest MREvent
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetReposByOwnerByNamePullsByNumberCommitsResponse parses an HTTP response from a GetReposByOwnerByNamePullsByNumberCommitsWithResponse call
-func ParseGetReposByOwnerByNamePullsByNumberCommitsResponse(rsp *http.Response) (*GetReposByOwnerByNamePullsByNumberCommitsResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetReposByOwnerByNamePullsByNumberCommitsResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest CommitsResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetReposByOwnerByNamePullsByNumberDiffResponse parses an HTTP response from a GetReposByOwnerByNamePullsByNumberDiffWithResponse call
-func ParseGetReposByOwnerByNamePullsByNumberDiffResponse(rsp *http.Response) (*GetReposByOwnerByNamePullsByNumberDiffResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetReposByOwnerByNamePullsByNumberDiffResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest DiffResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetReposByOwnerByNamePullsByNumberFilePreviewResponse parses an HTTP response from a GetReposByOwnerByNamePullsByNumberFilePreviewWithResponse call
-func ParseGetReposByOwnerByNamePullsByNumberFilePreviewResponse(rsp *http.Response) (*GetReposByOwnerByNamePullsByNumberFilePreviewResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetReposByOwnerByNamePullsByNumberFilePreviewResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest FilePreviewResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetReposByOwnerByNamePullsByNumberFilesResponse parses an HTTP response from a GetReposByOwnerByNamePullsByNumberFilesWithResponse call
-func ParseGetReposByOwnerByNamePullsByNumberFilesResponse(rsp *http.Response) (*GetReposByOwnerByNamePullsByNumberFilesResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetReposByOwnerByNamePullsByNumberFilesResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest FilesResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseSetPrGithubStateResponse parses an HTTP response from a SetPrGithubStateWithResponse call
-func ParseSetPrGithubStateResponse(rsp *http.Response) (*SetPrGithubStateResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &SetPrGithubStateResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest GithubStateOutputBody
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetReposByOwnerByNamePullsByNumberImportMetadataResponse parses an HTTP response from a GetReposByOwnerByNamePullsByNumberImportMetadataWithResponse call
-func ParseGetReposByOwnerByNamePullsByNumberImportMetadataResponse(rsp *http.Response) (*GetReposByOwnerByNamePullsByNumberImportMetadataResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetReposByOwnerByNamePullsByNumberImportMetadataResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest MrImportMetadataResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParsePostReposByOwnerByNamePullsByNumberMergeResponse parses an HTTP response from a PostReposByOwnerByNamePullsByNumberMergeWithResponse call
-func ParsePostReposByOwnerByNamePullsByNumberMergeResponse(rsp *http.Response) (*PostReposByOwnerByNamePullsByNumberMergeResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &PostReposByOwnerByNamePullsByNumberMergeResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest MergePRBody
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParsePostReposByOwnerByNamePullsByNumberReadyForReviewResponse parses an HTTP response from a PostReposByOwnerByNamePullsByNumberReadyForReviewWithResponse call
-func ParsePostReposByOwnerByNamePullsByNumberReadyForReviewResponse(rsp *http.Response) (*PostReposByOwnerByNamePullsByNumberReadyForReviewResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &PostReposByOwnerByNamePullsByNumberReadyForReviewResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest ActionStatusBody
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetReposByOwnerByNamePullsByNumberStackResponse parses an HTTP response from a GetReposByOwnerByNamePullsByNumberStackWithResponse call
-func ParseGetReposByOwnerByNamePullsByNumberStackResponse(rsp *http.Response) (*GetReposByOwnerByNamePullsByNumberStackResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetReposByOwnerByNamePullsByNumberStackResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest StackContextResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseSetKanbanStateResponse parses an HTTP response from a SetKanbanStateWithResponse call
-func ParseSetKanbanStateResponse(rsp *http.Response) (*SetKanbanStateResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &SetKanbanStateResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParsePostReposByOwnerByNamePullsByNumberSyncResponse parses an HTTP response from a PostReposByOwnerByNamePullsByNumberSyncWithResponse call
-func ParsePostReposByOwnerByNamePullsByNumberSyncResponse(rsp *http.Response) (*PostReposByOwnerByNamePullsByNumberSyncResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &PostReposByOwnerByNamePullsByNumberSyncResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest MergeRequestDetailResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseEnqueuePrSyncResponse parses an HTTP response from a EnqueuePrSyncWithResponse call
-func ParseEnqueuePrSyncResponse(rsp *http.Response) (*EnqueuePrSyncResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &EnqueuePrSyncResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseRefreshRepoResponse parses an HTTP response from a RefreshRepoWithResponse call
-func ParseRefreshRepoResponse(rsp *http.Response) (*RefreshRepoResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &RefreshRepoResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SettingsResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
