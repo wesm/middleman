@@ -191,6 +191,10 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
+    # Browsers and their OS deps are preinstalled here, so apt-get is skipped
+    # entirely. The image tag must track @playwright/test in bun.lock.
+    container:
+      image: mcr.microsoft.com/playwright:v1.55.1-noble
     strategy:
       fail-fast: false
       matrix:
@@ -219,9 +223,6 @@ jobs:
 
       - name: Build E2E server
         run: go build -o ./cmd/e2e-server/e2e-server ./cmd/e2e-server
-
-      - name: Install Playwright browser
-        run: cd frontend && bunx playwright install --with-deps ${{ matrix.browser }}
 
       - name: Run E2E tests
         run: cd frontend && bun run playwright test --config=playwright-e2e.config.ts --project=${{ matrix.browser }}
