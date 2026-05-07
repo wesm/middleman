@@ -16,6 +16,28 @@ type = "gitlab"
 host = "gitlab.com"
 token_env = "MIDDLEMAN_GITLAB_TOKEN"
 
+# Tokens are selected by provider and host. Read access is enough for sync;
+# write access is needed only for comments, state edits, approvals, and merges.
+[[platforms]]
+type = "forgejo"
+host = "codeberg.org"
+token_env = "MIDDLEMAN_FORGEJO_TOKEN"
+
+[[platforms]]
+type = "forgejo"
+host = "forgejo.internal.example"
+token_env = "FORGEJO_INTERNAL_TOKEN"
+
+[[platforms]]
+type = "gitea"
+host = "gitea.com"
+token_env = "MIDDLEMAN_GITEA_TOKEN"
+
+[[platforms]]
+type = "gitea"
+host = "gitea.internal.example"
+token_env = "GITEA_INTERNAL_TOKEN"
+
 [[repos]]
 owner = "apache"
 name = "arrow"
@@ -32,3 +54,27 @@ platform_host = "gitlab.com"
 owner = "my-group/subgroup"
 name = "my-project"
 repo_path = "my-group/subgroup/my-project"
+
+[[repos]]
+platform = "forgejo"
+platform_host = "codeberg.org"
+owner = "forgejo"
+name = "forgejo"
+
+[[repos]]
+platform = "forgejo"
+platform_host = "forgejo.internal.example"
+owner = "team"
+name = "service"
+
+[[repos]]
+platform = "gitea"
+platform_host = "gitea.com"
+owner = "gitea"
+name = "tea"
+
+[[repos]]
+platform = "gitea"
+platform_host = "gitea.internal.example"
+owner = "team"
+name = "ops"
