@@ -7,6 +7,8 @@ import (
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/platform"
+	forgejoclient "github.com/wesm/middleman/internal/platform/forgejo"
+	giteaclient "github.com/wesm/middleman/internal/platform/gitea"
 	gitlabclient "github.com/wesm/middleman/internal/platform/gitlab"
 )
 
@@ -51,6 +53,26 @@ func defaultProviderFactories() map[string]providerFactory {
 			client, err := gitlabclient.NewClient(
 				input.host, input.token,
 				gitlabclient.WithRateTracker(input.rateTracker),
+			)
+			if err != nil {
+				return providerFactoryOutput{}, err
+			}
+			return providerFactoryOutput{provider: client}, nil
+		},
+		string(platform.KindForgejo): func(input providerFactoryInput) (providerFactoryOutput, error) {
+			client, err := forgejoclient.NewClient(
+				input.host, input.token,
+				forgejoclient.WithRateTracker(input.rateTracker),
+			)
+			if err != nil {
+				return providerFactoryOutput{}, err
+			}
+			return providerFactoryOutput{provider: client}, nil
+		},
+		string(platform.KindGitea): func(input providerFactoryInput) (providerFactoryOutput, error) {
+			client, err := giteaclient.NewClient(
+				input.host, input.token,
+				giteaclient.WithRateTracker(input.rateTracker),
 			)
 			if err != nil {
 				return providerFactoryOutput{}, err

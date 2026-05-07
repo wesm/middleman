@@ -155,6 +155,76 @@ func TestValidateProviderHostKeysAllowsMixedProvidersOnSameHostWithSameToken(t *
 	require.NoError(t, err)
 }
 
+func TestDefaultProviderFactoriesRegisterForgejoAndGitea(t *testing.T) {
+	factories := defaultProviderFactories()
+
+	assert := Assert.New(t)
+	assert.Contains(factories, string(platform.KindForgejo))
+	assert.Contains(factories, string(platform.KindGitea))
+}
+
+func TestBuildProviderStartupKeepsForgeProviderHostsDistinct(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	database, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	callsByProvider := map[string][]providerFactoryInput{}
+	factories := map[string]providerFactory{
+		string(platform.KindForgejo): func(input providerFactoryInput) (providerFactoryOutput, error) {
+			callsByProvider[string(platform.KindForgejo)] = append(
+				callsByProvider[string(platform.KindForgejo)], input,
+			)
+			return providerFactoryOutput{provider: mainTestRepositoryReader{
+				kind: platform.KindForgejo,
+				host: input.host,
+			}}, nil
+		},
+		string(platform.KindGitea): func(input providerFactoryInput) (providerFactoryOutput, error) {
+			callsByProvider[string(platform.KindGitea)] = append(
+				callsByProvider[string(platform.KindGitea)], input,
+			)
+			return providerFactoryOutput{provider: mainTestRepositoryReader{
+				kind: platform.KindGitea,
+				host: input.host,
+			}}, nil
+		},
+	}
+
+	startup, err := buildProviderStartup(
+		database,
+		&config.Config{SyncBudgetPerHour: 200},
+		map[string]string{
+			providerHostKey(string(platform.KindForgejo), "codeberg.org"):    "codeberg-token",
+			providerHostKey(string(platform.KindGitea), "gitea.example.com"): "gitea-token",
+		},
+		factories,
+	)
+	require.NoError(err)
+
+	forgejoCalls := callsByProvider[string(platform.KindForgejo)]
+	giteaCalls := callsByProvider[string(platform.KindGitea)]
+	require.Len(forgejoCalls, 1)
+	require.Len(giteaCalls, 1)
+	assert.Equal("codeberg.org", forgejoCalls[0].host)
+	assert.Equal("codeberg-token", forgejoCalls[0].token)
+	assert.Equal("gitea.example.com", giteaCalls[0].host)
+	assert.Equal("gitea-token", giteaCalls[0].token)
+	assert.NotSame(forgejoCalls[0].rateTracker, giteaCalls[0].rateTracker)
+	assert.NotSame(forgejoCalls[0].budget, giteaCalls[0].budget)
+	assert.Equal("codeberg-token", startup.cloneTokens["codeberg.org"])
+	assert.Equal("gitea-token", startup.cloneTokens["gitea.example.com"])
+
+	forgejoReader, err := startup.registry.RepositoryReader(platform.KindForgejo, "codeberg.org")
+	require.NoError(err)
+	giteaReader, err := startup.registry.RepositoryReader(platform.KindGitea, "gitea.example.com")
+	require.NoError(err)
+	assert.NotNil(forgejoReader)
+	assert.NotNil(giteaReader)
+}
+
 func TestBuildProviderStartupUsesRegisteredFactoryForFutureProvider(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
