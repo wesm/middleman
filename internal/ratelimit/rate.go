@@ -121,10 +121,14 @@ func (rt *RateTracker) BucketKey() string {
 // persists to DB.
 func (rt *RateTracker) RecordRequest() {
 	rt.mu.Lock()
-	defer rt.mu.Unlock()
-	rt.rollIfNeeded()
+	resetFn := rt.rollIfNeeded()
 	rt.count++
 	rt.persist()
+	rt.mu.Unlock()
+
+	if resetFn != nil {
+		resetFn()
+	}
 }
 
 // SetOnWindowReset registers a callback invoked when a provider
@@ -238,9 +242,14 @@ func (rt *RateTracker) Known() bool {
 // the current hour window.
 func (rt *RateTracker) RequestsThisHour() int {
 	rt.mu.Lock()
-	defer rt.mu.Unlock()
-	rt.rollIfNeeded()
-	return rt.count
+	resetFn := rt.rollIfNeeded()
+	count := rt.count
+	rt.mu.Unlock()
+
+	if resetFn != nil {
+		resetFn()
+	}
+	return count
 }
 
 // ResetAt returns a copy of the reset time, or nil if unknown.
@@ -285,7 +294,7 @@ func (rt *RateTracker) isQuotaStale() bool {
 // rate window has expired. When the provider's resetAt is known, it
 // defines the window; otherwise falls back to clock-hour
 // boundaries. Must be called with mu held.
-func (rt *RateTracker) rollIfNeeded() {
+func (rt *RateTracker) rollIfNeeded() func() {
 	if rt.resetAt != nil {
 		if !time.Now().Before(*rt.resetAt) && !rt.lastRolledAt.Equal(*rt.resetAt) {
 			rt.lastRolledAt = *rt.resetAt
@@ -296,8 +305,9 @@ func (rt *RateTracker) rollIfNeeded() {
 			// does not change between windows.
 			rt.resetAt = nil
 			rt.persist()
+			return rt.onWindowReset
 		}
-		return
+		return nil
 	}
 	now := truncateHour(time.Now().UTC())
 	if now.After(rt.hourStart) {
@@ -305,7 +315,10 @@ func (rt *RateTracker) rollIfNeeded() {
 		rt.hourStart = now
 		rt.remaining = -1
 		// Keep rt.limit — same reasoning as above.
+		rt.persist()
+		return rt.onWindowReset
 	}
+	return nil
 }
 
 // persist writes current state to DB. Must be called with mu held.
