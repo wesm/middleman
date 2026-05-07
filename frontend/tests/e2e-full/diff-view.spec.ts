@@ -385,7 +385,7 @@ test.describe("diff view", () => {
   });
 
   test("clamps persisted file tree width inside narrow split panes", async ({ page }) => {
-    await page.setViewportSize({ width: 900, height: 720 });
+    await page.setViewportSize({ width: 780, height: 720 });
     await page.addInitScript(() => {
       localStorage.setItem("diff-file-tree-width", "520");
     });
@@ -400,6 +400,13 @@ test.describe("diff view", () => {
       const box = await diffPane.boundingBox();
       return Math.floor(box?.width ?? 0);
     }).toBeGreaterThanOrEqual(320);
+
+    await page.locator(".detail-tab", {
+      hasText: "Conversation",
+    }).click();
+    await expect.poll(async () =>
+      page.evaluate(() => localStorage.getItem("diff-file-tree-width")),
+    ).toBe("520");
   });
 
   test("sidebar file list shows status indicators", async ({ page }) => {

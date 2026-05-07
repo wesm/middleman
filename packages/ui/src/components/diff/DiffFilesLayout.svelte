@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
   import SplitResizeHandle from "../shared/SplitResizeHandle.svelte";
   import type { SplitResizeEvent } from "../shared/split-resize.js";
   import DiffSidebar from "./DiffSidebar.svelte";
@@ -48,22 +47,27 @@
     }
   }
 
-  function maxAllowedFileTreeWidth(): number {
+  function layoutMaxFileTreeWidth(): number {
     if (filesLayoutWidth <= 0) {
       return maxFileTreeWidth;
     }
     return Math.max(
-      minFileTreeWidth,
-      Math.min(
-        maxFileTreeWidth,
-        filesLayoutWidth - minDiffPaneWidth - resizeHandleWidth,
-      ),
+      0,
+      filesLayoutWidth - minDiffPaneWidth - resizeHandleWidth,
     );
+  }
+
+  function minAllowedFileTreeWidth(): number {
+    return Math.min(minFileTreeWidth, layoutMaxFileTreeWidth());
+  }
+
+  function maxAllowedFileTreeWidth(): number {
+    return Math.min(maxFileTreeWidth, layoutMaxFileTreeWidth());
   }
 
   function clampFileTreeWidth(width: number): number {
     return Math.max(
-      minFileTreeWidth,
+      minAllowedFileTreeWidth(),
       Math.min(maxAllowedFileTreeWidth(), Math.round(width)),
     );
   }
@@ -127,9 +131,6 @@
     };
   });
 
-  onDestroy(() => {
-    saveFileTreeWidth(fileTreeWidth);
-  });
 </script>
 
 <div class="files-view">
