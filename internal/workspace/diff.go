@@ -110,7 +110,11 @@ func worktreeDiffFilesFromRef(
 	if err != nil {
 		return nil, false, fmt.Errorf("git diff --numstat: %w", err)
 	}
-	applyWorktreeNumstat(files, parseWorktreeNumstatZ(numstatOut))
+	counts := parseWorktreeNumstatZ(numstatOut)
+	applyWorktreeNumstat(files, counts)
+	if hideWhitespace {
+		files = dropWhitespaceOnlyModifications(files, counts)
+	}
 	files = append(files, worktreeUntrackedFiles(ctx, dir, false, hideWhitespace)...)
 	return files, true, nil
 }
@@ -232,7 +236,11 @@ func worktreeDiffFromRefPath(
 	if files == nil {
 		files = []gitclone.DiffFile{}
 	}
-	applyWorktreeNumstat(files, parseWorktreeNumstatZ(numstatOut))
+	counts := parseWorktreeNumstatZ(numstatOut)
+	applyWorktreeNumstat(files, counts)
+	if hideWhitespace {
+		files = dropWhitespaceOnlyModifications(files, counts)
+	}
 
 	if !hideWhitespace {
 		wsFiles, err := worktreeWhitespaceOnlyFiles(ctx, dir, baseRef, path)
@@ -269,6 +277,28 @@ func applyWorktreeNumstat(
 			files[i].Hunks = []gitclone.Hunk{}
 		}
 	}
+}
+
+// dropWhitespaceOnlyModifications removes "modified" entries that --raw lists
+// but --numstat omits under -w. git's --raw output ignores -w (it compares
+// blob SHAs), while --numstat honors it, so absence from the numstat map
+// reliably indicates a whitespace-only modification. Renames, copies, adds,
+// and deletes are preserved since their inclusion in --raw still represents
+// a real history change even with 0/0 counts.
+func dropWhitespaceOnlyModifications(
+	files []gitclone.DiffFile,
+	counts map[string]worktreeNumstatCount,
+) []gitclone.DiffFile {
+	out := files[:0]
+	for i := range files {
+		if files[i].Status == "modified" {
+			if _, ok := counts[files[i].Path]; !ok {
+				continue
+			}
+		}
+		out = append(out, files[i])
+	}
+	return out
 }
 
 func addWorktreeWhitespaceFlag(
