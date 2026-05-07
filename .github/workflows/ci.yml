@@ -220,10 +220,12 @@ jobs:
       - name: Mark workspace as safe for git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      # The Playwright image is minimal; setup-bun needs unzip to extract the
-      # bun tarball. apt-get update is a tiny metadata fetch (cached layer).
-      - name: Install unzip for setup-bun
-        run: apt-get update && apt-get install -y --no-install-recommends unzip
+      # The Playwright image is minimal; install the few extras the e2e
+      # server and setup-bun need:
+      #   - unzip: setup-bun shells out to it to extract the bun tarball
+      #   - tmux:  the e2e workspace runtime spawns tmux sessions
+      - name: Install missing OS deps for the e2e job
+        run: apt-get update && apt-get install -y --no-install-recommends unzip tmux
 
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
         with:
