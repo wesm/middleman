@@ -205,6 +205,11 @@ jobs:
         with:
           persist-credentials: false
 
+      # The Playwright image is minimal; setup-bun needs unzip to extract the
+      # bun tarball. apt-get update is a tiny metadata fetch (cached layer).
+      - name: Install unzip for setup-bun
+        run: apt-get update && apt-get install -y --no-install-recommends unzip
+
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
         with:
           go-version-file: go.mod
