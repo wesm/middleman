@@ -20,6 +20,7 @@ import (
 	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/platform"
+	"github.com/wesm/middleman/internal/platform/gitealike"
 	"github.com/wesm/middleman/internal/workspace"
 	"github.com/wesm/middleman/internal/workspace/localruntime"
 )
@@ -1715,18 +1716,15 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 		input.Body.Method,
 	)
 	if err != nil {
-		var ghErr *gh.ErrorResponse
-		if errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil {
-			message := githubErrorResponseMessage(err, ghErr)
-			slog.Error("github merge failed",
+		if status, message, ok := mergeHTTPErrorStatus(err); ok {
+			slog.Error("provider merge failed",
 				"owner", input.Owner, "repo", input.Name,
 				"number", input.Number, "method", input.Body.Method,
-				"status", ghErr.Response.StatusCode,
+				"status", status,
 				"message", message,
 				"err", err)
 
-			if ghErr.Response.StatusCode == http.StatusMethodNotAllowed ||
-				ghErr.Response.StatusCode == http.StatusConflict {
+			if status == http.StatusMethodNotAllowed || status == http.StatusConflict {
 				s.runBackground(func(bgCtx context.Context) {
 					if syncErr := s.syncer.SyncMROnProvider(
 						bgCtx,
@@ -1739,18 +1737,18 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 				return nil, huma.Error409Conflict(message)
 			}
 
-			// Forward 4xx GitHub errors as-is so the user sees the real cause
+			// Forward 4xx provider errors as-is so the user sees the real cause
 			// (e.g. 422 validation, 403 forbidden). 5xx becomes 502.
-			if ghErr.Response.StatusCode >= 400 && ghErr.Response.StatusCode < 500 {
-				return nil, huma.NewError(ghErr.Response.StatusCode, message)
+			if status >= 400 && status < 500 {
+				return nil, huma.NewError(status, message)
 			}
-			return nil, huma.Error502BadGateway("GitHub: " + message)
+			return nil, huma.Error502BadGateway("provider merge error: " + message)
 		}
-		slog.Error("github merge transport error",
+		slog.Error("provider merge transport error",
 			"owner", input.Owner, "repo", input.Name,
 			"number", input.Number, "method", input.Body.Method,
 			"err", err)
-		return nil, huma.Error502BadGateway("GitHub merge error: " + err.Error())
+		return nil, huma.Error502BadGateway("provider merge error: " + err.Error())
 	}
 
 	now := s.now().UTC()
@@ -1763,6 +1761,18 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 			Message: result.Message,
 		},
 	}, nil
+}
+
+func mergeHTTPErrorStatus(err error) (int, string, bool) {
+	var ghErr *gh.ErrorResponse
+	if errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil {
+		return ghErr.Response.StatusCode, githubErrorResponseMessage(err, ghErr), true
+	}
+	var httpErr *gitealike.HTTPError
+	if errors.As(err, &httpErr) && httpErr != nil && httpErr.StatusCode != 0 {
+		return httpErr.StatusCode, httpErr.Error(), true
+	}
+	return 0, "", false
 }
 
 func githubErrorResponseMessage(err error, ghErr *gh.ErrorResponse) string {

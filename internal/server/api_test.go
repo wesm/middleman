@@ -971,7 +971,7 @@ func TestAPIMergePRForwardsGitHubErrorDetailsAndLogsError(t *testing.T) {
 
 	logText := logBuf.String()
 	assert.Contains(logText, "level=ERROR")
-	assert.Contains(logText, "github merge failed")
+	assert.Contains(logText, "provider merge failed")
 	assert.Contains(logText, "Required status check")
 }
 
@@ -8870,6 +8870,99 @@ func requireIssue(t *testing.T, database *db.DB, repoID int64, number int) *db.I
 	return issue
 }
 
+func TestAPIGitealikeMergeConflictReturnsConflict(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	base := time.Date(2026, 5, 3, 12, 0, 0, 0, time.UTC)
+	transport := &apiTestGitealikeTransport{
+		mergeErr: &gitealike.HTTPError{StatusCode: http.StatusConflict, Message: "pull request is out of date"},
+		repo: gitealike.RepositoryDTO{
+			ID:            101,
+			Owner:         gitealike.UserDTO{UserName: "tea"},
+			Name:          "kettle",
+			FullName:      "tea/kettle",
+			HTMLURL:       "https://gitea.test/tea/kettle",
+			CloneURL:      "https://gitea.test/tea/kettle.git",
+			DefaultBranch: "main",
+			Created:       base,
+			Updated:       base,
+		},
+		pulls: []gitealike.PullRequestDTO{{
+			ID:      201,
+			Index:   7,
+			HTMLURL: "https://gitea.test/tea/kettle/pulls/7",
+			Title:   "Add kettle",
+			User:    gitealike.UserDTO{UserName: "alice"},
+			State:   "open",
+			Head:    gitealike.BranchDTO{Ref: "feature", SHA: "abc123"},
+			Base:    gitealike.BranchDTO{Ref: "main", SHA: "def456"},
+			Created: base,
+			Updated: base,
+		}},
+	}
+	provider := gitealike.NewProvider(
+		platform.KindGitea,
+		"gitea.test",
+		transport,
+		gitealike.WithMutations(),
+	)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(database.Close()) })
+
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry,
+		database,
+		nil,
+		[]ghclient.RepoRef{{
+			Platform:     platform.KindGitea,
+			PlatformHost: "gitea.test",
+			Owner:        "tea",
+			Name:         "kettle",
+			RepoPath:     "tea/kettle",
+		}},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	syncer.RunOnce(ctx)
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitea",
+		PlatformHost: "gitea.test",
+		RepoPath:     "tea/kettle",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	transport.pulls[0].Title = "Refreshed kettle after conflict"
+
+	resp, err := client.HTTP.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithResponse(
+		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
+		generated.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody{
+			Method:        "squash",
+			CommitTitle:   "Merge kettle",
+			CommitMessage: "Merge Gitea MR",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusConflict, resp.StatusCode(), string(resp.Body))
+	assert.Contains(string(resp.Body), "pull request is out of date")
+	assert.Contains(transport.mutationCalls, "merge:7:squash")
+	require.Eventually(func() bool {
+		mr := requireMR(t, database, repo.ID, 7)
+		return mr.State == "open" && mr.Title == "Refreshed kettle after conflict"
+	}, time.Second, 10*time.Millisecond)
+}
+
 type apiTestGitealikeTransport struct {
 	repo           gitealike.RepositoryDTO
 	pulls          []gitealike.PullRequestDTO
@@ -8877,6 +8970,7 @@ type apiTestGitealikeTransport struct {
 	issues         []gitealike.IssueDTO
 	issueComments  []gitealike.CommentDTO
 	statuses       []gitealike.StatusDTO
+	mergeErr       error
 	nextCommentID  int64
 	nextIssueID    int64
 	nextIssueIndex int
@@ -9155,6 +9249,9 @@ func (t *apiTestGitealikeTransport) MergePullRequest(
 		return gitealike.MergeResultDTO{}, platform.ErrNotFound
 	}
 	t.mutationCalls = append(t.mutationCalls, fmt.Sprintf("merge:%d:%s", number, opts.Method))
+	if t.mergeErr != nil {
+		return gitealike.MergeResultDTO{}, t.mergeErr
+	}
 	now := time.Now().UTC().Truncate(time.Second)
 	pr.State = "merged"
 	pr.Merged = true
