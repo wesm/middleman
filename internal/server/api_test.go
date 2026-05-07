@@ -8864,6 +8864,58 @@ func TestAPIRateLimitsWithBudget(t *testing.T) {
 	assert.Equal(458, gh.BudgetRemaining)
 }
 
+func TestAPIRateLimitsResetExpiredBudgetWindow(t *testing.T) {
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { database.Close() })
+
+	rt := ghclient.NewRateTracker(database, "github.com", "rest")
+	budget := ghclient.NewSyncBudget(500)
+
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, nil,
+		[]ghclient.RepoRef{{
+			Owner: "acme", Name: "widget",
+			PlatformHost: "github.com",
+		}},
+		time.Minute,
+		map[string]*ghclient.RateTracker{"github.com": rt},
+		map[string]*ghclient.SyncBudget{"github.com": budget},
+	)
+	t.Cleanup(syncer.Stop)
+
+	budget.Spend(42)
+	rt.UpdateFromRate(ghclient.Rate{
+		Limit:     5000,
+		Remaining: 3000,
+		Reset:     time.Now().Add(time.Hour),
+	})
+	rt.SetResetAtForTesting(time.Now().Add(-time.Second))
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/v1/rate-limits")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(200, resp.StatusCode)
+
+	var body rateLimitsResponse
+	err = json.NewDecoder(resp.Body).Decode(&body)
+	require.NoError(t, err)
+
+	gh, ok := body.Hosts["github.com"]
+	assert.True(ok)
+	assert.Equal(500, gh.BudgetLimit)
+	assert.Equal(0, gh.BudgetSpent)
+	assert.Equal(500, gh.BudgetRemaining)
+}
+
 func TestAPIRateLimitsWithGQL(t *testing.T) {
 	assert := Assert.New(t)
 
