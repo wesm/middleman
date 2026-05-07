@@ -68,6 +68,17 @@ func TestConvertForgejoSDKRecords(t *testing.T) {
 	assert.Equal("feature", pr.Head.Ref)
 	assert.Equal("abc", pr.Head.SHA)
 	assert.Equal("https://example/head.git", pr.Head.RepoCloneURL)
+
+	draftPR := convertPullRequest(&forgejosdk.PullRequest{
+		ID:      30,
+		Index:   31,
+		Poster:  &forgejosdk.User{UserName: "alice"},
+		Title:   "WIP: Add thing",
+		State:   forgejosdk.StateType("open"),
+		Created: &created,
+		Updated: &updated,
+	})
+	assert.True(draftPR.Draft)
 	assert.Equal("main", pr.Base.Ref)
 	assert.Equal("feature", pr.Labels[0].Name)
 	assert.Equal(&closed, pr.MergedAt)
