@@ -2003,3 +2003,37 @@ func TestTokenEnvNamesIncludesImplicitPublicForgeTokenEnvs(t *testing.T) {
 		cfg.TokenEnvNames(),
 	)
 }
+
+func TestTokenEnvNamesIncludesFallbackProviderDefaultsForRepoTokenEnv(t *testing.T) {
+	cfg := &Config{
+		GitHubTokenEnv: "WORK_GH_BOT_TOKEN",
+		Repos: []Repo{
+			{
+				Platform:     "forgejo",
+				PlatformHost: "codeberg.org",
+				Owner:        "forgejo",
+				Name:         "forgejo",
+				TokenEnv:     "REPO_FORGEJO_TOKEN",
+			},
+			{
+				Platform:     "gitea",
+				PlatformHost: "gitea.com",
+				Owner:        "gitea",
+				Name:         "tea",
+				TokenEnv:     "REPO_GITEA_TOKEN",
+			},
+		},
+	}
+
+	Assert.Equal(
+		t,
+		[]string{
+			"WORK_GH_BOT_TOKEN",
+			"MIDDLEMAN_FORGEJO_TOKEN",
+			"MIDDLEMAN_GITEA_TOKEN",
+			"REPO_FORGEJO_TOKEN",
+			"REPO_GITEA_TOKEN",
+		},
+		cfg.TokenEnvNames(),
+	)
+}
