@@ -8696,9 +8696,130 @@ func TestAPIGitealikeLockedPRPersistsThroughServer(t *testing.T) {
 	assert.True(pullResp.JSON200.MergeRequest.IsLocked)
 }
 
+func TestAPIGitealikeDraftPRFieldsPersistThroughServer(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	base := time.Date(2026, 5, 2, 12, 0, 0, 0, time.UTC)
+	merged := base.Add(2 * time.Hour)
+	closed := base.Add(3 * time.Hour)
+	transport := &lockedGitealikeTransport{
+		repo: gitealike.RepositoryDTO{
+			ID:            102,
+			Owner:         gitealike.UserDTO{UserName: "gitea"},
+			Name:          "tea",
+			FullName:      "gitea/tea",
+			HTMLURL:       "https://gitea.test/gitea/tea",
+			CloneURL:      "https://gitea.test/gitea/tea.git",
+			DefaultBranch: "main",
+			Created:       base,
+			Updated:       base,
+		},
+		pull: gitealike.PullRequestDTO{
+			ID:      202,
+			Index:   8,
+			HTMLURL: "https://gitea.test/gitea/tea/pulls/8",
+			Title:   "Draft tea",
+			User:    gitealike.UserDTO{UserName: "bob"},
+			State:   "closed",
+			Draft:   true,
+			Head:    gitealike.BranchDTO{Ref: "feature", SHA: "abc456"},
+			Base:    gitealike.BranchDTO{Ref: "main", SHA: "def789"},
+			Labels: []gitealike.LabelDTO{{
+				ID:    301,
+				Name:  "bug",
+				Color: "cc0000",
+			}},
+			Created:  base,
+			Updated:  base.Add(time.Minute),
+			Merged:   true,
+			MergedAt: &merged,
+			Closed:   &closed,
+		},
+		statuses: []gitealike.StatusDTO{{
+			ID:      401,
+			Context: "build",
+			State:   "success",
+			Created: base.Add(time.Minute),
+			Updated: base.Add(time.Minute),
+		}},
+	}
+	provider := gitealike.NewProvider(platform.KindGitea, "gitea.test", transport)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(database.Close()) })
+
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry,
+		database,
+		nil,
+		[]ghclient.RepoRef{{
+			Platform:     platform.KindGitea,
+			PlatformHost: "gitea.test",
+			Owner:        "gitea",
+			Name:         "tea",
+			RepoPath:     "gitea/tea",
+		}},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	syncer.RunOnce(ctx)
+	require.NoError(syncer.SyncMR(ctx, "gitea", "tea", 8))
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitea",
+		PlatformHost: "gitea.test",
+		RepoPath:     "gitea/tea",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 8)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.True(mr.IsDraft)
+	assert.Equal("feature", mr.HeadBranch)
+	assert.Equal("main", mr.BaseBranch)
+	assert.Equal("abc456", mr.PlatformHeadSHA)
+	assert.Equal("def789", mr.PlatformBaseSHA)
+	assert.Equal("success", mr.CIStatus)
+	assert.NotEmpty(mr.CIChecksJSON)
+	require.NotNil(mr.MergedAt)
+	require.NotNil(mr.ClosedAt)
+	require.Len(mr.Labels, 1)
+	assert.Equal("bug", mr.Labels[0].Name)
+
+	pullResp, err := client.HTTP.GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberWithResponse(
+		ctx, "gitea.test", "gitea", "gitea", "tea", 8,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, pullResp.StatusCode(), string(pullResp.Body))
+	require.NotNil(pullResp.JSON200)
+	apiMR := pullResp.JSON200.MergeRequest
+	assert.True(apiMR.IsDraft)
+	assert.Equal("feature", apiMR.HeadBranch)
+	assert.Equal("main", apiMR.BaseBranch)
+	assert.Equal("success", apiMR.CIStatus)
+	require.NotNil(apiMR.MergedAt)
+	require.NotNil(apiMR.ClosedAt)
+	require.NotNil(apiMR.Labels)
+	require.Len(*apiMR.Labels, 1)
+	assert.Equal("bug", (*apiMR.Labels)[0].Name)
+}
+
 type lockedGitealikeTransport struct {
-	repo gitealike.RepositoryDTO
-	pull gitealike.PullRequestDTO
+	repo     gitealike.RepositoryDTO
+	pull     gitealike.PullRequestDTO
+	statuses []gitealike.StatusDTO
 }
 
 func (t *lockedGitealikeTransport) GetRepository(
@@ -8815,7 +8936,7 @@ func (t *lockedGitealikeTransport) ListStatuses(
 	string,
 	gitealike.PageOptions,
 ) ([]gitealike.StatusDTO, gitealike.Page, error) {
-	return nil, gitealike.Page{}, nil
+	return t.statuses, gitealike.Page{}, nil
 }
 
 func TestProviderIssueRouteGeneratedClientEscapesGitLabRepoPath(t *testing.T) {
