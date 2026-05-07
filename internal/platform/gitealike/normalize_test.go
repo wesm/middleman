@@ -83,6 +83,32 @@ func TestNormalizeMergeRequestIssueEventsAndArtifacts(t *testing.T) {
 	assert.Equal("Alice", pr.AuthorDisplayName)
 	assert.Equal("feature", pr.HeadBranch)
 	assert.Equal("abc123", pr.HeadSHA)
+	assert.False(pr.IsDraft)
+
+	draftPR := NormalizePullRequest(repo, PullRequestDTO{
+		ID:       101,
+		Index:    8,
+		Title:    "Draft tea",
+		User:     UserDTO{UserName: "alice"},
+		State:    "open",
+		Draft:    true,
+		IsLocked: true,
+		Created:  base,
+		Updated:  base,
+	})
+	assert.True(draftPR.IsDraft)
+
+	lockedPR := NormalizePullRequest(repo, PullRequestDTO{
+		ID:       102,
+		Index:    9,
+		Title:    "Locked tea",
+		User:     UserDTO{UserName: "alice"},
+		State:    "open",
+		IsLocked: true,
+		Created:  base,
+		Updated:  base,
+	})
+	assert.False(lockedPR.IsDraft)
 	assert.Equal("main", pr.BaseBranch)
 	assert.Equal("def456", pr.BaseSHA)
 	assert.Equal("https://example/head.git", pr.HeadRepoCloneURL)

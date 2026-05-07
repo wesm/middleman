@@ -83,6 +83,7 @@ type PullRequestDTO struct {
 	Title    string
 	User     UserDTO
 	State    string
+	Draft    bool
 	IsLocked bool
 	Body     string
 	Head     BranchDTO
