@@ -234,8 +234,14 @@ jobs:
       # server and setup-bun need:
       #   - unzip: setup-bun shells out to it to extract the bun tarball
       #   - tmux:  the e2e workspace runtime spawns tmux sessions
+      #   - zstd:  @actions/cache prefers zstd when present and falls back
+      #            to gzip otherwise. The compression method is part of the
+      #            cache version, so without zstd the container's lookup
+      #            (gzip) doesn't match the host's saved cache (zstd) even
+      #            for an identical key. Installing zstd brings the two
+      #            into alignment so the host-warmed Go cache restores.
       - name: Install missing OS deps for the e2e job
-        run: apt-get update && apt-get install -y --no-install-recommends unzip tmux
+        run: apt-get update && apt-get install -y --no-install-recommends unzip tmux zstd
 
       # Pre-create the Go cache dirs at the host paths configured via
       # GOCACHE / GOMODCACHE so setup-go's restore (which extracts to
