@@ -109,6 +109,7 @@ func TestNormalizeMergeRequestIssueEventsAndArtifacts(t *testing.T) {
 		Updated:  base,
 	})
 	assert.False(lockedPR.IsDraft)
+	assert.True(lockedPR.IsLocked)
 	assert.Equal("main", pr.BaseBranch)
 	assert.Equal("def456", pr.BaseSHA)
 	assert.Equal("https://example/head.git", pr.HeadRepoCloneURL)

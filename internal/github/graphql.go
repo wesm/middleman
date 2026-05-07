@@ -39,6 +39,7 @@ type gqlPR struct {
 	Title          string
 	State          string
 	IsDraft        bool
+	Locked         bool
 	Body           string
 	URL            string
 	Author         struct{ Login string }
@@ -265,6 +266,7 @@ func adaptPR(gql *gqlPR) *gh.PullRequest {
 		Title:     new(gql.Title),
 		State:     new(state),
 		Draft:     new(gql.IsDraft),
+		Locked:    new(gql.Locked),
 		Body:      new(gql.Body),
 		HTMLURL:   new(gql.URL),
 		Additions: new(gql.Additions),

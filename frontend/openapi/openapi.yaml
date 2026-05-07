@@ -1281,6 +1281,8 @@ components:
           type: integer
         IsDraft:
           type: boolean
+        IsLocked:
+          type: boolean
         KanbanStatus:
           type: string
         LastActivityAt:
@@ -1335,6 +1337,7 @@ components:
         - AuthorDisplayName
         - State
         - IsDraft
+        - IsLocked
         - Body
         - HeadBranch
         - BaseBranch
@@ -1468,6 +1471,8 @@ components:
           type: integer
         IsDraft:
           type: boolean
+        IsLocked:
+          type: boolean
         KanbanStatus:
           type: string
         LastActivityAt:
@@ -1546,6 +1551,7 @@ components:
         - AuthorDisplayName
         - State
         - IsDraft
+        - IsLocked
         - Body
         - HeadBranch
         - BaseBranch

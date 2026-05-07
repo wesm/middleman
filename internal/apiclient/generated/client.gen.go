@@ -543,6 +543,7 @@ type MergeRequest struct {
 	HeadRepoCloneURL   string     `json:"HeadRepoCloneURL"`
 	ID                 int64      `json:"ID"`
 	IsDraft            bool       `json:"IsDraft"`
+	IsLocked           bool       `json:"IsLocked"`
 	KanbanStatus       string     `json:"KanbanStatus"`
 	LastActivityAt     time.Time  `json:"LastActivityAt"`
 	MergeableState     string     `json:"MergeableState"`
@@ -600,6 +601,7 @@ type MergeRequestResponse struct {
 	HeadRepoCloneURL   string                  `json:"HeadRepoCloneURL"`
 	ID                 int64                   `json:"ID"`
 	IsDraft            bool                    `json:"IsDraft"`
+	IsLocked           bool                    `json:"IsLocked"`
 	KanbanStatus       string                  `json:"KanbanStatus"`
 	LastActivityAt     time.Time               `json:"LastActivityAt"`
 	MergeableState     string                  `json:"MergeableState"`
