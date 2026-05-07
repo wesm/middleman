@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  checks: read
+  checks: write
   contents: read
   issues: read
   pull-requests: read
@@ -86,17 +86,50 @@ jobs:
         run: cd frontend && bun run test
 
       - name: Run tests
-        run: go test ./... -v -shuffle=on
+        run: |
+          mkdir -p tmp
+          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-output.json -- ./... -shuffle=on
+
+      - name: Publish unit test report
+        if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        uses: dorny/test-reporter@df6247429542221bc30d46a036ee47af1102c451  # v2.7.0
+        with:
+          name: Go unit tests
+          path: tmp/test-output.json
+          reporter: golang-json
+          fail-on-error: false
 
       - name: Run live GraphQL validation
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
         env:
           GITHUB_TOKEN: ${{ github.token }}
           MIDDLEMAN_LIVE_GITHUB_TESTS: "1"
-        run: go test ./internal/github -run TestLiveGraphQLQueriesValidateAgainstGitHub -shuffle=on
+        run: |
+          mkdir -p tmp
+          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-graphql-output.json -- ./internal/github -run TestLiveGraphQLQueriesValidateAgainstGitHub -shuffle=on
+
+      - name: Publish live GraphQL test report
+        if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        uses: dorny/test-reporter@df6247429542221bc30d46a036ee47af1102c451  # v2.7.0
+        with:
+          name: Go live GraphQL tests
+          path: tmp/test-graphql-output.json
+          reporter: golang-json
+          fail-on-error: false
 
       - name: Run integration tests (git-dependent)
-        run: go test -tags integration ./... -v -shuffle=on
+        run: |
+          mkdir -p tmp
+          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-integration-output.json -- -tags integration ./... -shuffle=on
+
+      - name: Publish integration test report
+        if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        uses: dorny/test-reporter@df6247429542221bc30d46a036ee47af1102c451  # v2.7.0
+        with:
+          name: Go integration tests
+          path: tmp/test-integration-output.json
+          reporter: golang-json
+          fail-on-error: false
 
   race:
     name: go test -race
@@ -116,7 +149,18 @@ jobs:
           echo ok > internal/web/dist/stub.html
 
       - name: Run tests (race detector)
-        run: go test -race ./... -shuffle=on
+        run: |
+          mkdir -p tmp
+          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-race-output.json -- -race ./... -shuffle=on
+
+      - name: Publish race test report
+        if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        uses: dorny/test-reporter@df6247429542221bc30d46a036ee47af1102c451  # v2.7.0
+        with:
+          name: Go race tests
+          path: tmp/test-race-output.json
+          reporter: golang-json
+          fail-on-error: false
 
   build:
     runs-on: ubuntu-latest
