@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	giteasdk "code.gitea.io/sdk/gitea"
@@ -101,19 +102,34 @@ func (c *Client) Capabilities() platform.Capabilities {
 }
 
 type transport struct {
-	api *giteasdk.Client
+	api              *giteasdk.Client
+	requestContextMu sync.Mutex
 }
 
 func (t *transport) getRepositoryRaw(
 	ctx context.Context, owner, repo string,
 ) (*giteasdk.Repository, error) {
+	var repository *giteasdk.Repository
+	err := t.withRequestContext(ctx, func() error {
+		var err error
+		repository, _, err = t.api.GetRepo(owner, repo)
+		return err
+	})
+	return repository, err
+}
+
+func (t *transport) withRequestContext(ctx context.Context, request func() error) error {
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return ctx.Err()
 	default:
 	}
-	repository, _, err := t.api.GetRepo(owner, repo)
-	return repository, err
+
+	t.requestContextMu.Lock()
+	defer t.requestContextMu.Unlock()
+	t.api.SetContext(ctx)
+	defer t.api.SetContext(context.Background())
+	return request()
 }
 
 type rateTrackingTransport struct {

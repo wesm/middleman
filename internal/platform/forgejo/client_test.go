@@ -69,6 +69,48 @@ func TestClientLookupUsesForegroundTimeout(t *testing.T) {
 	require.Error(err)
 }
 
+func TestTransportGetRepositoryRawCancelsInFlightRequest(t *testing.T) {
+	assert := Assert.New(t)
+	require := Require.New(t)
+	requestStarted := make(chan struct{})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal("/api/v1/repos/owner/repo", r.URL.Path)
+		close(requestStarted)
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	client, err := NewClient(
+		"codeberg.test",
+		"forgejo-token",
+		WithBaseURLForTesting(server.URL),
+		WithForegroundTimeoutForTesting(time.Minute),
+	)
+	require.NoError(err)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+
+	go func() {
+		_, err := client.transport.getRepositoryRaw(ctx, "owner", "repo")
+		done <- err
+	}()
+
+	select {
+	case <-requestStarted:
+	case <-time.After(time.Second):
+		require.FailNow("request did not start")
+	}
+	cancel()
+
+	select {
+	case err := <-done:
+		require.ErrorIs(err, context.Canceled)
+	case <-time.After(time.Second):
+		require.FailNow("request was not canceled")
+	}
+}
+
 func TestClientProviderIdentityHasNoReadCapabilitiesYet(t *testing.T) {
 	assert := Assert.New(t)
 	require := Require.New(t)
