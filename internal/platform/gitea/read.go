@@ -369,15 +369,24 @@ func (t *transport) ListActionRuns(
 	opts gitealike.PageOptions,
 ) ([]gitealike.ActionRunDTO, gitealike.Page, error) {
 	t.spendSyncBudget(ctx)
-	runs, resp, err := t.api.ListRepoActionRuns(ref.Owner, ref.Name, giteasdk.ListRepoActionRunsOptions{
-		ListOptions: giteaListOptions(opts),
-		HeadSHA:     sha,
+	var runs *giteasdk.ActionWorkflowRunsResponse
+	var resp *giteasdk.Response
+	err := t.withRequestContext(ctx, func() error {
+		var err error
+		runs, resp, err = t.api.ListRepoActionRuns(ref.Owner, ref.Name, giteasdk.ListRepoActionRunsOptions{
+			ListOptions: giteaListOptions(opts),
+			HeadSHA:     sha,
+		})
+		return err
 	})
 	if err != nil {
 		if isActionsUnsupportedVersionError(err) {
 			return nil, gitealike.Page{}, nil
 		}
 		return nil, gitealike.Page{}, giteaHTTPError(resp, err)
+	}
+	if runs == nil {
+		return nil, giteaPage(resp), nil
 	}
 	return convertActionRuns(runs.WorkflowRuns), giteaPage(resp), nil
 }

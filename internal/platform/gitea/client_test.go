@@ -357,7 +357,7 @@ func TestClientFallsBackToStatusesWhenActionsRequireNewerGitea(t *testing.T) {
 	provider := gitealike.NewProvider(
 		platform.KindGitea,
 		"gitea.test",
-		&transport{api: api},
+		&transport{api: api, requestContextLock: make(chan struct{}, 1)},
 		gitealike.WithReadActions(),
 	)
 

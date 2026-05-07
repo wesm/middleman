@@ -169,6 +169,8 @@ func convertActionRun(run *giteasdk.ActionWorkflowRun) gitealike.ActionRunDTO {
 		Conclusion: run.Conclusion,
 		CommitSHA:  run.HeadSha,
 		HTMLURL:    run.HTMLURL,
+		Created:    run.StartedAt,
+		Updated:    run.CompletedAt,
 		Started:    nonZeroTimePtr(run.StartedAt),
 		Stopped:    nonZeroTimePtr(run.CompletedAt),
 	}

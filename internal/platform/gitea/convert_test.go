@@ -143,6 +143,8 @@ func TestConvertGiteaActionRun(t *testing.T) {
 	assert.Equal("failure", run.Conclusion)
 	assert.Equal("abc", run.CommitSHA)
 	assert.Equal("https://actions/run", run.HTMLURL)
+	assert.Equal(started, run.Created)
+	assert.Equal(completed, run.Updated)
 	assert.Equal(&started, run.Started)
 	assert.Equal(&completed, run.Stopped)
 }
