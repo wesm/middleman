@@ -227,6 +227,17 @@ func TestProviderMergesActionRunsWithStatusesWithoutDuplicates(t *testing.T) {
 				WorkflowID: "build.yml",
 			},
 			{
+				ID:         12,
+				Title:      "Build",
+				Status:     "completed",
+				Conclusion: "cancelled",
+				CommitSHA:  "abc",
+				HTMLURL:    "https://ci.test/actions/build",
+				Started:    &base,
+				Stopped:    &base,
+				WorkflowID: "build-action.yml",
+			},
+			{
 				ID:         11,
 				Title:      "Deploy",
 				Status:     "completed",
@@ -244,14 +255,18 @@ func TestProviderMergesActionRunsWithStatusesWithoutDuplicates(t *testing.T) {
 	checks, err := provider.ListCIChecks(context.Background(), ref, "abc")
 	require.NoError(err)
 
-	require.Len(checks, 2)
+	require.Len(checks, 3)
 	assert.Equal("Build", checks[0].Name)
 	assert.Equal("status", checks[0].App)
 	assert.Equal("success", checks[0].Conclusion)
-	assert.Equal("Deploy", checks[1].Name)
+	assert.Equal("Build", checks[1].Name)
 	assert.Equal("action", checks[1].App)
 	assert.Equal("completed", checks[1].Status)
 	assert.Equal("failure", checks[1].Conclusion)
+	assert.Equal("Deploy", checks[2].Name)
+	assert.Equal("action", checks[2].App)
+	assert.Equal("completed", checks[2].Status)
+	assert.Equal("failure", checks[2].Conclusion)
 	assert.Equal([]int{1}, transport.actionPages)
 }
 
