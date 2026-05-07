@@ -180,7 +180,7 @@ class Fixture:
         except Exception:
             return self.request(
                 "POST",
-                f"/org/{quote(self.owner)}/repos",
+                f"/orgs/{quote(self.owner)}/repos",
                 token=token,
                 data={
                     "name": self.repo,
