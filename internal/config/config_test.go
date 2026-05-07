@@ -772,6 +772,229 @@ name = "widgets"
 	)
 }
 
+func TestLoadPlatformConfigForgejoToken(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[[platforms]]
+type = "forgejo"
+host = "codeberg.org"
+token_env = "MIDDLEMAN_FORGEJO_TOKEN"
+
+[[repos]]
+platform = "forgejo"
+platform_host = "codeberg.org"
+owner = "forgejo"
+name = "forgejo"
+`)
+	t.Setenv("MIDDLEMAN_FORGEJO_TOKEN", "forgejo-secret")
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Platforms, 1)
+	require.Len(t, cfg.Repos, 1)
+	assert.Equal("forgejo", cfg.Platforms[0].Type)
+	assert.Equal("codeberg.org", cfg.Platforms[0].Host)
+	assert.Equal("MIDDLEMAN_FORGEJO_TOKEN", cfg.Platforms[0].TokenEnv)
+	assert.Equal("forgejo", cfg.Repos[0].Platform)
+	assert.Equal("codeberg.org", cfg.Repos[0].PlatformHost)
+	assert.Equal("forgejo-secret", cfg.TokenForPlatformHost("forgejo", "codeberg.org", ""))
+}
+
+func TestLoadForgejoDefaultHostUsesDefaultTokenEnv(t *testing.T) {
+	path := writeConfig(t, `
+[[repos]]
+platform = "forgejo"
+platform_host = "codeberg.org"
+owner = "forgejo"
+name = "forgejo"
+`)
+	t.Setenv("MIDDLEMAN_FORGEJO_TOKEN", "codeberg-secret")
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	Assert.Equal(t, "codeberg-secret", cfg.TokenForPlatformHost("forgejo", "codeberg.org", ""))
+	Assert.Empty(t, cfg.TokenForPlatformHost("forgejo", "forgejo.example.com", ""))
+}
+
+func TestLoadPlatformConfigForgejoTokensAreHostScoped(t *testing.T) {
+	path := writeConfig(t, `
+[[platforms]]
+type = "forgejo"
+host = "codeberg.org"
+token_env = "MIDDLEMAN_FORGEJO_TOKEN"
+
+[[platforms]]
+type = "forgejo"
+host = "forgejo.example.com"
+token_env = "FORGEJO_EXAMPLE_TOKEN"
+
+[[repos]]
+platform = "forgejo"
+platform_host = "codeberg.org"
+owner = "forgejo"
+name = "forgejo"
+
+[[repos]]
+platform = "forgejo"
+platform_host = "forgejo.example.com"
+owner = "team"
+name = "service"
+`)
+	t.Setenv("MIDDLEMAN_FORGEJO_TOKEN", "codeberg-secret")
+	t.Setenv("FORGEJO_EXAMPLE_TOKEN", "self-hosted-secret")
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	Assert.Equal(t, "codeberg-secret", cfg.TokenForPlatformHost("forgejo", "codeberg.org", ""))
+	Assert.Equal(t, "self-hosted-secret", cfg.TokenForPlatformHost("forgejo", "forgejo.example.com", ""))
+}
+
+func TestLoadParsesForgejoCodebergURL(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[[repos]]
+name = "https://codeberg.org/forgejo/forgejo.git"
+`)
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Repos, 1)
+	assert.Equal("forgejo", cfg.Repos[0].Platform)
+	assert.Equal("codeberg.org", cfg.Repos[0].PlatformHost)
+	assert.Equal("forgejo", cfg.Repos[0].Owner)
+	assert.Equal("forgejo", cfg.Repos[0].Name)
+	assert.Equal("forgejo/forgejo", cfg.Repos[0].RepoPath)
+}
+
+func TestLoadPlatformConfigGiteaToken(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[[platforms]]
+type = "gitea"
+host = "gitea.com"
+token_env = "MIDDLEMAN_GITEA_TOKEN"
+
+[[repos]]
+platform = "gitea"
+platform_host = "gitea.com"
+owner = "gitea"
+name = "tea"
+`)
+	t.Setenv("MIDDLEMAN_GITEA_TOKEN", "gitea-secret")
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Platforms, 1)
+	require.Len(t, cfg.Repos, 1)
+	assert.Equal("gitea", cfg.Platforms[0].Type)
+	assert.Equal("gitea.com", cfg.Platforms[0].Host)
+	assert.Equal("MIDDLEMAN_GITEA_TOKEN", cfg.Platforms[0].TokenEnv)
+	assert.Equal("gitea", cfg.Repos[0].Platform)
+	assert.Equal("gitea.com", cfg.Repos[0].PlatformHost)
+	assert.Equal("gitea-secret", cfg.TokenForPlatformHost("gitea", "gitea.com", ""))
+}
+
+func TestLoadGiteaDefaultHostUsesDefaultTokenEnv(t *testing.T) {
+	path := writeConfig(t, `
+[[repos]]
+platform = "gitea"
+platform_host = "gitea.com"
+owner = "gitea"
+name = "tea"
+`)
+	t.Setenv("MIDDLEMAN_GITEA_TOKEN", "gitea-public-secret")
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	Assert.Equal(t, "gitea-public-secret", cfg.TokenForPlatformHost("gitea", "gitea.com", ""))
+	Assert.Empty(t, cfg.TokenForPlatformHost("gitea", "gitea.internal.example", ""))
+}
+
+func TestLoadPlatformConfigGiteaTokensAreHostScoped(t *testing.T) {
+	path := writeConfig(t, `
+[[platforms]]
+type = "gitea"
+host = "gitea.com"
+token_env = "MIDDLEMAN_GITEA_TOKEN"
+
+[[platforms]]
+type = "gitea"
+host = "gitea.internal.example"
+token_env = "GITEA_INTERNAL_TOKEN"
+
+[[repos]]
+platform = "gitea"
+platform_host = "gitea.com"
+owner = "gitea"
+name = "tea"
+
+[[repos]]
+platform = "gitea"
+platform_host = "gitea.internal.example"
+owner = "team"
+name = "service"
+`)
+	t.Setenv("MIDDLEMAN_GITEA_TOKEN", "gitea-public-secret")
+	t.Setenv("GITEA_INTERNAL_TOKEN", "gitea-internal-secret")
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	Assert.Equal(t, "gitea-public-secret", cfg.TokenForPlatformHost("gitea", "gitea.com", ""))
+	Assert.Equal(t, "gitea-internal-secret", cfg.TokenForPlatformHost("gitea", "gitea.internal.example", ""))
+}
+
+func TestLoadParsesGiteaURL(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[[repos]]
+name = "https://gitea.com/gitea/tea.git"
+`)
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Repos, 1)
+	assert.Equal("gitea", cfg.Repos[0].Platform)
+	assert.Equal("gitea.com", cfg.Repos[0].PlatformHost)
+	assert.Equal("gitea", cfg.Repos[0].Owner)
+	assert.Equal("tea", cfg.Repos[0].Name)
+	assert.Equal("gitea/tea", cfg.Repos[0].RepoPath)
+}
+
+func TestLoadKeepsExistingGitHubURLInference(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[[repos]]
+name = "https://github.com/wesm/middleman.git"
+`)
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Repos, 1)
+	assert.Equal("github", cfg.Repos[0].Platform)
+	assert.Equal("github.com", cfg.Repos[0].PlatformHost)
+	assert.Equal("wesm", cfg.Repos[0].Owner)
+	assert.Equal("middleman", cfg.Repos[0].Name)
+	assert.Equal("wesm/middleman", cfg.Repos[0].RepoPath)
+}
+
+func TestLoadKeepsExistingGitLabURLInference(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[[repos]]
+platform = "gitlab"
+name = "https://gitlab.com/gitlab-org/gitlab.git"
+`)
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Repos, 1)
+	assert.Equal("gitlab", cfg.Repos[0].Platform)
+	assert.Equal("gitlab.com", cfg.Repos[0].PlatformHost)
+	assert.Equal("gitlab-org", cfg.Repos[0].Owner)
+	assert.Equal("gitlab", cfg.Repos[0].Name)
+	assert.Equal("gitlab-org/gitlab", cfg.Repos[0].RepoPath)
+}
+
 func TestLoadRejectsDuplicatePlatformConfig(t *testing.T) {
 	path := writeConfig(t, `
 [[platforms]]
@@ -1720,12 +1943,17 @@ func TestSavePreservesAgents(t *testing.T) {
 	assert.False(reloaded.Agents[1].EnabledOrDefault())
 }
 
-func TestTokenEnvNamesIncludesGlobalAndPerRepo(t *testing.T) {
+func TestTokenEnvNamesIncludesGlobalPlatformAndPerRepo(t *testing.T) {
 	var nilCfg *Config
 	require.Nil(t, nilCfg.TokenEnvNames())
 
 	cfg := &Config{
 		GitHubTokenEnv: "WORK_GH_BOT_TOKEN",
+		Platforms: []PlatformConfig{
+			{Type: "forgejo", Host: "codeberg.org", TokenEnv: "MIDDLEMAN_FORGEJO_TOKEN"},
+			{Type: "forgejo", Host: "forgejo.example.com", TokenEnv: "FORGEJO_EXAMPLE_TOKEN"},
+			{Type: "gitea", Host: "gitea.internal.example", TokenEnv: "GITEA_INTERNAL_TOKEN"},
+		},
 		Repos: []Repo{
 			{Owner: "acme", Name: "widget", TokenEnv: "ACME_TOKEN"},
 			{Owner: "other", Name: "thing"},
@@ -1734,7 +1962,44 @@ func TestTokenEnvNamesIncludesGlobalAndPerRepo(t *testing.T) {
 	}
 	Assert.Equal(
 		t,
-		[]string{"WORK_GH_BOT_TOKEN", "ACME_TOKEN", "THIRD_TOKEN"},
+		[]string{
+			"WORK_GH_BOT_TOKEN",
+			"MIDDLEMAN_FORGEJO_TOKEN",
+			"FORGEJO_EXAMPLE_TOKEN",
+			"GITEA_INTERNAL_TOKEN",
+			"ACME_TOKEN",
+			"THIRD_TOKEN",
+		},
+		cfg.TokenEnvNames(),
+	)
+}
+
+func TestTokenEnvNamesIncludesImplicitPublicForgeTokenEnvs(t *testing.T) {
+	cfg := &Config{
+		GitHubTokenEnv: "WORK_GH_BOT_TOKEN",
+		Repos: []Repo{
+			{
+				Platform:     "forgejo",
+				PlatformHost: "codeberg.org",
+				Owner:        "forgejo",
+				Name:         "forgejo",
+			},
+			{
+				Platform:     "gitea",
+				PlatformHost: "gitea.com",
+				Owner:        "gitea",
+				Name:         "tea",
+			},
+		},
+	}
+
+	Assert.Equal(
+		t,
+		[]string{
+			"WORK_GH_BOT_TOKEN",
+			"MIDDLEMAN_FORGEJO_TOKEN",
+			"MIDDLEMAN_GITEA_TOKEN",
+		},
 		cfg.TokenEnvNames(),
 	)
 }
