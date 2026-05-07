@@ -194,11 +194,6 @@ func worktreeDiffFromRefPath(
 		return nil, false, err
 	}
 
-	wsCount, err := worktreeWhitespaceOnlyCount(ctx, dir, baseRef, path)
-	if err != nil {
-		return nil, false, fmt.Errorf("whitespace count: %w", err)
-	}
-
 	rawArgs := addWorktreeWhitespaceFlag([]string{
 		"diff", "--raw", "-z", "-M", "-C", "--find-copies-harder",
 		baseRef,
@@ -234,12 +229,25 @@ func worktreeDiffFromRefPath(
 	}
 	applyWorktreeNumstat(files, parseWorktreeNumstatZ(numstatOut))
 
+	wsCount := 0
 	if !hideWhitespace {
-		wsFiles, err := worktreeWhitespaceOnlyFiles(ctx, dir, baseRef, path)
-		if err == nil {
+		if len(files) > 0 {
+			wsFiles, err := worktreeWhitespaceOnlyFilesForFiles(
+				ctx, dir, baseRef, path, files,
+			)
+			if err != nil {
+				return nil, false, fmt.Errorf("whitespace count: %w", err)
+			}
+			wsCount = len(wsFiles)
 			for i := range files {
 				files[i].IsWhitespaceOnly = wsFiles[files[i].Path]
 			}
+		}
+	} else {
+		var err error
+		wsCount, err = worktreeWhitespaceOnlyCount(ctx, dir, baseRef, path)
+		if err != nil {
+			return nil, false, fmt.Errorf("whitespace count: %w", err)
 		}
 	}
 	if path == "" {
@@ -549,8 +557,21 @@ func worktreeWhitespaceOnlyFiles(
 	if err != nil {
 		return nil, err
 	}
+
+	return worktreeWhitespaceOnlyFilesForFiles(
+		ctx, dir, baseRef, path, gitclone.ParseRawZ(outAll),
+	)
+}
+
+func worktreeWhitespaceOnlyFilesForFiles(
+	ctx context.Context,
+	dir string,
+	baseRef string,
+	path string,
+	files []gitclone.DiffFile,
+) (map[string]bool, error) {
 	noWhitespaceArgs := appendWorktreePathspec([]string{
-		"diff", "--raw", "-z", "--no-renames", "-w", baseRef,
+		"diff", "--numstat", "-z", "--no-renames", "-w", baseRef,
 	}, path)
 	outNoWhitespace, err := worktreeGitOutput(
 		ctx, dir, noWhitespaceArgs...,
@@ -559,22 +580,24 @@ func worktreeWhitespaceOnlyFiles(
 		return nil, err
 	}
 
-	allFiles := worktreeRawPaths(outAll)
-	noWhitespaceFiles := worktreeRawPaths(outNoWhitespace)
+	noWhitespaceFiles := worktreeNumstatPaths(
+		parseWorktreeNumstatZ(outNoWhitespace),
+	)
 	result := make(map[string]bool)
-	for file := range allFiles {
-		if !noWhitespaceFiles[file] {
-			result[file] = true
+	for _, file := range files {
+		if file.Path != "" && !noWhitespaceFiles[file.Path] {
+			result[file.Path] = true
 		}
 	}
 	return result, nil
 }
 
-func worktreeRawPaths(data []byte) map[string]bool {
-	files := gitclone.ParseRawZ(data)
-	paths := make(map[string]bool, len(files))
-	for _, file := range files {
-		paths[file.Path] = true
+func worktreeNumstatPaths(
+	counts map[string]worktreeNumstatCount,
+) map[string]bool {
+	paths := make(map[string]bool, len(counts))
+	for path := range counts {
+		paths[path] = true
 	}
 	return paths
 }

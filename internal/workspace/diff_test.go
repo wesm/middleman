@@ -3,7 +3,9 @@ package workspace
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	Assert "github.com/stretchr/testify/assert"
@@ -141,6 +143,52 @@ func TestWorktreeDiffAgainstPushedBranchIncludesLocalCommitsAndDirtyChanges(t *t
 	assert.Equal(0, diff.WhitespaceOnlyCount)
 }
 
+func TestWorktreeDiffUsesOneWhitespaceNumstatForTrackedFiles(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	work := setupDivergenceWorktree(t)
+
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "second.txt"), []byte("second\n"), 0o644,
+	))
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "third.txt"), []byte("third\n"), 0o644,
+	))
+	runWorkspaceTestGit(t, work, "add", ".")
+	runWorkspaceTestGit(t, work, "commit", "-m", "more tracked files")
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "f.txt"), []byte("f1  \n"), 0o644,
+	))
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "second.txt"), []byte("second changed\n"), 0o644,
+	))
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "third.txt"), []byte("third changed\n"), 0o644,
+	))
+
+	logPath := installWorkspaceGitLogger(t)
+	diff, ok, err := WorktreeDiff(
+		t.Context(), work, WorktreeDiffBaseHead, false,
+	)
+	require.NoError(err)
+	require.True(ok)
+	require.NotNil(diff)
+	assert.Equal(1, diff.WhitespaceOnlyCount)
+
+	var whitespaceNumstat []string
+	for line := range strings.SplitSeq(readFileString(t, logPath), "\n") {
+		if strings.Contains(line, "\tdiff\t") &&
+			strings.Contains(line, "\t--numstat\t") &&
+			strings.Contains(line, "\t-z\t") &&
+			strings.Contains(line, "\t--no-renames\t") &&
+			strings.Contains(line, "\t-w\t") {
+			whitespaceNumstat = append(whitespaceNumstat, line)
+		}
+	}
+	require.Len(whitespaceNumstat, 1)
+	assert.NotContains(whitespaceNumstat[0], "\t--\t")
+}
+
 func TestWorktreeDiffAgainstMergeTargetUsesMergeBase(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -183,6 +231,37 @@ func TestWorktreeDiffAgainstMergeTargetUsesMergeBase(t *testing.T) {
 	assert.Contains(paths, "committed.go")
 	assert.Contains(paths, "dirty.go")
 	assert.NotContains(paths, "target-only.txt")
+}
+
+func installWorkspaceGitLogger(t *testing.T) string {
+	t.Helper()
+
+	realGit, err := exec.LookPath("git")
+	require.NoError(t, err)
+
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "git.log")
+	wrapperPath := filepath.Join(dir, "git")
+	script := `#!/bin/sh
+for arg in "$@"; do
+  printf '\t%s' "$arg" >> "$MM_GIT_WRAPPER_LOG"
+done
+printf '\n' >> "$MM_GIT_WRAPPER_LOG"
+exec "$MM_REAL_GIT" "$@"
+`
+	require.NoError(t, os.WriteFile(wrapperPath, []byte(script), 0o755))
+	t.Setenv("MM_REAL_GIT", realGit)
+	t.Setenv("MM_GIT_WRAPPER_LOG", logPath)
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return logPath
+}
+
+func readFileString(t *testing.T, path string) string {
+	t.Helper()
+
+	content, err := os.ReadFile(path)
+	require.NoError(t, err)
+	return string(content)
 }
 
 func TestWorktreeDiffAgainstPushedBranchWithoutTrackingBranch(t *testing.T) {
