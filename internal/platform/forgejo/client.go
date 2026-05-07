@@ -8,6 +8,7 @@ import (
 
 	forgejosdk "codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3"
 	"github.com/wesm/middleman/internal/platform"
+	"github.com/wesm/middleman/internal/platform/gitealike"
 	"github.com/wesm/middleman/internal/ratelimit"
 )
 
@@ -24,6 +25,7 @@ type Client struct {
 	host              string
 	baseURL           string
 	transport         *transport
+	provider          *gitealike.Provider
 	api               *forgejosdk.Client
 	foregroundTimeout time.Duration
 }
@@ -82,11 +84,13 @@ func NewClient(host, token string, options ...ClientOption) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	transport := &transport{api: api}
 	return &Client{
 		host:              host,
 		baseURL:           opts.baseURL,
 		api:               api,
-		transport:         &transport{api: api},
+		transport:         transport,
+		provider:          gitealike.NewProvider(platform.KindForgejo, host, transport, gitealike.Options{ReadActions: true}),
 		foregroundTimeout: opts.foregroundTimeout,
 	}, nil
 }
@@ -100,7 +104,7 @@ func (c *Client) Host() string {
 }
 
 func (c *Client) Capabilities() platform.Capabilities {
-	return platform.Capabilities{}
+	return c.provider.Capabilities()
 }
 
 type transport struct {
