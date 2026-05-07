@@ -24,6 +24,10 @@ function expandToggle(sidebar: Locator): Locator {
   return sidebar.getByRole("button", { name: "Expand sidebar" });
 }
 
+function sidebarResizeHandle(page: Page): Locator {
+  return page.getByRole("button", { name: "Resize sidebar" });
+}
+
 async function dragResizeHandle(
   page: Page,
   handle: Locator,
@@ -54,7 +58,7 @@ async function expectResizedSidebar(
   await waitForList(page);
 
   const sidebar = page.locator(".sidebar").first();
-  const handle = page.locator(".resize-handle");
+  const handle = sidebarResizeHandle(page);
 
   expect(await sidebarWidth(sidebar)).toBe(340);
 
@@ -79,7 +83,7 @@ async function expectCompactFiltersAtMinimumWidth(
   await waitForList(page);
 
   const sidebar = page.locator(".sidebar").first();
-  const handle = page.locator(".resize-handle");
+  const handle = sidebarResizeHandle(page);
 
   await dragResizeHandle(page, handle, -220);
   await expect.poll(async () => sidebarWidth(sidebar)).toBe(200);
