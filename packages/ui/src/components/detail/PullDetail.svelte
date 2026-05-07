@@ -30,9 +30,7 @@
   import XIcon from "@lucide/svelte/icons/x";
   import Chip from "../shared/Chip.svelte";
   import GitHubLabels from "../shared/GitHubLabels.svelte";
-  import DiffView from "../diff/DiffView.svelte";
-  import DiffSidebar from "../diff/DiffSidebar.svelte";
-  import DiffToolbar from "../diff/DiffToolbar.svelte";
+  import DiffFilesLayout from "../diff/DiffFilesLayout.svelte";
   import CIStatus from "./CIStatus.svelte";
   import DiffSummaryChip from "./DiffSummaryChip.svelte";
   import CopyItemNumber from "./CopyItemNumber.svelte";
@@ -617,17 +615,7 @@
         </div>
       {/if}
       {#if !hideTabs && activeTab === "files"}
-        <div class="files-view">
-          <DiffToolbar />
-          <div class="files-layout">
-            <aside class="files-sidebar">
-              <DiffSidebar />
-            </aside>
-            <div class="files-main">
-              <DiffView {provider} {platformHost} {owner} {name} {repoPath} {number} />
-            </div>
-          </div>
-        </div>
+        <DiffFilesLayout {provider} {platformHost} {owner} {name} {repoPath} {number} />
       {:else}
         <div class="pull-detail">
           <div class="pull-detail-content">
@@ -1255,60 +1243,6 @@
     border-bottom: 1px solid var(--border-subtle);
     font-size: 12px;
     flex-shrink: 0;
-  }
-
-  .files-layout {
-    display: flex;
-    flex: 1;
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  .files-view {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  .files-sidebar {
-    width: 280px;
-    flex-shrink: 0;
-    border-right: 1px solid var(--border-default);
-    background: var(--bg-surface);
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .files-main {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  /* On narrow viewports the fixed 280px sidebar would crush the
-     diff pane. Stack the sidebar above the diff with a capped
-     height so the diff stays readable. */
-  @media (max-width: 720px) {
-    .files-layout {
-      flex-direction: column;
-    }
-
-    .files-sidebar {
-      width: 100%;
-      max-height: 35vh;
-      border-right: none;
-      border-bottom: 1px solid var(--border-default);
-    }
-
-    .files-main {
-      flex: 1;
-      min-height: 0;
-    }
   }
 
   .pull-detail {

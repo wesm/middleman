@@ -81,6 +81,18 @@ Intent:
 
 Use it inside left sidebar headers and collapsed strips. Pass a specific label such as `Workspaces sidebar` when the generic `sidebar` label would be ambiguous.
 
+### SplitResizeHandle
+
+Use `SplitResizeHandle` for draggable pane dividers in split views.
+
+Intent:
+
+- one shared drag lifecycle, keyboard resize behavior, hit target, cursor, focus, and hover treatment
+- keep pane-specific width bounds and direction math in the owning layout
+- avoid one-off splitter handles in sidebars, drawers, terminal panes, and diff views
+
+Use it between resizable panes. Pass a specific accessible label such as `Resize Activity rail` or `Resize file tree`.
+
 ### SelectDropdown
 
 Use `SelectDropdown` for single-value selection controls in the UI.

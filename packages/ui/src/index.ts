@@ -154,6 +154,12 @@ export {
   default as SelectDropdown,
 } from "./components/shared/SelectDropdown.svelte";
 export {
+  default as SplitResizeHandle,
+} from "./components/shared/SplitResizeHandle.svelte";
+export type {
+  SplitResizeEvent,
+} from "./components/shared/split-resize.js";
+export {
   default as WorkspaceRightSidebar,
 } from "./components/workspace/WorkspaceRightSidebar.svelte";
 export {

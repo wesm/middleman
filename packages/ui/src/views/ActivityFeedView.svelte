@@ -1,10 +1,9 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
   import type { ActivityItem } from "../api/types.js";
-  import ActivityFeed
-    from "../components/ActivityFeed.svelte";
-  import LeftSidebarToggle
-    from "../components/shared/LeftSidebarToggle.svelte";
+  import ActivityFeed from "../components/ActivityFeed.svelte";
+  import LeftSidebarToggle from "../components/shared/LeftSidebarToggle.svelte";
+  import SplitResizeHandle from "../components/shared/SplitResizeHandle.svelte";
+  import type { SplitResizeEvent } from "../components/shared/split-resize.js";
   import PRListView from "./PRListView.svelte";
   import IssueListView from "./IssueListView.svelte";
 
@@ -46,7 +45,7 @@
 
   const minActivityPaneWidth = 280;
   const maxActivityPaneWidth = 560;
-  let resizeCleanup: (() => void) | null = null;
+  let activityResizeStartWidth = 0;
 
   const controlled = $derived(
     controlledDrawer !== undefined || onCloseDrawer !== undefined,
@@ -93,7 +92,6 @@
 
   function handleClose(): void {
     activityPaneCollapsed = false;
-    stopActivityPaneResize();
     if (!controlled) {
       internalDrawer = null;
     }
@@ -107,43 +105,16 @@
     );
   }
 
-  function stopActivityPaneResize(): void {
-    resizeCleanup?.();
-    resizeCleanup = null;
+  function handleActivityPaneResizeStart(): void {
+    activityResizeStartWidth = activityPaneWidth;
   }
 
-  function startActivityPaneResize(event: MouseEvent): void {
-    event.preventDefault();
-    stopActivityPaneResize();
-    const startX = event.clientX;
-    const startWidth = activityPaneWidth;
-
-    function onMove(moveEvent: MouseEvent): void {
-      activityPaneWidth = clampActivityPaneWidth(
-        startWidth + moveEvent.clientX - startX,
-      );
-    }
-
-    function onUp(): void {
-      stopActivityPaneResize();
-    }
-
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    resizeCleanup = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-  }
-
-  function handleActivityPaneResizeKeydown(event: KeyboardEvent): void {
-    if (event.key === "ArrowLeft") {
-      event.preventDefault();
-      activityPaneWidth = clampActivityPaneWidth(activityPaneWidth - 24);
-    } else if (event.key === "ArrowRight") {
-      event.preventDefault();
-      activityPaneWidth = clampActivityPaneWidth(activityPaneWidth + 24);
-    }
+  function handleActivityPaneResize(
+    event: SplitResizeEvent,
+  ): void {
+    activityPaneWidth = clampActivityPaneWidth(
+      activityResizeStartWidth + event.deltaX,
+    );
   }
 
   function collapseActivityPane(): void {
@@ -153,10 +124,6 @@
   function expandActivityPane(): void {
     activityPaneCollapsed = false;
   }
-
-  onDestroy(() => {
-    stopActivityPaneResize();
-  });
 
   // Escape closes the active drawer when one is open. Mirrors the
   // behavior of the previous DetailDrawer the split view replaced.
@@ -216,13 +183,12 @@
   </section>
 
   {#if activeDrawer && !activityPaneCollapsed}
-    <button
+    <SplitResizeHandle
       class="activity-split-resize-handle"
-      aria-label="Resize Activity rail"
-      type="button"
-      onkeydown={handleActivityPaneResizeKeydown}
-      onmousedown={startActivityPaneResize}
-    ></button>
+      ariaLabel="Resize Activity rail"
+      onResizeStart={handleActivityPaneResizeStart}
+      onResize={handleActivityPaneResize}
+    />
   {/if}
 
   {#if activeDrawer}
@@ -367,22 +333,6 @@
     background: var(--bg-surface-hover);
   }
 
-  .activity-split-resize-handle {
-    width: 4px;
-    cursor: col-resize;
-    background: var(--border-muted);
-    appearance: none;
-    border: 0;
-    padding: 0;
-    flex-shrink: 0;
-  }
-
-  .activity-split-resize-handle:hover,
-  .activity-split-resize-handle:focus-visible {
-    background: var(--accent-blue);
-    outline: none;
-  }
-
   .activity-detail {
     flex: 1;
     min-width: 0;
@@ -396,7 +346,7 @@
       display: none;
     }
 
-    .activity-shell--split .activity-split-resize-handle {
+    .activity-shell--split :global(.activity-split-resize-handle) {
       display: none;
     }
   }

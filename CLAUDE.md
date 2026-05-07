@@ -120,6 +120,7 @@ make vet        # go vet
 - Use conventional commit messages whose subject explains the reason or user-visible outcome, not just the mechanical change. Good subjects answer "why does this commit exist?" (for example, `fix: restore workspace activity for launched agents`), while vague mechanics such as `fix: run agents under tmux` are not acceptable on their own
 - Commit bodies must add any important context about the bug, regression, constraint, or tradeoff that motivated the change; do not rely on the diff to explain intent
 - Run tests before committing when applicable
+- Before pushing UI changes, run the full affected Playwright e2e suite locally after the final UI/test edit; focused tests alone are not enough.
 - Never push or pull unless explicitly asked
 
 ## Pull Requests
