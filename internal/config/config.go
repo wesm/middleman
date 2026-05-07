@@ -11,8 +11,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/BurntSushi/toml"
 	platformpkg "github.com/wesm/middleman/internal/platform"
@@ -317,6 +319,13 @@ func normalizePlatform(raw string) (string, error) {
 	return string(kind), nil
 }
 
+// NormalizePlatformHost normalizes a configured provider host and rejects
+// URL authority forms that could redirect provider tokens through userinfo or
+// malformed host parsing.
+func NormalizePlatformHost(platform, raw string) (string, error) {
+	return normalizePlatformHost(platform, raw)
+}
+
 func normalizePlatformHost(platform, raw string) (string, error) {
 	platform, err := normalizePlatform(platform)
 	if err != nil {
@@ -334,7 +343,10 @@ func normalizePlatformHost(platform, raw string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("invalid_repo_ref: invalid platform_host %q: %w", raw, err)
 		}
-		if u.Path != "" && u.Path != "/" {
+		if u.User != nil {
+			return "", fmt.Errorf("invalid_repo_ref: platform_host %q must not include userinfo", raw)
+		}
+		if (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
 			return "", fmt.Errorf(
 				"invalid_repo_ref: platform_host %q must be a host; subpath installs are not supported",
 				raw,
@@ -350,11 +362,77 @@ func normalizePlatformHost(platform, raw string) (string, error) {
 			)
 		}
 	}
-	host = normalizePublicHost(host)
+	return normalizePlatformHostAuthority(raw, host)
+}
+
+func normalizePlatformHostAuthority(raw, host string) (string, error) {
+	host = strings.ToLower(strings.TrimSpace(host))
 	if host == "" {
 		return "", fmt.Errorf("invalid_repo_ref: platform_host %q is empty", raw)
 	}
-	return host, nil
+	if strings.Contains(host, "@") {
+		return "", fmt.Errorf("invalid_repo_ref: platform_host %q must not include userinfo", raw)
+	}
+	if strings.ContainsFunc(host, func(r rune) bool {
+		return unicode.IsControl(r) || unicode.IsSpace(r)
+	}) {
+		return "", fmt.Errorf("invalid_repo_ref: platform_host %q contains invalid characters", raw)
+	}
+	if err := validatePlatformHostPort(raw, host); err != nil {
+		return "", err
+	}
+
+	parsed, err := url.Parse("//" + host)
+	if err != nil {
+		return "", fmt.Errorf("invalid_repo_ref: invalid platform_host %q: %w", raw, err)
+	}
+	if parsed.User != nil || parsed.Hostname() == "" || parsed.Path != "" {
+		return "", fmt.Errorf("invalid_repo_ref: platform_host %q must be a host", raw)
+	}
+	return normalizePublicHost(host), nil
+}
+
+func validatePlatformHostPort(raw, host string) error {
+	if strings.HasPrefix(host, "[") {
+		closing := strings.LastIndex(host, "]")
+		if closing == -1 {
+			return fmt.Errorf("invalid_repo_ref: invalid platform_host %q", raw)
+		}
+		if closing == len(host)-1 {
+			return nil
+		}
+		if host[closing+1] != ':' {
+			return fmt.Errorf("invalid_repo_ref: invalid platform_host %q", raw)
+		}
+		return validatePlatformHostPortNumber(raw, host[closing+2:])
+	}
+
+	colonCount := strings.Count(host, ":")
+	switch colonCount {
+	case 0:
+		return nil
+	case 1:
+		_, port, _ := strings.Cut(host, ":")
+		return validatePlatformHostPortNumber(raw, port)
+	default:
+		return fmt.Errorf("invalid_repo_ref: platform_host %q must bracket IPv6 literals", raw)
+	}
+}
+
+func validatePlatformHostPortNumber(raw, port string) error {
+	if port == "" {
+		return fmt.Errorf("invalid_repo_ref: platform_host %q has an empty port", raw)
+	}
+	for _, r := range port {
+		if r < '0' || r > '9' {
+			return fmt.Errorf("invalid_repo_ref: platform_host %q has a non-numeric port", raw)
+		}
+	}
+	portNumber, err := strconv.Atoi(port)
+	if err != nil || portNumber > 65535 {
+		return fmt.Errorf("invalid_repo_ref: platform_host %q has an invalid port", raw)
+	}
+	return nil
 }
 
 // cleanPath strips query strings, fragments, trailing slashes,

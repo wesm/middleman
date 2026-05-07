@@ -918,6 +918,34 @@ name = "widgets"
 	Assert.Contains(t, err.Error(), "invalid_repo_ref")
 }
 
+func TestLoadRejectsUnsafePlatformHosts(t *testing.T) {
+	tests := []struct {
+		name string
+		host string
+	}{
+		{"url userinfo", "https://gitlab.com@attacker.example/"},
+		{"bare userinfo", "gitlab.com@attacker.example"},
+		{"malformed port", "gitlab.example.com:bad"},
+		{"control character", "gitlab.example.com\nattacker.example"},
+		{"whitespace", "gitlab.example.com attacker.example"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeConfig(t, fmt.Sprintf(`
+[[repos]]
+platform = "gitlab"
+platform_host = %q
+owner = "acme"
+name = "widgets"
+`, tt.host))
+
+			_, err := Load(path)
+			require.Error(t, err)
+			Assert.Contains(t, err.Error(), "invalid_repo_ref")
+		})
+	}
+}
+
 func TestLoadRejectsAmbiguousGitLabURL(t *testing.T) {
 	path := writeConfig(t, `
 [[repos]]

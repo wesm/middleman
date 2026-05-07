@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/url"
 	"path"
 	"slices"
 	"strings"
@@ -84,26 +83,11 @@ func normalizeImportPlatform(provider, host string) (platform.Kind, string, erro
 	if err != nil {
 		return "", "", err
 	}
-	host = strings.ToLower(strings.TrimSpace(host))
-	if strings.HasPrefix(host, "http://") || strings.HasPrefix(host, "https://") {
-		u, err := url.Parse(host)
-		if err != nil {
-			return "", "", fmt.Errorf("invalid platform_host %q: %w", host, err)
-		}
-		host = u.Host
+	normalizedHost, err := config.NormalizePlatformHost(string(kind), host)
+	if err != nil {
+		return "", "", err
 	}
-	host = strings.TrimRight(host, "/")
-	if strings.Contains(host, "/") {
-		return "", "", fmt.Errorf("platform_host must be a host")
-	}
-	if host == "" {
-		var ok bool
-		host, ok = platform.DefaultHost(kind)
-		if !ok {
-			return "", "", fmt.Errorf("platform_host is required for provider %q", kind)
-		}
-	}
-	return kind, host, nil
+	return kind, normalizedHost, nil
 }
 
 func importRequestHost(host, platformHost string) string {
