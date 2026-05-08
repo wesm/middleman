@@ -28,6 +28,12 @@ export type RateLimitsResponse =
   components["schemas"]["RateLimitsResponse"];
 export type ActivityItem = components["schemas"]["ActivityItemResponse"];
 export type ActivityResponse = components["schemas"]["ActivityResponse"];
+export type NotificationItem = components["schemas"]["NotificationResponse"];
+export type NotificationsResponse = components["schemas"]["NotificationsResponse"];
+export type NotificationSummary = components["schemas"]["NotificationSummaryResponse"];
+export type NotificationSyncStatus = components["schemas"]["NotificationSyncStatusResponse"];
+export type NotificationBulkResponse = components["schemas"]["NotificationBulkResponse"];
+export type NotificationParams = NonNullable<operations["list-notifications"]["parameters"]["query"]>;
 export type CommentAutocompleteResponse =
   components["schemas"]["CommentAutocompleteResponse"];
 export type CommentAutocompleteReference =
@@ -72,6 +78,10 @@ export interface TerminalSettings {
   renderer: TerminalRenderer;
 }
 
+export interface NotificationsSettings {
+  enabled: boolean;
+}
+
 export interface AgentSettings {
   key: string;
   label: string;
@@ -93,6 +103,7 @@ export interface Settings {
   repos: ConfigRepo[];
   activity: ActivitySettings;
   terminal: TerminalSettings;
+  notifications: NotificationsSettings;
   agents: AgentSettings[];
 }
 

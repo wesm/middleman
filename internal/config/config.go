@@ -21,18 +21,20 @@ import (
 )
 
 const (
-	defaultGitHubTokenEnv    = "MIDDLEMAN_GITHUB_TOKEN"
-	defaultForgejoTokenEnv   = "MIDDLEMAN_FORGEJO_TOKEN"
-	defaultGiteaTokenEnv     = "MIDDLEMAN_GITEA_TOKEN"
-	defaultSyncInterval      = "5m"
-	defaultHost              = "127.0.0.1"
-	defaultPort              = 8091
-	defaultViewMode          = "threaded"
-	defaultTimeRange         = "7d"
-	defaultBasePath          = "/"
-	defaultSyncBudgetPerHour = 500
-	defaultPlatform          = "github"
-	defaultPlatformHost      = platformpkg.DefaultGitHubHost
+	defaultGitHubTokenEnv                  = "MIDDLEMAN_GITHUB_TOKEN"
+	defaultForgejoTokenEnv                 = "MIDDLEMAN_FORGEJO_TOKEN"
+	defaultGiteaTokenEnv                   = "MIDDLEMAN_GITEA_TOKEN"
+	defaultSyncInterval                    = "5m"
+	defaultNotificationSyncInterval        = "2m"
+	defaultNotificationPropagationInterval = "1m"
+	defaultHost                            = "127.0.0.1"
+	defaultPort                            = 8091
+	defaultViewMode                        = "threaded"
+	defaultTimeRange                       = "7d"
+	defaultBasePath                        = "/"
+	defaultSyncBudgetPerHour               = 500
+	defaultPlatform                        = "github"
+	defaultPlatformHost                    = platformpkg.DefaultGitHubHost
 )
 
 type Repo struct {
@@ -290,17 +292,14 @@ func platformForRepoRefHost(host, configuredPlatform string) (string, bool) {
 	if configuredPlatform != defaultPlatform {
 		return configuredPlatform, true
 	}
-	if configuredPlatform == defaultPlatform {
-		if matchHost == defaultPlatformHost {
-			return defaultPlatform, true
-		}
-		if matchHost == platformpkg.DefaultForgejoHost {
-			return string(platformpkg.KindForgejo), true
-		}
-		if matchHost == platformpkg.DefaultGiteaHost {
-			return string(platformpkg.KindGitea), true
-		}
-		return "", false
+	if matchHost == defaultPlatformHost {
+		return defaultPlatform, true
+	}
+	if matchHost == platformpkg.DefaultForgejoHost {
+		return string(platformpkg.KindForgejo), true
+	}
+	if matchHost == platformpkg.DefaultGiteaHost {
+		return string(platformpkg.KindGitea), true
 	}
 	return "", false
 }
@@ -492,6 +491,13 @@ type Tmux struct {
 	AgentSessions *bool    `toml:"agent_sessions,omitempty"`
 }
 
+type Notifications struct {
+	Enabled             *bool  `toml:"enabled,omitempty" json:"enabled"`
+	SyncInterval        string `toml:"sync_interval" json:"sync_interval"`
+	PropagationInterval string `toml:"propagation_interval" json:"propagation_interval"`
+	BatchSize           int    `toml:"batch_size" json:"batch_size"`
+}
+
 // Shell configures the command middleman runs when ensuring the
 // per-workspace plain shell session. Hardened middleman deployments
 // (e.g. systemd services with SystemCallFilter=~@privileged) must
@@ -516,6 +522,7 @@ type Config struct {
 	Repos               []Repo           `toml:"repos"`
 	Platforms           []PlatformConfig `toml:"platforms"`
 	Activity            Activity         `toml:"activity"`
+	Notifications       Notifications    `toml:"notifications"`
 	Terminal            Terminal         `toml:"terminal"`
 	Agents              []Agent          `toml:"agents"`
 	Roborev             Roborev          `toml:"roborev"`
@@ -594,6 +601,12 @@ time_range = "7d"
 
 [terminal]
 renderer = "xterm"
+
+[notifications]
+enabled = false
+sync_interval = "2m"
+propagation_interval = "1m"
+batch_size = 25
 
 [tmux]
 agent_sessions = true
@@ -688,6 +701,15 @@ func Load(path string) (*Config, error) {
 	if cfg.Activity.TimeRange == "" {
 		cfg.Activity.TimeRange = defaultTimeRange
 	}
+	if cfg.Notifications.SyncInterval == "" {
+		cfg.Notifications.SyncInterval = defaultNotificationSyncInterval
+	}
+	if cfg.Notifications.PropagationInterval == "" {
+		cfg.Notifications.PropagationInterval = defaultNotificationPropagationInterval
+	}
+	if cfg.Notifications.BatchSize == 0 {
+		cfg.Notifications.BatchSize = 25
+	}
 
 	if cfg.SyncBudgetPerHour == 0 {
 		cfg.SyncBudgetPerHour = defaultSyncBudgetPerHour
@@ -781,6 +803,28 @@ func (c *Config) Validate() error {
 
 	if _, err := time.ParseDuration(c.SyncInterval); err != nil {
 		return fmt.Errorf("config: invalid sync_interval %q: %w", c.SyncInterval, err)
+	}
+	if c.Notifications.SyncInterval == "" {
+		c.Notifications.SyncInterval = defaultNotificationSyncInterval
+	}
+	if c.Notifications.PropagationInterval == "" {
+		c.Notifications.PropagationInterval = defaultNotificationPropagationInterval
+	}
+	if c.Notifications.BatchSize == 0 {
+		c.Notifications.BatchSize = 25
+	}
+	if d, err := time.ParseDuration(c.Notifications.SyncInterval); err != nil {
+		return fmt.Errorf("config: invalid notifications.sync_interval %q: %w", c.Notifications.SyncInterval, err)
+	} else if d <= 0 {
+		return fmt.Errorf("config: notifications.sync_interval must be positive, got %q", c.Notifications.SyncInterval)
+	}
+	if d, err := time.ParseDuration(c.Notifications.PropagationInterval); err != nil {
+		return fmt.Errorf("config: invalid notifications.propagation_interval %q: %w", c.Notifications.PropagationInterval, err)
+	} else if d <= 0 {
+		return fmt.Errorf("config: notifications.propagation_interval must be positive, got %q", c.Notifications.PropagationInterval)
+	}
+	if c.Notifications.BatchSize < 1 || c.Notifications.BatchSize > 200 {
+		return fmt.Errorf("config: notifications.batch_size must be between 1 and 200, got %d", c.Notifications.BatchSize)
 	}
 
 	if ip := net.ParseIP(c.Host); ip == nil {
@@ -966,6 +1010,27 @@ var (
 func (c *Config) SyncDuration() time.Duration {
 	d, _ := time.ParseDuration(c.SyncInterval)
 	return d
+}
+
+func (c *Config) NotificationsEnabled() bool {
+	return c != nil && c.Notifications.Enabled != nil && *c.Notifications.Enabled
+}
+
+func (c *Config) NotificationSyncDuration() time.Duration {
+	d, _ := time.ParseDuration(c.Notifications.SyncInterval)
+	return d
+}
+
+func (c *Config) NotificationPropagationDuration() time.Duration {
+	d, _ := time.ParseDuration(c.Notifications.PropagationInterval)
+	return d
+}
+
+func (c *Config) NotificationBatchSize() int {
+	if c.Notifications.BatchSize <= 0 {
+		return 25
+	}
+	return c.Notifications.BatchSize
 }
 
 func (c *Config) GitHubToken() string {
@@ -1179,6 +1244,7 @@ type configFile struct {
 	Repos               []Repo           `toml:"repos"`
 	Platforms           []PlatformConfig `toml:"platforms,omitempty"`
 	Activity            Activity         `toml:"activity"`
+	Notifications       Notifications    `toml:"notifications,omitempty"`
 	Terminal            Terminal         `toml:"terminal,omitempty"`
 	Agents              []Agent          `toml:"agents,omitempty"`
 	Roborev             Roborev          `toml:"roborev,omitempty"`
@@ -1186,8 +1252,22 @@ type configFile struct {
 	Shell               Shell            `toml:"shell,omitempty"`
 }
 
+func (n *Notifications) applyDefaults() {
+	if n.SyncInterval == "" {
+		n.SyncInterval = defaultNotificationSyncInterval
+	}
+	if n.PropagationInterval == "" {
+		n.PropagationInterval = defaultNotificationPropagationInterval
+	}
+	if n.BatchSize == 0 {
+		n.BatchSize = 25
+	}
+}
+
 // Save writes the current config to the given path.
 func (c *Config) Save(path string) error {
+	notifications := c.Notifications
+	notifications.applyDefaults()
 	f := configFile{
 		SyncInterval:        c.SyncInterval,
 		GitHubTokenEnv:      c.GitHubTokenEnv,
@@ -1197,6 +1277,7 @@ func (c *Config) Save(path string) error {
 		Repos:               reposForSave(c.Repos),
 		Platforms:           c.Platforms,
 		Activity:            c.Activity,
+		Notifications:       notifications,
 		Terminal:            c.Terminal,
 		Agents:              c.Agents,
 		Roborev:             c.Roborev,

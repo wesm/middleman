@@ -11,6 +11,7 @@ import (
 	gh "github.com/google/go-github/v84/github"
 	"github.com/stretchr/testify/require"
 	"github.com/wesm/middleman/internal/db"
+	ghclient "github.com/wesm/middleman/internal/github"
 )
 
 // SeedResult holds references to seeded data for use in E2E tests.
@@ -727,6 +728,84 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		return nil, fmt.Errorf("upsert tools issue#5 events: %w", err)
 	}
 
+	notifPRNumber := 1
+	notifIssueNumber := 5
+	seededNotifications := []db.Notification{
+		{
+			Platform:               "github",
+			PlatformHost:           "github.com",
+			PlatformNotificationID: "notif-widgets-1",
+			RepoID:                 &widgetsID,
+			RepoOwner:              "acme",
+			RepoName:               "widgets",
+			SubjectType:            "PullRequest",
+			SubjectTitle:           "Add widget caching layer",
+			WebURL:                 "https://github.com/acme/widgets/pull/1",
+			ItemNumber:             &notifPRNumber,
+			ItemType:               "pr",
+			ItemAuthor:             "alice",
+			Reason:                 "review_requested",
+			Unread:                 true,
+			Participating:          true,
+			SourceUpdatedAt:        now.Add(-2 * time.Hour),
+			SyncedAt:               now,
+		},
+		{
+			Platform:               "github",
+			PlatformHost:           "github.com",
+			PlatformNotificationID: "notif-tools-5",
+			RepoID:                 &toolsID,
+			RepoOwner:              "acme",
+			RepoName:               "tools",
+			SubjectType:            "Issue",
+			SubjectTitle:           "Support config file loading",
+			WebURL:                 "https://github.com/acme/tools/issues/5",
+			ItemNumber:             &notifIssueNumber,
+			ItemType:               "issue",
+			ItemAuthor:             "dave",
+			Reason:                 "mention",
+			Unread:                 true,
+			Participating:          true,
+			SourceUpdatedAt:        now.Add(-16 * time.Hour),
+			SyncedAt:               now,
+		},
+	}
+	if err := d.UpsertNotifications(ctx, seededNotifications); err != nil {
+		return nil, fmt.Errorf("upsert notifications: %w", err)
+	}
+	fixtureNotifications := []ghclient.NotificationThread{
+		{
+			ID:            "notif-widgets-1",
+			RepoOwner:     "acme",
+			RepoName:      "widgets",
+			SubjectType:   "PullRequest",
+			SubjectTitle:  "Add widget caching layer",
+			WebURL:        "https://github.com/acme/widgets/pull/1",
+			ItemNumber:    &notifPRNumber,
+			ItemType:      "pr",
+			ItemAuthor:    "alice",
+			Reason:        "review_requested",
+			Unread:        true,
+			Participating: true,
+			UpdatedAt:     now.Add(-2 * time.Hour),
+		},
+		{
+			ID:            "notif-tools-5",
+			RepoOwner:     "acme",
+			RepoName:      "tools",
+			SubjectType:   "Issue",
+			SubjectTitle:  "Support config file loading",
+			WebURL:        "https://github.com/acme/tools/issues/5",
+			ItemNumber:    &notifIssueNumber,
+			ItemType:      "issue",
+			ItemAuthor:    "dave",
+			Reason:        "mention",
+			Unread:        true,
+			Participating: true,
+			UpdatedAt:     now.Add(-16 * time.Hour),
+		},
+	}
+
 	// --- Build FixtureClient open items ---
 
 	openPRs := map[string][]*gh.PullRequest{
@@ -802,13 +881,14 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	result := &SeedResult{
 		FixtureClient: func() *FixtureClient {
 			return &FixtureClient{
-				OpenPRs:    openPRs,
-				PRs:        allPRs,
-				OpenIssues: openIssues,
-				Issues:     allIssues,
-				Comments:   make(map[string][]*gh.IssueComment),
-				Reviews:    reviews,
-				Tags:       make(map[string][]*gh.RepositoryTag),
+				OpenPRs:       openPRs,
+				PRs:           allPRs,
+				OpenIssues:    openIssues,
+				Issues:        allIssues,
+				Comments:      make(map[string][]*gh.IssueComment),
+				Reviews:       reviews,
+				Tags:          make(map[string][]*gh.RepositoryTag),
+				Notifications: fixtureNotifications,
 				CombinedStatuses: map[string]*gh.CombinedStatus{
 					refKey("acme", "widgets", widgetsPR1HeadSHA): {
 						State: new("success"),

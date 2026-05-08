@@ -42,7 +42,7 @@ describe("RepoImportModal", () => {
   it("filters, deselects visible rows, and submits remaining selected rows", async () => {
     const onImported = vi.fn();
     preview.mockResolvedValue({ provider: "github", platform_host: "github.com", owner: "acme", pattern: "*", repos: rows });
-    bulk.mockResolvedValue({ repos: [], activity: { view_mode: "threaded", time_range: "7d", hide_closed: false, hide_bots: false }, terminal: { font_family: "", renderer: "xterm" }, agents: [] });
+    bulk.mockResolvedValue({ repos: [], activity: { view_mode: "threaded", time_range: "7d", hide_closed: false, hide_bots: false }, terminal: { font_family: "", renderer: "xterm" }, notifications: { enabled: false }, agents: [] });
     render(RepoImportModal, { props: { open: true, onClose: vi.fn(), onImported } });
 
     await fireEvent.input(screen.getByLabelText("Repository pattern"), { target: { value: "acme/*" } });
@@ -63,7 +63,7 @@ describe("RepoImportModal", () => {
 
   it("hides private repositories and forks from preview selection", async () => {
     preview.mockResolvedValue({ provider: "github", platform_host: "github.com", owner: "acme", pattern: "*", repos: rows });
-    bulk.mockResolvedValue({ repos: [], activity: { view_mode: "threaded", time_range: "7d", hide_closed: false, hide_bots: false }, terminal: { font_family: "", renderer: "xterm" }, agents: [] });
+    bulk.mockResolvedValue({ repos: [], activity: { view_mode: "threaded", time_range: "7d", hide_closed: false, hide_bots: false }, terminal: { font_family: "", renderer: "xterm" }, notifications: { enabled: false }, agents: [] });
     render(RepoImportModal, { props: { open: true, onClose: vi.fn(), onImported: vi.fn() } });
 
     await fireEvent.input(screen.getByLabelText("Repository pattern"), { target: { value: "acme/*" } });

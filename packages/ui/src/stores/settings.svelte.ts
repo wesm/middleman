@@ -8,6 +8,7 @@ export function createSettingsStore() {
   let repos = $state<ConfigRepo[]>([]);
   let terminalFontFamily = $state("");
   let terminalRenderer = $state<TerminalRenderer>("xterm");
+  let notificationsFeatureEnabled = $state(false);
   let loaded = $state(false);
 
   function getConfiguredRepos(): ConfigRepo[] {
@@ -39,6 +40,14 @@ export function createSettingsStore() {
     terminalRenderer = renderer === "ghostty-web" ? "ghostty-web" : "xterm";
   }
 
+  function setNotificationsEnabled(enabled: boolean): void {
+    notificationsFeatureEnabled = enabled;
+  }
+
+  function notificationsEnabled(): boolean {
+    return notificationsFeatureEnabled;
+  }
+
   function hasConfiguredRepos(): boolean {
     return repos.length > 0;
   }
@@ -54,6 +63,8 @@ export function createSettingsStore() {
     setTerminalFontFamily,
     getTerminalRenderer,
     setTerminalRenderer,
+    setNotificationsEnabled,
+    notificationsEnabled,
     hasConfiguredRepos,
     isSettingsLoaded,
   };

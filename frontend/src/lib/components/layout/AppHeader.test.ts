@@ -9,6 +9,10 @@ vi.mock("../../api/runtime.js", () => ({
   apiErrorMessage: () => "",
 }));
 
+const mockSettings = vi.hoisted(() => ({
+  notificationsEnabled: false,
+}));
+
 // AppHeader reads sync state from the @middleman/ui context.
 vi.mock("@middleman/ui", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@middleman/ui")>();
@@ -18,6 +22,9 @@ vi.mock("@middleman/ui", async (importOriginal) => {
       sync: {
         getSyncState: () => null,
         triggerSync: () => Promise.resolve(),
+      },
+      settings: {
+        notificationsEnabled: () => mockSettings.notificationsEnabled,
       },
     }),
   };
@@ -30,7 +37,10 @@ import { navigate } from "../../stores/router.svelte.ts";
 
 type MediaChangeCallback = (event: MediaQueryListEvent) => void;
 
-function mockMatchMedia(matches: boolean, listeners?: MediaChangeCallback[]): void {
+function mockMatchMedia(
+  matches: boolean,
+  listeners?: MediaChangeCallback[],
+): void {
   Object.defineProperty(window, "matchMedia", {
     configurable: true,
     writable: true,
@@ -40,9 +50,11 @@ function mockMatchMedia(matches: boolean, listeners?: MediaChangeCallback[]): vo
       onchange: null,
       addListener: vi.fn(),
       removeListener: vi.fn(),
-      addEventListener: vi.fn().mockImplementation((_event: string, cb: MediaChangeCallback) => {
-        listeners?.push(cb);
-      }),
+      addEventListener: vi
+        .fn()
+        .mockImplementation((_event: string, cb: MediaChangeCallback) => {
+          listeners?.push(cb);
+        }),
       removeEventListener: vi.fn(),
       dispatchEvent: vi.fn(),
     })),
@@ -55,6 +67,7 @@ describe("AppHeader", () => {
     localStorage.clear();
     mockMatchMedia(false);
     setSidebarCollapsed(false);
+    mockSettings.notificationsEnabled = false;
   });
 
   afterEach(() => {
@@ -209,9 +222,9 @@ describe("AppHeader", () => {
     initTheme();
     render(AppHeader);
 
-    const moon = screen.getByTitle("Toggle theme").querySelector(
-      "[data-filled-icon='moon'] svg",
-    );
+    const moon = screen
+      .getByTitle("Toggle theme")
+      .querySelector("[data-filled-icon='moon'] svg");
 
     expect(moon).toBeTruthy();
   });
@@ -226,9 +239,26 @@ describe("AppHeader", () => {
     ).toBeTruthy();
   });
 
+  it("hides the Inbox tab while notification feature flag is disabled", () => {
+    initTheme();
+    render(AppHeader);
+
+    expect(screen.queryByRole("button", { name: "Inbox" })).toBeNull();
+  });
+
+  it("shows the Inbox tab when notification feature flag is enabled", () => {
+    mockSettings.notificationsEnabled = true;
+    initTheme();
+    render(AppHeader);
+
+    expect(screen.getByRole("button", { name: "Inbox" })).toBeTruthy();
+  });
+
   it("opens selected Activity PR in PRs tab with files tab preserved", async () => {
     initTheme();
-    navigate("/?selected=pr:1&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&selected_tab=files");
+    navigate(
+      "/?selected=pr:1&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&selected_tab=files",
+    );
     render(AppHeader);
 
     await fireEvent.click(screen.getByRole("button", { name: "PRs" }));
@@ -240,7 +270,9 @@ describe("AppHeader", () => {
 
   it("opens selected Activity issue in Issues tab with platform host preserved", async () => {
     initTheme();
-    navigate("/?selected=issue:10&provider=github&platform_host=ghe.example.com&repo_path=acme%2Fwidgets");
+    navigate(
+      "/?selected=issue:10&provider=github&platform_host=ghe.example.com&repo_path=acme%2Fwidgets",
+    );
     render(AppHeader);
 
     await fireEvent.click(screen.getByRole("button", { name: "Issues" }));
@@ -252,7 +284,9 @@ describe("AppHeader", () => {
 
   it("opens Issues list when Activity selection is a PR", async () => {
     initTheme();
-    navigate("/?selected=pr:1&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&selected_tab=files");
+    navigate(
+      "/?selected=pr:1&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&selected_tab=files",
+    );
     render(AppHeader);
 
     await fireEvent.click(screen.getByRole("button", { name: "Issues" }));

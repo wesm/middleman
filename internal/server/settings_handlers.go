@@ -18,10 +18,15 @@ import (
 )
 
 type settingsResponse struct {
-	Repos    []ghclient.ConfiguredRepoStatus `json:"repos"`
-	Activity config.Activity                 `json:"activity"`
-	Terminal config.Terminal                 `json:"terminal"`
-	Agents   []config.Agent                  `json:"agents"`
+	Repos         []ghclient.ConfiguredRepoStatus `json:"repos"`
+	Activity      config.Activity                 `json:"activity"`
+	Notifications notificationsSettingsResponse   `json:"notifications"`
+	Terminal      config.Terminal                 `json:"terminal"`
+	Agents        []config.Agent                  `json:"agents"`
+}
+
+type notificationsSettingsResponse struct {
+	Enabled bool `json:"enabled"`
 }
 
 type updateSettingsRequest struct {
@@ -54,6 +59,7 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 	s.cfgMu.Lock()
 	repos := slices.Clone(s.cfg.Repos)
 	activity := s.cfg.Activity
+	notifications := s.cfg.Notifications
 	terminal := s.cfg.Terminal
 	if terminal.Renderer == "" {
 		terminal.Renderer = config.TerminalRendererXterm
@@ -77,10 +83,11 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 		}
 	}
 	return settingsResponse{
-		Repos:    configured,
-		Activity: activity,
-		Terminal: terminal,
-		Agents:   agents,
+		Repos:         configured,
+		Activity:      activity,
+		Notifications: notificationsSettingsResponse{Enabled: notifications.Enabled != nil && *notifications.Enabled},
+		Terminal:      terminal,
+		Agents:        agents,
 	}
 }
 

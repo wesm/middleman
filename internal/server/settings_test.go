@@ -331,6 +331,7 @@ command = ["codex", "--full-auto"]
 	assert.Equal("acme", resp.Repos[0].Owner)
 	assert.Equal(1, resp.Repos[0].MatchedRepoCount)
 	assert.Equal("threaded", resp.Activity.ViewMode)
+	assert.False(resp.Notifications.Enabled)
 	assert.Empty(resp.Terminal.FontFamily)
 	require.Len(resp.Agents, 1)
 	assert.Equal("codex", resp.Agents[0].Key)

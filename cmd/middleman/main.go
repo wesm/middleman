@@ -381,6 +381,10 @@ func run(configPath string) error {
 	syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
 	syncer.Start(ctx)
 	defer syncer.Stop()
+	if cfg.NotificationsEnabled() {
+		notificationLoops := startNotificationLoops(ctx, syncer, cfg)
+		defer notificationLoops.Stop()
+	}
 	defer stop()
 
 	// srv.Shutdown MUST be the last-registered defer so LIFO runs

@@ -27,7 +27,7 @@ export interface ActionRegistry {
 export interface NavigateEvent {
   path: string;
   route: {
-    page: "pulls" | "issues" | "activity" | "diff" | "board" | "reviews";
+    page: "pulls" | "issues" | "activity" | "diff" | "board" | "reviews" | "inbox";
     view?: string;
     tab?: string;
     presentation?: "fullLayout" | "focus";
@@ -91,6 +91,7 @@ export type { PullsStore } from "./stores/pulls.svelte.js";
 export type { IssuesStore } from "./stores/issues.svelte.js";
 export type { DetailStore } from "./stores/detail.svelte.js";
 export type { ActivityStore } from "./stores/activity.svelte.js";
+export type { NotificationsStore } from "./stores/notifications.svelte.js";
 export type { SyncStore } from "./stores/sync.svelte.js";
 export type { DiffStore } from "./stores/diff.svelte.js";
 export type { GroupingStore } from "./stores/grouping.svelte.js";
@@ -106,6 +107,7 @@ import type { PullsStore } from "./stores/pulls.svelte.js";
 import type { IssuesStore } from "./stores/issues.svelte.js";
 import type { DetailStore } from "./stores/detail.svelte.js";
 import type { ActivityStore } from "./stores/activity.svelte.js";
+import type { NotificationsStore } from "./stores/notifications.svelte.js";
 import type { SyncStore } from "./stores/sync.svelte.js";
 import type { DiffStore } from "./stores/diff.svelte.js";
 import type { GroupingStore } from "./stores/grouping.svelte.js";
@@ -122,6 +124,7 @@ export interface StoreInstances {
   issues: IssuesStore;
   detail: DetailStore;
   activity: ActivityStore;
+  notifications: NotificationsStore;
   sync: SyncStore;
   diff: DiffStore;
   grouping: GroupingStore;

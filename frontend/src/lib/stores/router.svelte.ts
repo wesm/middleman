@@ -16,11 +16,21 @@ export type EmbedEmptyReason = "noSelection" | "noRepo" | "noWorkspace";
 
 export type EmbedDetailTab = "pr" | "issue" | "reviews";
 
+export type InboxRouteFilters = {
+  state?: "unread" | "active" | "read" | "done" | "all" | undefined;
+  reason?: string[] | undefined;
+  type?: string[] | undefined;
+  repo?: string | undefined;
+  q?: string | undefined;
+  sort?: string | undefined;
+};
+
 export type Route =
   | { page: "activity" }
   | { page: "mobile-activity" }
   | { page: "mobile-pulls" }
   | { page: "mobile-issues" }
+  | { page: "inbox"; filters?: InboxRouteFilters }
   | { page: "design-system" }
   | { page: "repos" }
   | { page: "workspaces" }
@@ -32,11 +42,11 @@ export type Route =
     }
   | { page: "issues"; selected?: HostedItemRef }
   | { page: "settings" }
-  | {
+  | ({
       page: "focus";
       itemType: "pr";
       tab?: "files";
-    } & NumberedItemRef
+    } & NumberedItemRef)
   | ({ page: "focus" } & IssueRouteRef & { itemType: "issue" })
   | { page: "focus"; itemType: "mrs"; repo?: string }
   | { page: "focus"; itemType: "issues"; repo?: string }
@@ -119,8 +129,14 @@ function parseProviderNumberedPath(
 ): NumberedItemRef | undefined {
   if (parts.length < start + 4) return undefined;
   const provider = decodeRouteSegment(parts[start] ?? "")?.trim();
-  const owner = decodeRouteSegment(parts[start + 1] ?? "")?.replace(/^\/+|\/+$/g, "");
-  const name = decodeRouteSegment(parts[start + 2] ?? "")?.replace(/^\/+|\/+$/g, "");
+  const owner = decodeRouteSegment(parts[start + 1] ?? "")?.replace(
+    /^\/+|\/+$/g,
+    "",
+  );
+  const name = decodeRouteSegment(parts[start + 2] ?? "")?.replace(
+    /^\/+|\/+$/g,
+    "",
+  );
   const numberText = decodeRouteSegment(parts[start + 3] ?? "");
   if (!provider || !owner || !name || !numberText) return undefined;
 
@@ -159,13 +175,64 @@ function inferLegacyEmbedProvider(platformHost: string): string {
   return platformHost.toLowerCase().includes("gitlab") ? "gitlab" : "github";
 }
 
-function splitRepoPath(repoPath: string): { owner: string; name: string } | undefined {
-  const pathParts = repoPath.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
+function splitRepoPath(
+  repoPath: string,
+): { owner: string; name: string } | undefined {
+  const pathParts = repoPath
+    .replace(/^\/+|\/+$/g, "")
+    .split("/")
+    .filter(Boolean);
   if (pathParts.length < 2) return undefined;
   return {
     owner: pathParts.slice(0, -1).join("/"),
     name: pathParts[pathParts.length - 1]!,
   };
+}
+
+const validInboxStates = new Set(["unread", "active", "read", "done", "all"]);
+
+function nonEmptyValues(sp: URLSearchParams, key: string): string[] {
+  return sp
+    .getAll(key)
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function parseInboxFilters(search: string): InboxRouteFilters | undefined {
+  const sp = new URLSearchParams(search);
+  const filters: InboxRouteFilters = {};
+  const state = sp.get("state")?.trim();
+  if (state && validInboxStates.has(state)) {
+    filters.state = state as InboxRouteFilters["state"];
+  }
+  const reason = nonEmptyValues(sp, "reason");
+  if (reason.length > 0) filters.reason = reason;
+  const type = nonEmptyValues(sp, "type");
+  if (type.length > 0) filters.type = type;
+  const repo = sp.get("repo")?.trim();
+  if (repo) filters.repo = repo;
+  const q = sp.get("q")?.trim();
+  if (q) filters.q = q;
+  const sort = sp.get("sort")?.trim();
+  if (sort) filters.sort = sort;
+  return Object.keys(filters).length > 0 ? filters : undefined;
+}
+
+export function buildInboxRoute(filters: InboxRouteFilters = {}): string {
+  const sp = new URLSearchParams();
+  if (filters.state && filters.state !== "unread")
+    sp.set("state", filters.state);
+  for (const reason of filters.reason ?? []) {
+    if (reason) sp.append("reason", reason);
+  }
+  for (const type of filters.type ?? []) {
+    if (type) sp.append("type", type);
+  }
+  if (filters.repo) sp.set("repo", filters.repo);
+  if (filters.q) sp.set("q", filters.q);
+  if (filters.sort && filters.sort !== "priority") sp.set("sort", filters.sort);
+  const query = sp.toString();
+  return query ? `/inbox?${query}` : "/inbox";
 }
 
 function parseRoute(fullPath: string): Route {
@@ -201,7 +268,11 @@ function parseRoute(fullPath: string): Route {
     const pull = parseHostProviderNumberedPath(parts, "pulls", 1);
     const isPullFiles = parts[parts.length - 1] === "files";
     const focusPullLength = parts[1] === "host" ? 8 : 6;
-    if (pull && (parts.length === focusPullLength || (isPullFiles && parts.length === focusPullLength + 1))) {
+    if (
+      pull &&
+      (parts.length === focusPullLength ||
+        (isPullFiles && parts.length === focusPullLength + 1))
+    ) {
       return {
         page: "focus",
         itemType: "pr",
@@ -217,6 +288,10 @@ function parseRoute(fullPath: string): Route {
         ...issue,
       };
     }
+  }
+  if (path === "/inbox") {
+    const filters = parseInboxFilters(search);
+    return filters ? { page: "inbox", filters } : { page: "inbox" };
   }
   if (path === "/design-system") {
     return { page: "design-system" };
@@ -418,11 +493,7 @@ function parseRoute(fullPath: string): Route {
 
 const configuredInitialRoute = getInitialRoute();
 if (configuredInitialRoute) {
-  history.replaceState(
-    null,
-    "",
-    basePrefix + configuredInitialRoute,
-  );
+  history.replaceState(null, "", basePrefix + configuredInitialRoute);
 }
 
 let route = $state<Route>(
@@ -482,6 +553,8 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     navType = "issue";
   } else if (r.page === "repos") {
     navType = "repos";
+  } else if (r.page === "inbox") {
+    navType = "activity";
   } else if (r.page === "reviews") {
     navType = "reviews";
   } else if (isWorkspacePage(r.page)) {
@@ -551,9 +624,11 @@ export function isWorkspaceEmbedPage(page: Page): boolean {
 }
 
 export function isMobilePage(page: Page): boolean {
-  return page === "mobile-activity"
-    || page === "mobile-pulls"
-    || page === "mobile-issues";
+  return (
+    page === "mobile-activity" ||
+    page === "mobile-pulls" ||
+    page === "mobile-issues"
+  );
 }
 
 function fireMiddlemanNavigateEvent(r: Route): void {
@@ -634,7 +709,8 @@ export function setView(v: View): void {
 
 export function getTab(): Tab {
   if (route.page === "pulls" || route.page === "mobile-pulls") return "pulls";
-  if (route.page === "issues" || route.page === "mobile-issues") return "issues";
+  if (route.page === "issues" || route.page === "mobile-issues")
+    return "issues";
   return "pulls";
 }
 

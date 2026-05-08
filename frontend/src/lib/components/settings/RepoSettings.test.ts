@@ -246,6 +246,7 @@ describe("RepoSettings", () => {
         hide_bots: false,
       },
       terminal: { font_family: "", renderer: "xterm" },
+      notifications: { enabled: false },
       agents: [],
     });
     render(RepoSettings, {
