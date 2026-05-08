@@ -3,6 +3,7 @@ import {
   getPage,
   getDetailTab,
   isDiffView,
+  getSelectedPRFromRoute,
 } from "../router.svelte.js";
 import type { Context } from "./types.js";
 import type { PullSelection } from "@middleman/ui/stores/pulls";
@@ -17,7 +18,10 @@ export function buildContext(stores: SelectionSources): Context {
   return {
     page: getPage(),
     route: getRoute(),
-    selectedPR: stores.pulls.getSelectedPR(),
+    // Mirror App.svelte's render path: route-derived selection wins so PR
+    // detail navigation via deep-link or back/forward keeps actions enabled
+    // before the pulls store has hydrated.
+    selectedPR: getSelectedPRFromRoute() ?? stores.pulls.getSelectedPR(),
     selectedIssue: stores.issues.getSelectedIssue(),
     isDiffView: isDiffView(),
     detailTab: getDetailTab(),
