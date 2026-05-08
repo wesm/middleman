@@ -21,6 +21,7 @@ import (
 	"github.com/wesm/middleman/internal/db"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/platform"
+	"github.com/wesm/middleman/internal/platform/gitealike"
 	"github.com/wesm/middleman/internal/workspace/localruntime"
 )
 
@@ -157,6 +158,132 @@ func (p repoImportTestProvider) ListRepositories(
 		}
 	}
 	return repos, nil
+}
+
+type gitealikeImportTransport struct {
+	userRepos     []gitealike.RepositoryDTO
+	userReposErr  error
+	orgRepos      []gitealike.RepositoryDTO
+	orgReposErr   error
+	repository    gitealike.RepositoryDTO
+	repositoryErr error
+}
+
+func (t *gitealikeImportTransport) GetRepository(
+	context.Context,
+	string,
+	string,
+) (gitealike.RepositoryDTO, error) {
+	return t.repository, t.repositoryErr
+}
+
+func (t *gitealikeImportTransport) ListUserRepositories(
+	context.Context,
+	string,
+	gitealike.PageOptions,
+) ([]gitealike.RepositoryDTO, gitealike.Page, error) {
+	return t.userRepos, gitealike.Page{}, t.userReposErr
+}
+
+func (t *gitealikeImportTransport) ListOrgRepositories(
+	context.Context,
+	string,
+	gitealike.PageOptions,
+) ([]gitealike.RepositoryDTO, gitealike.Page, error) {
+	return t.orgRepos, gitealike.Page{}, t.orgReposErr
+}
+
+func (t *gitealikeImportTransport) ListOpenPullRequests(
+	context.Context,
+	platform.RepoRef,
+	gitealike.PageOptions,
+) ([]gitealike.PullRequestDTO, gitealike.Page, error) {
+	return nil, gitealike.Page{}, errors.New("unexpected ListOpenPullRequests call")
+}
+
+func (t *gitealikeImportTransport) GetPullRequest(
+	context.Context,
+	platform.RepoRef,
+	int,
+) (gitealike.PullRequestDTO, error) {
+	return gitealike.PullRequestDTO{}, errors.New("unexpected GetPullRequest call")
+}
+
+func (t *gitealikeImportTransport) ListPullRequestComments(
+	context.Context,
+	platform.RepoRef,
+	int,
+	gitealike.PageOptions,
+) ([]gitealike.CommentDTO, gitealike.Page, error) {
+	return nil, gitealike.Page{}, errors.New("unexpected ListPullRequestComments call")
+}
+
+func (t *gitealikeImportTransport) ListPullRequestReviews(
+	context.Context,
+	platform.RepoRef,
+	int,
+	gitealike.PageOptions,
+) ([]gitealike.ReviewDTO, gitealike.Page, error) {
+	return nil, gitealike.Page{}, errors.New("unexpected ListPullRequestReviews call")
+}
+
+func (t *gitealikeImportTransport) ListPullRequestCommits(
+	context.Context,
+	platform.RepoRef,
+	int,
+	gitealike.PageOptions,
+) ([]gitealike.CommitDTO, gitealike.Page, error) {
+	return nil, gitealike.Page{}, errors.New("unexpected ListPullRequestCommits call")
+}
+
+func (t *gitealikeImportTransport) ListOpenIssues(
+	context.Context,
+	platform.RepoRef,
+	gitealike.PageOptions,
+) ([]gitealike.IssueDTO, gitealike.Page, error) {
+	return nil, gitealike.Page{}, errors.New("unexpected ListOpenIssues call")
+}
+
+func (t *gitealikeImportTransport) GetIssue(
+	context.Context,
+	platform.RepoRef,
+	int,
+) (gitealike.IssueDTO, error) {
+	return gitealike.IssueDTO{}, errors.New("unexpected GetIssue call")
+}
+
+func (t *gitealikeImportTransport) ListIssueComments(
+	context.Context,
+	platform.RepoRef,
+	int,
+	gitealike.PageOptions,
+) ([]gitealike.CommentDTO, gitealike.Page, error) {
+	return nil, gitealike.Page{}, errors.New("unexpected ListIssueComments call")
+}
+
+func (t *gitealikeImportTransport) ListReleases(
+	context.Context,
+	platform.RepoRef,
+	gitealike.PageOptions,
+) ([]gitealike.ReleaseDTO, gitealike.Page, error) {
+	return nil, gitealike.Page{}, errors.New("unexpected ListReleases call")
+}
+
+func (t *gitealikeImportTransport) ListTags(
+	context.Context,
+	platform.RepoRef,
+	gitealike.PageOptions,
+) ([]gitealike.TagDTO, gitealike.Page, error) {
+	return nil, gitealike.Page{}, errors.New("unexpected ListTags call")
+}
+
+func (t *gitealikeImportTransport) ListStatuses(
+	context.Context,
+	platform.RepoRef,
+	string,
+	gitealike.PageOptions,
+) ([]gitealike.StatusDTO, gitealike.Page, error) {
+	return nil, gitealike.Page{}, errors.New("unexpected ListStatuses call")
 }
 
 func doJSON(
@@ -1470,6 +1597,83 @@ name = "Project"
 	assert.NotContains(rr.Body.String(), "Other")
 }
 
+func TestHandlePreviewReposSupportsForgejoOrgFallback(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	updatedAt := time.Date(2026, 5, 2, 14, 0, 0, 0, time.UTC)
+	transport := &gitealikeImportTransport{
+		userReposErr: platform.ErrNotFound,
+		orgRepos: []gitealike.RepositoryDTO{
+			{
+				ID:          101,
+				Owner:       gitealike.UserDTO{UserName: "ForgeOrg"},
+				Name:        "Widget",
+				FullName:    "ForgeOrg/Widget",
+				Description: "forgejo widget",
+				Private:     true,
+				Updated:     updatedAt,
+			},
+			{
+				ID:       102,
+				Owner:    gitealike.UserDTO{UserName: "ForgeOrg"},
+				Name:     "Widget-Archived",
+				FullName: "ForgeOrg/Widget-Archived",
+				Archived: true,
+			},
+			{
+				ID:       103,
+				Owner:    gitealike.UserDTO{UserName: "ForgeOrg"},
+				Name:     "Other",
+				FullName: "ForgeOrg/Other",
+			},
+		},
+	}
+	provider := gitealike.NewProvider(
+		platform.KindForgejo, "codeberg.example.com", transport,
+	)
+	srv, _, _ := setupTestServerWithConfigProviders(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+platform = "forgejo"
+platform_host = "codeberg.example.com"
+owner = "ForgeOrg"
+name = "Widget"
+repo_path = "ForgeOrg/Widget"
+`, &mockGH{}, provider)
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
+		"provider": "forgejo",
+		"host":     "codeberg.example.com",
+		"owner":    "ForgeOrg",
+		"pattern":  "Widget*",
+	})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	body := rr.Body.String()
+	var resp repoPreviewResponse
+	require.NoError(json.NewDecoder(strings.NewReader(body)).Decode(&resp))
+	require.Len(resp.Repos, 1)
+	assert.Equal("forgejo", resp.Provider)
+	assert.Equal("codeberg.example.com", resp.PlatformHost)
+	assert.Equal("ForgeOrg", resp.Owner)
+	assert.Equal("forgejo", resp.Repos[0].Provider)
+	assert.Equal("codeberg.example.com", resp.Repos[0].PlatformHost)
+	assert.Equal("ForgeOrg", resp.Repos[0].Owner)
+	assert.Equal("Widget", resp.Repos[0].Name)
+	assert.Equal("ForgeOrg/Widget", resp.Repos[0].RepoPath)
+	assert.Equal("forgejo widget", *resp.Repos[0].Description)
+	assert.True(resp.Repos[0].Private)
+	assert.True(resp.Repos[0].AlreadyConfigured)
+	require.NotNil(resp.Repos[0].PushedAt)
+	assert.Equal(updatedAt.Format(time.RFC3339), *resp.Repos[0].PushedAt)
+	assert.NotContains(body, "Widget-Archived")
+	assert.NotContains(body, "Other")
+}
+
 func TestHandleBulkAddReposPersistsExactRepos(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -1592,6 +1796,76 @@ port = 8091
 	assert.Equal("gitlab", dbRepo.Platform)
 	assert.Equal("gitlab.example.com", dbRepo.PlatformHost)
 	assert.Equal("Group/Subgroup/Project", dbRepo.RepoPath)
+}
+
+func TestHandleBulkAddReposPersistsGiteaProviderIdentity(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	transport := &gitealikeImportTransport{
+		repository: gitealike.RepositoryDTO{
+			ID:            6262,
+			Owner:         gitealike.UserDTO{UserName: "Team"},
+			Name:          "Service",
+			FullName:      "Team/Service",
+			HTMLURL:       "https://gitea.example.com/Team/Service",
+			CloneURL:      "https://gitea.example.com/Team/Service.git",
+			DefaultBranch: "main",
+		},
+	}
+	provider := gitealike.NewProvider(
+		platform.KindGitea, "gitea.example.com", transport,
+	)
+	srv, database, cfgPath := setupTestServerWithConfigProviders(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+`, &mockGH{}, provider)
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
+		"repos": []map[string]string{
+			{
+				"provider":  "gitea",
+				"host":      "gitea.example.com",
+				"repo_path": "Team/Service",
+			},
+		},
+	})
+	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
+
+	var resp settingsResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(resp.Repos, 1)
+	assert.Equal("gitea", resp.Repos[0].Provider)
+	assert.Equal("gitea.example.com", resp.Repos[0].PlatformHost)
+	assert.Equal("Team", resp.Repos[0].Owner)
+	assert.Equal("Service", resp.Repos[0].Name)
+	assert.Equal("Team/Service", resp.Repos[0].RepoPath)
+
+	cfg2, err := config.Load(cfgPath)
+	require.NoError(err)
+	require.Len(cfg2.Repos, 1)
+	assert.Equal("gitea", cfg2.Repos[0].Platform)
+	assert.Equal("gitea.example.com", cfg2.Repos[0].PlatformHost)
+	assert.Equal("Team", cfg2.Repos[0].Owner)
+	assert.Equal("Service", cfg2.Repos[0].Name)
+	assert.Equal("Team/Service", cfg2.Repos[0].RepoPath)
+	assert.True(srv.syncer.IsTrackedRepoOnHost("Team", "Service", "gitea.example.com"))
+
+	ref := platform.RepoRef{
+		Platform:   platform.KindGitea,
+		Host:       "gitea.example.com",
+		Owner:      "Team",
+		Name:       "Service",
+		RepoPath:   "Team/Service",
+		PlatformID: 6262,
+	}
+	dbRepo, err := database.GetRepoByIdentity(t.Context(), platform.DBRepoIdentity(ref))
+	require.NoError(err)
+	require.NotNil(dbRepo)
+	assert.Equal("gitea", dbRepo.Platform)
+	assert.Equal("gitea.example.com", dbRepo.PlatformHost)
+	assert.Equal("Team/Service", dbRepo.RepoPath)
 }
 
 func TestHandleBulkAddReposValidationFailureChangesNothing(t *testing.T) {
