@@ -1482,6 +1482,34 @@ func TestListPullRequestsFilterBySearch(t *testing.T) {
 	Assert.Equal(t, 1, prs[0].Number)
 }
 
+func TestListPullRequestsFilterBySearchNumber(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	d := openTestDB(t)
+
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	base := baseTime()
+
+	insertTestMR(t, d, repoID, 12, "add feature", base)
+	insertTestMR(t, d, repoID, 278, "fix bug", base.Add(time.Hour))
+	insertTestMR(t, d, repoID, 290, "another change", base.Add(2*time.Hour))
+
+	prs, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{Search: "278"})
+	require.NoError(err)
+	require.Len(prs, 1)
+	assert.Equal(278, prs[0].Number)
+
+	prs, err = d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{Search: "#278"})
+	require.NoError(err)
+	require.Len(prs, 1)
+	assert.Equal(278, prs[0].Number)
+
+	// Substring of number matches multiple.
+	prs, err = d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{Search: "2"})
+	require.NoError(err)
+	require.Len(prs, 3)
+}
+
 func TestListPullRequestsFilterByKanban(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -2392,6 +2420,39 @@ func TestIssueRepoScopedQueriesCanonicalizeOwnerName(t *testing.T) {
 	gotID, err := d.GetIssueIDByRepoAndNumber(ctx, "Owner", "Repo", 7)
 	require.NoError(err)
 	assert.Equal(issueID, gotID)
+}
+
+func TestListIssuesFilterBySearch(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	d := openTestDB(t)
+
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	base := baseTime()
+
+	insertTestIssue(t, d, repoID, 12, "report a bug", base)
+	insertTestIssue(t, d, repoID, 278, "filter broken", base.Add(time.Hour))
+	insertTestIssue(t, d, repoID, 290, "another change", base.Add(2*time.Hour))
+
+	issues, err := d.ListIssues(t.Context(), ListIssuesOpts{Search: "broken"})
+	require.NoError(err)
+	require.Len(issues, 1)
+	assert.Equal(278, issues[0].Number)
+
+	issues, err = d.ListIssues(t.Context(), ListIssuesOpts{Search: "278"})
+	require.NoError(err)
+	require.Len(issues, 1)
+	assert.Equal(278, issues[0].Number)
+
+	issues, err = d.ListIssues(t.Context(), ListIssuesOpts{Search: "#278"})
+	require.NoError(err)
+	require.Len(issues, 1)
+	assert.Equal(278, issues[0].Number)
+
+	// Substring of number matches multiple.
+	issues, err = d.ListIssues(t.Context(), ListIssuesOpts{Search: "2"})
+	require.NoError(err)
+	require.Len(issues, 3)
 }
 
 func TestReplaceIssueLabels_RejectsWrongRepoID(t *testing.T) {

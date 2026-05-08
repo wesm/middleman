@@ -9,6 +9,20 @@ import (
 	"time"
 )
 
+// listSearchCondition returns a SQL condition and args for a free-text search.
+// The title is searched as "#{number} {title}" so substring queries can match
+// the number, the title, or both at once (e.g. "278" hits "#278 fix bug").
+// Author is matched separately. The alias is the table alias used in the
+// surrounding query (e.g. "p" for merge requests, "i" for issues).
+func listSearchCondition(alias, search string) (string, []any) {
+	like := "%" + search + "%"
+	cond := fmt.Sprintf(
+		"(('#' || %s.number || ' ' || %s.title) LIKE ? OR %s.author LIKE ?)",
+		alias, alias, alias,
+	)
+	return cond, []any{like, like}
+}
+
 func sqlPlaceholders(count int) string {
 	parts := make([]string, count)
 	for i := range parts {
@@ -1652,9 +1666,9 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		conds = append(conds, "s.number IS NOT NULL")
 	}
 	if opts.Search != "" {
-		conds = append(conds, "(p.title LIKE ? OR p.author LIKE ?)")
-		like := "%" + opts.Search + "%"
-		args = append(args, like, like)
+		cond, condArgs := listSearchCondition("p", opts.Search)
+		conds = append(conds, cond)
+		args = append(args, condArgs...)
 	}
 
 	where := ""
@@ -2392,9 +2406,9 @@ func (d *DB) ListIssues(
 		conds = append(conds, "s.number IS NOT NULL")
 	}
 	if opts.Search != "" {
-		conds = append(conds, "(i.title LIKE ? OR i.author LIKE ?)")
-		like := "%" + opts.Search + "%"
-		args = append(args, like, like)
+		cond, condArgs := listSearchCondition("i", opts.Search)
+		conds = append(conds, cond)
+		args = append(args, condArgs...)
 	}
 
 	where := ""

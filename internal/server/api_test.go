@@ -696,6 +696,10 @@ func withSeedPRHeadRepoCloneURL(cloneURL string) seedPROpt {
 	return func(pr *db.MergeRequest) { pr.HeadRepoCloneURL = cloneURL }
 }
 
+func withSeedPRTitle(title string) seedPROpt {
+	return func(pr *db.MergeRequest) { pr.Title = title }
+}
+
 // seedPR inserts a repo and a PR into the DB, returning the PR's internal ID.
 func seedPR(t *testing.T, database *db.DB, owner, name string, number int, opts ...seedPROpt) int64 {
 	t.Helper()
@@ -5385,6 +5389,86 @@ func TestAPIListPullsStateFilter(t *testing.T) {
 	resp, err = client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsParams{State: &state})
 	require.NoError(err)
 	require.Equal(http.StatusBadRequest, resp.StatusCode())
+}
+
+func TestAPIListPullsSearchByNumber(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+
+	seedPR(t, database, "acme", "widget", 12, withSeedPRTitle("add feature"))
+	seedPR(t, database, "acme", "widget", 278, withSeedPRTitle("fix bug"))
+	seedPR(t, database, "acme", "widget", 290, withSeedPRTitle("another change"))
+
+	client := setupTestClient(t, srv)
+
+	pullNumbers := func(params *generated.ListPullsParams) []int {
+		t.Helper()
+		resp, err := client.HTTP.ListPullsWithResponse(ctx, params)
+		require.NoError(err)
+		require.Equal(http.StatusOK, resp.StatusCode())
+		require.NotNil(resp.JSON200)
+		nums := make([]int, 0, len(*resp.JSON200))
+		for _, pr := range *resp.JSON200 {
+			nums = append(nums, int(pr.Number))
+		}
+		return nums
+	}
+
+	q := "278"
+	assert.ElementsMatch([]int{278}, pullNumbers(&generated.ListPullsParams{Q: &q}))
+
+	q = "#278"
+	assert.ElementsMatch([]int{278}, pullNumbers(&generated.ListPullsParams{Q: &q}))
+
+	// Title still matches.
+	q = "fix"
+	assert.ElementsMatch([]int{278}, pullNumbers(&generated.ListPullsParams{Q: &q}))
+
+	// Substring of number matches multiple.
+	q = "2"
+	assert.ElementsMatch([]int{12, 278, 290}, pullNumbers(&generated.ListPullsParams{Q: &q}))
+}
+
+func TestAPIListIssuesSearchByNumber(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+
+	seedIssueOnHost(t, database, "github.com", "acme", "widget", 12, "open", "report a bug")
+	seedIssueOnHost(t, database, "github.com", "acme", "widget", 278, "open", "filter broken")
+	seedIssueOnHost(t, database, "github.com", "acme", "widget", 290, "open", "another change")
+
+	client := setupTestClient(t, srv)
+
+	issueNumbers := func(params *generated.ListIssuesParams) []int {
+		t.Helper()
+		resp, err := client.HTTP.ListIssuesWithResponse(ctx, params)
+		require.NoError(err)
+		require.Equal(http.StatusOK, resp.StatusCode())
+		require.NotNil(resp.JSON200)
+		nums := make([]int, 0, len(*resp.JSON200))
+		for _, issue := range *resp.JSON200 {
+			nums = append(nums, int(issue.Number))
+		}
+		return nums
+	}
+
+	q := "278"
+	assert.ElementsMatch([]int{278}, issueNumbers(&generated.ListIssuesParams{Q: &q}))
+
+	q = "#278"
+	assert.ElementsMatch([]int{278}, issueNumbers(&generated.ListIssuesParams{Q: &q}))
+
+	// Title still matches.
+	q = "broken"
+	assert.ElementsMatch([]int{278}, issueNumbers(&generated.ListIssuesParams{Q: &q}))
+
+	// Substring of number matches multiple.
+	q = "2"
+	assert.ElementsMatch([]int{12, 278, 290}, issueNumbers(&generated.ListIssuesParams{Q: &q}))
 }
 
 func TestAPIListPullsReportsBackfilledMergedPRFromMergedAt(t *testing.T) {
