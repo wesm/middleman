@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { onMount, tick } from "svelte";
   import { getStores } from "@middleman/ui";
   import { client } from "../api/runtime.js";
   import type { ConfigRepo, Repo } from "@middleman/ui/api/types";
   import { ChevronDownIcon } from "../icons.ts";
+  import { registerCheatsheetEntries } from "../stores/keyboard/registry.svelte.js";
 
   interface Props {
     selected: string | undefined;
@@ -13,6 +14,23 @@
   let { selected, onchange }: Props = $props();
 
   const stores = getStores();
+
+  onMount(() =>
+    registerCheatsheetEntries("repo-typeahead", [
+      {
+        id: "repo-typeahead.next",
+        label: "Next repo",
+        binding: { key: "ArrowDown" },
+        scope: "view-pulls",
+      },
+      {
+        id: "repo-typeahead.prev",
+        label: "Previous repo",
+        binding: { key: "ArrowUp" },
+        scope: "view-pulls",
+      },
+    ]),
+  );
 
   let fetchedRepos = $state<Repo[]>([]);
   let reposLoading = $state(false);
