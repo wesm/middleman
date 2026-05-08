@@ -33,7 +33,7 @@ export function pushModalFrame(
 export function getTopFrame(): ModalFrame | null {
   if (stack.length === 0) return null;
   const top = stack[stack.length - 1]!;
-  return { frameId: top.frameId, actions: top.actions };
+  return { frameId: top.frameId, actions: [...top.actions] };
 }
 
 export function getStackDepth(): number {
@@ -41,7 +41,7 @@ export function getStackDepth(): number {
 }
 
 export function getStack(): ModalFrame[] {
-  return stack.map((f) => ({ frameId: f.frameId, actions: f.actions }));
+  return stack.map((f) => ({ frameId: f.frameId, actions: [...f.actions] }));
 }
 
 export function resetModalStack(): void {
