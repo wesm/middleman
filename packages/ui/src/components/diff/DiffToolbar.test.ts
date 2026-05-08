@@ -38,6 +38,7 @@ describe("DiffToolbar", () => {
       .map((button) => button.textContent?.replace(/\s+/g, " ").trim());
     expect(labels).toEqual([
       "Plans/docs (0)",
+      "Generated (0)",
       "Code (0)",
       "Tests (0)",
       "Other (0)",

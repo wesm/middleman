@@ -82,6 +82,39 @@ func TestWorktreeDiffFilesHidesWhitespaceOnlyUntrackedFiles(t *testing.T) {
 	assert.Equal("z-empty.txt", files[1].Path)
 }
 
+func TestWorktreeDiffFilesMarksGeneratedFiles(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	work := setupDivergenceWorktree(t)
+
+	require.NoError(os.WriteFile(
+		filepath.Join(work, ".gitattributes"),
+		[]byte("dist/** linguist-generated\n"), 0o644,
+	))
+	require.NoError(os.MkdirAll(filepath.Join(work, "dist"), 0o755))
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "dist", "api.ts"), []byte("export const api = 1;\n"), 0o644,
+	))
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "src.ts"), []byte("export const src = 1;\n"), 0o644,
+	))
+
+	files, ok, err := WorktreeDiffFiles(
+		t.Context(), work, WorktreeDiffBaseHead, false,
+	)
+	require.NoError(err)
+	require.True(ok)
+	require.Len(files, 3)
+
+	generated := map[string]bool{}
+	for _, file := range files {
+		generated[file.Path] = file.IsGenerated
+	}
+	assert.False(generated[".gitattributes"])
+	assert.True(generated["dist/api.ts"])
+	assert.False(generated["src.ts"])
+}
+
 func TestWorktreeFileDiffAgainstHeadScopesPatchToOnePath(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

@@ -294,9 +294,18 @@ func normalizeCloneHost(host string) string {
 func (m *Manager) git(
 	ctx context.Context, host, dir string, args ...string,
 ) ([]byte, error) {
+	return m.gitWithInput(ctx, host, dir, nil, args...)
+}
+
+func (m *Manager) gitWithInput(
+	ctx context.Context, host, dir string, input []byte, args ...string,
+) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	if dir != "" {
 		cmd.Dir = dir
+	}
+	if input != nil {
+		cmd.Stdin = bytes.NewReader(input)
 	}
 	cmd.Env = append(gitenv.StripAll(os.Environ()),
 		"GIT_TERMINAL_PROMPT=0",

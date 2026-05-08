@@ -33,6 +33,7 @@
 
   const rows = $derived([
     { key: "plansDocs" as const, label: "Plans/docs" },
+    { key: "generated" as const, label: "Generated" },
     { key: "code" as const, label: "Code" },
     { key: "tests" as const, label: "Tests" },
     { key: "other" as const, label: "Other" },

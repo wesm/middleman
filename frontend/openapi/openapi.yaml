@@ -438,6 +438,8 @@ components:
             - "null"
         is_binary:
           type: boolean
+        is_generated:
+          type: boolean
         is_whitespace_only:
           type: boolean
         old_path:
@@ -451,6 +453,7 @@ components:
         - old_path
         - status
         - is_binary
+        - is_generated
         - is_whitespace_only
         - additions
         - deletions

@@ -39,6 +39,7 @@ const ZERO_TOTALS: DiffLineTotals = { additions: 0, deletions: 0 };
 function emptySummary(): DiffLineSummary {
   return {
     plansDocs: { ...ZERO_TOTALS },
+    generated: { ...ZERO_TOTALS },
     code: { ...ZERO_TOTALS },
     tests: { ...ZERO_TOTALS },
     other: { ...ZERO_TOTALS },
@@ -49,7 +50,7 @@ function emptySummary(): DiffLineSummary {
 export function summarizeDiffFiles(files: DiffFile[]): DiffLineSummary {
   const summary = emptySummary();
   for (const file of files) {
-    const category = categorizeDiffFile(file.path);
+    const category = categorizeDiffFile(file);
     summary[category].additions += file.additions;
     summary[category].deletions += file.deletions;
     summary.total.additions += file.additions;

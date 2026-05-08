@@ -13640,6 +13640,45 @@ func TestWorkspaceDiffEndpointHandlesUntrackedSymlinkAndLargeFileE2E(t *testing.
 	assert.Empty(*large.Hunks)
 }
 
+func TestWorkspaceDiffEndpointMarksGeneratedFilesE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, ".gitattributes"),
+		[]byte("dist/** linguist-generated\n"), 0o644,
+	))
+	require.NoError(os.MkdirAll(filepath.Join(ws.WorktreePath, "dist"), 0o755))
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "dist", "api.ts"),
+		[]byte("export const generated = true;\n"), 0o644,
+	))
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "bun.lock"),
+		[]byte("# lock\n"), 0o644,
+	))
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "src.ts"),
+		[]byte("export const source = true;\n"), 0o644,
+	))
+
+	files := requestWorkspaceFiles(t, srv, ws.Id, "head")
+	require.NotNil(files.Files)
+	assert.True(requireWorkspaceDiffFile(t, *files.Files, "dist/api.ts").IsGenerated)
+	assert.True(requireWorkspaceDiffFile(t, *files.Files, "bun.lock").IsGenerated)
+	assert.False(requireWorkspaceDiffFile(t, *files.Files, "src.ts").IsGenerated)
+
+	diff := requestWorkspaceDiff(t, srv, ws.Id, "head")
+	require.NotNil(diff.Files)
+	assert.True(requireWorkspaceDiffFile(t, *diff.Files, "dist/api.ts").IsGenerated)
+	assert.True(requireWorkspaceDiffFile(t, *diff.Files, "bun.lock").IsGenerated)
+	assert.False(requireWorkspaceDiffFile(t, *diff.Files, "src.ts").IsGenerated)
+}
+
 func TestWorkspaceDiffEndpointScopesPatchByPathE2E(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

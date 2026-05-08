@@ -51,6 +51,7 @@ func (m *Manager) DiffFiles(
 			files[i].Hunks = []Hunk{}
 		}
 	}
+	m.markGenerated(ctx, host, clonePath, headSHA, files)
 	return files, nil
 }
 
@@ -172,11 +173,37 @@ func (m *Manager) Diff(
 			}
 		}
 	}
+	m.markGenerated(ctx, host, clonePath, headSHA, files)
 
 	return &DiffResult{
 		WhitespaceOnlyCount: wsCount,
 		Files:               files,
 	}, nil
+}
+
+func (m *Manager) markGenerated(
+	ctx context.Context,
+	host string,
+	clonePath string,
+	attrSource string,
+	files []DiffFile,
+) {
+	if len(files) == 0 {
+		return
+	}
+	generated := map[string]bool{}
+	input := GeneratedAttributeInput(files)
+	if len(input) > 0 {
+		args := []string{"check-attr", "-z", "--stdin"}
+		if attrSource != "" {
+			args = append(args, "--source", attrSource)
+		}
+		args = append(args, "linguist-generated")
+		if out, err := m.gitWithInput(ctx, host, clonePath, input, args...); err == nil {
+			generated = ParseLinguistGeneratedAttributes(out)
+		}
+	}
+	MarkGeneratedFiles(files, generated)
 }
 
 func (m *Manager) computeWhitespaceOnlyCount(

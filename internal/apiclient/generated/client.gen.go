@@ -209,6 +209,7 @@ type DiffFile struct {
 	Deletions        int64   `json:"deletions"`
 	Hunks            *[]Hunk `json:"hunks"`
 	IsBinary         bool    `json:"is_binary"`
+	IsGenerated      bool    `json:"is_generated"`
 	IsWhitespaceOnly bool    `json:"is_whitespace_only"`
 	OldPath          string  `json:"old_path"`
 	Path             string  `json:"path"`

@@ -116,6 +116,7 @@ func worktreeDiffFilesFromRef(
 		files = dropWhitespaceOnlyModifications(files, counts)
 	}
 	files = append(files, worktreeUntrackedFiles(ctx, dir, false, hideWhitespace)...)
+	markWorktreeGeneratedFiles(ctx, dir, files)
 	return files, true, nil
 }
 
@@ -257,11 +258,34 @@ func worktreeDiffFromRefPath(
 	); ok {
 		files = append(files, file)
 	}
+	markWorktreeGeneratedFiles(ctx, dir, files)
 
 	return &gitclone.DiffResult{
 		WhitespaceOnlyCount: wsCount,
 		Files:               files,
 	}, true, nil
+}
+
+func markWorktreeGeneratedFiles(
+	ctx context.Context,
+	dir string,
+	files []gitclone.DiffFile,
+) {
+	if len(files) == 0 {
+		return
+	}
+	generated := map[string]bool{}
+	input := gitclone.GeneratedAttributeInput(files)
+	if len(input) > 0 {
+		out, err := worktreeGitOutputWithInput(
+			ctx, dir, input,
+			"check-attr", "-z", "--stdin", "linguist-generated",
+		)
+		if err == nil {
+			generated = gitclone.ParseLinguistGeneratedAttributes(out)
+		}
+	}
+	gitclone.MarkGeneratedFiles(files, generated)
 }
 
 func applyWorktreeNumstat(
@@ -668,11 +692,23 @@ func worktreeGitOutput(
 	dir string,
 	args ...string,
 ) ([]byte, error) {
+	return worktreeGitOutputWithInput(ctx, dir, nil, args...)
+}
+
+func worktreeGitOutputWithInput(
+	ctx context.Context,
+	dir string,
+	input []byte,
+	args ...string,
+) ([]byte, error) {
 	if dir == "" {
 		return nil, errors.New("empty worktree dir")
 	}
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
+	if input != nil {
+		cmd.Stdin = bytes.NewReader(input)
+	}
 	cmd.Env = append(gitenv.StripAll(os.Environ()),
 		"GIT_TERMINAL_PROMPT=0",
 		"GIT_CONFIG_NOSYSTEM=1",

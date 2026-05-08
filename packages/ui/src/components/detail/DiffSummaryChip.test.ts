@@ -39,6 +39,7 @@ describe("DiffSummaryChip", () => {
       file("src/App.svelte", 40, 6),
       file("src/App.test.ts", 20, 8),
       file("bun.lock", 1, 1),
+      { ...file("src/api/generated/schema.ts", 2, 2), is_generated: true },
     ]);
 
     render(DiffSummaryChip, {
@@ -61,8 +62,8 @@ describe("DiffSummaryChip", () => {
     expect(screen.getByText("+40/-6")).toBeTruthy();
     expect(screen.getByText("Tests")).toBeTruthy();
     expect(screen.getByText("+20/-8")).toBeTruthy();
-    expect(screen.getByText("Other")).toBeTruthy();
-    expect(screen.getByText("+1/-1")).toBeTruthy();
+    expect(screen.getByText("Generated")).toBeTruthy();
+    expect(screen.getByText("+3/-3")).toBeTruthy();
     expect(loadFiles).toHaveBeenCalledTimes(1);
   });
 
@@ -91,6 +92,7 @@ describe("DiffSummaryChip", () => {
     expect(screen.getByText("Tests")).toBeTruthy();
     expect(screen.getByText("+20/-8")).toBeTruthy();
     expect(screen.queryByText("Plans/docs")).toBeNull();
+    expect(screen.queryByText("Generated")).toBeNull();
     expect(screen.queryByText("Other")).toBeNull();
   });
 
