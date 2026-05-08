@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
 
   import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
   import type { ModalFrameAction } from "@middleman/ui/stores/keyboard/keyspec";
@@ -9,6 +9,7 @@
   } from "../../stores/keyboard/palette-state.svelte.js";
 
   let dialogEl: HTMLDivElement | undefined = $state();
+  let inputEl: HTMLInputElement | undefined = $state();
 
   $effect(() => {
     if (!isPaletteOpen()) return;
@@ -24,7 +25,12 @@
       when: () => true,
       handler: () => closePalette(),
     };
-    return untrack(() => pushModalFrame("palette", [closeAction]));
+    const cleanup = untrack(() => pushModalFrame("palette", [closeAction]));
+    // Move keyboard focus into the search input on open. Without this the
+    // user's existing focus stays on whatever was active before, so typed
+    // characters land in the wrong field.
+    void tick().then(() => inputEl?.focus());
+    return cleanup;
   });
 </script>
 
@@ -40,6 +46,7 @@
     aria-label="Command palette"
   >
     <input
+      bind:this={inputEl}
       class="palette-input"
       placeholder="Search loaded PRs, issues, commands..."
     />
