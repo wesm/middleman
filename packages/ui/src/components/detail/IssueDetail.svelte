@@ -6,6 +6,7 @@
     getStores, getClient, getActions,
     getUIConfig, getNavigate,
   } from "../../context.js";
+  import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
   import type { IssueDetailSyncMode } from "../../stores/issues.svelte.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
@@ -245,6 +246,11 @@
   let branchConflict = $state<BranchConflictState | null>(
     null,
   );
+
+  $effect(() => {
+    if (branchConflict == null) return;
+    return untrack(() => pushModalFrame("issue-detail-confirm", []));
+  });
   const workspace = $derived(
     issues.getIssueDetail()?.workspace,
   );
