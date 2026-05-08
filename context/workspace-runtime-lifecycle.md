@@ -86,6 +86,50 @@ stale tabs.
   unintended navigation when the user is targeting a nested control.
 - Persisted "last active tab" state must be scoped per workspace.
 
+## Shell Command Override
+
+The plain shell session is launched as a direct child of middleman via
+`pty.StartWithSize`, which means it inherits middleman's seccomp filter,
+namespace restrictions, and resource limits. Hardened deployments
+(systemd services with `SystemCallFilter=~@privileged`, `LockPersonality=`,
+`MemoryDenyWriteExecute=`, etc.) will SIGSYS the shell almost immediately:
+zsh and bash both call `setresuid(uid, uid, uid)` during startup to drop
+saved-uid privileges, and that syscall is in `@privileged`.
+
+For these deployments, set `[shell] command = [...]` to wrap the launch
+in something that escapes the parent unit's filter. On systemd hosts,
+`systemd-run --user` spawns a fresh transient unit with its own
+(unfiltered) policy:
+
+```toml
+[shell]
+command = [
+  "systemd-run", "--user", "--quiet", "--collect", "--wait", "--pipe",
+  "--service-type=exec",
+  "--property=KillMode=process",
+  "--description=middleman shell",
+  "--",
+  "zsh",  # absolute path or PATH-resolvable name; see below
+]
+```
+
+Notes:
+
+- `cwd` is propagated by the runtime via `cmd.Dir` — your wrapper must
+  forward it to the actual shell. With `systemd-run`, that's
+  `--working-directory=$PWD` (or a fixed path); without an explicit
+  flag the transient unit does not inherit the launcher's working
+  directory.
+- The configured argv is invoked verbatim (no shell expansion). The
+  first element must be an absolute path or a `PATH`-resolvable name;
+  relative paths are rejected so a malicious worktree cannot drop a
+  binary into itself and gain code execution.
+- When unset, the runtime falls back to `$SHELL`, then `/bin/sh`. This
+  is the safe default for unhardened single-user installs.
+
+The `[tmux] command` setting follows the same wrap-it-in-systemd-run
+pattern for similar reasons; the two are independent.
+
 ## Testing Expectations
 
 Prefer full-stack coverage when the bug crosses backend lifecycle and frontend

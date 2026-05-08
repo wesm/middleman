@@ -492,6 +492,18 @@ type Tmux struct {
 	AgentSessions *bool    `toml:"agent_sessions,omitempty"`
 }
 
+// Shell configures the command middleman runs when ensuring the
+// per-workspace plain shell session. Hardened middleman deployments
+// (e.g. systemd services with SystemCallFilter=~@privileged) must
+// wrap the shell so it escapes the parent's seccomp filter — zsh
+// calls setresuid during startup and is killed by SIGSYS otherwise.
+// The configured command is invoked with the workspace worktree as
+// its working directory; provide a command that propagates that to
+// the spawned shell (e.g. `systemd-run --working-directory=...`).
+type Shell struct {
+	Command []string `toml:"command,omitempty"`
+}
+
 type Config struct {
 	SyncInterval        string           `toml:"sync_interval"`
 	GitHubTokenEnv      string           `toml:"github_token_env"`
@@ -508,6 +520,7 @@ type Config struct {
 	Agents              []Agent          `toml:"agents"`
 	Roborev             Roborev          `toml:"roborev"`
 	Tmux                Tmux             `toml:"tmux"`
+	Shell               Shell            `toml:"shell"`
 }
 
 func DefaultConfigPath() string {
@@ -841,6 +854,13 @@ func (c *Config) Validate() error {
 		)
 	}
 
+	if len(c.Shell.Command) > 0 &&
+		strings.TrimSpace(c.Shell.Command[0]) == "" {
+		return fmt.Errorf(
+			"config: invalid shell.command: first element must be non-empty",
+		)
+	}
+
 	return nil
 }
 
@@ -1108,6 +1128,17 @@ func (c *Config) TmuxCommand() []string {
 	return slices.Clone(c.Tmux.Command)
 }
 
+// ShellCommand returns the configured shell command + argv prefix
+// used when ensuring a workspace's plain shell session, or nil when
+// unset. nil means the runtime falls back to the user's $SHELL (or
+// /bin/sh). The returned slice is a copy, safe to append to.
+func (c *Config) ShellCommand() []string {
+	if c == nil || len(c.Shell.Command) == 0 {
+		return nil
+	}
+	return slices.Clone(c.Shell.Command)
+}
+
 // TmuxAgentSessionsEnabled reports whether runtime agent launches
 // should prefer tmux-backed sessions. Defaults to true so agent
 // activity is visible to tmux-based workspace fingerprinting.
@@ -1152,6 +1183,7 @@ type configFile struct {
 	Agents              []Agent          `toml:"agents,omitempty"`
 	Roborev             Roborev          `toml:"roborev,omitempty"`
 	Tmux                Tmux             `toml:"tmux,omitempty"`
+	Shell               Shell            `toml:"shell,omitempty"`
 }
 
 // Save writes the current config to the given path.
@@ -1169,6 +1201,7 @@ func (c *Config) Save(path string) error {
 		Agents:              c.Agents,
 		Roborev:             c.Roborev,
 		Tmux:                c.Tmux,
+		Shell:               c.Shell,
 	}
 	if c.DefaultPlatformHost == defaultPlatformHost {
 		f.DefaultPlatformHost = ""
