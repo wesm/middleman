@@ -13650,7 +13650,7 @@ func TestWorkspaceDiffEndpointMarksGeneratedFilesE2E(t *testing.T) {
 
 	require.NoError(os.WriteFile(
 		filepath.Join(ws.WorktreePath, ".gitattributes"),
-		[]byte("dist/** linguist-generated\n"), 0o644,
+		[]byte("dist/** linguist-generated\nbun.lock -linguist-generated\n"), 0o644,
 	))
 	require.NoError(os.MkdirAll(filepath.Join(ws.WorktreePath, "dist"), 0o755))
 	require.NoError(os.WriteFile(
@@ -13669,13 +13669,13 @@ func TestWorkspaceDiffEndpointMarksGeneratedFilesE2E(t *testing.T) {
 	files := requestWorkspaceFiles(t, srv, ws.Id, "head")
 	require.NotNil(files.Files)
 	assert.True(requireWorkspaceDiffFile(t, *files.Files, "dist/api.ts").IsGenerated)
-	assert.True(requireWorkspaceDiffFile(t, *files.Files, "bun.lock").IsGenerated)
+	assert.False(requireWorkspaceDiffFile(t, *files.Files, "bun.lock").IsGenerated)
 	assert.False(requireWorkspaceDiffFile(t, *files.Files, "src.ts").IsGenerated)
 
 	diff := requestWorkspaceDiff(t, srv, ws.Id, "head")
 	require.NotNil(diff.Files)
 	assert.True(requireWorkspaceDiffFile(t, *diff.Files, "dist/api.ts").IsGenerated)
-	assert.True(requireWorkspaceDiffFile(t, *diff.Files, "bun.lock").IsGenerated)
+	assert.False(requireWorkspaceDiffFile(t, *diff.Files, "bun.lock").IsGenerated)
 	assert.False(requireWorkspaceDiffFile(t, *diff.Files, "src.ts").IsGenerated)
 }
 
