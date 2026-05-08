@@ -22,6 +22,8 @@ import (
 
 const (
 	defaultGitHubTokenEnv    = "MIDDLEMAN_GITHUB_TOKEN"
+	defaultForgejoTokenEnv   = "MIDDLEMAN_FORGEJO_TOKEN"
+	defaultGiteaTokenEnv     = "MIDDLEMAN_GITEA_TOKEN"
 	defaultSyncInterval      = "5m"
 	defaultHost              = "127.0.0.1"
 	defaultPort              = 8091
@@ -156,7 +158,8 @@ func (r *Repo) normalize(defaultGitHubHost string) error {
 	}
 	if r.Platform == defaultPlatform &&
 		r.PlatformHost == defaultPlatformHost &&
-		defaultGitHubHost == defaultPlatformHost {
+		defaultGitHubHost == defaultPlatformHost &&
+		!hadPlatformHost {
 		r.PlatformHost = ""
 	}
 	return nil
@@ -290,6 +293,12 @@ func platformForRepoRefHost(host, configuredPlatform string) (string, bool) {
 	if configuredPlatform == defaultPlatform {
 		if matchHost == defaultPlatformHost {
 			return defaultPlatform, true
+		}
+		if matchHost == platformpkg.DefaultForgejoHost {
+			return string(platformpkg.KindForgejo), true
+		}
+		if matchHost == platformpkg.DefaultGiteaHost {
+			return string(platformpkg.KindGitea), true
 		}
 		return "", false
 	}
@@ -968,6 +977,9 @@ func (c *Config) TokenForPlatformHost(platform, host, repoTokenEnv string) strin
 			return os.Getenv(pc.TokenEnv)
 		}
 	}
+	if defaultTokenEnv, ok := defaultTokenEnvForPlatformHost(p, h); ok {
+		return os.Getenv(defaultTokenEnv)
+	}
 	if p == defaultPlatform {
 		return c.GitHubToken()
 	}
@@ -994,36 +1006,65 @@ func (c *Config) effectiveTokenEnvForPlatformHost(
 			return pc.TokenEnv
 		}
 	}
+	if defaultTokenEnv, ok := defaultTokenEnvForPlatformHost(platform, host); ok {
+		return defaultTokenEnv
+	}
 	if platform == defaultPlatform {
 		return c.GitHubTokenEnv
 	}
 	return ""
 }
 
-// TokenEnvNames returns every env var name that may hold a GitHub
-// token according to this config: the global github_token_env plus
-// any per-repo token_env overrides. Used by the runtime sanitizer
-// to strip them from launched session environments so a non-default
-// token name is not exposed to PR-controlled processes.
+func defaultTokenEnvForPlatformHost(platform, host string) (string, bool) {
+	switch platform {
+	case string(platformpkg.KindForgejo):
+		return defaultForgejoTokenEnv, host == platformpkg.DefaultForgejoHost
+	case string(platformpkg.KindGitea):
+		return defaultGiteaTokenEnv, host == platformpkg.DefaultGiteaHost
+	default:
+		return "", false
+	}
+}
+
+// TokenEnvNames returns every env var name that may hold a provider
+// token according to this config. Used by the runtime sanitizer to
+// strip tokens from launched session environments.
 func (c *Config) TokenEnvNames() []string {
 	if c == nil {
 		return nil
 	}
 	names := make([]string, 0, 1+len(c.Repos))
 	if c.GitHubTokenEnv != "" {
-		names = append(names, c.GitHubTokenEnv)
-	}
-	for _, r := range c.Repos {
-		if r.TokenEnv != "" {
-			names = append(names, r.TokenEnv)
-		}
+		names = appendTokenEnvName(names, c.GitHubTokenEnv)
 	}
 	for _, p := range c.Platforms {
 		if p.TokenEnv != "" {
-			names = append(names, p.TokenEnv)
+			names = appendTokenEnvName(names, p.TokenEnv)
+		}
+	}
+	for _, r := range c.Repos {
+		names = appendTokenEnvName(
+			names,
+			c.effectiveTokenEnvForPlatformHost(
+				r.PlatformOrDefault(),
+				r.PlatformHostOrDefault(),
+				"",
+			),
+		)
+	}
+	for _, r := range c.Repos {
+		if r.TokenEnv != "" {
+			names = appendTokenEnvName(names, r.TokenEnv)
 		}
 	}
 	return names
+}
+
+func appendTokenEnvName(names []string, name string) []string {
+	if name == "" || slices.Contains(names, name) {
+		return names
+	}
+	return append(names, name)
 }
 
 var execCommand = exec.Command
