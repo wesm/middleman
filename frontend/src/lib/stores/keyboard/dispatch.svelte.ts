@@ -66,13 +66,17 @@ interface RunnableAction {
   handler: (ctx: Context) => void | Promise<void>;
 }
 
+const inFlight = new Set<string>();
+
 function runHandler(action: RunnableAction, ctx: Context): void {
+  if (inFlight.has(action.id)) return;
   try {
     const result = action.handler(ctx);
-    if (result && typeof (result as Promise<void>).catch === "function") {
-      (result as Promise<void>).catch((err: unknown) =>
-        surfaceError(action.id, err),
-      );
+    if (result && typeof (result as Promise<void>).then === "function") {
+      inFlight.add(action.id);
+      (result as Promise<void>)
+        .catch((err: unknown) => surfaceError(action.id, err))
+        .finally(() => inFlight.delete(action.id));
     }
   } catch (err) {
     surfaceError(action.id, err);

@@ -132,3 +132,25 @@ describe("dispatchKeydown — error handling", () => {
     flash.mockRestore();
   });
 });
+
+describe("dispatchKeydown — in-flight de-dup", () => {
+  beforeEach(() => {
+    resetRegistry();
+    resetModalStack();
+  });
+
+  it("does not re-invoke an in-flight async action", async () => {
+    let resolve!: () => void;
+    const handler = vi.fn(() => new Promise<void>((r) => { resolve = r; }));
+    registerScopedActions("a", [
+      { id: "slow", label: "x", scope: "global", binding: { key: "j" }, priority: 0, when: () => true, handler },
+    ]);
+    dispatchKeydown(event({ key: "j" }), () => ctx);
+    dispatchKeydown(event({ key: "j" }), () => ctx);
+    expect(handler).toHaveBeenCalledTimes(1);
+    resolve();
+    await new Promise((r) => setTimeout(r, 0));
+    dispatchKeydown(event({ key: "j" }), () => ctx);
+    expect(handler).toHaveBeenCalledTimes(2);
+  });
+});
