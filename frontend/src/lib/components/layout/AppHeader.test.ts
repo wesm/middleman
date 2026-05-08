@@ -10,14 +10,18 @@ vi.mock("../../api/runtime.js", () => ({
 }));
 
 // AppHeader reads sync state from the @middleman/ui context.
-vi.mock("@middleman/ui", () => ({
-  getStores: () => ({
-    sync: {
-      getSyncState: () => null,
-      triggerSync: () => Promise.resolve(),
-    },
-  }),
-}));
+vi.mock("@middleman/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@middleman/ui")>();
+  return {
+    ...actual,
+    getStores: () => ({
+      sync: {
+        getSyncState: () => null,
+        triggerSync: () => Promise.resolve(),
+      },
+    }),
+  };
+});
 
 import AppHeader from "./AppHeader.svelte";
 import { initTheme, cleanupTheme } from "../../stores/theme.svelte.js";
