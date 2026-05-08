@@ -41,6 +41,23 @@ const onPullsListNotBoard = (ctx: Context): boolean =>
 
 const onIssuesList = (ctx: Context): boolean => ctx.page === "issues";
 
+// Mirrors App.svelte's pre-migration page exclusions for `1`/`2`/`f`/etc.:
+// settings, design-system, repos, reviews, workspaces, activity all returned
+// early before the global shortcut switch ran.
+const onNumberNavPages = (ctx: Context): boolean => {
+  switch (ctx.page) {
+    case "settings":
+    case "design-system":
+    case "repos":
+    case "reviews":
+    case "workspaces":
+    case "activity":
+      return false;
+    default:
+      return true;
+  }
+};
+
 // Mirror App.svelte's navigateToSelectedPR helper (replaceUrl when a PR is
 // already selected in the URL, navigate otherwise).
 function navigateToSelectedPR(): void {
@@ -145,7 +162,7 @@ export const defaultActions: Action[] = [
     scope: "global",
     binding: { key: "1" },
     priority: 0,
-    when: always,
+    when: onNumberNavPages,
     handler: () => navigate("/pulls"),
   },
   {
@@ -154,7 +171,7 @@ export const defaultActions: Action[] = [
     scope: "global",
     binding: { key: "2" },
     priority: 0,
-    when: always,
+    when: onNumberNavPages,
     handler: () => navigate("/pulls/board"),
   },
   {

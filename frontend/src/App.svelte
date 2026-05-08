@@ -313,13 +313,28 @@
     if (!shouldUseFullAppShell(getPage())) return;
     if (!stores) return;
     setStoreInstances(() => stores!);
-    const cleanup = registerScopedActions("app:defaults", defaultActions);
+    const cleanupDefaults = registerScopedActions("app:defaults", defaultActions);
+    // Activity-page drawer close is owned by App.svelte because drawerItem and
+    // closeDrawer are local to this component. Mirrors the pre-migration
+    // behavior where Escape on the activity page closed the open PR drawer.
+    const cleanupActivity = registerScopedActions("app:activity-drawer", [
+      {
+        id: "activity.drawer.close",
+        label: "Close activity drawer",
+        scope: "global",
+        binding: { key: "Escape" },
+        priority: 50,
+        when: (ctx) => ctx.page === "activity" && drawerItem !== null,
+        handler: () => closeDrawer(),
+      },
+    ]);
     const onKeydown = (e: KeyboardEvent) =>
       dispatchKeydown(e, () => buildContext(stores!));
     window.addEventListener("keydown", onKeydown);
     return () => {
       window.removeEventListener("keydown", onKeydown);
-      cleanup();
+      cleanupActivity();
+      cleanupDefaults();
     };
   });
 </script>
