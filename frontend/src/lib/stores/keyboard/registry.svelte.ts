@@ -7,9 +7,10 @@ export function registerScopedActions(
   ownerId: string,
   actions: Action[],
 ): () => void {
-  actionsByOwner = new Map(actionsByOwner.set(ownerId, [...actions]));
+  const registered = [...actions];
+  actionsByOwner = new Map(actionsByOwner).set(ownerId, registered);
   return () => {
-    if (actionsByOwner.has(ownerId)) {
+    if (actionsByOwner.get(ownerId) === registered) {
       const next = new Map(actionsByOwner);
       next.delete(ownerId);
       actionsByOwner = next;
@@ -21,9 +22,10 @@ export function registerCheatsheetEntries(
   ownerId: string,
   entries: CheatsheetEntry[],
 ): () => void {
-  cheatsheetByOwner = new Map(cheatsheetByOwner.set(ownerId, [...entries]));
+  const registered = [...entries];
+  cheatsheetByOwner = new Map(cheatsheetByOwner).set(ownerId, registered);
   return () => {
-    if (cheatsheetByOwner.has(ownerId)) {
+    if (cheatsheetByOwner.get(ownerId) === registered) {
       const next = new Map(cheatsheetByOwner);
       next.delete(ownerId);
       cheatsheetByOwner = next;
