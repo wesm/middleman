@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	giteasdk "code.gitea.io/sdk/gitea"
 	Assert "github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
 	ghsync "github.com/wesm/middleman/internal/github"
@@ -17,6 +18,7 @@ import (
 
 var (
 	_ gitealike.Transport         = (*transport)(nil)
+	_ gitealike.ActionsTransport  = (*transport)(nil)
 	_ platform.RepositoryReader   = (*Client)(nil)
 	_ platform.MergeRequestReader = (*Client)(nil)
 	_ platform.IssueReader        = (*Client)(nil)
@@ -256,11 +258,11 @@ func TestClientProviderIdentityExposesReadCapabilities(t *testing.T) {
 	}, client.Capabilities())
 }
 
-func TestClientReadsOpenPullRequestsIssuesAndStatusChecks(t *testing.T) {
+func TestClientReadsOpenPullRequestsIssuesAndCIChecks(t *testing.T) {
 	assert := Assert.New(t)
 	require := Require.New(t)
 
-	var sawPulls, sawIssues, sawStatuses bool
+	var sawPulls, sawIssues, sawStatuses, sawActions bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal("token gitea-token", r.Header.Get("Authorization"))
 		w.Header().Set("Content-Type", "application/json")
@@ -288,6 +290,16 @@ func TestClientReadsOpenPullRequestsIssuesAndStatusChecks(t *testing.T) {
 			assert.NoError(json.NewEncoder(w).Encode([]map[string]any{{
 				"id": 31, "context": "build", "state": "success", "target_url": "https://ci.test/build",
 			}}))
+		case "/api/v1/repos/owner/repo/actions/runs":
+			sawActions = true
+			assert.Equal("abc", r.URL.Query().Get("head_sha"))
+			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+				"total_count": 1,
+				"workflow_runs": []map[string]any{{
+					"id": 41, "display_title": "CI", "status": "completed", "conclusion": "success",
+					"head_sha": "abc", "html_url": "https://gitea.test/owner/repo/actions/runs/41",
+				}},
+			}))
 		default:
 			http.NotFound(w, r)
 		}
@@ -308,9 +320,56 @@ func TestClientReadsOpenPullRequestsIssuesAndStatusChecks(t *testing.T) {
 	assert.True(sawPulls)
 	assert.True(sawIssues)
 	assert.True(sawStatuses)
+	assert.True(sawActions)
 	assert.Len(mrs, 1)
 	assert.Len(issues, 1)
-	assert.Len(checks, 1)
+	assert.Len(checks, 2)
+}
+
+func TestClientFallsBackToStatusesWhenActionsRequireNewerGitea(t *testing.T) {
+	assert := Assert.New(t)
+	require := Require.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/version":
+			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+				"version": "1.25.0",
+			}))
+		case "/api/v1/repos/owner/repo/commits/abc/statuses":
+			assert.NoError(json.NewEncoder(w).Encode([]map[string]any{{
+				"id": 31, "context": "build", "status": "success", "target_url": "https://ci.test/build",
+			}}))
+		case "/api/v1/repos/owner/repo/actions/runs":
+			assert.Fail("older Gitea actions endpoint should not be called")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	api, err := giteasdk.NewClient(
+		server.URL,
+		giteasdk.SetToken("gitea-token"),
+		giteasdk.SetUserAgent("middleman"),
+	)
+	require.NoError(err)
+	provider := gitealike.NewProvider(
+		platform.KindGitea,
+		"gitea.test",
+		&transport{api: api, requestContextLock: make(chan struct{}, 1)},
+		gitealike.WithReadActions(),
+	)
+
+	checks, err := provider.ListCIChecks(
+		context.Background(),
+		platform.RepoRef{Owner: "owner", Name: "repo"},
+		"abc",
+	)
+	require.NoError(err)
+	require.Len(checks, 1)
+	assert.Equal("build", checks[0].Name)
+	assert.Equal("success", checks[0].Conclusion)
 }
 
 func TestClientMutationCapabilityUsesGiteaEndpoints(t *testing.T) {

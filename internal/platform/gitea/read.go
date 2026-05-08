@@ -2,6 +2,7 @@ package gitea
 
 import (
 	"context"
+	"strings"
 
 	giteasdk "code.gitea.io/sdk/gitea"
 	"github.com/wesm/middleman/internal/platform"
@@ -359,6 +360,44 @@ func (t *transport) ListStatuses(
 		return nil, gitealike.Page{}, giteaHTTPError(resp, err)
 	}
 	return convertStatuses(statuses), giteaPage(resp), nil
+}
+
+func (t *transport) ListActionRuns(
+	ctx context.Context,
+	ref platform.RepoRef,
+	sha string,
+	opts gitealike.PageOptions,
+) ([]gitealike.ActionRunDTO, gitealike.Page, error) {
+	t.spendSyncBudget(ctx)
+	var runs *giteasdk.ActionWorkflowRunsResponse
+	var resp *giteasdk.Response
+	err := t.withRequestContext(ctx, func() error {
+		var err error
+		runs, resp, err = t.api.ListRepoActionRuns(ref.Owner, ref.Name, giteasdk.ListRepoActionRunsOptions{
+			ListOptions: giteaListOptions(opts),
+			HeadSHA:     sha,
+		})
+		return err
+	})
+	if err != nil {
+		if isActionsUnsupportedVersionError(err) {
+			return nil, gitealike.Page{}, nil
+		}
+		return nil, gitealike.Page{}, giteaHTTPError(resp, err)
+	}
+	if runs == nil {
+		return nil, giteaPage(resp), nil
+	}
+	return convertActionRuns(runs.WorkflowRuns), giteaPage(resp), nil
+}
+
+func isActionsUnsupportedVersionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "is older than 1.26.0") ||
+		strings.Contains(msg, "does not satisfy version constraint >= 1.26.0")
 }
 
 func giteaListOptions(opts gitealike.PageOptions) giteasdk.ListOptions {

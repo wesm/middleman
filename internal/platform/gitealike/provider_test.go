@@ -200,6 +200,76 @@ func TestCollectPagesRejectsExcessivePagination(t *testing.T) {
 	assert.Contains(err.Error(), "exceeded")
 }
 
+func TestProviderMergesActionRunsWithStatusesWithoutDuplicates(t *testing.T) {
+	assert := Assert.New(t)
+	require := Require.New(t)
+	base := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
+	ref := platform.RepoRef{
+		Platform: platform.KindForgejo,
+		Host:     "codeberg.org",
+		Owner:    "forgejo",
+		Name:     "forgejo",
+		RepoPath: "forgejo/forgejo",
+	}
+	transport := &fakeTransport{
+		statuses: [][]StatusDTO{{
+			{ID: 9, Context: "Build", State: "success", TargetURL: "https://ci.test/build", Created: base, Updated: base},
+		}},
+		actionRuns: [][]ActionRunDTO{{
+			{
+				ID:         10,
+				Title:      "Build",
+				Status:     "success",
+				CommitSHA:  "abc",
+				HTMLURL:    "https://ci.test/build",
+				Started:    &base,
+				Stopped:    &base,
+				WorkflowID: "build.yml",
+			},
+			{
+				ID:         12,
+				Title:      "Build",
+				Status:     "completed",
+				Conclusion: "cancelled",
+				CommitSHA:  "abc",
+				HTMLURL:    "https://ci.test/actions/build",
+				Started:    &base,
+				Stopped:    &base,
+				WorkflowID: "build-action.yml",
+			},
+			{
+				ID:         11,
+				Title:      "Deploy",
+				Status:     "completed",
+				Conclusion: "failure",
+				CommitSHA:  "abc",
+				HTMLURL:    "https://ci.test/deploy",
+				Started:    &base,
+				Stopped:    &base,
+				WorkflowID: "deploy.yml",
+			},
+		}},
+	}
+	provider := NewProvider(platform.KindForgejo, "codeberg.org", transport, WithReadActions())
+
+	checks, err := provider.ListCIChecks(context.Background(), ref, "abc")
+	require.NoError(err)
+
+	require.Len(checks, 3)
+	assert.Equal("Build", checks[0].Name)
+	assert.Equal("status", checks[0].App)
+	assert.Equal("success", checks[0].Conclusion)
+	assert.Equal("Build", checks[1].Name)
+	assert.Equal("action", checks[1].App)
+	assert.Equal("completed", checks[1].Status)
+	assert.Equal("failure", checks[1].Conclusion)
+	assert.Equal("Deploy", checks[2].Name)
+	assert.Equal("action", checks[2].App)
+	assert.Equal("completed", checks[2].Status)
+	assert.Equal("failure", checks[2].Conclusion)
+	assert.Equal([]int{1}, transport.actionPages)
+}
+
 func TestProviderFallsBackFromUserToOrgRepositoryImport(t *testing.T) {
 	assert := Assert.New(t)
 	require := Require.New(t)
@@ -267,6 +337,7 @@ type fakeTransport struct {
 	releases    [][]ReleaseDTO
 	tags        [][]TagDTO
 	statuses    [][]StatusDTO
+	actionRuns  [][]ActionRunDTO
 	comment     CommentDTO
 	pr          PullRequestDTO
 	issue       IssueDTO
@@ -276,6 +347,7 @@ type fakeTransport struct {
 	userRepoPages []int
 	orgRepoPages  []int
 	pullPages     []int
+	actionPages   []int
 	mutationCalls []string
 }
 
@@ -354,6 +426,11 @@ func (t *fakeTransport) ListTags(_ context.Context, _ platform.RepoRef, opts Pag
 
 func (t *fakeTransport) ListStatuses(_ context.Context, _ platform.RepoRef, _ string, opts PageOptions) ([]StatusDTO, Page, error) {
 	return pageFor(t.statuses, opts.Page)
+}
+
+func (t *fakeTransport) ListActionRuns(_ context.Context, _ platform.RepoRef, _ string, opts PageOptions) ([]ActionRunDTO, Page, error) {
+	t.actionPages = append(t.actionPages, opts.Page)
+	return pageFor(t.actionRuns, opts.Page)
 }
 
 func (t *fakeTransport) CreateIssueComment(_ context.Context, _ platform.RepoRef, number int, _ string) (CommentDTO, error) {

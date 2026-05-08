@@ -40,6 +40,7 @@
     providerRepoPath,
     providerRouteParams,
   } from "../../api/provider-routes.js";
+  import { supportsLocked } from "../../api/provider-capabilities.js";
   import { buildDiffSummaryKey } from "./diff-summary-key.js";
   import {
     activePRTimelineFilterCount,
@@ -582,6 +583,12 @@
   {#if detail !== null && !stalePR}
     {@const pr = detail.merge_request}
     {@const capabilities = detail.repo?.capabilities ?? defaultProviderCapabilities}
+    {@const lockedSupported = supportsLocked(
+      detail.repo?.provider ?? provider,
+      detail.repo?.platform_host ?? detail.platform_host,
+      detail.repo?.owner ?? owner,
+      detail.repo?.name ?? name,
+    )}
     <div class="pull-detail-wrap">
       {#if stalePR && detailStore.getDetailError() !== null}
         <div class="detail-load-error" data-testid="detail-load-error">
@@ -746,6 +753,9 @@
           <Chip class="chip--amber">Draft</Chip>
         {:else}
           <Chip class="chip--green">Open</Chip>
+        {/if}
+        {#if pr.IsLocked && lockedSupported}
+          <Chip class="chip--amber" title="This pull request is locked">Locked</Chip>
         {/if}
         <CIStatus
           status={pr.CIStatus}

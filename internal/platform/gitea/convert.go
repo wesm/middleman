@@ -156,6 +156,26 @@ func safeStatusTargetURL(rawURL string) string {
 	}
 }
 
+func convertActionRun(run *giteasdk.ActionWorkflowRun) gitealike.ActionRunDTO {
+	if run == nil {
+		return gitealike.ActionRunDTO{}
+	}
+	return gitealike.ActionRunDTO{
+		ID:         run.ID,
+		RunNumber:  run.RunNumber,
+		WorkflowID: run.Path,
+		Title:      run.DisplayTitle,
+		Status:     run.Status,
+		Conclusion: run.Conclusion,
+		CommitSHA:  run.HeadSha,
+		HTMLURL:    run.HTMLURL,
+		Created:    run.StartedAt,
+		Updated:    run.CompletedAt,
+		Started:    nonZeroTimePtr(run.StartedAt),
+		Stopped:    nonZeroTimePtr(run.CompletedAt),
+	}
+}
+
 func convertCommit(commit *giteasdk.Commit) gitealike.CommitDTO {
 	if commit == nil {
 		return gitealike.CommitDTO{}
@@ -246,6 +266,14 @@ func convertStatuses(statuses []*giteasdk.Status) []gitealike.StatusDTO {
 	out := make([]gitealike.StatusDTO, 0, len(statuses))
 	for _, status := range statuses {
 		out = append(out, convertStatus(status))
+	}
+	return out
+}
+
+func convertActionRuns(runs []*giteasdk.ActionWorkflowRun) []gitealike.ActionRunDTO {
+	out := make([]gitealike.ActionRunDTO, 0, len(runs))
+	for _, run := range runs {
+		out = append(out, convertActionRun(run))
 	}
 	return out
 }

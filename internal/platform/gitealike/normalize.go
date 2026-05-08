@@ -232,8 +232,12 @@ func NormalizeStatuses(
 	actionRuns []ActionRunDTO,
 ) []platform.CICheck {
 	checks := make([]platform.CICheck, 0, len(statuses)+len(actionRuns))
+	statusURLs := make(map[string]struct{}, len(statuses))
 	for _, status := range statuses {
 		checkStatus, conclusion := NormalizeCommitStatus(status.State)
+		if strings.TrimSpace(status.TargetURL) != "" {
+			statusURLs[casefoldKey(status.TargetURL)] = struct{}{}
+		}
 		checks = append(checks, platform.CICheck{
 			Repo:               repo,
 			PlatformID:         status.ID,
@@ -247,13 +251,19 @@ func NormalizeStatuses(
 			CompletedAt:        timePtr(status.Updated),
 		})
 	}
-	for _, run := range actionRuns {
-		checkStatus, conclusion := NormalizeCommitStatus(run.Status)
+	for _, run := range latestActionRuns(actionRuns) {
+		name := actionRunName(run)
+		if strings.TrimSpace(run.HTMLURL) != "" {
+			if _, ok := statusURLs[casefoldKey(run.HTMLURL)]; ok {
+				continue
+			}
+		}
+		checkStatus, conclusion := NormalizeActionRunStatus(run.Status, run.Conclusion)
 		checks = append(checks, platform.CICheck{
 			Repo:               repo,
 			PlatformID:         run.ID,
 			PlatformExternalID: strconv.FormatInt(run.ID, 10),
-			Name:               run.Title,
+			Name:               name,
 			Status:             checkStatus,
 			Conclusion:         conclusion,
 			URL:                safeLinkURL(run.HTMLURL),
@@ -276,6 +286,72 @@ func safeLinkURL(rawURL string) string {
 	default:
 		return ""
 	}
+}
+
+func latestActionRuns(actionRuns []ActionRunDTO) []ActionRunDTO {
+	latest := make(map[string]ActionRunDTO, len(actionRuns))
+	order := make([]string, 0, len(actionRuns))
+	for _, run := range actionRuns {
+		key := actionRunKey(run)
+		if _, seen := latest[key]; !seen {
+			order = append(order, key)
+			latest[key] = run
+			continue
+		}
+		if actionRunIsNewer(run, latest[key]) {
+			latest[key] = run
+		}
+	}
+	out := make([]ActionRunDTO, 0, len(latest))
+	for _, key := range order {
+		out = append(out, latest[key])
+	}
+	return out
+}
+
+func actionRunKey(run ActionRunDTO) string {
+	if workflowID := strings.TrimSpace(run.WorkflowID); workflowID != "" {
+		return "workflow:" + casefoldKey(workflowID)
+	}
+	if name := actionRunName(run); name != "" {
+		return "name:" + casefoldKey(name)
+	}
+	return "id:" + strconv.FormatInt(run.ID, 10)
+}
+
+func actionRunIsNewer(candidate, current ActionRunDTO) bool {
+	if candidate.RunNumber != 0 && current.RunNumber != 0 && candidate.RunNumber != current.RunNumber {
+		return candidate.RunNumber > current.RunNumber
+	}
+	candidateTime := actionRunSortTime(candidate)
+	currentTime := actionRunSortTime(current)
+	if !candidateTime.Equal(currentTime) {
+		return candidateTime.After(currentTime)
+	}
+	return candidate.ID > current.ID
+}
+
+func actionRunSortTime(run ActionRunDTO) time.Time {
+	if !run.Updated.IsZero() {
+		return run.Updated.UTC()
+	}
+	if !run.Created.IsZero() {
+		return run.Created.UTC()
+	}
+	if run.Stopped != nil && !run.Stopped.IsZero() {
+		return run.Stopped.UTC()
+	}
+	if run.Started != nil && !run.Started.IsZero() {
+		return run.Started.UTC()
+	}
+	return time.Time{}
+}
+
+func actionRunName(run ActionRunDTO) string {
+	if title := strings.TrimSpace(run.Title); title != "" {
+		return title
+	}
+	return strings.TrimSpace(run.WorkflowID)
 }
 
 func NormalizeState(state string) string {
@@ -323,6 +399,35 @@ func NormalizeCommitStatus(state string) (status string, conclusion string) {
 	default:
 		return NormalizeState(state), ""
 	}
+}
+
+func NormalizeActionRunStatus(status, conclusion string) (string, string) {
+	normalizedStatus, normalizedConclusion := NormalizeCommitStatus(status)
+	if normalizedStatus == "pending" {
+		return normalizedStatus, ""
+	}
+	if strings.TrimSpace(conclusion) == "" {
+		return normalizedStatus, normalizedConclusion
+	}
+	return "completed", NormalizeCIConclusion(conclusion)
+}
+
+func NormalizeCIConclusion(conclusion string) string {
+	normalized := strings.ToLower(strings.TrimSpace(conclusion))
+	switch normalized {
+	case "success", "successful", "passed":
+		return "success"
+	case "failure", "failed", "error", "cancelled", "canceled", "timed_out":
+		return "failure"
+	case "skipped", "neutral":
+		return normalized
+	default:
+		return normalized
+	}
+}
+
+func casefoldKey(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }
 
 func NextPage(next int) int {

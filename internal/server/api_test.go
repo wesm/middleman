@@ -8870,6 +8870,172 @@ func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
 	})
 }
 
+func TestAPIGiteaActionsSyncPersistsThroughServer(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	base := time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC)
+	stopped := base.Add(2 * time.Minute)
+	transport := &apiTestGitealikeTransport{
+		repo: gitealike.RepositoryDTO{
+			ID:            301,
+			Owner:         gitealike.UserDTO{UserName: "tea"},
+			Name:          "actions",
+			FullName:      "tea/actions",
+			HTMLURL:       "https://gitea.test/tea/actions",
+			CloneURL:      "https://gitea.test/tea/actions.git",
+			DefaultBranch: "main",
+			Created:       base,
+			Updated:       base,
+		},
+		pulls: []gitealike.PullRequestDTO{{
+			ID:      302,
+			Index:   5,
+			HTMLURL: "https://gitea.test/tea/actions/pulls/5",
+			Title:   "Wire actions",
+			User:    gitealike.UserDTO{UserName: "alice"},
+			State:   "open",
+			Head:    gitealike.BranchDTO{Ref: "feature", SHA: "sha-actions"},
+			Base:    gitealike.BranchDTO{Ref: "main", SHA: "base-sha"},
+			Created: base,
+			Updated: base,
+		}},
+		statuses: []gitealike.StatusDTO{
+			{
+				ID:        401,
+				Context:   "Build",
+				State:     "success",
+				TargetURL: "https://ci.test/build",
+				Created:   base,
+				Updated:   stopped,
+			},
+			{
+				ID:        402,
+				Context:   "Lint",
+				State:     "pending",
+				TargetURL: "https://ci.test/lint",
+				Created:   base,
+			},
+		},
+		actionRuns: []gitealike.ActionRunDTO{
+			{
+				ID:         501,
+				Title:      "Build",
+				Status:     "completed",
+				Conclusion: "success",
+				CommitSHA:  "sha-actions",
+				HTMLURL:    "https://ci.test/build",
+				Started:    &base,
+				Stopped:    &stopped,
+				WorkflowID: "build.yml",
+			},
+			{
+				ID:         502,
+				Title:      "Build",
+				Status:     "completed",
+				Conclusion: "cancelled",
+				CommitSHA:  "sha-actions",
+				HTMLURL:    "https://gitea.test/tea/actions/actions/runs/502",
+				Started:    &base,
+				Stopped:    &stopped,
+				WorkflowID: "build-action.yml",
+			},
+			{
+				ID:         503,
+				RunNumber:  1,
+				Title:      "Deploy",
+				Status:     "completed",
+				Conclusion: "failure",
+				CommitSHA:  "sha-actions",
+				HTMLURL:    "https://gitea.test/tea/actions/actions/runs/503",
+				Created:    base,
+				Updated:    base,
+				Started:    &base,
+				Stopped:    &base,
+				WorkflowID: "deploy.yml",
+			},
+			{
+				ID:         504,
+				RunNumber:  2,
+				Title:      "Deploy",
+				Status:     "queued",
+				CommitSHA:  "sha-actions",
+				HTMLURL:    "https://gitea.test/tea/actions/actions/runs/504",
+				Created:    stopped,
+				Updated:    stopped,
+				WorkflowID: "deploy.yml",
+			},
+		},
+	}
+	provider := gitealike.NewProvider(
+		platform.KindGitea,
+		"gitea.test",
+		transport,
+		gitealike.WithReadActions(),
+	)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(database.Close()) })
+
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry,
+		database,
+		nil,
+		[]ghclient.RepoRef{{
+			Platform:     platform.KindGitea,
+			PlatformHost: "gitea.test",
+			Owner:        "tea",
+			Name:         "actions",
+			RepoPath:     "tea/actions",
+		}},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	syncer.RunOnce(ctx)
+	require.NoError(syncer.SyncMROnProvider(ctx, platform.KindGitea, "gitea.test", "tea", "actions", 5))
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitea",
+		PlatformHost: "gitea.test",
+		RepoPath:     "tea/actions",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr := requireMR(t, database, repo.ID, 5)
+	require.Equal("failure", mr.CIStatus)
+
+	pullResp, err := client.HTTP.GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberWithResponse(
+		ctx, "gitea.test", "gitea", "tea", "actions", 5,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, pullResp.StatusCode())
+	require.NotNil(pullResp.JSON200)
+
+	var checks []db.CICheck
+	require.NoError(json.Unmarshal([]byte(pullResp.JSON200.MergeRequest.CIChecksJSON), &checks))
+	require.Len(checks, 4)
+	assert.Equal([]string{"Build/status/success", "Lint/status/", "Build/action/failure", "Deploy/action/"}, ciCheckSummaries(checks))
+	assert.Equal("failure", pullResp.JSON200.MergeRequest.CIStatus)
+}
+
+func ciCheckSummaries(checks []db.CICheck) []string {
+	out := make([]string, 0, len(checks))
+	for _, check := range checks {
+		out = append(out, check.Name+"/"+check.App+"/"+check.Conclusion)
+	}
+	return out
+}
+
 func requireMR(t *testing.T, database *db.DB, repoID int64, number int) *db.MergeRequest {
 	t.Helper()
 	require := require.New(t)
@@ -8989,6 +9155,7 @@ type apiTestGitealikeTransport struct {
 	issueComments  []gitealike.CommentDTO
 	statuses       []gitealike.StatusDTO
 	mergeErr       error
+	actionRuns     []gitealike.ActionRunDTO
 	nextCommentID  int64
 	nextIssueID    int64
 	nextIssueIndex int
@@ -9120,6 +9287,15 @@ func (t *apiTestGitealikeTransport) ListStatuses(
 	gitealike.PageOptions,
 ) ([]gitealike.StatusDTO, gitealike.Page, error) {
 	return t.statuses, gitealike.Page{}, nil
+}
+
+func (t *apiTestGitealikeTransport) ListActionRuns(
+	context.Context,
+	platform.RepoRef,
+	string,
+	gitealike.PageOptions,
+) ([]gitealike.ActionRunDTO, gitealike.Page, error) {
+	return t.actionRuns, gitealike.Page{}, nil
 }
 
 func (t *apiTestGitealikeTransport) CreateIssueComment(

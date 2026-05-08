@@ -1,6 +1,24 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("provider capabilities", () => {
+  test("PR detail shows locked state only for providers that support it", async ({ page }) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/1", async (route) => {
+      const response = await route.fetch();
+      const body = await response.json();
+      body.merge_request.IsLocked = true;
+      await route.fulfill({ response, json: body });
+    });
+
+    await page.goto(
+      "/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1",
+    );
+
+    await expect(page.locator(".pull-detail")).toBeVisible();
+    await expect(
+      page.locator(".chips-row").getByText("Locked", { exact: true }),
+    ).toBeVisible();
+  });
+
   test("GitLab issue detail hides timeline edit controls when comments are read-only", async ({ page }) => {
     await page.goto(
       "/issues/detail?provider=gitlab&platform_host=gitlab.example.com&repo_path=group%2Fproject&number=11",

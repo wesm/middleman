@@ -185,6 +185,7 @@ func TestNormalizeStatusesMapsCommitStatusesAndActionRuns(t *testing.T) {
 	require := Require.New(t)
 	started := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	stopped := started.Add(time.Minute)
+	laterStopped := stopped.Add(time.Minute)
 	repo := platform.RepoRef{Platform: platform.KindForgejo, Host: "codeberg.org", RepoPath: "forgejo/forgejo"}
 
 	checks := NormalizeStatuses(repo, []StatusDTO{
@@ -194,6 +195,7 @@ func TestNormalizeStatusesMapsCommitStatusesAndActionRuns(t *testing.T) {
 		{ID: 5, Context: "ci/unsafe", State: "success", TargetURL: "javascript:alert(1)", Created: started},
 	}, []ActionRunDTO{
 		{ID: 4, WorkflowID: "build", Title: "Build", Status: "failure", CommitSHA: "abc123", HTMLURL: "https://actions/build", Started: &started, Stopped: &stopped, NeedApproval: true},
+		{ID: 5, WorkflowID: "build", Title: "Build", Status: "completed", Conclusion: "success", CommitSHA: "abc123", HTMLURL: "https://actions/build-rerun", Started: &started, Stopped: &laterStopped},
 	})
 
 	require.Len(checks, 5)
@@ -207,8 +209,51 @@ func TestNormalizeStatusesMapsCommitStatusesAndActionRuns(t *testing.T) {
 	assert.Empty(checks[3].URL)
 	assert.Equal("Build", checks[4].Name)
 	assert.Equal("action", checks[4].App)
+	assert.Equal("success", checks[4].Conclusion)
+	assert.Equal("https://actions/build-rerun", checks[4].URL)
 	assert.Equal(&started, checks[4].StartedAt)
-	assert.Equal(&stopped, checks[4].CompletedAt)
+	assert.Equal(&laterStopped, checks[4].CompletedAt)
+}
+
+func TestNormalizeStatusesKeepsQueuedActionRerunAsLatest(t *testing.T) {
+	assert := Assert.New(t)
+	require := Require.New(t)
+	started := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
+	stopped := started.Add(time.Minute)
+	queuedAt := stopped.Add(time.Minute)
+	repo := platform.RepoRef{Platform: platform.KindGitea, Host: "gitea.com", RepoPath: "gitea/tea"}
+
+	checks := NormalizeStatuses(repo, nil, []ActionRunDTO{
+		{
+			ID:         10,
+			RunNumber:  1,
+			WorkflowID: "deploy.yml",
+			Title:      "Deploy",
+			Status:     "completed",
+			Conclusion: "failure",
+			HTMLURL:    "https://gitea/actions/10",
+			Started:    &started,
+			Stopped:    &stopped,
+			Created:    started,
+			Updated:    stopped,
+		},
+		{
+			ID:         11,
+			RunNumber:  2,
+			WorkflowID: "deploy.yml",
+			Title:      "Deploy",
+			Status:     "queued",
+			HTMLURL:    "https://gitea/actions/11",
+			Created:    queuedAt,
+			Updated:    queuedAt,
+		},
+	})
+
+	require.Len(checks, 1)
+	assert.Equal("Deploy", checks[0].Name)
+	assert.Equal("pending", checks[0].Status)
+	assert.Empty(checks[0].Conclusion)
+	assert.Equal("https://gitea/actions/11", checks[0].URL)
 }
 
 func TestSharedHelpersNormalizeStateDedupeAndPagination(t *testing.T) {

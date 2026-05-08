@@ -109,9 +109,13 @@ Self-hosted Forgejo and Gitea instances are separate provider-host entries even
 when they have the same owner/name pairs as public repos.
 
 Actions/CI parity is provider-specific. Forgejo reads Actions runs through the
-shared gitealike provider when the SDK exposes them. Gitea should not claim
-workflow approval or ready-for-review support unless the provider interface and
-server/UI capability tests prove those exact operations.
+shared gitealike provider. Gitea reads repository workflow runs only when the
+pinned SDK and server version expose the Gitea 1.26+ `/actions/runs` API; older
+Gitea hosts stay status-only. Gitealike CI normalization must merge commit
+statuses and Actions runs without duplicating a check already represented by
+the status endpoint. Neither Forgejo nor Gitea should claim workflow approval or
+ready-for-review support unless the provider interface and server/UI capability
+tests prove those exact operations.
 
 ## Import And Routes
 
