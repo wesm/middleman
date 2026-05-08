@@ -1,0 +1,19 @@
+services:
+  forgejo:
+    image: ${MIDDLEMAN_FORGEJO_IMAGE:-codeberg.org/forgejo/forgejo:12}
+    ports:
+      - "127.0.0.1:${FORGEJO_HTTP_PORT:-13000}:3000"
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      FORGEJO__database__DB_TYPE: sqlite3
+      FORGEJO__security__INSTALL_LOCK: "true"
+      FORGEJO__server__DOMAIN: 127.0.0.1
+      FORGEJO__server__ROOT_URL: http://127.0.0.1:${FORGEJO_HTTP_PORT:-13000}/
+      FORGEJO__service__DISABLE_REGISTRATION: "false"
+      FORGEJO__repository__DEFAULT_BRANCH: main
+    volumes:
+      - forgejo-data:/data
+
+volumes:
+  forgejo-data:

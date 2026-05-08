@@ -1,0 +1,19 @@
+services:
+  gitea:
+    image: ${MIDDLEMAN_GITEA_IMAGE:-gitea/gitea:1.24.6}
+    ports:
+      - "127.0.0.1:${GITEA_HTTP_PORT:-13001}:3000"
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      GITEA__database__DB_TYPE: sqlite3
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__server__DOMAIN: 127.0.0.1
+      GITEA__server__ROOT_URL: http://127.0.0.1:${GITEA_HTTP_PORT:-13001}/
+      GITEA__service__DISABLE_REGISTRATION: "false"
+      GITEA__repository__DEFAULT_BRANCH: main
+    volumes:
+      - gitea-data:/data
+
+volumes:
+  gitea-data:
