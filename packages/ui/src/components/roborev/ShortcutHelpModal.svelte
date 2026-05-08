@@ -1,9 +1,18 @@
 <script lang="ts">
+  import { untrack } from "svelte";
+
+  import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
+
   interface Props {
     open: boolean;
     onclose: () => void;
   }
   let { open, onclose }: Props = $props();
+
+  $effect(() => {
+    if (!open) return;
+    return untrack(() => pushModalFrame("roborev-shortcut-help", []));
+  });
 
   function handleKeydown(e: KeyboardEvent): void {
     if (e.key === "Escape") {
