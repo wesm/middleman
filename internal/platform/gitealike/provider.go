@@ -14,17 +14,17 @@ type Provider struct {
 	kind      platform.Kind
 	host      string
 	transport Transport
-	options   Options
+	options   options
 }
 
-type Options struct {
+type options struct {
 	ReadActions bool
 }
 
-type Option func(*Options)
+type Option func(*options)
 
 func WithReadActions() Option {
-	return func(options *Options) {
+	return func(options *options) {
 		options.ReadActions = true
 	}
 }
@@ -35,7 +35,7 @@ func NewProvider(
 	transport Transport,
 	opts ...Option,
 ) *Provider {
-	var options Options
+	var options options
 	for _, opt := range opts {
 		opt(&options)
 	}

@@ -165,6 +165,21 @@ func safeStatusTargetURL(rawURL string) string {
 	}
 }
 
+func convertCommit(commit *forgejosdk.Commit) gitealike.CommitDTO {
+	if commit == nil {
+		return gitealike.CommitDTO{}
+	}
+	out := convertCommitMeta(commit.CommitMeta)
+	out.URL = commit.HTMLURL
+	if commit.RepoCommit != nil {
+		out.Message = commit.RepoCommit.Message
+		if commit.RepoCommit.Author != nil {
+			out.AuthorName = commit.RepoCommit.Author.Name
+		}
+	}
+	return out
+}
+
 func convertActionRun(run *forgejosdk.ActionRun) gitealike.ActionRunDTO {
 	if run == nil {
 		return gitealike.ActionRunDTO{}
@@ -180,6 +195,93 @@ func convertActionRun(run *forgejosdk.ActionRun) gitealike.ActionRunDTO {
 		Stopped:      nonZeroTimePtr(run.Stopped),
 		NeedApproval: run.NeedApproval,
 	}
+}
+
+func convertRepositories(
+	repos []*forgejosdk.Repository,
+	page gitealike.Page,
+) ([]gitealike.RepositoryDTO, gitealike.Page, error) {
+	out := make([]gitealike.RepositoryDTO, 0, len(repos))
+	for _, repo := range repos {
+		item, err := convertRepository(repo)
+		if err != nil {
+			return nil, gitealike.Page{}, err
+		}
+		out = append(out, item)
+	}
+	return out, page, nil
+}
+
+func convertPullRequests(prs []*forgejosdk.PullRequest) []gitealike.PullRequestDTO {
+	out := make([]gitealike.PullRequestDTO, 0, len(prs))
+	for _, pr := range prs {
+		out = append(out, convertPullRequest(pr))
+	}
+	return out
+}
+
+func convertIssues(issues []*forgejosdk.Issue) []gitealike.IssueDTO {
+	out := make([]gitealike.IssueDTO, 0, len(issues))
+	for _, issue := range issues {
+		out = append(out, convertIssue(issue))
+	}
+	return out
+}
+
+func convertComments(comments []*forgejosdk.Comment) []gitealike.CommentDTO {
+	out := make([]gitealike.CommentDTO, 0, len(comments))
+	for _, comment := range comments {
+		out = append(out, convertComment(comment))
+	}
+	return out
+}
+
+func convertReviews(reviews []*forgejosdk.PullReview) []gitealike.ReviewDTO {
+	out := make([]gitealike.ReviewDTO, 0, len(reviews))
+	for _, review := range reviews {
+		out = append(out, convertReview(review))
+	}
+	return out
+}
+
+func convertCommits(commits []*forgejosdk.Commit) []gitealike.CommitDTO {
+	out := make([]gitealike.CommitDTO, 0, len(commits))
+	for _, commit := range commits {
+		out = append(out, convertCommit(commit))
+	}
+	return out
+}
+
+func convertReleases(releases []*forgejosdk.Release) []gitealike.ReleaseDTO {
+	out := make([]gitealike.ReleaseDTO, 0, len(releases))
+	for _, release := range releases {
+		out = append(out, convertRelease(release))
+	}
+	return out
+}
+
+func convertTags(tags []*forgejosdk.Tag) []gitealike.TagDTO {
+	out := make([]gitealike.TagDTO, 0, len(tags))
+	for _, tag := range tags {
+		out = append(out, convertTag(tag))
+	}
+	return out
+}
+
+func convertStatuses(statuses []*forgejosdk.Status) []gitealike.StatusDTO {
+	out := make([]gitealike.StatusDTO, 0, len(statuses))
+	for _, status := range statuses {
+		out = append(out, convertStatus(status))
+	}
+	return out
+}
+
+func convertActionRuns(runs []*forgejosdk.ActionRun) []gitealike.ActionRunDTO {
+	out := make([]gitealike.ActionRunDTO, 0, len(runs))
+	for _, run := range runs {
+		out = append(out, convertActionRun(run))
+	}
+	return out
 }
 
 func convertUser(user *forgejosdk.User) gitealike.UserDTO {
