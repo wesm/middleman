@@ -149,9 +149,10 @@ export function categorizeDiffFile(file: string | CategorizableDiffFile): DiffFi
   const parts = pathParts(path);
   const base = basename(path);
   const ext = extension(path);
+  const generatedMetadata = typeof file === "string" ? undefined : file.is_generated;
 
-  if (typeof file !== "string" && file.is_generated) return "generated";
-  if (hasGeneratedSignal(base)) return "generated";
+  if (generatedMetadata === true) return "generated";
+  if (generatedMetadata !== false && hasGeneratedSignal(base)) return "generated";
   if (hasTestSignal(parts, base)) return "tests";
   if (hasDocsSignal(parts, base, ext)) return "plansDocs";
   if (codeExtensions.has(ext)) return "code";
