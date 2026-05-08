@@ -19,6 +19,7 @@ type Provider struct {
 
 type options struct {
 	ReadActions bool
+	Mutations   bool
 }
 
 type Option func(*options)
@@ -26,6 +27,12 @@ type Option func(*options)
 func WithReadActions() Option {
 	return func(options *options) {
 		options.ReadActions = true
+	}
+}
+
+func WithMutations() Option {
+	return func(options *options) {
+		options.Mutations = true
 	}
 }
 
@@ -56,7 +63,7 @@ func (p *Provider) Host() string {
 }
 
 func (p *Provider) Capabilities() platform.Capabilities {
-	return platform.Capabilities{
+	caps := platform.Capabilities{
 		ReadRepositories:  true,
 		ReadMergeRequests: true,
 		ReadIssues:        true,
@@ -64,6 +71,14 @@ func (p *Provider) Capabilities() platform.Capabilities {
 		ReadReleases:      true,
 		ReadCI:            true,
 	}
+	if p.options.Mutations {
+		caps.CommentMutation = true
+		caps.StateMutation = true
+		caps.MergeMutation = true
+		caps.ReviewMutation = true
+		caps.IssueMutation = true
+	}
+	return caps
 }
 
 func (p *Provider) GetRepository(
@@ -254,6 +269,185 @@ func (p *Provider) ListCIChecks(
 	return NormalizeStatuses(ref, statuses, actionRuns), nil
 }
 
+func (p *Provider) CreateMergeRequestComment(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	body string,
+) (platform.MergeRequestEvent, error) {
+	transport, err := p.mutationTransport("comment_mutation")
+	if err != nil {
+		return platform.MergeRequestEvent{}, err
+	}
+	comment, err := transport.CreateIssueComment(ctx, ref, number, body)
+	if err != nil {
+		return platform.MergeRequestEvent{}, p.mapError(err)
+	}
+	return NormalizeMergeRequestEvents(p.kind, ref, number, []CommentDTO{comment}, nil, nil)[0], nil
+}
+
+func (p *Provider) EditMergeRequestComment(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	commentID int64,
+	body string,
+) (platform.MergeRequestEvent, error) {
+	transport, err := p.mutationTransport("comment_mutation")
+	if err != nil {
+		return platform.MergeRequestEvent{}, err
+	}
+	comment, err := transport.EditIssueComment(ctx, ref, commentID, body)
+	if err != nil {
+		return platform.MergeRequestEvent{}, p.mapError(err)
+	}
+	return NormalizeMergeRequestEvents(p.kind, ref, number, []CommentDTO{comment}, nil, nil)[0], nil
+}
+
+func (p *Provider) CreateIssueComment(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	body string,
+) (platform.IssueEvent, error) {
+	transport, err := p.mutationTransport("comment_mutation")
+	if err != nil {
+		return platform.IssueEvent{}, err
+	}
+	comment, err := transport.CreateIssueComment(ctx, ref, number, body)
+	if err != nil {
+		return platform.IssueEvent{}, p.mapError(err)
+	}
+	return NormalizeIssueComments(p.kind, ref, number, []CommentDTO{comment})[0], nil
+}
+
+func (p *Provider) EditIssueComment(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	commentID int64,
+	body string,
+) (platform.IssueEvent, error) {
+	transport, err := p.mutationTransport("comment_mutation")
+	if err != nil {
+		return platform.IssueEvent{}, err
+	}
+	comment, err := transport.EditIssueComment(ctx, ref, commentID, body)
+	if err != nil {
+		return platform.IssueEvent{}, p.mapError(err)
+	}
+	return NormalizeIssueComments(p.kind, ref, number, []CommentDTO{comment})[0], nil
+}
+
+func (p *Provider) CreateIssue(
+	ctx context.Context,
+	ref platform.RepoRef,
+	title string,
+	body string,
+) (platform.Issue, error) {
+	transport, err := p.mutationTransport("issue_mutation")
+	if err != nil {
+		return platform.Issue{}, err
+	}
+	issue, err := transport.CreateIssue(ctx, ref, title, body)
+	if err != nil {
+		return platform.Issue{}, p.mapError(err)
+	}
+	return NormalizeIssue(ref, issue), nil
+}
+
+func (p *Provider) SetMergeRequestState(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	state string,
+) (platform.MergeRequest, error) {
+	transport, err := p.mutationTransport("state_mutation")
+	if err != nil {
+		return platform.MergeRequest{}, err
+	}
+	pr, err := transport.EditPullRequest(ctx, ref, number, PullRequestMutationOptions{State: &state})
+	if err != nil {
+		return platform.MergeRequest{}, p.mapError(err)
+	}
+	return NormalizePullRequest(ref, pr), nil
+}
+
+func (p *Provider) SetIssueState(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	state string,
+) (platform.Issue, error) {
+	transport, err := p.mutationTransport("state_mutation")
+	if err != nil {
+		return platform.Issue{}, err
+	}
+	issue, err := transport.EditIssue(ctx, ref, number, IssueMutationOptions{State: &state})
+	if err != nil {
+		return platform.Issue{}, p.mapError(err)
+	}
+	return NormalizeIssue(ref, issue), nil
+}
+
+func (p *Provider) MergeMergeRequest(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	commitTitle string,
+	commitMessage string,
+	method string,
+) (platform.MergeResult, error) {
+	transport, err := p.mutationTransport("merge_mutation")
+	if err != nil {
+		return platform.MergeResult{}, err
+	}
+	result, err := transport.MergePullRequest(ctx, ref, number, MergeOptions{
+		CommitTitle:   commitTitle,
+		CommitMessage: commitMessage,
+		Method:        method,
+	})
+	if err != nil {
+		return platform.MergeResult{}, p.mapError(err)
+	}
+	return platform.MergeResult{Merged: result.Merged, SHA: result.SHA, Message: result.Message}, nil
+}
+
+func (p *Provider) ApproveMergeRequest(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	body string,
+) (platform.MergeRequestEvent, error) {
+	transport, err := p.mutationTransport("review_mutation")
+	if err != nil {
+		return platform.MergeRequestEvent{}, err
+	}
+	review, err := transport.CreatePullReview(ctx, ref, number, body)
+	if err != nil {
+		return platform.MergeRequestEvent{}, p.mapError(err)
+	}
+	return NormalizeMergeRequestEvents(p.kind, ref, number, nil, []ReviewDTO{review}, nil)[0], nil
+}
+
+func (p *Provider) EditMergeRequestContent(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	title *string,
+	body *string,
+) (platform.MergeRequest, error) {
+	transport, err := p.mutationTransport("state_mutation")
+	if err != nil {
+		return platform.MergeRequest{}, err
+	}
+	pr, err := transport.EditPullRequest(ctx, ref, number, PullRequestMutationOptions{Title: title, Body: body})
+	if err != nil {
+		return platform.MergeRequest{}, p.mapError(err)
+	}
+	return NormalizePullRequest(ref, pr), nil
+}
+
 func (p *Provider) listRepositories(
 	ctx context.Context,
 	owner string,
@@ -276,6 +470,17 @@ func (p *Provider) listRepositories(
 		}
 	}
 	return out, nil
+}
+
+func (p *Provider) mutationTransport(capability string) (MutationTransport, error) {
+	if !p.options.Mutations {
+		return nil, platform.UnsupportedCapability(p.kind, p.host, capability)
+	}
+	transport, ok := p.transport.(MutationTransport)
+	if !ok {
+		return nil, platform.UnsupportedCapability(p.kind, p.host, capability)
+	}
+	return transport, nil
 }
 
 func (p *Provider) mapError(err error) error {

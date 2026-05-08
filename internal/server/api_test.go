@@ -971,7 +971,7 @@ func TestAPIMergePRForwardsGitHubErrorDetailsAndLogsError(t *testing.T) {
 
 	logText := logBuf.String()
 	assert.Contains(logText, "level=ERROR")
-	assert.Contains(logText, "github merge failed")
+	assert.Contains(logText, "provider merge failed")
 	assert.Contains(logText, "Required status check")
 }
 
@@ -8633,13 +8633,366 @@ func TestAPIGitealikeReadSyncPersistsThroughServer(t *testing.T) {
 	assert.Equal("confirmed", (*issueResp.JSON200.Events)[0].Body)
 }
 
+func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	base := time.Date(2026, 5, 3, 12, 0, 0, 0, time.UTC)
+	transport := &apiTestGitealikeTransport{
+		nextCommentID:  900,
+		nextIssueID:    950,
+		nextIssueIndex: 81,
+		repo: gitealike.RepositoryDTO{
+			ID:            101,
+			Owner:         gitealike.UserDTO{UserName: "tea"},
+			Name:          "kettle",
+			FullName:      "tea/kettle",
+			HTMLURL:       "https://gitea.test/tea/kettle",
+			CloneURL:      "https://gitea.test/tea/kettle.git",
+			DefaultBranch: "main",
+			Created:       base,
+			Updated:       base,
+		},
+		pulls: []gitealike.PullRequestDTO{
+			{
+				ID:      201,
+				Index:   7,
+				HTMLURL: "https://gitea.test/tea/kettle/pulls/7",
+				Title:   "Add kettle",
+				User:    gitealike.UserDTO{UserName: "alice"},
+				State:   "open",
+				Head:    gitealike.BranchDTO{Ref: "feature", SHA: "abc123"},
+				Base:    gitealike.BranchDTO{Ref: "main", SHA: "def456"},
+				Created: base,
+				Updated: base,
+			},
+			{
+				ID:      202,
+				Index:   9,
+				HTMLURL: "https://gitea.test/tea/kettle/pulls/9",
+				Title:   "Close me",
+				User:    gitealike.UserDTO{UserName: "alice"},
+				State:   "open",
+				Head:    gitealike.BranchDTO{Ref: "close", SHA: "abc999"},
+				Base:    gitealike.BranchDTO{Ref: "main", SHA: "def456"},
+				Created: base,
+				Updated: base,
+			},
+		},
+		issues: []gitealike.IssueDTO{{
+			ID:      401,
+			Index:   8,
+			HTMLURL: "https://gitea.test/tea/kettle/issues/8",
+			Title:   "Missing cup",
+			User:    gitealike.UserDTO{UserName: "bob"},
+			State:   "open",
+			Created: base,
+			Updated: base,
+		}},
+	}
+	provider := gitealike.NewProvider(
+		platform.KindGitea,
+		"gitea.test",
+		transport,
+		gitealike.WithMutations(),
+	)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(database.Close()) })
+
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry,
+		database,
+		nil,
+		[]ghclient.RepoRef{{
+			Platform:     platform.KindGitea,
+			PlatformHost: "gitea.test",
+			Owner:        "tea",
+			Name:         "kettle",
+			RepoPath:     "tea/kettle",
+		}},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	syncer.RunOnce(ctx)
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitea",
+		PlatformHost: "gitea.test",
+		RepoPath:     "tea/kettle",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+
+	editedTitle := "Edited kettle"
+	editedBody := "Updated kettle body"
+	editContentResp, err := client.HTTP.EditPrContentOnHostWithResponse(
+		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
+		generated.EditPrContentOnHostJSONRequestBody{
+			Title: &editedTitle,
+			Body:  &editedBody,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, editContentResp.StatusCode())
+	require.NotNil(editContentResp.JSON200)
+	assert.Equal(editedTitle, editContentResp.JSON200.MergeRequest.Title)
+	assert.Equal(editedBody, editContentResp.JSON200.MergeRequest.Body)
+	mrSeven := requireMR(t, database, repo.ID, 7)
+	assert.Equal(editedTitle, mrSeven.Title)
+	assert.Equal(editedBody, mrSeven.Body)
+
+	commentResp, err := client.HTTP.PostPrCommentOnHostWithResponse(
+		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
+		generated.PostPrCommentOnHostJSONRequestBody{Body: "Looks good"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusCreated, commentResp.StatusCode())
+	mrEvents, err := database.ListMREvents(ctx, mrSeven.ID)
+	require.NoError(err)
+	require.Len(mrEvents, 1)
+	require.NotNil(mrEvents[0].PlatformID)
+	commentID := *mrEvents[0].PlatformID
+	assert.Equal("Looks good", mrEvents[0].Body)
+
+	editCommentResp, err := client.HTTP.EditPrCommentOnHostWithResponse(
+		ctx, "gitea.test", "gitea", "tea", "kettle", 7, commentID,
+		generated.EditPrCommentOnHostJSONRequestBody{Body: "Still good"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, editCommentResp.StatusCode())
+	mrEvents, err = database.ListMREvents(ctx, mrSeven.ID)
+	require.NoError(err)
+	require.Len(mrEvents, 1)
+	assert.Equal("Still good", mrEvents[0].Body)
+
+	approveResp, err := client.HTTP.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWithResponse(
+		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
+		generated.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody{Body: "approved"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, approveResp.StatusCode())
+	mrEvents, err = database.ListMREvents(ctx, mrSeven.ID)
+	require.NoError(err)
+	assert.Len(mrEvents, 2)
+
+	mergeResp, err := client.HTTP.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithResponse(
+		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
+		generated.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody{
+			Method:        "squash",
+			CommitTitle:   "Merge kettle",
+			CommitMessage: "Merge Gitea MR",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, mergeResp.StatusCode())
+	mrSeven = requireMR(t, database, repo.ID, 7)
+	assert.Equal("merged", mrSeven.State)
+	require.NotNil(mrSeven.MergedAt)
+
+	stateResp, err := client.HTTP.SetPrGithubStateOnHostWithResponse(
+		ctx, "gitea.test", "gitea", "tea", "kettle", 9,
+		generated.SetPrGithubStateOnHostJSONRequestBody{State: "closed"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, stateResp.StatusCode())
+	mrNine := requireMR(t, database, repo.ID, 9)
+	assert.Equal("closed", mrNine.State)
+	require.NotNil(mrNine.ClosedAt)
+
+	createIssueResp, err := client.HTTP.CreateIssueOnHostWithResponse(
+		ctx, "gitea.test", "gitea", "tea", "kettle",
+		generated.CreateIssueOnHostJSONRequestBody{Title: "New issue", Body: "New issue body"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusCreated, createIssueResp.StatusCode())
+	createdIssue, err := database.GetIssueByRepoIDAndNumber(ctx, repo.ID, 81)
+	require.NoError(err)
+	require.NotNil(createdIssue)
+	assert.Equal("New issue", createdIssue.Title)
+
+	issueCommentResp, err := client.HTTP.PostIssueCommentOnHostWithResponse(
+		ctx, "gitea.test", "gitea", "tea", "kettle", 8,
+		generated.PostIssueCommentOnHostJSONRequestBody{Body: "Confirmed"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusCreated, issueCommentResp.StatusCode())
+	issueEight := requireIssue(t, database, repo.ID, 8)
+	issueEvents, err := database.ListIssueEvents(ctx, issueEight.ID)
+	require.NoError(err)
+	require.Len(issueEvents, 1)
+	require.NotNil(issueEvents[0].PlatformID)
+	issueCommentID := *issueEvents[0].PlatformID
+	assert.Equal("Confirmed", issueEvents[0].Body)
+
+	editIssueCommentResp, err := client.HTTP.EditIssueCommentOnHostWithResponse(
+		ctx, "gitea.test", "gitea", "tea", "kettle", 8, issueCommentID,
+		generated.EditIssueCommentOnHostJSONRequestBody{Body: "Confirmed again"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, editIssueCommentResp.StatusCode())
+	issueEvents, err = database.ListIssueEvents(ctx, issueEight.ID)
+	require.NoError(err)
+	require.Len(issueEvents, 1)
+	assert.Equal("Confirmed again", issueEvents[0].Body)
+
+	issueStateResp, err := client.HTTP.SetIssueGithubStateOnHostWithResponse(
+		ctx, "gitea.test", "gitea", "tea", "kettle", 8,
+		generated.SetIssueGithubStateOnHostJSONRequestBody{State: "closed"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, issueStateResp.StatusCode())
+	issueEight = requireIssue(t, database, repo.ID, 8)
+	assert.Equal("closed", issueEight.State)
+	require.NotNil(issueEight.ClosedAt)
+
+	assert.Subset(transport.mutationCalls, []string{
+		"edit_pull_content:7:Edited kettle:Updated kettle body",
+		"create_comment:7:Looks good",
+		"edit_comment:900:Still good",
+		"review:7:approved",
+		"merge:7:squash",
+		"edit_pull:9:closed",
+		"create_issue:New issue",
+		"create_comment:8:Confirmed",
+		"edit_comment:901:Confirmed again",
+		"edit_issue:8:closed",
+	})
+}
+
+func requireMR(t *testing.T, database *db.DB, repoID int64, number int) *db.MergeRequest {
+	t.Helper()
+	require := require.New(t)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, number)
+	require.NoError(err)
+	require.NotNil(mr)
+	return mr
+}
+
+func requireIssue(t *testing.T, database *db.DB, repoID int64, number int) *db.Issue {
+	t.Helper()
+	require := require.New(t)
+	issue, err := database.GetIssueByRepoIDAndNumber(t.Context(), repoID, number)
+	require.NoError(err)
+	require.NotNil(issue)
+	return issue
+}
+
+func TestAPIGitealikeMergeConflictReturnsConflict(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	base := time.Date(2026, 5, 3, 12, 0, 0, 0, time.UTC)
+	transport := &apiTestGitealikeTransport{
+		mergeErr: &gitealike.HTTPError{StatusCode: http.StatusConflict, Message: "pull request is out of date"},
+		repo: gitealike.RepositoryDTO{
+			ID:            101,
+			Owner:         gitealike.UserDTO{UserName: "tea"},
+			Name:          "kettle",
+			FullName:      "tea/kettle",
+			HTMLURL:       "https://gitea.test/tea/kettle",
+			CloneURL:      "https://gitea.test/tea/kettle.git",
+			DefaultBranch: "main",
+			Created:       base,
+			Updated:       base,
+		},
+		pulls: []gitealike.PullRequestDTO{{
+			ID:      201,
+			Index:   7,
+			HTMLURL: "https://gitea.test/tea/kettle/pulls/7",
+			Title:   "Add kettle",
+			User:    gitealike.UserDTO{UserName: "alice"},
+			State:   "open",
+			Head:    gitealike.BranchDTO{Ref: "feature", SHA: "abc123"},
+			Base:    gitealike.BranchDTO{Ref: "main", SHA: "def456"},
+			Created: base,
+			Updated: base,
+		}},
+	}
+	provider := gitealike.NewProvider(
+		platform.KindGitea,
+		"gitea.test",
+		transport,
+		gitealike.WithMutations(),
+	)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(database.Close()) })
+
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry,
+		database,
+		nil,
+		[]ghclient.RepoRef{{
+			Platform:     platform.KindGitea,
+			PlatformHost: "gitea.test",
+			Owner:        "tea",
+			Name:         "kettle",
+			RepoPath:     "tea/kettle",
+		}},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	syncer.RunOnce(ctx)
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitea",
+		PlatformHost: "gitea.test",
+		RepoPath:     "tea/kettle",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	transport.pulls[0].Title = "Refreshed kettle after conflict"
+
+	resp, err := client.HTTP.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithResponse(
+		ctx, "gitea.test", "gitea", "tea", "kettle", 7,
+		generated.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody{
+			Method:        "squash",
+			CommitTitle:   "Merge kettle",
+			CommitMessage: "Merge Gitea MR",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusConflict, resp.StatusCode(), string(resp.Body))
+	assert.Contains(string(resp.Body), "pull request is out of date")
+	assert.Contains(transport.mutationCalls, "merge:7:squash")
+	require.Eventually(func() bool {
+		mr := requireMR(t, database, repo.ID, 7)
+		return mr.State == "open" && mr.Title == "Refreshed kettle after conflict"
+	}, time.Second, 10*time.Millisecond)
+}
+
 type apiTestGitealikeTransport struct {
-	repo          gitealike.RepositoryDTO
-	pulls         []gitealike.PullRequestDTO
-	pullComments  []gitealike.CommentDTO
-	issues        []gitealike.IssueDTO
-	issueComments []gitealike.CommentDTO
-	statuses      []gitealike.StatusDTO
+	repo           gitealike.RepositoryDTO
+	pulls          []gitealike.PullRequestDTO
+	pullComments   []gitealike.CommentDTO
+	issues         []gitealike.IssueDTO
+	issueComments  []gitealike.CommentDTO
+	statuses       []gitealike.StatusDTO
+	mergeErr       error
+	nextCommentID  int64
+	nextIssueID    int64
+	nextIssueIndex int
+	mutationCalls  []string
 }
 
 func (t *apiTestGitealikeTransport) GetRepository(
@@ -8767,6 +9120,209 @@ func (t *apiTestGitealikeTransport) ListStatuses(
 	gitealike.PageOptions,
 ) ([]gitealike.StatusDTO, gitealike.Page, error) {
 	return t.statuses, gitealike.Page{}, nil
+}
+
+func (t *apiTestGitealikeTransport) CreateIssueComment(
+	_ context.Context,
+	_ platform.RepoRef,
+	number int,
+	body string,
+) (gitealike.CommentDTO, error) {
+	if t.nextCommentID == 0 {
+		t.nextCommentID = 1
+	}
+	id := t.nextCommentID
+	t.nextCommentID++
+	t.mutationCalls = append(t.mutationCalls, fmt.Sprintf("create_comment:%d:%s", number, body))
+	comment := gitealike.CommentDTO{
+		ID:      id,
+		User:    gitealike.UserDTO{UserName: "mutation-bot"},
+		Body:    body,
+		Created: time.Now().UTC().Truncate(time.Second),
+		Updated: time.Now().UTC().Truncate(time.Second),
+	}
+	if issue := t.findIssue(number); issue != nil {
+		t.issueComments = upsertComment(t.issueComments, comment)
+		return comment, nil
+	}
+	t.pullComments = upsertComment(t.pullComments, comment)
+	return comment, nil
+}
+
+func (t *apiTestGitealikeTransport) EditIssueComment(
+	_ context.Context,
+	_ platform.RepoRef,
+	commentID int64,
+	body string,
+) (gitealike.CommentDTO, error) {
+	t.mutationCalls = append(t.mutationCalls, fmt.Sprintf("edit_comment:%d:%s", commentID, body))
+	comment := gitealike.CommentDTO{
+		ID:      commentID,
+		User:    gitealike.UserDTO{UserName: "mutation-bot"},
+		Body:    body,
+		Created: time.Now().UTC().Truncate(time.Second),
+		Updated: time.Now().UTC().Truncate(time.Second),
+	}
+	t.pullComments = upsertComment(t.pullComments, comment)
+	t.issueComments = upsertComment(t.issueComments, comment)
+	return comment, nil
+}
+
+func (t *apiTestGitealikeTransport) CreateIssue(
+	_ context.Context,
+	ref platform.RepoRef,
+	title string,
+	body string,
+) (gitealike.IssueDTO, error) {
+	if t.nextIssueID == 0 {
+		t.nextIssueID = 1
+	}
+	if t.nextIssueIndex == 0 {
+		t.nextIssueIndex = 1
+	}
+	id := t.nextIssueID
+	t.nextIssueID++
+	number := t.nextIssueIndex
+	t.nextIssueIndex++
+	t.mutationCalls = append(t.mutationCalls, "create_issue:"+title)
+	issue := gitealike.IssueDTO{
+		ID:      id,
+		Index:   number,
+		HTMLURL: fmt.Sprintf("https://%s/%s/%s/issues/%d", ref.Host, ref.Owner, ref.Name, number),
+		Title:   title,
+		User:    gitealike.UserDTO{UserName: "mutation-bot"},
+		State:   "open",
+		Body:    body,
+		Created: time.Now().UTC().Truncate(time.Second),
+		Updated: time.Now().UTC().Truncate(time.Second),
+	}
+	t.issues = append(t.issues, issue)
+	return issue, nil
+}
+
+func (t *apiTestGitealikeTransport) EditIssue(
+	_ context.Context,
+	_ platform.RepoRef,
+	number int,
+	opts gitealike.IssueMutationOptions,
+) (gitealike.IssueDTO, error) {
+	issue := t.findIssue(number)
+	if issue == nil {
+		return gitealike.IssueDTO{}, platform.ErrNotFound
+	}
+	if opts.State != nil {
+		issue.State = *opts.State
+		t.mutationCalls = append(t.mutationCalls, fmt.Sprintf("edit_issue:%d:%s", number, *opts.State))
+	}
+	if opts.Title != nil {
+		issue.Title = *opts.Title
+	}
+	if opts.Body != nil {
+		issue.Body = *opts.Body
+	}
+	issue.Updated = time.Now().UTC().Truncate(time.Second)
+	if issue.State == "closed" {
+		closed := issue.Updated
+		issue.Closed = &closed
+	}
+	return *issue, nil
+}
+
+func (t *apiTestGitealikeTransport) EditPullRequest(
+	_ context.Context,
+	_ platform.RepoRef,
+	number int,
+	opts gitealike.PullRequestMutationOptions,
+) (gitealike.PullRequestDTO, error) {
+	pr := t.findPull(number)
+	if pr == nil {
+		return gitealike.PullRequestDTO{}, platform.ErrNotFound
+	}
+	if opts.State != nil {
+		pr.State = *opts.State
+		t.mutationCalls = append(t.mutationCalls, fmt.Sprintf("edit_pull:%d:%s", number, *opts.State))
+	}
+	if opts.Title != nil {
+		pr.Title = *opts.Title
+	}
+	if opts.Body != nil {
+		pr.Body = *opts.Body
+	}
+	if opts.Title != nil || opts.Body != nil {
+		t.mutationCalls = append(t.mutationCalls, fmt.Sprintf("edit_pull_content:%d:%s:%s", number, pr.Title, pr.Body))
+	}
+	pr.Updated = time.Now().UTC().Truncate(time.Second)
+	if pr.State == "closed" {
+		closed := pr.Updated
+		pr.Closed = &closed
+	}
+	return *pr, nil
+}
+
+func (t *apiTestGitealikeTransport) MergePullRequest(
+	_ context.Context,
+	_ platform.RepoRef,
+	number int,
+	opts gitealike.MergeOptions,
+) (gitealike.MergeResultDTO, error) {
+	pr := t.findPull(number)
+	if pr == nil {
+		return gitealike.MergeResultDTO{}, platform.ErrNotFound
+	}
+	t.mutationCalls = append(t.mutationCalls, fmt.Sprintf("merge:%d:%s", number, opts.Method))
+	if t.mergeErr != nil {
+		return gitealike.MergeResultDTO{}, t.mergeErr
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	pr.State = "merged"
+	pr.Merged = true
+	pr.MergedAt = &now
+	pr.Updated = now
+	return gitealike.MergeResultDTO{Merged: true, SHA: "merged-sha", Message: "merged"}, nil
+}
+
+func (t *apiTestGitealikeTransport) CreatePullReview(
+	_ context.Context,
+	_ platform.RepoRef,
+	number int,
+	body string,
+) (gitealike.ReviewDTO, error) {
+	t.mutationCalls = append(t.mutationCalls, fmt.Sprintf("review:%d:%s", number, body))
+	return gitealike.ReviewDTO{
+		ID:        980,
+		User:      gitealike.UserDTO{UserName: "reviewer"},
+		State:     "approved",
+		Body:      body,
+		Submitted: time.Now().UTC().Truncate(time.Second),
+	}, nil
+}
+
+func (t *apiTestGitealikeTransport) findPull(number int) *gitealike.PullRequestDTO {
+	for i := range t.pulls {
+		if t.pulls[i].Index == number {
+			return &t.pulls[i]
+		}
+	}
+	return nil
+}
+
+func (t *apiTestGitealikeTransport) findIssue(number int) *gitealike.IssueDTO {
+	for i := range t.issues {
+		if t.issues[i].Index == number {
+			return &t.issues[i]
+		}
+	}
+	return nil
+}
+
+func upsertComment(comments []gitealike.CommentDTO, comment gitealike.CommentDTO) []gitealike.CommentDTO {
+	for i := range comments {
+		if comments[i].ID == comment.ID {
+			comments[i] = comment
+			return comments
+		}
+	}
+	return append(comments, comment)
 }
 
 func setupGitLabCapabilityServer(t *testing.T) (*Server, *db.DB) {

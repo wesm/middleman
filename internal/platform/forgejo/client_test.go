@@ -24,6 +24,11 @@ var (
 	_ platform.ReleaseReader      = (*Client)(nil)
 	_ platform.TagReader          = (*Client)(nil)
 	_ platform.CIReader           = (*Client)(nil)
+	_ platform.CommentMutator     = (*Client)(nil)
+	_ platform.StateMutator       = (*Client)(nil)
+	_ platform.MergeMutator       = (*Client)(nil)
+	_ platform.ReviewMutator      = (*Client)(nil)
+	_ platform.IssueMutator       = (*Client)(nil)
 )
 
 func TestClientLooksUpRepositoryAndSendsToken(t *testing.T) {
@@ -244,6 +249,11 @@ func TestClientProviderIdentityExposesReadCapabilities(t *testing.T) {
 		ReadComments:      true,
 		ReadReleases:      true,
 		ReadCI:            true,
+		CommentMutation:   true,
+		StateMutation:     true,
+		MergeMutation:     true,
+		ReviewMutation:    true,
+		IssueMutation:     true,
 	}, client.Capabilities())
 }
 
@@ -360,6 +370,78 @@ func TestClientReadsCommitStatusesWhenActionsEndpointUnavailable(t *testing.T) {
 			assert.Equal("success", checks[0].Conclusion)
 		})
 	}
+}
+
+func TestClientMutationCapabilityUsesForgejoEndpoints(t *testing.T) {
+	assert := Assert.New(t)
+	require := Require.New(t)
+	var seen []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal("token forgejo-token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		seen = append(seen, r.Method+" "+r.URL.Path)
+		switch r.Method + " " + r.URL.Path {
+		case "POST /api/v1/repos/owner/repo/issues/7/comments",
+			"PATCH /api/v1/repos/owner/repo/issues/comments/10":
+			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+				"id": 10, "body": "comment", "user": map[string]any{"login": "alice"},
+			}))
+		case "POST /api/v1/repos/owner/repo/issues",
+			"PATCH /api/v1/repos/owner/repo/issues/8":
+			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+				"id": 20, "number": 8, "title": "issue", "state": "closed", "user": map[string]any{"login": "bob"},
+			}))
+		case "PATCH /api/v1/repos/owner/repo/pulls/7":
+			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+				"id": 30, "number": 7, "title": "pr", "state": "closed", "user": map[string]any{"login": "carol"},
+				"head": map[string]any{"ref": "feature", "sha": "abc"},
+				"base": map[string]any{"ref": "main", "sha": "def"},
+			}))
+		case "POST /api/v1/repos/owner/repo/pulls/7/merge":
+			assert.NoError(json.NewEncoder(w).Encode(map[string]any{}))
+		case "POST /api/v1/repos/owner/repo/pulls/7/reviews":
+			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+				"id": 40, "state": "APPROVED", "body": "ship it", "user": map[string]any{"login": "dana"},
+			}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient("codeberg.test", "forgejo-token", WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+	ref := platform.RepoRef{Owner: "owner", Name: "repo"}
+
+	_, err = client.CreateMergeRequestComment(context.Background(), ref, 7, "comment")
+	require.NoError(err)
+	_, err = client.EditIssueComment(context.Background(), ref, 8, 10, "comment")
+	require.NoError(err)
+	_, err = client.CreateIssue(context.Background(), ref, "issue", "body")
+	require.NoError(err)
+	_, err = client.SetIssueState(context.Background(), ref, 8, "closed")
+	require.NoError(err)
+	_, err = client.SetMergeRequestState(context.Background(), ref, 7, "closed")
+	require.NoError(err)
+	prTitle := "pr"
+	prBody := "body"
+	_, err = client.EditMergeRequestContent(context.Background(), ref, 7, &prTitle, &prBody)
+	require.NoError(err)
+	_, err = client.MergeMergeRequest(context.Background(), ref, 7, "title", "message", "squash")
+	require.NoError(err)
+	_, err = client.ApproveMergeRequest(context.Background(), ref, 7, "ship it")
+	require.NoError(err)
+
+	assert.Equal([]string{
+		"POST /api/v1/repos/owner/repo/issues/7/comments",
+		"PATCH /api/v1/repos/owner/repo/issues/comments/10",
+		"POST /api/v1/repos/owner/repo/issues",
+		"PATCH /api/v1/repos/owner/repo/issues/8",
+		"PATCH /api/v1/repos/owner/repo/pulls/7",
+		"PATCH /api/v1/repos/owner/repo/pulls/7",
+		"POST /api/v1/repos/owner/repo/pulls/7/merge",
+		"POST /api/v1/repos/owner/repo/pulls/7/reviews",
+	}, seen)
 }
 
 func TestClientMapsNotFoundResponsesToPlatformError(t *testing.T) {

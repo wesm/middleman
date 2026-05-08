@@ -98,11 +98,17 @@ func NewClient(host, token string, options ...ClientOption) (*Client, error) {
 		requestContextLock: make(chan struct{}, 1),
 	}
 	return &Client{
-		host:              host,
-		baseURL:           opts.baseURL,
-		api:               api,
-		transport:         transport,
-		provider:          gitealike.NewProvider(platform.KindForgejo, host, transport, gitealike.WithReadActions()),
+		host:      host,
+		baseURL:   opts.baseURL,
+		api:       api,
+		transport: transport,
+		provider: gitealike.NewProvider(
+			platform.KindForgejo,
+			host,
+			transport,
+			gitealike.WithReadActions(),
+			gitealike.WithMutations(),
+		),
 		foregroundTimeout: opts.foregroundTimeout,
 	}, nil
 }
