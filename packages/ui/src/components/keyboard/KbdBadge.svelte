@@ -25,6 +25,7 @@
     border: 1px solid var(--border-default);
     border-radius: 3px;
     font-size: 11px;
+    line-height: 1;
     color: var(--text-secondary);
     background: var(--bg-inset);
     font-family: ui-monospace, monospace;
