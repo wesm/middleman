@@ -29,6 +29,13 @@ var generatedBasenames = map[string]bool{
 	"yarn.lock":           true,
 }
 
+var generatedSuffixes = []string{
+	".lock",
+	".lock.json",
+	".lock.yaml",
+	".lock.yml",
+}
+
 // GeneratedAttributeInput returns NUL-delimited paths for git check-attr.
 func GeneratedAttributeInput(files []DiffFile) []byte {
 	var input bytes.Buffer
@@ -82,8 +89,10 @@ func IsGeneratedPath(path string) bool {
 	if generatedBasenames[base] {
 		return true
 	}
-	return strings.HasSuffix(base, ".lock") ||
-		strings.HasSuffix(base, ".lock.json") ||
-		strings.HasSuffix(base, ".lock.yaml") ||
-		strings.HasSuffix(base, ".lock.yml")
+	for _, suffix := range generatedSuffixes {
+		if strings.HasSuffix(base, suffix) {
+			return true
+		}
+	}
+	return false
 }

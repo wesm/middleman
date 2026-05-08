@@ -83,6 +83,12 @@ const generatedBasenames = new Set([
   "uv.lock",
   "yarn.lock",
 ]);
+const generatedSuffixes = [
+  ".lock",
+  ".lock.json",
+  ".lock.yaml",
+  ".lock.yml",
+];
 
 function pathParts(path: string): string[] {
   return path.toLowerCase().split(/[\\/]+/).filter(Boolean);
@@ -134,21 +140,12 @@ function hasDocsSignal(parts: string[], base: string, ext: string): boolean {
 }
 
 function hasGeneratedSignal(base: string): boolean {
-  return (
-    generatedBasenames.has(base) ||
-    base.endsWith(".lock") ||
-    base.endsWith(".lock.json") ||
-    base.endsWith(".lock.yaml") ||
-    base.endsWith(".lock.yml")
-  );
-}
-
-function diffFilePath(file: string | CategorizableDiffFile): string {
-  return typeof file === "string" ? file : file.path;
+  return generatedBasenames.has(base) ||
+    generatedSuffixes.some((suffix) => base.endsWith(suffix));
 }
 
 export function categorizeDiffFile(file: string | CategorizableDiffFile): DiffFileCategory {
-  const path = diffFilePath(file);
+  const path = typeof file === "string" ? file : file.path;
   const parts = pathParts(path);
   const base = basename(path);
   const ext = extension(path);
