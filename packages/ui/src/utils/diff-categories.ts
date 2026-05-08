@@ -10,10 +10,10 @@ export const diffFileCategoryOptions: {
   label: string;
 }[] = [
   { value: "plansDocs", label: "Plans/docs" },
-  { value: "generated", label: "Generated" },
   { value: "code", label: "Code" },
   { value: "tests", label: "Tests" },
   { value: "other", label: "Other" },
+  { value: "generated", label: "Generated" },
   { value: "all", label: "All" },
 ];
 
