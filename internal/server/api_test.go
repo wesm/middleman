@@ -14142,6 +14142,136 @@ func TestWorkspaceRuntimeShellTerminalWebSocketE2E(t *testing.T) {
 	require.Contains(got.String(), "echo:ping")
 }
 
+// TestWorkspaceRuntimeShellTerminalDeliversExitFrameE2E pins the
+// websocket "exited" text frame contract. Without it, the frontend's
+// ShellDrawer never fires its onExit handler, so the drawer doesn't
+// auto-close on shell exit and the user is stranded on a dead session
+// (TerminalPane reconnect-loops on a still-listed-but-output-dead
+// session, which looks like a hang).
+//
+// The frame is the only client-visible signal that the shell ended;
+// the existing WebSocket test pair (this and the runtime-session
+// variant below) prove only that bytes flow during the session. They
+// silently passed when the bridge dropped the exit frame on the
+// outputDone path.
+func TestWorkspaceRuntimeShellTerminalDeliversExitFrameE2E(t *testing.T) {
+	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
+
+	require := require.New(t)
+	cfg := &config.Config{
+		Shell: config.Shell{
+			Command: serverRuntimeHelperCommand("exit"),
+		},
+	}
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	shellResp, err := client.HTTP.EnsureWorkspaceRuntimeShellWithResponse(
+		ctx, ws.Id,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, shellResp.StatusCode())
+
+	ts := httptest.NewServer(srv)
+	t.Cleanup(ts.Close)
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
+		"/ws/v1/workspaces/" + ws.Id +
+		"/runtime/shell/terminal?cols=80&rows=24"
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	require.NoError(err)
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+
+	readCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	for {
+		typ, data, readErr := conn.Read(readCtx)
+		if readErr != nil {
+			require.Failf(
+				"never received exit frame",
+				"read err before exit frame: %v", readErr,
+			)
+		}
+		if typ != websocket.MessageText {
+			continue
+		}
+		var msg struct {
+			Type string `json:"type"`
+			Code int    `json:"code"`
+		}
+		require.NoError(json.Unmarshal(data, &msg))
+		require.Equal("exited", msg.Type)
+		require.Equal(3, msg.Code)
+		return
+	}
+}
+
+// TestWorkspaceRuntimeEnsureShellAfterExitStartsFreshE2E pins the
+// behavior that an EnsureShell call following a previous shell's exit
+// always returns a fresh session, never the dead one. Without the
+// runningSession outputClosed check, drainOutput's PTY EOF is observed
+// before watchSession's cmd.Wait returns; during that window the
+// session sits in m.shells with Status=Running but no live PTY, and
+// EnsureShell would reuse it — yielding a "starting" session whose
+// terminal never produces a single byte.
+func TestWorkspaceRuntimeEnsureShellAfterExitStartsFreshE2E(t *testing.T) {
+	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
+
+	require := require.New(t)
+	assert := Assert.New(t)
+	cfg := &config.Config{
+		Shell: config.Shell{
+			Command: serverRuntimeHelperCommand("exit"),
+		},
+	}
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	first, err := client.HTTP.EnsureWorkspaceRuntimeShellWithResponse(
+		ctx, ws.Id,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, first.StatusCode())
+	require.NotNil(first.JSON200)
+	firstCreatedAt := first.JSON200.CreatedAt
+
+	// Drive the first shell to exit by attaching once. The "exit"
+	// helper exits immediately with code 3; bridgeRuntimeAttachment
+	// observes outputDone and closes.
+	ts := httptest.NewServer(srv)
+	t.Cleanup(ts.Close)
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
+		"/ws/v1/workspaces/" + ws.Id +
+		"/runtime/shell/terminal?cols=80&rows=24"
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	require.NoError(err)
+	for {
+		readCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		_, _, readErr := conn.Read(readCtx)
+		cancel()
+		if readErr != nil {
+			break
+		}
+	}
+	conn.Close(websocket.StatusNormalClosure, "done")
+
+	// Re-ensure right away — within the watchSession-completes window
+	// where the previous session can still be sitting in the manager
+	// map. The new shell must be a fresh one.
+	second, err := client.HTTP.EnsureWorkspaceRuntimeShellWithResponse(
+		ctx, ws.Id,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, second.StatusCode())
+	require.NotNil(second.JSON200)
+	assert.NotEqual(
+		firstCreatedAt, second.JSON200.CreatedAt,
+		"second EnsureShell must return a fresh session, not the just-exited one",
+	)
+	assert.Equal(string(localruntime.SessionStatusRunning), second.JSON200.Status)
+}
+
 func TestWorkspaceRuntimeSessionTerminalWebSocketE2E(t *testing.T) {
 	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
 

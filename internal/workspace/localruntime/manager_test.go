@@ -946,6 +946,63 @@ func TestManagerShellSingletonPerWorkspace(t *testing.T) {
 	assert.Empty(mgr.ListSessions("ws-1"))
 }
 
+// TestManagerEnsureShellSkipsZombieSessions pins the runningSession
+// outputClosed check that prevents EnsureShell from returning a
+// session whose drainOutput already saw PTY EOF but whose
+// watchSession's cmd.Wait hasn't fired yet.
+//
+// Wrapped shells (systemd-run --wait, etc.) routinely sit in this
+// "output dead, status still Running" window after the inner zsh
+// exits while the wrapper does its cleanup. Without this guard,
+// EnsureShell would hand the next caller a snapshot of the zombie:
+// status=Running, but a closed Output channel that yields nothing.
+// The frontend then mounts a TerminalPane, attaches, gets the exit
+// frame instantly, auto-closes — and on the user's next click does
+// it all over again until the zombie is finally collected. From the
+// user's seat that looks like a hang.
+func TestManagerEnsureShellSkipsZombieSessions(t *testing.T) {
+	requirePTYAvailable(t)
+	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+	mgr := NewManager(Options{
+		ShellCommand: helperCommand("sleep"),
+	})
+	t.Cleanup(mgr.Shutdown)
+
+	first, err := mgr.EnsureShell(ctx, "ws-1", t.TempDir())
+	require.NoError(err)
+	require.Equal(SessionStatusRunning, first.Status)
+
+	// Reach into the manager state and synthesize the zombie window:
+	// outputClosed flipped while the watchSession goroutine is still
+	// blocked on cmd.Wait (the helperCommand("sleep") process never
+	// exits, so cmd.Wait won't return until Shutdown kills it).
+	mgr.mu.Lock()
+	s := mgr.shells[first.Key]
+	mgr.mu.Unlock()
+	require.NotNil(s, "shell session should be in m.shells")
+	s.mu.Lock()
+	s.outputClosed = true
+	s.mu.Unlock()
+
+	second, err := mgr.EnsureShell(ctx, "ws-1", t.TempDir())
+	require.NoError(err)
+	assert.Equal(SessionStatusRunning, second.Status)
+	assert.NotEqual(
+		first.CreatedAt, second.CreatedAt,
+		"EnsureShell after a zombie must return a fresh session",
+	)
+	// The new session replaces the zombie in the map.
+	mgr.mu.Lock()
+	current := mgr.shells[first.Key]
+	mgr.mu.Unlock()
+	assert.NotSame(s, current,
+		"the zombie should have been replaced, not reused")
+}
+
 func TestManagerShellConcurrentStartsOneProcess(t *testing.T) {
 	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")

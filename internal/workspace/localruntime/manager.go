@@ -1323,12 +1323,27 @@ func (m *Manager) runningSession(
 		return nil
 	}
 	info := s.snapshot()
-	if info.Status == SessionStatusRunning ||
-		info.Status == SessionStatusStarting {
-		return s
+	if info.Status != SessionStatusRunning &&
+		info.Status != SessionStatusStarting {
+		delete(sessions, key)
+		return nil
 	}
-	delete(sessions, key)
-	return nil
+	// drainOutput closes outputClosed as soon as the PTY hits EOF, but
+	// watchSession only marks Status=Exited once cmd.Wait returns —
+	// which can lag noticeably for wrapped commands (systemd-run
+	// --wait, etc.). Treating those output-dead sessions as still
+	// "running" hands callers a zombie they can attach to but never
+	// receive any bytes from. Reject them so EnsureShell/Launch start
+	// a fresh session; the lingering watchSession will overwrite-or-
+	// skip the map entry on its own (removeExitedSession's identity
+	// check guards against double-cleanup).
+	s.mu.Lock()
+	outputClosed := s.outputClosed
+	s.mu.Unlock()
+	if outputClosed {
+		return nil
+	}
+	return s
 }
 
 func (m *Manager) session(

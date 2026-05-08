@@ -270,15 +270,18 @@ func bridgeRuntimeAttachment(
 		cancel()
 		return false
 	case <-outputDone:
-		select {
-		case <-attachment.Done:
-			cancel()
-			writeRuntimeExit(conn, attachment.Info())
-			return true
-		case <-time.After(100 * time.Millisecond):
-			cancel()
-			return false
-		}
+		// Output channel closed = drainOutput observed PTY EOF, which
+		// is the client-visible "session is over" signal. Process exit
+		// (attachment.Done) follows in a separate goroutine and can lag
+		// noticeably when the session is wrapped (e.g. systemd-run
+		// --wait collecting the transient unit), so don't gate the exit
+		// frame on it — clients that miss the frame reconnect-loop on a
+		// dead session and never fire their onExit handler. ExitCode
+		// may not be populated yet; writeRuntimeExit emits -1 in that
+		// case, which the frontend treats the same as any other exit.
+		cancel()
+		writeRuntimeExit(conn, attachment.Info())
+		return true
 	case <-ctx.Done():
 		return false
 	}
