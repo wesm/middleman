@@ -176,9 +176,10 @@ export const defaultActions: Action[] = [
     ],
     priority: 0,
     when: always,
-    handler: () => {
-      throw new Error("not yet wired");
-    },
+    // Stubbed until Task 17 lands palette-state. No-op rather than throw so
+    // pressing the binding doesn't surface a flash toast every time during
+    // the staged rollout. The real handler replaces this in stage 6.
+    handler: () => {},
   },
   {
     id: "cheatsheet.open",
@@ -187,9 +188,8 @@ export const defaultActions: Action[] = [
     binding: { key: "?" },
     priority: 0,
     when: always,
-    handler: () => {
-      throw new Error("not yet wired");
-    },
+    // Stubbed until Task 24 lands cheatsheet-state — see palette.open above.
+    handler: () => {},
   },
   {
     id: "sync.repos",
