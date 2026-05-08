@@ -5,8 +5,13 @@ import {
   registerScopedActions,
   resetRegistry,
 } from "./registry.svelte.js";
-import { resetModalStack } from "@middleman/ui/stores/keyboard/modal-stack";
+import {
+  pushModalFrame,
+  resetModalStack,
+} from "@middleman/ui/stores/keyboard/modal-stack";
 import type { Action, Context } from "./types.js";
+
+const flashModule = await import("@middleman/ui/stores/flash");
 
 const ctx: Context = {
   page: "pulls",
@@ -60,5 +65,70 @@ describe("dispatchKeydown — global registry", () => {
     registerScopedActions("test", [a]);
     dispatchKeydown(event({ key: "j" }), () => ctx);
     expect(handler).not.toHaveBeenCalled();
+  });
+});
+
+describe("dispatchKeydown — modal stack", () => {
+  beforeEach(() => {
+    resetRegistry();
+    resetModalStack();
+  });
+
+  it("blocks global handlers when modal stack is non-empty", () => {
+    const globalHandler = vi.fn();
+    registerScopedActions("g", [
+      {
+        id: "g.next",
+        label: "x",
+        scope: "view-pulls",
+        binding: { key: "j" },
+        priority: 0,
+        when: () => true,
+        handler: globalHandler,
+      },
+    ]);
+    pushModalFrame("modal", []);
+    dispatchKeydown(event({ key: "j" }), () => ctx);
+    expect(globalHandler).not.toHaveBeenCalled();
+  });
+
+  it("preventDefaults reserved keys (Cmd+K) when no frame action matches", () => {
+    pushModalFrame("modal", []);
+    const e = event({ key: "k", metaKey: true });
+    dispatchKeydown(e, () => ctx);
+    expect(e.preventDefault).toHaveBeenCalled();
+  });
+
+  it("does NOT preventDefault unmatched non-reserved keys", () => {
+    pushModalFrame("modal", []);
+    const e = event({ key: "x" });
+    dispatchKeydown(e, () => ctx);
+    expect(e.preventDefault).not.toHaveBeenCalled();
+  });
+});
+
+describe("dispatchKeydown — error handling", () => {
+  beforeEach(() => {
+    resetRegistry();
+    resetModalStack();
+  });
+
+  it("routes async handler rejections to flash with the Error message", async () => {
+    const flash = vi.spyOn(flashModule, "showFlash").mockImplementation(() => {});
+    registerScopedActions("e", [
+      {
+        id: "fail",
+        label: "Fail",
+        scope: "global",
+        binding: { key: "j" },
+        priority: 0,
+        when: () => true,
+        handler: () => Promise.reject(new Error("boom")),
+      },
+    ]);
+    dispatchKeydown(event({ key: "j" }), () => ctx);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(flash).toHaveBeenCalledWith(expect.stringContaining("boom"));
+    flash.mockRestore();
   });
 });

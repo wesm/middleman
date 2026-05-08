@@ -1,4 +1,5 @@
 import { getStack } from "@middleman/ui/stores/keyboard/modal-stack";
+import { showFlash } from "@middleman/ui/stores/flash";
 import { getAllActions } from "./registry.svelte.js";
 import { shouldIgnoreGlobalShortcutTarget } from "../../utils/keyboardShortcuts.js";
 import type { Action, Context, KeySpec } from "./types.js";
@@ -29,7 +30,7 @@ export function dispatchKeydown(
         if (!matches(a.binding, event)) continue;
         if (a.when && !a.when(modalCtx)) continue;
         event.preventDefault();
-        void a.handler(modalCtx);
+        runHandler(a, modalCtx);
         return;
       }
     }
@@ -57,7 +58,34 @@ export function dispatchKeydown(
   });
 
   event.preventDefault();
-  void matchingActions[0]!.handler(ctx);
+  runHandler(matchingActions[0]!, ctx);
+}
+
+interface RunnableAction {
+  id: string;
+  handler: (ctx: Context) => void | Promise<void>;
+}
+
+function runHandler(action: RunnableAction, ctx: Context): void {
+  try {
+    const result = action.handler(ctx);
+    if (result && typeof (result as Promise<void>).catch === "function") {
+      (result as Promise<void>).catch((err: unknown) =>
+        surfaceError(action.id, err),
+      );
+    }
+  } catch (err) {
+    surfaceError(action.id, err);
+  }
+}
+
+function surfaceError(actionId: string, err: unknown): void {
+  const msg = err instanceof Error && err.message ? err.message : "Command failed";
+  if (!(err instanceof Error) || !err.message) {
+    // eslint-disable-next-line no-console
+    console.error(`keyboard action ${actionId} failed`, err);
+  }
+  showFlash(msg);
 }
 
 function matches(spec: Action["binding"] | KeySpec, event: KeyboardEvent): boolean {
