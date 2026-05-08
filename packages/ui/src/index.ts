@@ -49,6 +49,7 @@ export {
   buildPullRequestRoute,
   buildRoutedItemRoute,
 } from "./routes.js";
+export { supportsLocked } from "./api/provider-capabilities.js";
 export type {
   FocusListRouteRef,
   IssueRouteRef,

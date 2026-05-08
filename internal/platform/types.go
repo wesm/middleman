@@ -69,6 +69,7 @@ type MergeRequest struct {
 	AuthorDisplayName  string
 	State              string
 	IsDraft            bool
+	IsLocked           bool
 	Body               string
 	HeadBranch         string
 	BaseBranch         string

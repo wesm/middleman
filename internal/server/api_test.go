@@ -41,6 +41,7 @@ import (
 	"github.com/wesm/middleman/internal/gitenv"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/platform"
+	"github.com/wesm/middleman/internal/platform/gitealike"
 	"github.com/wesm/middleman/internal/stacks"
 	"github.com/wesm/middleman/internal/testutil"
 	"github.com/wesm/middleman/internal/workspace"
@@ -8608,6 +8609,215 @@ func assertUnsupportedCapabilityProblem(
 	assert.Equal(capability, problem.Errors[0].Value["capability"])
 }
 
+func TestAPIGitealikeLockedPRPersistsThroughServer(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	base := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	transport := &lockedGitealikeTransport{
+		repo: gitealike.RepositoryDTO{
+			ID:            101,
+			Owner:         gitealike.UserDTO{UserName: "forgejo"},
+			Name:          "tea",
+			FullName:      "forgejo/tea",
+			HTMLURL:       "https://codeberg.test/forgejo/tea",
+			CloneURL:      "https://codeberg.test/forgejo/tea.git",
+			DefaultBranch: "main",
+			Created:       base,
+			Updated:       base,
+		},
+		pull: gitealike.PullRequestDTO{
+			ID:       201,
+			Index:    7,
+			HTMLURL:  "https://codeberg.test/forgejo/tea/pulls/7",
+			Title:    "Locked tea",
+			User:     gitealike.UserDTO{UserName: "alice"},
+			State:    "open",
+			Draft:    false,
+			IsLocked: true,
+			Head:     gitealike.BranchDTO{Ref: "feature", SHA: "abc123"},
+			Base:     gitealike.BranchDTO{Ref: "main", SHA: "def456"},
+			Created:  base,
+			Updated:  base.Add(time.Minute),
+		},
+	}
+	provider := gitealike.NewProvider(platform.KindForgejo, "codeberg.test", transport)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(database.Close()) })
+
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry,
+		database,
+		nil,
+		[]ghclient.RepoRef{{
+			Platform:     platform.KindForgejo,
+			PlatformHost: "codeberg.test",
+			Owner:        "forgejo",
+			Name:         "tea",
+			RepoPath:     "forgejo/tea",
+		}},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	syncer.RunOnce(ctx)
+	require.NoError(syncer.SyncMR(ctx, "forgejo", "tea", 7))
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "forgejo",
+		PlatformHost: "codeberg.test",
+		RepoPath:     "forgejo/tea",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.False(mr.IsDraft)
+	assert.True(mr.IsLocked)
+
+	pullResp, err := client.HTTP.GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberWithResponse(
+		ctx, "codeberg.test", "forgejo", "forgejo", "tea", 7,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, pullResp.StatusCode(), string(pullResp.Body))
+	require.NotNil(pullResp.JSON200)
+	assert.False(pullResp.JSON200.MergeRequest.IsDraft)
+	assert.True(pullResp.JSON200.MergeRequest.IsLocked)
+}
+
+type lockedGitealikeTransport struct {
+	repo gitealike.RepositoryDTO
+	pull gitealike.PullRequestDTO
+}
+
+func (t *lockedGitealikeTransport) GetRepository(
+	context.Context,
+	string,
+	string,
+) (gitealike.RepositoryDTO, error) {
+	return t.repo, nil
+}
+
+func (t *lockedGitealikeTransport) ListUserRepositories(
+	context.Context,
+	string,
+	gitealike.PageOptions,
+) ([]gitealike.RepositoryDTO, gitealike.Page, error) {
+	return []gitealike.RepositoryDTO{t.repo}, gitealike.Page{}, nil
+}
+
+func (t *lockedGitealikeTransport) ListOrgRepositories(
+	context.Context,
+	string,
+	gitealike.PageOptions,
+) ([]gitealike.RepositoryDTO, gitealike.Page, error) {
+	return []gitealike.RepositoryDTO{t.repo}, gitealike.Page{}, nil
+}
+
+func (t *lockedGitealikeTransport) ListOpenPullRequests(
+	context.Context,
+	platform.RepoRef,
+	gitealike.PageOptions,
+) ([]gitealike.PullRequestDTO, gitealike.Page, error) {
+	return []gitealike.PullRequestDTO{t.pull}, gitealike.Page{}, nil
+}
+
+func (t *lockedGitealikeTransport) GetPullRequest(
+	context.Context,
+	platform.RepoRef,
+	int,
+) (gitealike.PullRequestDTO, error) {
+	return t.pull, nil
+}
+
+func (t *lockedGitealikeTransport) ListPullRequestComments(
+	context.Context,
+	platform.RepoRef,
+	int,
+	gitealike.PageOptions,
+) ([]gitealike.CommentDTO, gitealike.Page, error) {
+	return nil, gitealike.Page{}, nil
+}
+
+func (t *lockedGitealikeTransport) ListPullRequestReviews(
+	context.Context,
+	platform.RepoRef,
+	int,
+	gitealike.PageOptions,
+) ([]gitealike.ReviewDTO, gitealike.Page, error) {
+	return nil, gitealike.Page{}, nil
+}
+
+func (t *lockedGitealikeTransport) ListPullRequestCommits(
+	context.Context,
+	platform.RepoRef,
+	int,
+	gitealike.PageOptions,
+) ([]gitealike.CommitDTO, gitealike.Page, error) {
+	return nil, gitealike.Page{}, nil
+}
+
+func (t *lockedGitealikeTransport) ListOpenIssues(
+	context.Context,
+	platform.RepoRef,
+	gitealike.PageOptions,
+) ([]gitealike.IssueDTO, gitealike.Page, error) {
+	return nil, gitealike.Page{}, nil
+}
+
+func (t *lockedGitealikeTransport) GetIssue(
+	context.Context,
+	platform.RepoRef,
+	int,
+) (gitealike.IssueDTO, error) {
+	return gitealike.IssueDTO{}, platform.ErrNotFound
+}
+
+func (t *lockedGitealikeTransport) ListIssueComments(
+	context.Context,
+	platform.RepoRef,
+	int,
+	gitealike.PageOptions,
+) ([]gitealike.CommentDTO, gitealike.Page, error) {
+	return nil, gitealike.Page{}, nil
+}
+
+func (t *lockedGitealikeTransport) ListReleases(
+	context.Context,
+	platform.RepoRef,
+	gitealike.PageOptions,
+) ([]gitealike.ReleaseDTO, gitealike.Page, error) {
+	return nil, gitealike.Page{}, nil
+}
+
+func (t *lockedGitealikeTransport) ListTags(
+	context.Context,
+	platform.RepoRef,
+	gitealike.PageOptions,
+) ([]gitealike.TagDTO, gitealike.Page, error) {
+	return nil, gitealike.Page{}, nil
+}
+
+func (t *lockedGitealikeTransport) ListStatuses(
+	context.Context,
+	platform.RepoRef,
+	string,
+	gitealike.PageOptions,
+) ([]gitealike.StatusDTO, gitealike.Page, error) {
+	return nil, gitealike.Page{}, nil
+}
+
 func TestProviderIssueRouteGeneratedClientEscapesGitLabRepoPath(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -9421,6 +9631,7 @@ func TestAPIActivityStartupRepairsLegacyTimestampStorage(t *testing.T) {
 			DROP INDEX IF EXISTS idx_merge_requests_repo_platform_external_id;
 			DROP INDEX IF EXISTS idx_repos_provider_path_key;
 			DROP INDEX IF EXISTS idx_repos_platform_repo_id;
+			ALTER TABLE middleman_merge_requests DROP COLUMN is_locked;
 			ALTER TABLE middleman_mr_events DROP COLUMN platform_external_id;
 			ALTER TABLE middleman_labels DROP COLUMN platform_external_id;
 			ALTER TABLE middleman_issues DROP COLUMN platform_external_id;

@@ -2008,6 +2008,7 @@ export interface components {
             /** Format: int64 */
             ID: number;
             IsDraft: boolean;
+            IsLocked: boolean;
             KanbanStatus: string;
             /** Format: date-time */
             LastActivityAt: string;
@@ -2077,6 +2078,7 @@ export interface components {
             /** Format: int64 */
             ID: number;
             IsDraft: boolean;
+            IsLocked: boolean;
             KanbanStatus: string;
             /** Format: date-time */
             LastActivityAt: string;

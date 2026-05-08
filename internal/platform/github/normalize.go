@@ -29,6 +29,7 @@ func NormalizePullRequest(repo platform.RepoRef, ghPR *gh.PullRequest) (platform
 		AuthorDisplayName:  nameOrEmpty(ghPR.GetUser()),
 		State:              ghPR.GetState(),
 		IsDraft:            ghPR.GetDraft(),
+		IsLocked:           ghPR.GetLocked(),
 		Body:               ghPR.GetBody(),
 		Additions:          ghPR.GetAdditions(),
 		Deletions:          ghPR.GetDeletions(),

@@ -27,6 +27,7 @@ func TestAdaptPR(t *testing.T) {
 		Title:          "Fix bug",
 		State:          "OPEN",
 		IsDraft:        true,
+		Locked:         true,
 		Body:           "Fixes #1",
 		URL:            "https://github.com/o/r/pull/42",
 		Additions:      10,
@@ -51,6 +52,7 @@ func TestAdaptPR(t *testing.T) {
 	assert.Equal("Fix bug", pr.GetTitle())
 	assert.Equal("open", pr.GetState())
 	assert.True(pr.GetDraft())
+	assert.True(pr.GetLocked())
 	assert.Equal("Fixes #1", pr.GetBody())
 	assert.Equal("https://github.com/o/r/pull/42", pr.GetHTMLURL())
 	assert.Equal(10, pr.GetAdditions())

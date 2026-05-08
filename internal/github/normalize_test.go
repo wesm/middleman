@@ -50,6 +50,7 @@ func TestNormalizePR_OpenPR(t *testing.T) {
 		User:      &gh.User{Login: new("alice")},
 		State:     new("open"),
 		Draft:     new(false),
+		Locked:    new(true),
 		Body:      new("description"),
 		Additions: new(10),
 		Deletions: new(5),
@@ -75,6 +76,7 @@ func TestNormalizePR_OpenPR(t *testing.T) {
 	assert.Equal("alice", pr.Author)
 	assert.Equal("open", pr.State)
 	assert.False(pr.IsDraft)
+	assert.True(pr.IsLocked)
 	assert.Equal("description", pr.Body)
 	assert.Equal(10, pr.Additions)
 	assert.Equal(5, pr.Deletions)
