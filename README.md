@@ -61,7 +61,8 @@ Expandable check run section on each PR shows pass/fail/pending status with colo
 ### Other
 
 - **Dark mode** -- auto-detects system preference, with a manual toggle
-- **GitHub Enterprise and GitLab** -- set `platform`/`platform_host` per repo to connect to other provider hosts
+- **GitHub Enterprise, GitLab, Forgejo, and Gitea** -- set
+  `platform`/`platform_host` per repo to connect to other provider hosts
 - **Copy to clipboard** -- one-click copy of PR/issue bodies and comments
 - **Settings UI** -- add/remove repos and configure activity feed defaults from the browser
 - **Reverse proxy support** -- deploy behind a proxy with the `base_path` config
@@ -73,7 +74,9 @@ Expandable check run section on each PR shows pass/fail/pending status with colo
 
 - Go 1.26+
 - [Bun](https://bun.sh/) (or install via [mise](https://mise.jdx.dev/))
-- A GitHub token (classic or fine-grained with repo read access), or a configured GitLab token for GitLab-only configs
+- A provider token with read access to the configured repos. GitHub can use a
+  classic or fine-grained token; GitLab, Forgejo, and Gitea use host-scoped
+  tokens from config.
 
 ### Build and run
 
@@ -141,7 +144,18 @@ platform_host = "github.corp.example.com"
 token_env = "GHE_TOKEN"
 ```
 
-Each distinct host can use a separate token env var. Repos without `platform_host` default to `github.com`. Set `default_platform_host` when you want another host to be hidden as the implied repository host in the UI.
+Tokens are looked up by `(provider, host)`. Each distinct host can use a
+separate token env var, so `github.com`, a GitHub Enterprise host, `gitlab.com`,
+`codeberg.org`, and a private Gitea host do not share credentials unless you
+explicitly point them at the same env var. Repos without `platform_host` default
+to that provider's public host: `github.com`, `gitlab.com`, `codeberg.org`, or
+`gitea.com`. Set `default_platform_host` when you want another host to be hidden
+as the implied repository host in the UI.
+
+Minimum read access is enough for sync: repository metadata, pull or merge
+requests, issues, comments, commits, tags, releases, and CI/status data. Enable
+write access only if you want middleman to post comments, edit titles/bodies,
+change issue or PR state, approve reviews, or merge.
 
 GitLab hosts are configured through `[[platforms]]`, then referenced by repos:
 
@@ -163,6 +177,55 @@ GitLab nested namespaces are preserved in `owner` and `repo_path`. Mutating
 actions are exposed only when the provider reports support for that capability;
 unsupported provider actions return a typed capability error instead of trying a
 GitHub-only route.
+
+Forgejo and Gitea use the same provider-host shape. Public Forgejo defaults to
+Codeberg, and public Gitea defaults to gitea.com:
+
+```toml
+[[repos]]
+platform = "forgejo"
+platform_host = "codeberg.org"
+owner = "forgejo"
+name = "forgejo"
+
+[[repos]]
+platform = "gitea"
+platform_host = "gitea.com"
+owner = "gitea"
+name = "tea"
+```
+
+Self-hosted Forgejo and Gitea instances should be declared in `[[platforms]]`
+with their own token env var, then referenced from repos:
+
+```toml
+[[platforms]]
+type = "forgejo"
+host = "forgejo.internal.example"
+token_env = "FORGEJO_INTERNAL_TOKEN"
+
+[[platforms]]
+type = "gitea"
+host = "gitea.internal.example"
+token_env = "GITEA_INTERNAL_TOKEN"
+
+[[repos]]
+platform = "forgejo"
+platform_host = "forgejo.internal.example"
+owner = "team"
+name = "service"
+
+[[repos]]
+platform = "gitea"
+platform_host = "gitea.internal.example"
+owner = "team"
+name = "ops"
+```
+
+Forgejo and Gitea preserve owner and repo casing as returned by the server.
+Unlike GitLab, nested owners are not supported for these providers; `repo_path`
+is normally the same as `owner/name` and is most useful when middleman parsed a
+repository URL or needs to preserve provider-canonical casing.
 
 ## Embedding
 
@@ -198,7 +261,7 @@ Middleman is a single Go binary with the Svelte frontend embedded at build time.
 ```
 middleman binary
   |- Config loader (TOML)
-  |- Sync engine -> provider registry (GitHub/GitLab readers)
+  |- Sync engine -> provider registry (GitHub/GitLab/Forgejo/Gitea readers)
   |- SQLite database (WAL mode, pure Go driver)
   +- HTTP server (Huma) -> REST API + embedded SPA
 ```

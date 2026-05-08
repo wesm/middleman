@@ -11,7 +11,8 @@ Repository identity is `(platform, platform_host, owner, name)`, with
 `repo_path` as the provider-canonical full path and provider IDs used for
 reconciliation when available.
 
-- `platform` is the provider kind, such as `github` or `gitlab`.
+- `platform` is the provider kind, such as `github`, `gitlab`, `forgejo`, or
+  `gitea`.
 - `platform_host` is the normalized host for that provider. Preserve ports.
 - `owner` and `name` are provider-canonical display/config fields.
 - `repo_path` carries the full provider path when `owner/name` is not enough.
@@ -22,6 +23,11 @@ GitLab nested namespaces make `repo_path` mandatory for reliable addressing:
 `group/subgroup/project` has owner `group/subgroup` and name `project`.
 GitHub repositories can continue to omit `repo_path` when the path is exactly
 `owner/name`.
+
+Forgejo and Gitea use GitHub-like two-segment repository paths. Preserve
+provider-canonical owner/name casing; do not lowercase them like GitLab.
+`repo_path` is normally `owner/name` and is primarily a canonicalization aid for
+URL-parsed config or provider responses.
 
 Do not identify repos, merge requests, issues, events, stars, workspaces, or
 activity rows by owner/name/number alone. Thread the full provider ref through
@@ -34,6 +40,8 @@ Each configured provider host may have its own token env var.
 
 - Legacy GitHub config still defaults to `github` on `github.com`.
 - GitLab public config defaults to `gitlab.com`.
+- Forgejo public config defaults to `codeberg.org`.
+- Gitea public config defaults to `gitea.com`.
 - Self-hosted hosts are hostnames with optional ports, not URL paths.
 - A missing token should fail only the provider host that needs it.
 
@@ -41,7 +49,21 @@ Provider clients must be registered by `(platform, platform_host)`. Provider
 startup builds host-scoped rate trackers, budgets, clone tokens, GitHub GraphQL
 fetchers where applicable, and a `platform.Registry`. A third provider should
 add metadata, a factory, and an implementation; it should not masquerade as
-GitHub or GitLab.
+GitHub, GitLab, Forgejo, or Gitea.
+
+Token lookup is also scoped by `(provider, platform_host)`. A repo-level
+`token_env` overrides that repo. Otherwise the configured `[[platforms]]`
+entry for the same provider/host wins, then the provider public-host default is
+used where supported: `MIDDLEMAN_GITHUB_TOKEN`, `MIDDLEMAN_GITLAB_TOKEN`,
+`MIDDLEMAN_FORGEJO_TOKEN`, or `MIDDLEMAN_GITEA_TOKEN`. Do not let a token for
+one provider host leak into another host with the same hostname string under a
+different provider kind.
+
+Minimum read scope should cover repository metadata, merge requests or pull
+requests, issues, comments, commits, tags, releases, and CI/status data. Write
+scopes are only required for mutation capabilities: comments, issue creation,
+issue or PR content/state changes, merge, review approval, workflow approval,
+or ready-for-review.
 
 ## Sync Capabilities
 
@@ -54,6 +76,10 @@ registry helpers return typed errors for missing providers or capabilities.
   platform error, not break unrelated sync work.
 - Mutation routes must check provider capabilities before posting comments,
   changing state, merging, requesting review, or approving workflows.
+- Forgejo and Gitea currently expose only SDK-proven mutations: comments,
+  issue creation, issue and PR content/state edits, merge, and review approval.
+  Workflow approval and ready-for-review must remain hidden or return typed
+  `unsupported_capability` errors until proven per provider.
 - GitHub GraphQL bulk fetch, ETag recovery, and detailed diff behavior are
   GitHub-only optimizations. Keep them optional around the neutral persistence
   path.
@@ -70,6 +96,22 @@ preserve `path_with_namespace` as `repo_path`.
 GitLab merge request and issue `iid` values are repo-scoped numbers. Persist
 provider object ids separately from user-visible numbers, and scope events by
 provider identity so equal GitHub/GitLab ids do not collide.
+
+## Forgejo And Gitea Shape
+
+Forgejo and Gitea use owner/name repository addressing in the REST and SDK
+surfaces. Middleman should still persist provider repo IDs and external object
+IDs when available, but route and config identity should remain
+`(provider, host, owner, name)` with optional `repo_path` for canonical display.
+
+Codeberg is Forgejo's public host. gitea.com is Gitea's public host.
+Self-hosted Forgejo and Gitea instances are separate provider-host entries even
+when they have the same owner/name pairs as public repos.
+
+Actions/CI parity is provider-specific. Forgejo reads Actions runs through the
+shared gitealike provider when the SDK exposes them. Gitea should not claim
+workflow approval or ready-for-review support unless the provider interface and
+server/UI capability tests prove those exact operations.
 
 ## Import And Routes
 
@@ -104,4 +146,6 @@ Provider work should be covered at the boundary where a regression would show:
   too weak to catch endpoint or auth drift.
 
 Run Go tests with `-shuffle=on`. Use the GitLab CE container fixture for
-changes that need real GitLab REST behavior.
+changes that need real GitLab REST behavior. Use the optional Forgejo/Gitea
+container fixtures when fake transports are too weak to prove gitealike REST
+behavior.
