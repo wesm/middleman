@@ -114,6 +114,7 @@ export interface DiffFile {
   old_path: string;
   status: "added" | "modified" | "deleted" | "renamed" | "copied";
   is_binary: boolean;
+  is_generated?: boolean;
   is_whitespace_only: boolean;
   additions: number;
   deletions: number;

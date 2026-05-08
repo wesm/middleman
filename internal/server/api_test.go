@@ -10111,6 +10111,97 @@ func TestAPIGetFiles503WhenCloneManagerNil(t *testing.T) {
 	require.Equal(http.StatusServiceUnavailable, resp.StatusCode())
 }
 
+func TestAPIGetFilesAndDiffMarkGeneratedFilesE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+
+	dir := t.TempDir()
+	database, err := db.Open(filepath.Join(dir, "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { database.Close() })
+
+	bareDir := filepath.Join(dir, "clones")
+	bare := filepath.Join(bareDir, "github.com", "acme", "widget.git")
+	require.NoError(os.MkdirAll(filepath.Dir(bare), 0o755))
+
+	work := filepath.Join(dir, "work")
+	runGit(t, dir, "init", "--bare", "--initial-branch=main", bare)
+	runGit(t, dir, "clone", bare, work)
+	runGit(t, work, "config", "user.email", "test@test.com")
+	runGit(t, work, "config", "user.name", "Test")
+
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "base.txt"),
+		[]byte("base\n"), 0o644,
+	))
+	runGit(t, work, "add", ".")
+	runGit(t, work, "commit", "-m", "base commit")
+	runGit(t, work, "push", "origin", "main")
+	mergeBase := testGitSHA(t, work, "HEAD")
+
+	runGit(t, work, "checkout", "-b", "feature")
+	require.NoError(os.WriteFile(
+		filepath.Join(work, ".gitattributes"),
+		[]byte("dist/** linguist-generated\nbun.lock -linguist-generated\n"), 0o644,
+	))
+	require.NoError(os.MkdirAll(filepath.Join(work, "dist"), 0o755))
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "dist", "api.ts"),
+		[]byte("export const generated = true;\n"), 0o644,
+	))
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "bun.lock"),
+		[]byte("# lock\n"), 0o644,
+	))
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "src.ts"),
+		[]byte("export const source = true;\n"), 0o644,
+	))
+	runGit(t, work, "add", ".")
+	runGit(t, work, "commit", "-m", "feature commit")
+	runGit(t, work, "push", "origin", "feature")
+	headSHA := testGitSHA(t, work, "HEAD")
+
+	clones := gitclone.New(bareDir, nil)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, nil, defaultTestRepos, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{Clones: clones})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	seedPR(t, database, "acme", "widget", 1)
+	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	require.NoError(err)
+	require.NoError(database.UpdateDiffSHAs(ctx, repoID, 1, headSHA, mergeBase, mergeBase))
+
+	filesResp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberFilesWithResponse(
+		ctx, "gh", "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, filesResp.StatusCode(), string(filesResp.Body))
+	require.NotNil(filesResp.JSON200)
+	require.NotNil(filesResp.JSON200.Files)
+	assert.True(requireWorkspaceDiffFile(t, *filesResp.JSON200.Files, "dist/api.ts").IsGenerated)
+	assert.False(requireWorkspaceDiffFile(t, *filesResp.JSON200.Files, "bun.lock").IsGenerated)
+	assert.False(requireWorkspaceDiffFile(t, *filesResp.JSON200.Files, "src.ts").IsGenerated)
+
+	diffResp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberDiffWithResponse(
+		ctx, "gh", "acme", "widget", 1,
+		nil,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, diffResp.StatusCode(), string(diffResp.Body))
+	require.NotNil(diffResp.JSON200)
+	require.NotNil(diffResp.JSON200.Files)
+	assert.True(requireWorkspaceDiffFile(t, *diffResp.JSON200.Files, "dist/api.ts").IsGenerated)
+	assert.False(requireWorkspaceDiffFile(t, *diffResp.JSON200.Files, "bun.lock").IsGenerated)
+	assert.False(requireWorkspaceDiffFile(t, *diffResp.JSON200.Files, "src.ts").IsGenerated)
+}
+
 func TestSetActiveWorktreeKey(t *testing.T) {
 	assert := Assert.New(t)
 	srv, _ := setupTestServer(t)
@@ -13638,6 +13729,45 @@ func TestWorkspaceDiffEndpointHandlesUntrackedSymlinkAndLargeFileE2E(t *testing.
 	assert.Zero(large.Additions)
 	require.NotNil(large.Hunks)
 	assert.Empty(*large.Hunks)
+}
+
+func TestWorkspaceDiffEndpointMarksGeneratedFilesE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, ".gitattributes"),
+		[]byte("dist/** linguist-generated\nbun.lock -linguist-generated\n"), 0o644,
+	))
+	require.NoError(os.MkdirAll(filepath.Join(ws.WorktreePath, "dist"), 0o755))
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "dist", "api.ts"),
+		[]byte("export const generated = true;\n"), 0o644,
+	))
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "bun.lock"),
+		[]byte("# lock\n"), 0o644,
+	))
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "src.ts"),
+		[]byte("export const source = true;\n"), 0o644,
+	))
+
+	files := requestWorkspaceFiles(t, srv, ws.Id, "head")
+	require.NotNil(files.Files)
+	assert.True(requireWorkspaceDiffFile(t, *files.Files, "dist/api.ts").IsGenerated)
+	assert.False(requireWorkspaceDiffFile(t, *files.Files, "bun.lock").IsGenerated)
+	assert.False(requireWorkspaceDiffFile(t, *files.Files, "src.ts").IsGenerated)
+
+	diff := requestWorkspaceDiff(t, srv, ws.Id, "head")
+	require.NotNil(diff.Files)
+	assert.True(requireWorkspaceDiffFile(t, *diff.Files, "dist/api.ts").IsGenerated)
+	assert.False(requireWorkspaceDiffFile(t, *diff.Files, "bun.lock").IsGenerated)
+	assert.False(requireWorkspaceDiffFile(t, *diff.Files, "src.ts").IsGenerated)
 }
 
 func TestWorkspaceDiffEndpointScopesPatchByPathE2E(t *testing.T) {

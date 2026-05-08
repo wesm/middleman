@@ -36,6 +36,7 @@
     { key: "code" as const, label: "Code" },
     { key: "tests" as const, label: "Tests" },
     { key: "other" as const, label: "Other" },
+    { key: "generated" as const, label: "Generated" },
   ]);
   const visibleRows = $derived(
     summary === null

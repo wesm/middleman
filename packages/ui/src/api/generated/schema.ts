@@ -1590,6 +1590,7 @@ export interface components {
             deletions: number;
             hunks: components["schemas"]["Hunk"][] | null;
             is_binary: boolean;
+            is_generated: boolean;
             is_whitespace_only: boolean;
             old_path: string;
             path: string;

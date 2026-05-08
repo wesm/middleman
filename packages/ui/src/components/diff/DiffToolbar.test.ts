@@ -41,6 +41,7 @@ describe("DiffToolbar", () => {
       "Code (0)",
       "Tests (0)",
       "Other (0)",
+      "Generated (0)",
       "All (0)",
     ]);
 

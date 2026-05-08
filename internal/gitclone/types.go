@@ -20,6 +20,7 @@ type DiffFile struct {
 	OldPath          string `json:"old_path"`
 	Status           string `json:"status"` // added, modified, deleted, renamed, copied
 	IsBinary         bool   `json:"is_binary"`
+	IsGenerated      bool   `json:"is_generated"`
 	IsWhitespaceOnly bool   `json:"is_whitespace_only"`
 	Additions        int    `json:"additions"`
 	Deletions        int    `json:"deletions"`

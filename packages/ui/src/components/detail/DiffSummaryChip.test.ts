@@ -38,23 +38,29 @@ describe("DiffSummaryChip", () => {
       file("docs/plan.md", 10, 2),
       file("src/App.svelte", 40, 6),
       file("src/App.test.ts", 20, 8),
+      file("mise.toml", 1, 1),
       file("bun.lock", 1, 1),
+      { ...file("src/api/generated/schema.ts", 2, 2), is_generated: true },
     ]);
 
     render(DiffSummaryChip, {
       props: {
-        additions: 71,
-        deletions: 17,
+        additions: 74,
+        deletions: 20,
         loadFiles: async () =>
           new DiffSummaryFilesResult(false, await loadFiles()),
       },
     });
 
     await fireEvent.mouseEnter(
-      screen.getByRole("button", { name: /\+71\/-17/i }),
+      screen.getByRole("button", { name: /\+74\/-20/i }),
     );
 
-    expect(await screen.findByText("Plans/docs")).toBeTruthy();
+    const popover = await screen.findByRole("status");
+    const labels = Array.from(popover.querySelectorAll(".diff-summary-row span:first-child"))
+      .map((label) => label.textContent);
+    expect(labels).toEqual(["Plans/docs", "Code", "Tests", "Other", "Generated"]);
+    expect(screen.getByText("Plans/docs")).toBeTruthy();
     expect(screen.queryByText("Total")).toBeNull();
     expect(screen.getByText("+10/-2")).toBeTruthy();
     expect(screen.getByText("Code")).toBeTruthy();
@@ -63,6 +69,8 @@ describe("DiffSummaryChip", () => {
     expect(screen.getByText("+20/-8")).toBeTruthy();
     expect(screen.getByText("Other")).toBeTruthy();
     expect(screen.getByText("+1/-1")).toBeTruthy();
+    expect(screen.getByText("Generated")).toBeTruthy();
+    expect(screen.getByText("+3/-3")).toBeTruthy();
     expect(loadFiles).toHaveBeenCalledTimes(1);
   });
 
@@ -91,6 +99,7 @@ describe("DiffSummaryChip", () => {
     expect(screen.getByText("Tests")).toBeTruthy();
     expect(screen.getByText("+20/-8")).toBeTruthy();
     expect(screen.queryByText("Plans/docs")).toBeNull();
+    expect(screen.queryByText("Generated")).toBeNull();
     expect(screen.queryByText("Other")).toBeNull();
   });
 

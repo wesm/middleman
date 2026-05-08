@@ -23,6 +23,18 @@ function file(
 }
 
 describe("diff summary categorization", () => {
+  it("puts generated files into generated", () => {
+    expect(categorizeDiffFile({ ...file("src/api/client.ts", 1, 1), is_generated: true }))
+      .toBe("generated");
+    expect(categorizeDiffFile(file("bun.lock", 1, 1))).toBe("generated");
+    expect(categorizeDiffFile(file("package-lock.json", 1, 1))).toBe("generated");
+  });
+
+  it("honors explicit non-generated API metadata before filename heuristics", () => {
+    expect(categorizeDiffFile({ ...file("bun.lock", 1, 1), is_generated: false }))
+      .toBe("other");
+  });
+
   it("puts documentation and planning paths into plans/docs", () => {
     expect(categorizeDiffFile("docs/rollout-plan.md")).toBe("plansDocs");
     expect(categorizeDiffFile("context/ui-design-system.md")).toBe("plansDocs");
@@ -43,15 +55,17 @@ describe("diff summary categorization", () => {
   it("summarizes added and deleted lines by category", () => {
     const summary = summarizeDiffFiles([
       file("docs/plan.md", 10, 2),
+      file("bun.lock", 5, 1),
       file("internal/server/api.go", 30, 4),
       file("internal/server/api_test.go", 20, 8),
       file("mise.toml", 1, 1),
     ]);
 
     expect(summary.plansDocs).toEqual({ additions: 10, deletions: 2 });
+    expect(summary.generated).toEqual({ additions: 5, deletions: 1 });
     expect(summary.code).toEqual({ additions: 30, deletions: 4 });
     expect(summary.tests).toEqual({ additions: 20, deletions: 8 });
     expect(summary.other).toEqual({ additions: 1, deletions: 1 });
-    expect(summary.total).toEqual({ additions: 61, deletions: 15 });
+    expect(summary.total).toEqual({ additions: 66, deletions: 16 });
   });
 });

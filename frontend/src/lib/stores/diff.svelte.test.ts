@@ -145,6 +145,7 @@ describe("createDiffStore loadDiff", () => {
     expect(store.getFileCategoryCounts()).toEqual({
       all: 3,
       plansDocs: 1,
+      generated: 0,
       code: 1,
       tests: 1,
       other: 0,
@@ -804,9 +805,10 @@ describe("createDiffStore loadDiff", () => {
     ]);
     expect(store.getFileCategoryCounts()).toEqual({
       plansDocs: 1,
+      generated: 1,
       code: 1,
       tests: 1,
-      other: 1,
+      other: 0,
       all: 4,
     });
 
