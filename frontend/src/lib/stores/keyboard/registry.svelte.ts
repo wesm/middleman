@@ -8,14 +8,44 @@ export function registerScopedActions(
   actions: Action[],
 ): () => void {
   const registered = [...actions];
-  actionsByOwner = new Map(actionsByOwner).set(ownerId, registered);
+  const next = new Map(actionsByOwner).set(ownerId, registered);
+  assertNoConflicts(next);
+  actionsByOwner = next;
   return () => {
     if (actionsByOwner.get(ownerId) === registered) {
-      const next = new Map(actionsByOwner);
-      next.delete(ownerId);
-      actionsByOwner = next;
+      const cleanupNext = new Map(actionsByOwner);
+      cleanupNext.delete(ownerId);
+      actionsByOwner = cleanupNext;
     }
   };
+}
+
+function assertNoConflicts(map: Map<string, Action[]>): void {
+  const seen = new Map<string, { id: string; owner: string }>();
+  for (const [owner, list] of map) {
+    for (const action of list) {
+      if (action.binding === null) continue;
+      const bindings = Array.isArray(action.binding)
+        ? action.binding
+        : [action.binding];
+      for (const b of bindings) {
+        const key = `${b.key}|${b.ctrlOrMeta ?? false}|${b.shift ?? false}|${b.alt ?? false}|${action.scope}|${action.priority}`;
+        const prior = seen.get(key);
+        if (prior) {
+          const msg =
+            `keyboard registry conflict: action '${prior.id}' (owner '${prior.owner}') ` +
+            `and '${action.id}' (owner '${owner}') share binding+scope+priority`;
+          if (import.meta.env?.DEV || import.meta.env?.MODE === "test") {
+            throw new Error(msg);
+          }
+          // eslint-disable-next-line no-console
+          console.warn(msg);
+        } else {
+          seen.set(key, { id: action.id, owner });
+        }
+      }
+    }
+  }
 }
 
 export function registerCheatsheetEntries(
