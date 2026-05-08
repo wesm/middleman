@@ -3,8 +3,9 @@ import type { PullSelection } from "@middleman/ui/stores/pulls";
 import type { IssueSelection } from "@middleman/ui/stores/issues";
 import type { RoutedItemRef } from "@middleman/ui/routes";
 import type { KeySpec } from "@middleman/ui/stores/keyboard/keyspec";
+import type { StoreInstances } from "@middleman/ui";
 
-export type { KeySpec };
+export type { KeySpec, StoreInstances };
 
 export type ScopeTag =
   | "global"
