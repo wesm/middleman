@@ -11,11 +11,7 @@
   } from "@middleman/ui";
   import type { StoreInstances } from "@middleman/ui";
   import type { ActivityItem } from "@middleman/ui/api/types";
-  import {
-    buildPullRequestFilesRoute,
-    buildPullRequestRoute,
-    type RoutedItemRef,
-  } from "@middleman/ui/routes";
+  import type { RoutedItemRef } from "@middleman/ui/routes";
   import { client } from "./lib/api/runtime.js";
 
   import AppHeader from "./lib/components/layout/AppHeader.svelte";
@@ -29,7 +25,6 @@
   import { SpinnerIcon } from "./lib/icons.ts";
   import { showFlash } from "./lib/stores/flash.svelte.js";
   import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
-  import { shouldIgnoreGlobalShortcutTarget } from "./lib/utils/keyboardShortcuts.js";
   import { runAppStartup } from "./lib/utils/appStartup.js";
   import {
     initTheme,
@@ -56,7 +51,6 @@
     navigate,
     replaceUrl,
     getBasePath,
-    isDiffView,
     getDetailTab,
     getSelectedPRFromRoute,
   } from "./lib/stores/router.svelte.ts";
@@ -84,6 +78,13 @@
   } from "./lib/stores/embed-config.svelte.js";
   import { getSettings } from "./lib/api/settings.js";
   import { shouldUseFullAppShell } from "./lib/utils/appShell.js";
+  import { registerScopedActions } from "./lib/stores/keyboard/registry.svelte.js";
+  import {
+    defaultActions,
+    setStoreInstances,
+  } from "./lib/stores/keyboard/actions.js";
+  import { dispatchKeydown } from "./lib/stores/keyboard/dispatch.svelte.js";
+  import { buildContext } from "./lib/stores/keyboard/context.svelte.js";
 
   let stores = $state<StoreInstances | undefined>();
   let appReady = $state(false);
@@ -308,143 +309,18 @@
     });
   }
 
-  function navigateToSelectedPR(): void {
-    if (!stores) return;
-    const sel = stores.pulls.getSelectedPR();
-    if (!sel) return;
-    const tab = getDetailTab();
-    const path =
-      tab === "files"
-        ? buildPullRequestFilesRoute(sel)
-        : buildPullRequestRoute(sel);
-    if (getSelectedPRFromRoute()) {
-      replaceUrl(path);
-    } else {
-      navigate(path);
-    }
-  }
-
-  function handleKeydown(e: KeyboardEvent): void {
-    if (!stores) return;
-    const selectionAnchor =
-      typeof window !== "undefined"
-        ? window.getSelection()?.anchorNode ?? null
-        : null;
-    const focusedEditor =
-      typeof document !== "undefined"
-        ? document.querySelector(
-            ".ProseMirror-focused, [contenteditable='true']:focus",
-          )
-        : null;
-    if (focusedEditor) {
-      return;
-    }
-
-    if (
-      shouldIgnoreGlobalShortcutTarget(e.target) ||
-      shouldIgnoreGlobalShortcutTarget(document.activeElement) ||
-      shouldIgnoreGlobalShortcutTarget(selectionAnchor)
-    ) {
-      return;
-    }
-
-    if (
-      e.key === "[" &&
-      (e.metaKey || e.ctrlKey) &&
-      isSidebarToggleEnabled()
-    ) {
-      e.preventDefault();
-      toggleSidebar();
-      return;
-    }
-
-    const page = getPage();
-    if (page === "settings") return;
-    if (page === "design-system") return;
-    if (page === "repos") return;
-    if (page === "reviews") return;
-    if (page === "workspaces") return;
-
-    if (page === "activity") {
-      if (
-        e.key === "Escape" &&
-        drawerItem &&
-        !e.defaultPrevented
-      ) {
-        e.preventDefault();
-        closeDrawer();
-      }
-      return;
-    }
-
-    if (e.key === "f" && page === "pulls") {
-      const sel = getSelectedPRFromRoute();
-      if (sel) {
-        e.preventDefault();
-        const tab = getDetailTab();
-        if (tab === "conversation") {
-          navigate(buildPullRequestFilesRoute(sel));
-        } else {
-          navigate(buildPullRequestRoute(sel));
-        }
-        return;
-      }
-    }
-
-    const inDiffView = isDiffView();
-    const currentRoute = getRoute();
-    const isBoardView =
-      currentRoute.page === "pulls" &&
-      "view" in currentRoute &&
-      currentRoute.view === "board";
-    const isIssues = page === "issues";
-
-    switch (e.key) {
-      case "j":
-        if (inDiffView || isBoardView) break;
-        e.preventDefault();
-        if (isIssues) {
-          stores.issues.selectNextIssue();
-        } else {
-          stores.pulls.selectNextPR();
-          navigateToSelectedPR();
-        }
-        break;
-      case "k":
-        if (inDiffView || isBoardView) break;
-        e.preventDefault();
-        if (isIssues) {
-          stores.issues.selectPrevIssue();
-        } else {
-          stores.pulls.selectPrevPR();
-          navigateToSelectedPR();
-        }
-        break;
-      case "Escape":
-        if (e.defaultPrevented || isBoardView) break;
-        e.preventDefault();
-        if (isIssues) navigate("/issues");
-        else navigate("/pulls");
-        break;
-      case "1":
-        e.preventDefault();
-        navigate("/pulls");
-        break;
-      case "2":
-        e.preventDefault();
-        navigate("/pulls/board");
-        break;
-    }
-  }
-
   $effect(() => {
     if (!shouldUseFullAppShell(getPage())) return;
-    window.addEventListener("keydown", handleKeydown);
-    return () =>
-      window.removeEventListener(
-        "keydown",
-        handleKeydown,
-      );
+    if (!stores) return;
+    setStoreInstances(() => stores!);
+    const cleanup = registerScopedActions("app:defaults", defaultActions);
+    const onKeydown = (e: KeyboardEvent) =>
+      dispatchKeydown(e, () => buildContext(stores!));
+    window.addEventListener("keydown", onKeydown);
+    return () => {
+      window.removeEventListener("keydown", onKeydown);
+      cleanup();
+    };
   });
 </script>
 
