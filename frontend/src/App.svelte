@@ -16,6 +16,7 @@
 
   import AppHeader from "./lib/components/layout/AppHeader.svelte";
   import StatusBar from "./lib/components/layout/StatusBar.svelte";
+  import Palette from "./lib/components/keyboard/Palette.svelte";
   import RepoSummaryPage from "./lib/components/repositories/RepoSummaryPage.svelte";
   import SettingsPage from "./lib/components/settings/SettingsPage.svelte";
   import WorkspaceTerminalView from "./lib/components/terminal/WorkspaceTerminalView.svelte";
@@ -522,6 +523,8 @@
       <StatusBar />
     {/if}
   {/if}
+
+    <Palette />
   </Provider>
 {/if}
 

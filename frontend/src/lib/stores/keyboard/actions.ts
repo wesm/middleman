@@ -9,6 +9,7 @@ import {
   toggleSidebar,
 } from "../sidebar.svelte.js";
 import { toggleTheme } from "../theme.svelte.js";
+import { togglePalette } from "./palette-state.svelte.js";
 import {
   buildPullRequestFilesRoute,
   buildPullRequestRoute,
@@ -193,10 +194,7 @@ export const defaultActions: Action[] = [
     ],
     priority: 0,
     when: always,
-    // Stubbed until Task 17 lands palette-state. No-op rather than throw so
-    // pressing the binding doesn't surface a flash toast every time during
-    // the staged rollout. The real handler replaces this in stage 6.
-    handler: () => {},
+    handler: () => togglePalette(),
   },
   {
     id: "cheatsheet.open",
