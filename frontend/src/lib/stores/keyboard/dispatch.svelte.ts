@@ -22,14 +22,15 @@ export function dispatchKeydown(
 ): void {
   const stack = getStack();
   if (stack.length > 0) {
+    const modalCtx = contextProvider();
     for (let i = stack.length - 1; i >= 0; i--) {
       const frame = stack[i]!;
       for (const a of frame.actions) {
-        if (matches(a.binding, event)) {
-          event.preventDefault();
-          void a.handler(contextProvider());
-          return;
-        }
+        if (!matches(a.binding, event)) continue;
+        if (a.when && !a.when(modalCtx)) continue;
+        event.preventDefault();
+        void a.handler(modalCtx);
+        return;
       }
     }
     if (RESERVED_WHILE_MODAL_OPEN.some((b) => matches(b, event))) {
