@@ -8,8 +8,8 @@ import {
   getPage,
 } from "./router.svelte.js";
 
-const prRoute = "/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42";
-const prFilesRoute = "/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42";
+const prRoute = "/pulls/github/acme/widgets/42";
+const prFilesRoute = "/pulls/github/acme/widgets/42/files";
 const prRef = {
   provider: "github",
   platformHost: "github.com",
@@ -19,7 +19,7 @@ const prRef = {
   number: 42,
 };
 
-describe("router /pulls/detail files route", () => {
+describe("router /pulls files route", () => {
   beforeEach(() => {
     navigate("/pulls");
   });
@@ -97,14 +97,19 @@ describe("router basic routes", () => {
     expect(getRoute()).toEqual({ page: "pulls", view: "board" });
   });
 
-  it("does not parse legacy pull detail routes", () => {
+  it("does not parse legacy owner/name pull detail routes", () => {
     navigate("/pulls/org/repo/7");
+    expect(getRoute()).toEqual({ page: "pulls", view: "list" });
+  });
+
+  it("does not parse old query-param pull detail routes", () => {
+    navigate("/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42");
     expect(getRoute()).toEqual({ page: "pulls", view: "list" });
   });
 
   it("parses provider pull routes with escaped nested repo paths", () => {
     navigate(
-      "/pulls/detail?provider=gitlab&platform_host=gitlab.example.com%3A8443&repo_path=Group%2FSubGroup%2FSubGroup%202%2FMy_Project.v2&number=12",
+      "/host/gitlab.example.com%3A8443/pulls/gitlab/Group%2FSubGroup%2FSubGroup%202/My_Project.v2/12",
     );
 
     expect(getRoute()).toEqual({
@@ -123,7 +128,7 @@ describe("router basic routes", () => {
 
   it("parses provider pull files routes with escaped nested repo paths", () => {
     navigate(
-      "/pulls/detail/files?provider=gitlab&platform_host=gitlab.example.com%3A8443&repo_path=Group%2FSubGroup%2FSubGroup%202%2FMy_Project.v2&number=12",
+      "/host/gitlab.example.com%3A8443/pulls/gitlab/Group%2FSubGroup%2FSubGroup%202/My_Project.v2/12/files",
     );
 
     expect(getRoute()).toEqual({
@@ -161,9 +166,14 @@ describe("router basic routes", () => {
     expect(getRoute()).toEqual({ page: "issues" });
   });
 
+  it("does not parse old query-param issue detail routes", () => {
+    navigate("/issues/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42");
+    expect(getRoute()).toEqual({ page: "issues" });
+  });
+
   it("parses provider issue routes with special characters in repo paths", () => {
     navigate(
-      "/issues/detail?provider=gitlab&platform_host=gitlab.example.test%3A8443&repo_path=Team%20One%2FSub%20Team%2Fproject%2B%231&number=7",
+      "/host/gitlab.example.test%3A8443/issues/gitlab/Team%20One%2FSub%20Team/project%2B%231/7",
     );
 
     expect(getRoute()).toEqual({
@@ -177,6 +187,32 @@ describe("router basic routes", () => {
         number: 7,
       },
     });
+  });
+
+  it("parses focus provider pull and issue routes", () => {
+    navigate("/focus/pulls/github/acme/widgets/42");
+    expect(getRoute()).toEqual({
+      page: "focus",
+      itemType: "pr",
+      ...prRef,
+    });
+
+    navigate("/focus/host/ghe.example.com/issues/github/acme/widgets/7");
+    expect(getRoute()).toEqual({
+      page: "focus",
+      itemType: "issue",
+      provider: "github",
+      platformHost: "ghe.example.com",
+      owner: "acme",
+      name: "widgets",
+      repoPath: "acme/widgets",
+      number: 7,
+    });
+  });
+
+  it("does not parse old query-param focus detail routes", () => {
+    navigate("/focus/pr?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42");
+    expect(getRoute()).toEqual({ page: "activity" });
   });
 
   it("treats legacy /workspaces/panel routes as workspaces page", () => {

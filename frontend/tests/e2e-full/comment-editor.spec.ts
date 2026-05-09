@@ -98,7 +98,7 @@ test.describe("comment editor autocomplete", () => {
   });
 
   test("PR comment editor accepts @ mention and submits end-to-end", async ({ page }) => {
-    await page.goto("/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=5");
+    await page.goto("/pulls/github/acme/widgets/5");
     await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
     await expect(page.getByText("Detail not yet loaded")).toHaveCount(0, { timeout: 10_000 });
 
@@ -126,7 +126,7 @@ test.describe("comment editor autocomplete", () => {
   });
 
   test("issue comment editor accepts # reference and submits end-to-end", async ({ page }) => {
-    await page.goto("/issues/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=12");
+    await page.goto("/issues/github/acme/widgets/12");
     await page.locator(".issue-detail").waitFor({ state: "visible", timeout: 10_000 });
     await expect(page.getByText("Detail not yet loaded")).toHaveCount(0, { timeout: 10_000 });
 

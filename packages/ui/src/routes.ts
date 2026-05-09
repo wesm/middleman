@@ -1,3 +1,8 @@
+import {
+  providerRouteParams,
+  type ProviderRouteRef as APIProviderRouteRef,
+} from "./api/provider-routes.js";
+
 export type RepositoryRouteRef = {
   provider: string;
   platformHost?: string | undefined;
@@ -38,13 +43,13 @@ export function buildPullRequestFilesRoute(ref: PullRequestRouteRef): string {
 }
 
 export function buildProviderPullRequestRoute(ref: ProviderRouteRef & { number: number }): string {
-  return `/pulls/detail${providerItemQuery(ref)}`;
+  return providerItemPath("pulls", ref);
 }
 
 export function buildProviderPullRequestFilesRoute(
   ref: ProviderRouteRef & { number: number },
 ): string {
-  return `/pulls/detail/files${providerItemQuery(ref)}`;
+  return `${providerItemPath("pulls", ref)}/files`;
 }
 
 export function buildIssueRoute(ref: IssueRouteRef): string {
@@ -52,15 +57,15 @@ export function buildIssueRoute(ref: IssueRouteRef): string {
 }
 
 export function buildProviderIssueRoute(ref: ProviderRouteRef & { number: number }): string {
-  return `/issues/detail${providerItemQuery(ref)}`;
+  return providerItemPath("issues", ref);
 }
 
 export function buildFocusPullRequestRoute(ref: PullRequestRouteRef): string {
-  return `/focus/pr${providerItemQuery(providerRouteRef(ref))}`;
+  return `/focus${buildProviderPullRequestRoute(providerRouteRef(ref))}`;
 }
 
 export function buildFocusIssueRoute(ref: IssueRouteRef): string {
-  return `/focus/issue${providerItemQuery(providerRouteRef(ref))}`;
+  return `/focus${buildProviderIssueRoute(providerRouteRef(ref))}`;
 }
 
 export function buildFocusListRoute(ref: FocusListRouteRef): string {
@@ -85,18 +90,6 @@ function requireRouteText(value: string, field: string): string {
   return value;
 }
 
-function providerItemQuery(ref: ProviderRouteRef & { number: number }): string {
-  const params: Array<[string, string]> = [
-    ["provider", requireRouteText(ref.provider, "provider")],
-    ["repo_path", requireRouteText(ref.repoPath, "repoPath")],
-    ["number", ref.number.toString()],
-  ];
-  if (ref.platformHost) {
-    params.splice(1, 0, ["platform_host", ref.platformHost]);
-  }
-  return `?${params.map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join("&")}`;
-}
-
 function providerRouteRef(ref: NumberedRouteItemRef): ProviderRouteRef & { number: number } {
   return {
     provider: ref.provider,
@@ -104,4 +97,35 @@ function providerRouteRef(ref: NumberedRouteItemRef): ProviderRouteRef & { numbe
     repoPath: ref.repoPath,
     number: ref.number,
   };
+}
+
+function providerItemPath(kind: "pulls" | "issues", ref: ProviderRouteRef & { number: number }): string {
+  const routeRef = providerRouteParts(ref);
+  const encodedProvider = encodeURIComponent(routeRef.provider);
+  const encodedOwner = encodeURIComponent(routeRef.owner);
+  const encodedName = encodeURIComponent(routeRef.name);
+  const encodedNumber = encodeURIComponent(ref.number.toString());
+  if (routeRef.platform_host) {
+    return `/host/${encodeURIComponent(routeRef.platform_host)}/${kind}/${encodedProvider}/${encodedOwner}/${encodedName}/${encodedNumber}`;
+  }
+  return `/${kind}/${encodedProvider}/${encodedOwner}/${encodedName}/${encodedNumber}`;
+}
+
+function providerRouteParts(
+  ref: ProviderRouteRef,
+): ReturnType<typeof providerRouteParams> {
+  const repoPath = requireRouteText(ref.repoPath, "repoPath").replace(/^\/+|\/+$/g, "");
+  const pathParts = repoPath.split("/").filter(Boolean);
+  if (pathParts.length < 2) {
+    throw new Error("missing route repoPath owner/name");
+  }
+  const owner = pathParts.slice(0, -1).join("/");
+  const name = pathParts[pathParts.length - 1]!;
+  return providerRouteParams({
+    provider: requireRouteText(ref.provider, "provider"),
+    platformHost: ref.platformHost,
+    owner,
+    name,
+    repoPath,
+  } satisfies APIProviderRouteRef);
 }

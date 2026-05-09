@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const issueRoute =
-  "/issues/detail?provider=github&platform_host=ghe.example.com&repo_path=acme%2Fwidget&number=7";
+  "/host/ghe.example.com/issues/github/acme/widget/7";
 
 async function importRouterAt(path: string) {
   vi.resetModules();
@@ -15,7 +15,7 @@ describe("router initialization", () => {
     vi.resetModules();
   });
 
-  it("preserves provider issue query state on initial load", async () => {
+  it("preserves provider issue route state on initial load", async () => {
     const { getRoute } = await importRouterAt(issueRoute);
 
     expect(getRoute()).toEqual({
@@ -31,7 +31,7 @@ describe("router initialization", () => {
     });
   });
 
-  it("preserves provider issue query state on popstate", async () => {
+  it("preserves provider issue route state on popstate", async () => {
     const { getRoute } = await importRouterAt("/issues");
 
     window.history.pushState(null, "", issueRoute);

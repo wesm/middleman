@@ -7,7 +7,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("edit title: click Edit, type, save", async ({ page }) => {
-  await page.goto("/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42");
+  await page.goto("/pulls/github/acme/widgets/42");
   await expect(page.locator(".detail-title")).toContainText("Add browser regression coverage");
   await page.locator(".edit-title-btn").click();
 
@@ -20,7 +20,7 @@ test("edit title: click Edit, type, save", async ({ page }) => {
 });
 
 test("edit title: cancel with Escape", async ({ page }) => {
-  await page.goto("/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42");
+  await page.goto("/pulls/github/acme/widgets/42");
   await page.locator(".edit-title-btn").click();
 
   const input = page.locator(".title-edit-input");
@@ -33,7 +33,7 @@ test("edit title: cancel with Escape", async ({ page }) => {
 });
 
 test("edit title: save disabled when blank", async ({ page }) => {
-  await page.goto("/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42");
+  await page.goto("/pulls/github/acme/widgets/42");
   await page.locator(".edit-title-btn").click();
 
   const input = page.locator(".title-edit-input");
@@ -42,7 +42,7 @@ test("edit title: save disabled when blank", async ({ page }) => {
 });
 
 test("edit body: click Edit, type, save", async ({ page }) => {
-  await page.goto("/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42");
+  await page.goto("/pulls/github/acme/widgets/42");
   await page.locator(".edit-body-btn").click();
 
   const textarea = page.locator(".body-edit-textarea");
@@ -54,7 +54,7 @@ test("edit body: click Edit, type, save", async ({ page }) => {
 });
 
 test("edit body: cancel preserves original", async ({ page }) => {
-  await page.goto("/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42");
+  await page.goto("/pulls/github/acme/widgets/42");
   await page.locator(".edit-body-btn").click();
 
   await page.locator(".body-edit-textarea").fill("discarded");
@@ -119,7 +119,7 @@ test("markdown tables keep compact columns readable", async ({ page }) => {
     });
   });
 
-  await page.goto("/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42");
+  await page.goto("/pulls/github/acme/widgets/42");
 
   const taskHeader = page
     .locator(".markdown-body th")
@@ -187,7 +187,7 @@ test("add description to empty-body PR shows add-description-btn", async ({ page
     });
   });
 
-  await page.goto("/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42");
+  await page.goto("/pulls/github/acme/widgets/42");
 
   const addBtn = page.locator(".add-description-btn");
   await expect(addBtn).toBeVisible();

@@ -5,6 +5,7 @@ import {
   type RepositoryRouteRef,
   type RoutedItemRef,
 } from "@middleman/ui/routes";
+import { canonicalProvider } from "@middleman/ui/api/provider-routes";
 
 export type RepoRef = RepositoryRouteRef;
 export type NumberedItemRef = NumberedRouteItemRef;
@@ -52,27 +53,64 @@ function currentLocationPath(): string {
   return window.location.pathname + window.location.search;
 }
 
-function parseProviderNumberedRef(search: string): NumberedItemRef | undefined {
-  const sp = new URLSearchParams(search);
-  const provider = sp.get("provider")?.trim();
-  const repoPath = sp.get("repo_path")?.replace(/^\/+|\/+$/g, "");
-  const numberText = sp.get("number");
-  if (!provider || !repoPath || !numberText) return undefined;
+const defaultPlatformHosts: Record<string, string> = {
+  github: "github.com",
+  gitlab: "gitlab.com",
+};
+
+function defaultPlatformHost(provider: string): string | undefined {
+  return defaultPlatformHosts[canonicalProvider(provider)];
+}
+
+function decodeRouteSegment(segment: string): string | undefined {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return undefined;
+  }
+}
+
+function parseProviderNumberedPath(
+  parts: string[],
+  start: number,
+  platformHost?: string | undefined,
+): NumberedItemRef | undefined {
+  if (parts.length < start + 4) return undefined;
+  const provider = decodeRouteSegment(parts[start] ?? "")?.trim();
+  const owner = decodeRouteSegment(parts[start + 1] ?? "")?.replace(/^\/+|\/+$/g, "");
+  const name = decodeRouteSegment(parts[start + 2] ?? "")?.replace(/^\/+|\/+$/g, "");
+  const numberText = decodeRouteSegment(parts[start + 3] ?? "");
+  if (!provider || !owner || !name || !numberText) return undefined;
 
   const number = parseInt(numberText, 10);
-  const pathParts = repoPath.split("/").filter(Boolean);
-  if (!Number.isFinite(number) || number <= 0 || pathParts.length < 2) return undefined;
+  if (!Number.isFinite(number) || number <= 0) return undefined;
 
-  const platformHost = sp.get("platform_host") ?? undefined;
+  const resolvedPlatformHost = platformHost ?? defaultPlatformHost(provider);
   const ref: NumberedItemRef = {
     provider,
-    owner: pathParts.slice(0, -1).join("/"),
-    name: pathParts[pathParts.length - 1]!,
+    owner,
+    name,
     number,
-    repoPath,
-    ...(platformHost && { platformHost }),
+    repoPath: `${owner}/${name}`,
+    ...(resolvedPlatformHost && { platformHost: resolvedPlatformHost }),
   };
   return ref;
+}
+
+function parseHostProviderNumberedPath(
+  parts: string[],
+  kind: "pulls" | "issues",
+  start = 0,
+): NumberedItemRef | undefined {
+  if (parts[start] === kind) {
+    return parseProviderNumberedPath(parts, start + 1);
+  }
+  if (parts[start] === "host" && parts[start + 2] === kind) {
+    const platformHost = decodeRouteSegment(parts[start + 1] ?? "")?.trim();
+    if (!platformHost) return undefined;
+    return parseProviderNumberedPath(parts, start + 3, platformHost);
+  }
+  return undefined;
 }
 
 function parseRoute(fullPath: string): Route {
@@ -80,6 +118,7 @@ function parseRoute(fullPath: string): Route {
   const pathname = qIdx >= 0 ? fullPath.slice(0, qIdx) : fullPath;
   const search = qIdx >= 0 ? fullPath.slice(qIdx + 1) : "";
   const path = stripBase(pathname).replace(/\/+$/, "") || "/";
+  const parts = path.split("/").filter(Boolean);
   if (path.startsWith("/focus/")) {
     if (path === "/focus/mrs") {
       const sp = new URLSearchParams(search);
@@ -95,25 +134,21 @@ function parseRoute(fullPath: string): Route {
       if (repo) r.repo = repo;
       return r;
     }
-    if (path === "/focus/pr") {
-      const selected = parseProviderNumberedRef(search);
-      if (selected) {
-        return {
-          page: "focus",
-          itemType: "pr",
-          ...selected,
-        };
-      }
+    const pull = parseHostProviderNumberedPath(parts, "pulls", 1);
+    if (pull && parts.length === (parts[1] === "host" ? 8 : 6)) {
+      return {
+        page: "focus",
+        itemType: "pr",
+        ...pull,
+      };
     }
-    if (path === "/focus/issue") {
-      const selected = parseProviderNumberedRef(search);
-      if (selected) {
-        return {
-          page: "focus",
-          itemType: "issue",
-          ...selected,
-        };
-      }
+    const issue = parseHostProviderNumberedPath(parts, "issues", 1);
+    if (issue && parts.length === (parts[1] === "host" ? 8 : 6)) {
+      return {
+        page: "focus",
+        itemType: "issue",
+        ...issue,
+      };
     }
   }
   if (path === "/design-system") {
@@ -121,14 +156,15 @@ function parseRoute(fullPath: string): Route {
   }
   if (path.startsWith("/pulls")) {
     const rest = path.slice("/pulls".length);
-    if (rest === "/detail" || rest === "/detail/files") {
-      const selected = parseProviderNumberedRef(search);
-      if (selected) {
+    if (rest !== "" && rest !== "/board") {
+      const selected = parseHostProviderNumberedPath(parts, "pulls");
+      const isFiles = parts[parts.length - 1] === "files";
+      if (selected && (parts.length === 5 || (parts.length === 6 && isFiles))) {
         return {
           page: "pulls",
           view: "list",
           selected,
-          ...(rest === "/detail/files" && { tab: "files" as const }),
+          ...(isFiles && { tab: "files" as const }),
         };
       }
     }
@@ -140,9 +176,9 @@ function parseRoute(fullPath: string): Route {
   }
   if (path === "/settings" && !isEmbedded()) return { page: "settings" };
   if (path.startsWith("/issues")) {
-    if (path === "/issues/detail") {
-      const selected = parseProviderNumberedRef(search);
-      if (selected) {
+    if (path !== "/issues") {
+      const selected = parseHostProviderNumberedPath(parts, "issues");
+      if (selected && parts.length === 5) {
         return {
           page: "issues",
           selected,
@@ -150,6 +186,25 @@ function parseRoute(fullPath: string): Route {
       }
     }
     return { page: "issues" };
+  }
+  if (path.startsWith("/host/")) {
+    const pull = parseHostProviderNumberedPath(parts, "pulls");
+    const isPullFiles = parts[parts.length - 1] === "files";
+    if (pull && (parts.length === 7 || (parts.length === 8 && isPullFiles))) {
+      return {
+        page: "pulls",
+        view: "list",
+        selected: pull,
+        ...(isPullFiles && { tab: "files" as const }),
+      };
+    }
+    const issue = parseHostProviderNumberedPath(parts, "issues");
+    if (issue && parts.length === 7) {
+      return {
+        page: "issues",
+        selected: issue,
+      };
+    }
   }
   const reviewsMatch = path.match(/^\/reviews(?:\/(\d+))?$/);
   if (reviewsMatch) {

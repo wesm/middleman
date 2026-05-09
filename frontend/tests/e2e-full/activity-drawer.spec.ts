@@ -805,7 +805,7 @@ test.describe("activity split view and detail drawers", () => {
     await page.locator(".view-tab", { hasText: "PRs" }).click();
 
     await expect(page).toHaveURL(
-      /\/pulls\/detail\/files\?provider=github&platform_host=github\.com&repo_path=acme%2Fwidgets&number=1$/,
+      /\/pulls\/github\/acme\/widgets\/1\/files$/,
     );
   });
 
@@ -819,7 +819,7 @@ test.describe("activity split view and detail drawers", () => {
     await page.locator(".view-tab", { hasText: "Issues" }).click();
 
     await expect(page).toHaveURL(
-      /\/issues\/detail\?provider=github&platform_host=ghe\.example\.com&repo_path=acme%2Fwidgets&number=10$/,
+      /\/host\/ghe\.example\.com\/issues\/github\/acme\/widgets\/10$/,
     );
   });
 
@@ -1463,7 +1463,7 @@ test.describe("PR list tabs", () => {
     await mockDiffForAllPRs(page, tinyDiff);
 
     await page.goto(
-      "/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1",
+      "/pulls/github/acme/widgets/1",
     );
 
     // Wait for the PRListView tab bar (scoped to .main-area) to
@@ -1495,7 +1495,7 @@ test.describe("PR list tabs", () => {
       { hasText: "Files changed" },
     ).click();
     await expect(page).toHaveURL(
-      /\/pulls\/detail\/files\?provider=github&platform_host=github\.com&repo_path=acme%2Fwidgets&number=1$/,
+      /\/pulls\/github\/acme\/widgets\/1\/files$/,
     );
     await expect(page.locator(".diff-view")).toBeVisible();
     await expect(page.locator(".main-area .detail-tabs")).toHaveCount(1);
@@ -1507,7 +1507,7 @@ test.describe("PR list tabs", () => {
       { hasText: "Conversation" },
     ).click();
     await expect(page).toHaveURL(
-      /\/pulls\/detail\?provider=github&platform_host=github\.com&repo_path=acme%2Fwidgets&number=1$/,
+      /\/pulls\/github\/acme\/widgets\/1$/,
     );
     await expect(page.locator(".main-area .detail-tabs")).toHaveCount(1);
   });
@@ -1520,7 +1520,7 @@ test.describe("PR list tabs", () => {
     await mockDiffForAllPRs(page, tinyDiff);
 
     await page.goto(
-      "/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1",
+      "/pulls/github/acme/widgets/1/files",
     );
 
     await page.locator(".main-area .detail-tabs").first()

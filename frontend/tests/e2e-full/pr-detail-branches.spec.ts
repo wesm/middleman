@@ -3,7 +3,7 @@ import { startIsolatedE2EServer } from "./support/e2eServer";
 
 test.describe("PR detail branch info", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1");
+    await page.goto("/pulls/github/acme/widgets/1");
     await page.locator(".pull-detail")
       .waitFor({ state: "visible", timeout: 10_000 });
   });
@@ -84,7 +84,7 @@ test.describe("PR detail branch info", () => {
       });
     });
 
-    await page.goto("/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1");
+    await page.goto("/pulls/github/acme/widgets/1");
     await page.locator(".pull-detail")
       .waitFor({ state: "visible", timeout: 10_000 });
 
@@ -110,7 +110,7 @@ test("diff summary uses real files after the PR head advances", async ({ page })
       window.setInterval = ((handler: TimerHandler, timeout?: number, ...args: unknown[]) =>
         realSetInterval(handler, timeout === 60_000 ? 100 : timeout, ...args)) as typeof window.setInterval;
     });
-    await page.goto(`${server.info.base_url}/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1`);
+    await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
     await page.locator(".pull-detail")
       .waitFor({ state: "visible", timeout: 10_000 });
     await expect(page.locator(".sync-indicator")).toHaveCount(0);

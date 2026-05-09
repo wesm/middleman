@@ -630,7 +630,7 @@ describe("RepoSummaryPage", () => {
         "github.com/acme/widgets",
       );
       expect(mockNavigate).toHaveBeenCalledWith(
-        "/issues/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=27",
+        "/issues/github/acme/widgets/27",
       );
     });
   });
@@ -698,7 +698,7 @@ describe("RepoSummaryPage", () => {
     });
     await waitFor(() => {
       expect(mockNavigate).toHaveBeenCalledWith(
-        "/issues/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=27",
+        "/issues/github/acme/widgets/27",
       );
     });
   });
@@ -827,7 +827,7 @@ describe("RepoSummaryPage", () => {
         "ghe.example.com/acme/widgets",
       );
       expect(mockNavigate).toHaveBeenCalledWith(
-        "/issues/detail?provider=github&platform_host=ghe.example.com&repo_path=acme%2Fwidgets&number=42",
+        "/host/ghe.example.com/issues/github/acme/widgets/42",
       );
     });
   });

@@ -230,7 +230,7 @@ describe("AppHeader", () => {
     await fireEvent.click(screen.getByRole("button", { name: "PRs" }));
 
     expect(window.location.pathname + window.location.search).toBe(
-      "/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1",
+      "/pulls/github/acme/widgets/1/files",
     );
   });
 
@@ -242,7 +242,7 @@ describe("AppHeader", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Issues" }));
 
     expect(window.location.pathname + window.location.search).toBe(
-      "/issues/detail?provider=github&platform_host=ghe.example.com&repo_path=acme%2Fwidgets&number=10",
+      "/host/ghe.example.com/issues/github/acme/widgets/10",
     );
   });
 

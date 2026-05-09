@@ -147,7 +147,7 @@ test.describe("repository summaries", () => {
     await dialog.getByRole("button", { name: "Create issue" }).click();
 
     await expect(page).toHaveURL(
-      /\/issues\/detail\?provider=github&platform_host=github\.com&repo_path=acme%2Fwidgets&number=\d+$/,
+      /\/issues\/github\/acme\/widgets\/\d+$/,
     );
     await page.locator(".issue-detail").waitFor({
       state: "visible",

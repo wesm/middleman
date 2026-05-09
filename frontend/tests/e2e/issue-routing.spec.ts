@@ -71,7 +71,7 @@ test.describe("issue route platform host", () => {
   test("direct issue load preserves platform_host in detail requests", async ({ page }) => {
     const seenHosts = await mockIssueDetailAndTrackHosts(page);
 
-    await page.goto("/issues/detail?provider=github&platform_host=ghe.example.com&repo_path=acme%2Fwidgets&number=7");
+    await page.goto("/host/ghe.example.com/issues/github/acme/widgets/7");
 
     await expect(page.locator(".issue-detail .detail-title"))
       .toContainText("Mirror host issue");
@@ -86,7 +86,7 @@ test.describe("issue route platform host", () => {
       window.history.pushState(
         null,
         "",
-        "/issues/detail?provider=github&platform_host=ghe.example.com&repo_path=acme%2Fwidgets&number=7",
+        "/host/ghe.example.com/issues/github/acme/widgets/7",
       );
       window.dispatchEvent(new PopStateEvent("popstate"));
     });

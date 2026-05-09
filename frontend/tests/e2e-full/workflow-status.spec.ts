@@ -43,7 +43,7 @@ test("workflow status dropdown persists through API and database", async ({
   const server = await startIsolatedE2EServer();
 
   try {
-    const detailPath = `/pulls/detail?provider=github&platform_host=github.com&repo_path=${target.owner}%2F${target.repo}&number=${target.number}`;
+    const detailPath = `/pulls/github/${target.owner}/${target.repo}/${target.number}`;
     await page.goto(`${server.info.base_url}${detailPath}`);
     await expect(page.locator(".pull-detail")).toBeVisible();
 
