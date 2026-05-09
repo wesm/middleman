@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import Palette from "./Palette.svelte";
 import {
@@ -11,6 +11,7 @@ import {
   registerScopedActions,
   resetRegistry,
 } from "../../stores/keyboard/registry.svelte.js";
+import { RECENTS_KEY } from "../../stores/keyboard/recents.svelte.js";
 import type { Action } from "../../stores/keyboard/types.js";
 import { resetModalStack } from "@middleman/ui/stores/keyboard/modal-stack";
 
@@ -30,11 +31,16 @@ function action(id: string, label = id, scope: Action["scope"] = "global"): Acti
 }
 
 describe("Palette", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
   afterEach(() => {
     cleanup();
     resetPaletteState();
     resetModalStack();
     resetRegistry();
+    localStorage.clear();
   });
 
   it("renders only when isPaletteOpen is true", async () => {
@@ -172,5 +178,112 @@ describe("Palette", () => {
     await rerender({});
     expect(ran).toBe(true);
     expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull();
+  });
+
+  it("renders no Recently used header when localStorage is empty", async () => {
+    const { rerender } = render(Palette, { props: {} });
+    openPalette();
+    await rerender({});
+    const dialog = screen.getByRole("dialog", { name: "Command palette" });
+    const headers = Array.from(
+      dialog.querySelectorAll(".palette-group-header"),
+    ).map((el) => el.textContent ?? "");
+    expect(headers).not.toContain("Recently used");
+  });
+
+  it("hides recents section when query is non-empty", async () => {
+    localStorage.setItem(
+      RECENTS_KEY,
+      JSON.stringify({
+        version: 1,
+        items: [
+          {
+            kind: "pr",
+            ref: {
+              itemType: "pr",
+              provider: "github",
+              platformHost: "github.com",
+              owner: "acme",
+              name: "widgets",
+              repoPath: "acme/widgets",
+              number: 42,
+            },
+            lastSelectedAt: new Date().toISOString(),
+          },
+        ],
+      }),
+    );
+    const { rerender } = render(Palette, { props: {} });
+    openPalette();
+    await rerender({});
+    const dialog = screen.getByRole("dialog", { name: "Command palette" });
+    const headersBefore = Array.from(
+      dialog.querySelectorAll(".palette-group-header"),
+    ).map((el) => el.textContent ?? "");
+    expect(headersBefore).toContain("Recently used");
+
+    const input = dialog.querySelector(".palette-input");
+    expect(input).not.toBeNull();
+    await fireEvent.input(input!, { target: { value: "x" } });
+    await rerender({});
+    const headersAfter = Array.from(
+      dialog.querySelectorAll(".palette-group-header"),
+    ).map((el) => el.textContent ?? "");
+    expect(headersAfter).not.toContain("Recently used");
+  });
+
+  it("clicking a recent row writes a fresh recent and triggers navigation", async () => {
+    // Use a recent timestamp so pruneStale (30-day cutoff) doesn't drop the
+    // seeded entry before the row renders.
+    const seedAt = new Date(Date.now() - 60_000).toISOString();
+    localStorage.setItem(
+      RECENTS_KEY,
+      JSON.stringify({
+        version: 1,
+        items: [
+          {
+            kind: "pr",
+            ref: {
+              itemType: "pr",
+              provider: "github",
+              platformHost: "github.com",
+              owner: "acme",
+              name: "widgets",
+              repoPath: "acme/widgets",
+              number: 42,
+            },
+            lastSelectedAt: seedAt,
+          },
+        ],
+      }),
+    );
+    const { rerender } = render(Palette, { props: {} });
+    openPalette();
+    await rerender({});
+    const dialog = screen.getByRole("dialog", { name: "Command palette" });
+    const recentGroup = Array.from(
+      dialog.querySelectorAll(".palette-group"),
+    ).find((g) =>
+      (g.querySelector(".palette-group-header")?.textContent ?? "").includes(
+        "Recently used",
+      ),
+    );
+    expect(recentGroup).toBeTruthy();
+    const row = recentGroup!.querySelector(".palette-row");
+    expect(row).not.toBeNull();
+    await fireEvent.click(row!);
+    await rerender({});
+
+    // We can't assert navigation because the router store is not mocked in
+    // this fixture; instead assert the localStorage side effect: the same PR
+    // is still at the front and its lastSelectedAt has advanced past the
+    // seed timestamp.
+    const persisted = JSON.parse(localStorage.getItem(RECENTS_KEY) ?? "{}");
+    expect(persisted.items).toBeTruthy();
+    expect(persisted.items[0].kind).toBe("pr");
+    expect(persisted.items[0].ref.number).toBe(42);
+    expect(
+      Date.parse(persisted.items[0].lastSelectedAt),
+    ).toBeGreaterThan(Date.parse(seedAt));
   });
 });
