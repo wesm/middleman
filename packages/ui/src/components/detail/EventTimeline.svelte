@@ -72,9 +72,8 @@
     return body.split(/\r?\n/, 1)[0] ?? "";
   }
 
-  function commitBodyDetails(body: string): string {
-    const lines = body.split(/\r?\n/);
-    return lines.slice(1).join("\n").trim();
+  function commitDetailsBody(body: string): string {
+    return body.trim();
   }
 
   function systemEventLabel(eventType: string): string {
@@ -191,7 +190,7 @@
         </div>
         {#if isCompactEvent(event.EventType)}
           {@const metadata = parseMetadata(event)}
-          {@const commitDetails = event.EventType === "commit" ? commitBodyDetails(event.Body) : ""}
+          {@const commitDetails = event.EventType === "commit" ? commitDetailsBody(event.Body) : ""}
           <div class="event-card event-card--compact">
             <div class="event-header event-header--compact">
               <span
@@ -205,7 +204,9 @@
               {/if}
               {#if event.EventType === "commit"}
                 <span class="commit-sha">{shortCommit(event.Summary)}</span>
-                <span class="commit-title">{commitTitle(event.Body)}</span>
+                {#if !showCommitDetails}
+                  <span class="commit-title">{commitTitle(event.Body)}</span>
+                {/if}
                 <span class="event-time">{timeAgo(event.CreatedAt)}</span>
               {:else if event.EventType === "cross_referenced"}
                 {@const sourceUrl = metadataString(metadata, "source_url")}
