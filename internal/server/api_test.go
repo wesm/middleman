@@ -14185,14 +14185,18 @@ func TestWorkspaceRuntimeShellTerminalDeliversExitFrameE2E(t *testing.T) {
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
-	// Helper closes its PTY end immediately, then sleeps 750ms before
-	// exiting. The bridge's outputDone fires within milliseconds; an
-	// exit frame must still be delivered well before the helper's
-	// cmd.Wait return. 4 s is generous slack for slow CI without
-	// risking the test masking a frame that comes ONLY after cmd.Wait.
-	readCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	// Helper closes its PTY end immediately, then sleeps long enough
+	// before exiting that a regression which gates the exit frame on
+	// cmd.Wait would push delivery well past our promptness budget.
+	// The bridge's outputDone path must deliver the frame within a
+	// few hundred ms of attach; cmd.Wait can only return when the
+	// helper finishes its sleep, so the gap between "right" and
+	// "wrong" is the helper's sleep duration. Helper sleeps 2 s; we
+	// allow up to 800 ms for the PTY-EOF path even on slow CI.
+	readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	frameDeadline := time.Now().Add(400 * time.Millisecond)
+	const exitFrameBudget = 800 * time.Millisecond
+	attachStart := time.Now()
 	for {
 		typ, data, readErr := conn.Read(readCtx)
 		if readErr != nil {
@@ -14204,10 +14208,13 @@ func TestWorkspaceRuntimeShellTerminalDeliversExitFrameE2E(t *testing.T) {
 		if typ != websocket.MessageText {
 			continue
 		}
-		require.LessOrEqualf(
-			time.Now().Unix(), frameDeadline.Unix()+1,
-			"exit frame must arrive promptly after PTY EOF, "+
-				"not gated on the wrapper's cmd.Wait",
+		elapsed := time.Since(attachStart)
+		require.Lessf(elapsed, exitFrameBudget,
+			"exit frame took %s after attach; bridge appears "+
+				"gated on cmd.Wait rather than PTY EOF (helper "+
+				"sleeps 2 s, so a regression would clock in "+
+				"around there)",
+			elapsed,
 		)
 		var msg struct {
 			Type string `json:"type"`
@@ -14828,12 +14835,15 @@ func TestServerRuntimeHelperProcess(t *testing.T) {
 		// close — without that, the kernel SIGHUPs the session leader
 		// and cmd.Wait returns alongside drainOutput, which hides the
 		// race we're trying to exercise. Closing stdin/stdout/stderr
-		// drops every slave fd; the master sees EOF immediately.
+		// drops every slave fd; the master sees EOF immediately. The
+		// 2 s sleep gives the exit-frame promptness assertion clear
+		// daylight: a regression that gates on cmd.Wait would deliver
+		// at ~2 s, well past the test's promptness budget.
 		signal.Ignore(syscall.SIGHUP, syscall.SIGTERM, syscall.SIGINT)
 		_ = os.Stdin.Close()
 		_ = os.Stdout.Close()
 		_ = os.Stderr.Close()
-		time.Sleep(750 * time.Millisecond)
+		time.Sleep(2 * time.Second)
 		os.Exit(7)
 	default:
 		os.Exit(2)

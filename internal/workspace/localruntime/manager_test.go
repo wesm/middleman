@@ -1057,31 +1057,27 @@ func TestAttachmentSessionOutputClosedDistinguishesSubscriberDrop(t *testing.T) 
 	require.NotNil(s)
 
 	// Force the broadcast-drops-subscriber path: the channel buffer
-	// is 64. We do not consume from attach.Output, so 65+ broadcasts
-	// will eventually trigger broadcast's `default` branch (drop +
-	// close). Stop as soon as the channel is observed closed.
-	dropped := make(chan struct{})
-	go func() {
-		for {
-			select {
-			case _, ok := <-attach.Output:
-				if !ok {
-					close(dropped)
-					return
-				}
-			case <-time.After(2 * time.Second):
-				return
-			}
-		}
-	}()
+	// is 64, so the 65th broadcast that can't enqueue takes the
+	// `default` branch and closes the channel. Run the broadcasts
+	// synchronously WITHOUT a concurrent consumer — a parallel
+	// reader could drain the buffer faster than we fill it and the
+	// drop would never trigger. Drain afterward to confirm closure.
 	for range 200 {
 		s.broadcast([]byte("x"))
 	}
-	select {
-	case <-dropped:
-	case <-time.After(2 * time.Second):
-		require.Fail("broadcast never dropped the slow subscriber")
+	drained := 0
+	for {
+		_, ok := <-attach.Output
+		if !ok {
+			break
+		}
+		drained++
+		require.Less(drained, 200,
+			"channel never closed; broadcast did not drop the "+
+				"slow subscriber")
 	}
+	assert.LessOrEqual(drained, 64,
+		"buffer is 64; drop should fire by the 65th broadcast")
 
 	// Subscriber dropped, but the session itself is still healthy
 	// (helperCommand("sleep") is still running and drainOutput has

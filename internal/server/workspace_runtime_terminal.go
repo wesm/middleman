@@ -263,8 +263,11 @@ func bridgeRuntimeAttachment(
 		case <-outputDone:
 		case <-time.After(100 * time.Millisecond):
 		}
-		cancel()
+		// Write the frame BEFORE cancel: coder/websocket tears down
+		// the underlying connection when the input goroutine's
+		// Read context is canceled, which races our Write.
 		writeRuntimeExit(conn, attachment.Info())
+		cancel()
 		return true
 	case <-inputDone:
 		cancel()
@@ -289,12 +292,19 @@ func bridgeRuntimeAttachment(
 		//      here would auto-close the drawer on a healthy shell.
 		//      Close the websocket without an exit frame; the client
 		//      can reconnect and resubscribe from the replay buffer.
-		cancel()
-		if attachment.SessionOutputClosed() {
+		//
+		// Order matters: write the exit frame BEFORE cancel(). The
+		// input goroutine's conn.Read uses ctx, and coder/websocket
+		// tears down the underlying TCP connection when that ctx is
+		// canceled. Cancelling first races writeRuntimeExit's Write
+		// against socket teardown — the Write loses ~25 % of the
+		// time and the frame never reaches the client.
+		closed := attachment.SessionOutputClosed()
+		if closed {
 			writeRuntimeExit(conn, attachment.Info())
-			return true
 		}
-		return false
+		cancel()
+		return closed
 	case <-ctx.Done():
 		return false
 	}
