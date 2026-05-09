@@ -1001,6 +1001,101 @@ func TestManagerEnsureShellSkipsZombieSessions(t *testing.T) {
 	mgr.mu.Unlock()
 	assert.NotSame(s, current,
 		"the zombie should have been replaced, not reused")
+
+	// Once the zombie is no longer in the map, Manager.Shutdown
+	// can't reach it. EnsureShell must therefore reap it inline:
+	// SIGKILL the process group so cmd.Wait returns and the
+	// per-session watchSession goroutine completes (closing s.done).
+	// helperCommand("sleep") would otherwise block forever.
+	require.Eventually(func() bool {
+		select {
+		case <-s.done:
+			return true
+		default:
+			return false
+		}
+	}, 2*time.Second, 20*time.Millisecond,
+		"zombie's process must be killed and reaped, not orphaned")
+}
+
+// TestAttachmentSessionOutputClosedDistinguishesSubscriberDrop covers
+// the contract bridges rely on to tell a real session exit from a
+// dropped subscriber: a closed Output channel can mean either, and
+// auto-closing the drawer on the latter would hang the user out on a
+// healthy shell.
+//
+// broadcast drops a subscriber when its 64-slot buffer can't accept
+// another chunk (slow client / congested writer). drainOutput's PTY
+// EOF, in contrast, runs closeSubscribers which flips s.outputClosed
+// before closing every subscriber channel. SessionOutputClosed
+// exposes that distinction to bridge code.
+func TestAttachmentSessionOutputClosedDistinguishesSubscriberDrop(t *testing.T) {
+	requirePTYAvailable(t)
+	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+	mgr := NewManager(Options{ShellCommand: helperCommand("sleep")})
+	t.Cleanup(mgr.Shutdown)
+
+	shell, err := mgr.EnsureShell(ctx, "ws-1", t.TempDir())
+	require.NoError(err)
+
+	attach, err := mgr.AttachShell("ws-1")
+	require.NoError(err)
+	t.Cleanup(attach.Close)
+	require.Equal(shell.Key, attach.Info().Key)
+
+	// Healthy session: SessionOutputClosed must report false.
+	assert.False(attach.SessionOutputClosed(),
+		"freshly-attached session should not look output-closed")
+
+	mgr.mu.Lock()
+	s := mgr.shells[shell.Key]
+	mgr.mu.Unlock()
+	require.NotNil(s)
+
+	// Force the broadcast-drops-subscriber path: the channel buffer
+	// is 64. We do not consume from attach.Output, so 65+ broadcasts
+	// will eventually trigger broadcast's `default` branch (drop +
+	// close). Stop as soon as the channel is observed closed.
+	dropped := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case _, ok := <-attach.Output:
+				if !ok {
+					close(dropped)
+					return
+				}
+			case <-time.After(2 * time.Second):
+				return
+			}
+		}
+	}()
+	for range 200 {
+		s.broadcast([]byte("x"))
+	}
+	select {
+	case <-dropped:
+	case <-time.After(2 * time.Second):
+		require.Fail("broadcast never dropped the slow subscriber")
+	}
+
+	// Subscriber dropped, but the session itself is still healthy
+	// (helperCommand("sleep") is still running and drainOutput has
+	// not seen PTY EOF). SessionOutputClosed must NOT be true here —
+	// otherwise the bridge would emit "exited" on a live shell.
+	assert.False(attach.SessionOutputClosed(),
+		"subscriber drop must not be misreported as session exit")
+
+	// Now simulate the real session-exit path. closeSubscribers is
+	// what drainOutput calls on PTY EOF; it flips outputClosed.
+	s.closeSubscribers()
+	assert.True(attach.SessionOutputClosed(),
+		"after drainOutput's closeSubscribers, the bridge must see "+
+			"the session as output-closed and emit the exit frame")
 }
 
 func TestManagerShellConcurrentStartsOneProcess(t *testing.T) {

@@ -159,6 +159,13 @@ type Attachment struct {
 	resize  func(cols, rows int) error
 	refresh func(context.Context) error
 	close   func()
+
+	// sessionOutputClosed reports whether the underlying session's
+	// PTY EOF has been observed by drainOutput (s.outputClosed=true).
+	// The Output channel can also close because broadcast dropped
+	// this subscriber for falling behind; that is not a session exit
+	// and bridges must not propagate it as one.
+	sessionOutputClosed func() bool
 }
 
 func NewManager(options Options) *Manager {
@@ -1009,6 +1016,19 @@ func (a *Attachment) Close() {
 	}
 }
 
+// SessionOutputClosed reports whether the session's drainOutput has
+// observed PTY EOF — i.e. the session itself ended, not merely this
+// attachment's per-subscriber channel. Bridges use it to tell a real
+// session exit (send the "exited" frame) from a slow-subscriber drop
+// (broadcast closed our channel because we fell behind; the session
+// is still running and any reconnect should resubscribe).
+func (a *Attachment) SessionOutputClosed() bool {
+	if a == nil || a.sessionOutputClosed == nil {
+		return false
+	}
+	return a.sessionOutputClosed()
+}
+
 func (m *Manager) ShellSession(workspaceID string) *SessionInfo {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1328,19 +1348,28 @@ func (m *Manager) runningSession(
 		delete(sessions, key)
 		return nil
 	}
-	// drainOutput closes outputClosed as soon as the PTY hits EOF, but
-	// watchSession only marks Status=Exited once cmd.Wait returns —
-	// which can lag noticeably for wrapped commands (systemd-run
-	// --wait, etc.). Treating those output-dead sessions as still
-	// "running" hands callers a zombie they can attach to but never
-	// receive any bytes from. Reject them so EnsureShell/Launch start
-	// a fresh session; the lingering watchSession will overwrite-or-
-	// skip the map entry on its own (removeExitedSession's identity
-	// check guards against double-cleanup).
+	// drainOutput closes outputClosed as soon as the PTY hits EOF,
+	// but watchSession only marks Status=Exited once cmd.Wait
+	// returns — which can lag noticeably for wrapped commands
+	// (systemd-run --wait, etc.). Treating those output-dead
+	// sessions as still "running" hands callers a zombie they can
+	// attach to but never receive any bytes from. Reject the zombie
+	// so EnsureShell/Launch start a fresh session.
+	//
+	// The caller will overwrite our map entry with the new session,
+	// which means we are about to lose our only handle to the old
+	// process. If its wrapper is still in cmd.Wait (zsh exited but
+	// systemd-run is still tearing down the transient unit), or
+	// worse, hung indefinitely, Manager.Shutdown can no longer
+	// reach it. stop() it now: SIGKILL the process group and close
+	// the master so cmd.Wait returns and the goroutine can finish.
+	// removeExitedSession's identity check (current != s) guards
+	// against double-cleanup once the new session is in place.
 	s.mu.Lock()
 	outputClosed := s.outputClosed
 	s.mu.Unlock()
 	if outputClosed {
+		s.stop()
 		return nil
 	}
 	return s
@@ -1935,5 +1964,10 @@ func attachToSession(
 			return refresh(ctx, s)
 		},
 		close: unsubscribe,
+		sessionOutputClosed: func() bool {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			return s.outputClosed
+		},
 	}, nil
 }

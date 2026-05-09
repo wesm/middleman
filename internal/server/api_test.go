@@ -14298,6 +14298,86 @@ func TestWorkspaceRuntimeEnsureShellAfterExitStartsFreshE2E(t *testing.T) {
 	assert.Equal(string(localruntime.SessionStatusRunning), second.JSON200.Status)
 }
 
+// TestBridgeRuntimeAttachmentSubscriberDropDoesNotEmitExitFrame
+// pins the bridge's branch that distinguishes a subscriber drop from
+// a real session exit. broadcast closes a subscriber's Output channel
+// when its 64-slot buffer fills (slow client); without this branch
+// the bridge would emit "exited" on a healthy shell and auto-close
+// the drawer in front of a still-running session.
+//
+// We exercise the bridge directly with an Attachment whose Output is
+// pre-closed and whose SessionOutputClosed reports false — exactly
+// the post-broadcast-drop state. Constructing that state via real
+// PTY traffic would be timing-fragile (it requires saturating the
+// TCP send buffer faster than the bridge can drain it), so this is
+// a focused unit test on the bridge's branching logic.
+func TestBridgeRuntimeAttachmentSubscriberDropDoesNotEmitExitFrame(t *testing.T) {
+	require := require.New(t)
+	closedOutput := make(chan []byte)
+	close(closedOutput)
+	stillRunning := make(chan struct{}) // never closed
+	attach := localruntime.NewAttachmentForTesting(
+		localruntime.AttachmentForTestingOptions{
+			Output:              closedOutput,
+			Done:                stillRunning,
+			SessionOutputClosed: func() bool { return false },
+		},
+	)
+
+	bridgeReturn := make(chan bool, 1)
+	acceptErr := make(chan error, 1)
+	srv := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+				InsecureSkipVerify: true,
+			})
+			if err != nil {
+				acceptErr <- err
+				return
+			}
+			exited := bridgeRuntimeAttachment(r.Context(), conn, attach)
+			bridgeReturn <- exited
+			conn.Close(websocket.StatusNormalClosure, "test done")
+		},
+	))
+	t.Cleanup(srv.Close)
+
+	ctx, cancel := context.WithTimeout(
+		context.Background(), 4*time.Second,
+	)
+	defer cancel()
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	require.NoError(err)
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+
+	// Read until close. With the bug present (always-emit on
+	// outputDone), we'd see a MessageText "exited" frame here.
+	for {
+		typ, data, readErr := conn.Read(ctx)
+		if readErr != nil {
+			break
+		}
+		if typ == websocket.MessageText {
+			require.Failf(
+				"unexpected exit frame on subscriber drop",
+				"frame: %s", data,
+			)
+		}
+	}
+
+	select {
+	case exited := <-bridgeReturn:
+		require.False(exited,
+			"bridge must report not-exited when only the "+
+				"subscriber's Output closed")
+	case err := <-acceptErr:
+		require.NoError(err, "websocket accept failed")
+	case <-time.After(2 * time.Second):
+		require.Fail("bridge did not return")
+	}
+}
+
 func TestWorkspaceRuntimeSessionTerminalWebSocketE2E(t *testing.T) {
 	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
 

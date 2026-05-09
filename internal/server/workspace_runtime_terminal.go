@@ -270,18 +270,31 @@ func bridgeRuntimeAttachment(
 		cancel()
 		return false
 	case <-outputDone:
-		// Output channel closed = drainOutput observed PTY EOF, which
-		// is the client-visible "session is over" signal. Process exit
-		// (attachment.Done) follows in a separate goroutine and can lag
-		// noticeably when the session is wrapped (e.g. systemd-run
-		// --wait collecting the transient unit), so don't gate the exit
-		// frame on it — clients that miss the frame reconnect-loop on a
-		// dead session and never fire their onExit handler. ExitCode
-		// may not be populated yet; writeRuntimeExit emits -1 in that
-		// case, which the frontend treats the same as any other exit.
+		// outputDone fires when the per-subscriber Output channel
+		// closes. There are two distinct reasons that can happen:
+		//
+		//   1. drainOutput observed PTY EOF and closed every
+		//      subscriber via closeSubscribers. The session itself
+		//      is over; send the "exited" frame so the client's
+		//      onExit fires. attachment.Done follows in a separate
+		//      goroutine and can lag noticeably for wrapped sessions
+		//      (systemd-run --wait collecting the transient unit),
+		//      so we do NOT gate the frame on attachment.Done —
+		//      ExitCode may be nil and writeRuntimeExit emits -1,
+		//      which the frontend treats identically.
+		//
+		//   2. broadcast dropped this subscriber because its 64-slot
+		//      buffer filled (slow client, congested writer, etc.).
+		//      The session is still running, and reporting "exited"
+		//      here would auto-close the drawer on a healthy shell.
+		//      Close the websocket without an exit frame; the client
+		//      can reconnect and resubscribe from the replay buffer.
 		cancel()
-		writeRuntimeExit(conn, attachment.Info())
-		return true
+		if attachment.SessionOutputClosed() {
+			writeRuntimeExit(conn, attachment.Info())
+			return true
+		}
+		return false
 	case <-ctx.Done():
 		return false
 	}
