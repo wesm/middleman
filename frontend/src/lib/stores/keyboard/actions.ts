@@ -9,6 +9,7 @@ import {
   toggleSidebar,
 } from "../sidebar.svelte.js";
 import { toggleTheme } from "../theme.svelte.js";
+import { toggleCheatsheet } from "./cheatsheet-state.svelte.js";
 import { togglePalette } from "./palette-state.svelte.js";
 import {
   buildPullRequestFilesRoute,
@@ -203,8 +204,7 @@ export const defaultActions: Action[] = [
     binding: { key: "?" },
     priority: 0,
     when: always,
-    // Stubbed until Task 24 lands cheatsheet-state — see palette.open above.
-    handler: () => {},
+    handler: () => toggleCheatsheet(),
   },
   {
     id: "sync.repos",
