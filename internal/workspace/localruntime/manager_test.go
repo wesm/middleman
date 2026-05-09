@@ -1066,15 +1066,27 @@ func TestAttachmentSessionOutputClosedDistinguishesSubscriberDrop(t *testing.T) 
 		s.broadcast([]byte("x"))
 	}
 	drained := 0
+drain:
 	for {
-		_, ok := <-attach.Output
-		if !ok {
-			break
+		// Bound the receive: if broadcast regresses and never
+		// closes the channel, the buffered messages drain and the
+		// next receive would block forever, hanging the test
+		// process instead of failing it.
+		select {
+		case _, ok := <-attach.Output:
+			if !ok {
+				break drain
+			}
+			drained++
+			require.Less(drained, 200,
+				"channel never closed; broadcast did not "+
+					"drop the slow subscriber")
+		case <-time.After(2 * time.Second):
+			require.Fail(
+				"timed out waiting for channel close; " +
+					"broadcast did not drop the slow subscriber",
+			)
 		}
-		drained++
-		require.Less(drained, 200,
-			"channel never closed; broadcast did not drop the "+
-				"slow subscriber")
 	}
 	assert.LessOrEqual(drained, 64,
 		"buffer is 64; drop should fire by the 65th broadcast")
