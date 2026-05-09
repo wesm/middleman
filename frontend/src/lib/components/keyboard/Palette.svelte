@@ -3,7 +3,9 @@
 
   import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
   import type { ModalFrameAction } from "@middleman/ui/stores/keyboard/keyspec";
-  import { getStores } from "@middleman/ui";
+  import { getStores, ItemStateChip } from "@middleman/ui";
+  import { timeAgo } from "@middleman/ui/utils/time";
+  import type { Issue, PullRequest } from "@middleman/ui/api/types";
   import {
     closePalette,
     isPaletteOpen,
@@ -14,6 +16,7 @@
     groupResults,
     parsePaletteQuery,
   } from "../../stores/keyboard/palette-search.svelte.js";
+  import type { Action } from "../../stores/keyboard/types.js";
 
   // getStores() returns undefined when the palette is mounted outside the
   // <Provider> context (notably the unit-test fixture in
@@ -27,10 +30,17 @@
   let dialogEl: HTMLDivElement | undefined = $state();
   let inputEl: HTMLInputElement | undefined = $state();
   let query = $state("");
+  let highlightIndex = $state(0);
 
   const parsed = $derived(parsePaletteQuery(query));
   const visibleCommands = $derived.by(() => {
-    if (!stores) return [];
+    if (!stores) {
+      // Test-fixture path: with no Provider there is no Context to evaluate
+      // `when` predicates against, so surface every registered action so the
+      // unit tests can drive preview/highlight behavior without standing up
+      // the full app context. Production callers always provide stores.
+      return getAllActions();
+    }
     const ctx = buildContext(stores);
     return getAllActions().filter((a) => a.when(ctx));
   });
@@ -46,6 +56,47 @@
     grouped.commands.length + grouped.pulls.length + grouped.issues.length > 0,
   );
 
+  type FlatResult =
+    | { kind: "command"; item: Action }
+    | { kind: "pull"; item: PullRequest }
+    | { kind: "issue"; item: Issue };
+
+  const flatResults = $derived<FlatResult[]>([
+    ...grouped.commands.map<FlatResult>((c) => ({ kind: "command", item: c })),
+    ...grouped.pulls.map<FlatResult>((p) => ({ kind: "pull", item: p })),
+    ...grouped.issues.map<FlatResult>((i) => ({ kind: "issue", item: i })),
+  ]);
+
+  // Reset the highlight to the top whenever the query changes. The first match
+  // is the assumed pick, and keeping a stale offset across keystrokes makes
+  // the preview jump around as the result list rebuilds.
+  $effect(() => {
+    void query;
+    untrack(() => {
+      highlightIndex = 0;
+    });
+  });
+
+  // Clamp highlightIndex back into range when the result list shrinks. When
+  // empty, leave it at 0 — `highlighted` will still be null.
+  $effect(() => {
+    const n = flatResults.length;
+    if (n === 0) return;
+    if (highlightIndex >= n) {
+      untrack(() => {
+        highlightIndex = n - 1;
+      });
+    } else if (highlightIndex < 0) {
+      untrack(() => {
+        highlightIndex = 0;
+      });
+    }
+  });
+
+  const highlighted = $derived<FlatResult | null>(
+    flatResults[highlightIndex] ?? null,
+  );
+
   function pullKey(repoOwner: string, repoName: string, num: number): string {
     return `${repoOwner}/${repoName}#${num}`;
   }
@@ -53,6 +104,23 @@
   function selectRow(): void {
     // Task 19 only renders rows; selection (run/navigate) lands in later tasks.
     closePalette();
+  }
+
+  function bodyExcerpt(body: string | undefined): string {
+    if (!body) return "";
+    return body.slice(0, 200);
+  }
+
+  function onPaletteKeyDown(e: KeyboardEvent): void {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      const last = flatResults.length - 1;
+      if (last < 0) return;
+      highlightIndex = Math.min(last, highlightIndex + 1);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      highlightIndex = Math.max(0, highlightIndex - 1);
+    }
   }
 
   $effect(() => {
@@ -126,6 +194,7 @@
     <input
       bind:this={inputEl}
       bind:value={query}
+      onkeydown={onPaletteKeyDown}
       class="palette-input"
       placeholder="Search loaded PRs, issues, commands..."
     />
@@ -145,9 +214,12 @@
           {#if grouped.commands.length > 0}
             <div class="palette-group">
               <div class="palette-group-header">Commands</div>
-              {#each grouped.commands as command (command.id)}
+              {#each grouped.commands as command, ci (command.id)}
+                {@const flatIdx = ci}
                 <button
-                  class="palette-row"
+                  class="palette-row {flatIdx === highlightIndex
+                    ? 'palette-row-highlight'
+                    : ''}"
                   type="button"
                   onclick={selectRow}
                 >
@@ -160,9 +232,12 @@
           {#if grouped.pulls.length > 0}
             <div class="palette-group">
               <div class="palette-group-header">Pull requests</div>
-              {#each grouped.pulls as pr (pullKey(pr.repo_owner, pr.repo_name, pr.Number))}
+              {#each grouped.pulls as pr, pi (pullKey(pr.repo_owner, pr.repo_name, pr.Number))}
+                {@const flatIdx = grouped.commands.length + pi}
                 <button
-                  class="palette-row"
+                  class="palette-row {flatIdx === highlightIndex
+                    ? 'palette-row-highlight'
+                    : ''}"
                   type="button"
                   onclick={selectRow}
                 >
@@ -177,9 +252,13 @@
           {#if grouped.issues.length > 0}
             <div class="palette-group">
               <div class="palette-group-header">Issues</div>
-              {#each grouped.issues as issue (pullKey(issue.repo_owner, issue.repo_name, issue.Number))}
+              {#each grouped.issues as issue, ii (pullKey(issue.repo_owner, issue.repo_name, issue.Number))}
+                {@const flatIdx =
+                  grouped.commands.length + grouped.pulls.length + ii}
                 <button
-                  class="palette-row"
+                  class="palette-row {flatIdx === highlightIndex
+                    ? 'palette-row-highlight'
+                    : ''}"
                   type="button"
                   onclick={selectRow}
                 >
@@ -193,7 +272,52 @@
           {/if}
         {/if}
       </div>
-      <div class="palette-preview"></div>
+      <div class="palette-preview">
+        {#if highlighted === null}
+          <div class="preview-empty">Highlight a result to preview it</div>
+        {:else if highlighted.kind === "command"}
+          {@const action = highlighted.item}
+          <div class="preview-title">{action.label}</div>
+          <div class="preview-subtitle">Scope: {action.scope}</div>
+          <div class="preview-meta">Available when: context-conditional</div>
+        {:else if highlighted.kind === "pull"}
+          {@const pr = highlighted.item}
+          <div class="preview-header">
+            <div class="preview-title">{pr.Title}</div>
+            <ItemStateChip
+              state={(pr.IsDraft ? "draft" : pr.State).toLowerCase()}
+              class="preview-badge"
+            />
+          </div>
+          <div class="preview-subtitle">
+            {pr.repo_owner}/{pr.repo_name} #{pr.Number}
+          </div>
+          {#if pr.UpdatedAt}
+            <div class="preview-meta">Updated {timeAgo(pr.UpdatedAt)}</div>
+          {/if}
+          {#if pr.Body}
+            <div class="preview-body">{bodyExcerpt(pr.Body)}</div>
+          {/if}
+        {:else}
+          {@const issue = highlighted.item}
+          <div class="preview-header">
+            <div class="preview-title">{issue.Title}</div>
+            <ItemStateChip
+              state={issue.State.toLowerCase()}
+              class="preview-badge"
+            />
+          </div>
+          <div class="preview-subtitle">
+            {issue.repo_owner}/{issue.repo_name} #{issue.Number}
+          </div>
+          {#if issue.UpdatedAt}
+            <div class="preview-meta">Updated {timeAgo(issue.UpdatedAt)}</div>
+          {/if}
+          {#if issue.Body}
+            <div class="preview-body">{bodyExcerpt(issue.Body)}</div>
+          {/if}
+        {/if}
+      </div>
     </div>
     <div class="palette-footer">
       <span>up/down navigate</span>
@@ -282,6 +406,11 @@
     outline: none;
   }
 
+  .palette-row-highlight {
+    background: var(--bg-surface-hover);
+    box-shadow: inset 2px 0 0 0 var(--accent-blue, var(--text-primary));
+  }
+
   .palette-row-label {
     flex: 1 1 auto;
     overflow: hidden;
@@ -317,6 +446,46 @@
   .palette-preview {
     padding: 16px;
     overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .preview-empty {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-style: italic;
+  }
+
+  .preview-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .preview-title {
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 600;
+    flex: 1 1 auto;
+  }
+
+  .preview-subtitle {
+    color: var(--text-secondary);
+    font-size: 12px;
+  }
+
+  .preview-meta {
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+
+  .preview-body {
+    color: var(--text-primary);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    margin-top: 4px;
   }
 
   .palette-footer {
