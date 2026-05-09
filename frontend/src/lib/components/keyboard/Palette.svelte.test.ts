@@ -119,4 +119,58 @@ describe("Palette", () => {
     expect(text).toContain("First Action");
     expect(text).toContain("Scope: view-pulls");
   });
+
+  it("Enter runs the highlighted command's handler and closes the palette", async () => {
+    let ran = false;
+    registerScopedActions("test-run-enter", [
+      {
+        id: "test.run",
+        label: "Test run",
+        scope: "global",
+        binding: null,
+        priority: 0,
+        when: trueWhen,
+        handler: () => {
+          ran = true;
+        },
+      },
+    ]);
+    const { rerender } = render(Palette, { props: {} });
+    openPalette();
+    await rerender({});
+    const dialog = screen.getByRole("dialog", { name: "Command palette" });
+    const input = dialog.querySelector(".palette-input");
+    expect(input).not.toBeNull();
+    await fireEvent.keyDown(input!, { key: "Enter" });
+    await rerender({});
+    expect(ran).toBe(true);
+    expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull();
+  });
+
+  it("clicking a command row runs its handler and closes the palette", async () => {
+    let ran = false;
+    registerScopedActions("test-run-click", [
+      {
+        id: "test.click",
+        label: "Test click",
+        scope: "global",
+        binding: null,
+        priority: 0,
+        when: trueWhen,
+        handler: () => {
+          ran = true;
+        },
+      },
+    ]);
+    const { rerender } = render(Palette, { props: {} });
+    openPalette();
+    await rerender({});
+    const dialog = screen.getByRole("dialog", { name: "Command palette" });
+    const row = dialog.querySelector(".palette-row");
+    expect(row).not.toBeNull();
+    await fireEvent.click(row!);
+    await rerender({});
+    expect(ran).toBe(true);
+    expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull();
+  });
 });

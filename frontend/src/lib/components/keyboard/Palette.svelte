@@ -6,6 +6,7 @@
   import { getStores, ItemStateChip } from "@middleman/ui";
   import { timeAgo } from "@middleman/ui/utils/time";
   import type { Issue, PullRequest } from "@middleman/ui/api/types";
+  import { buildIssueRoute, buildPullRequestRoute } from "@middleman/ui/routes";
   import {
     closePalette,
     isPaletteOpen,
@@ -16,6 +17,7 @@
     groupResults,
     parsePaletteQuery,
   } from "../../stores/keyboard/palette-search.svelte.js";
+  import { navigate } from "../../stores/router.svelte.js";
   import type { Action } from "../../stores/keyboard/types.js";
 
   // getStores() returns undefined when the palette is mounted outside the
@@ -101,9 +103,66 @@
     return `${repoOwner}/${repoName}#${num}`;
   }
 
-  function selectRow(): void {
-    // Task 19 only renders rows; selection (run/navigate) lands in later tasks.
+  function runHighlighted(): void {
+    const result = highlighted;
+    if (result === null) return;
+    if (result.kind === "command") {
+      // Close before invoking the handler so navigation-style commands
+      // (e.g. nav.settings) don't race the modal teardown — the route
+      // change can unmount the palette host while the handler runs.
+      const action = result.item;
+      const ctxStores = stores;
+      closePalette();
+      // The unit-test fixture mounts the palette without a Provider, so
+      // `stores` is undefined and `buildContext` cannot run. Hand the
+      // handler an empty context object in that case — production
+      // actions all read `stores()` via their own getter, so the only
+      // handlers that actually invoke through the test fixture are the
+      // simple ones the unit tests register.
+      const ctx = ctxStores
+        ? buildContext(ctxStores)
+        : ({} as ReturnType<typeof buildContext>);
+      try {
+        untrack(() => action.handler(ctx));
+      } catch (err) {
+        // Mirror dispatch.svelte.ts/runHandler: log and keep the palette
+        // host alive so a throwing handler doesn't crash the app.
+        console.error(`palette action ${action.id} failed`, err);
+      }
+      return;
+    }
+    if (result.kind === "pull") {
+      const pr = result.item;
+      closePalette();
+      navigate(
+        buildPullRequestRoute({
+          provider: pr.repo.provider,
+          platformHost: pr.repo.platform_host,
+          owner: pr.repo.owner,
+          name: pr.repo.name,
+          repoPath: pr.repo.repo_path,
+          number: pr.Number,
+        }),
+      );
+      return;
+    }
+    const issue = result.item;
     closePalette();
+    navigate(
+      buildIssueRoute({
+        provider: issue.repo.provider,
+        platformHost: issue.repo.platform_host,
+        owner: issue.repo.owner,
+        name: issue.repo.name,
+        repoPath: issue.repo.repo_path,
+        number: issue.Number,
+      }),
+    );
+  }
+
+  function selectRowAt(index: number): void {
+    highlightIndex = index;
+    runHighlighted();
   }
 
   function bodyExcerpt(body: string | undefined): string {
@@ -120,6 +179,9 @@
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       highlightIndex = Math.max(0, highlightIndex - 1);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      runHighlighted();
     }
   }
 
@@ -221,7 +283,7 @@
                     ? 'palette-row-highlight'
                     : ''}"
                   type="button"
-                  onclick={selectRow}
+                  onclick={() => selectRowAt(flatIdx)}
                 >
                   <span class="palette-row-label">{command.label}</span>
                   <span class="palette-row-tag">{command.id}</span>
@@ -239,7 +301,7 @@
                     ? 'palette-row-highlight'
                     : ''}"
                   type="button"
-                  onclick={selectRow}
+                  onclick={() => selectRowAt(flatIdx)}
                 >
                   <span class="palette-row-tag">
                     {pr.repo_owner}/{pr.repo_name} #{pr.Number}
@@ -260,7 +322,7 @@
                     ? 'palette-row-highlight'
                     : ''}"
                   type="button"
-                  onclick={selectRow}
+                  onclick={() => selectRowAt(flatIdx)}
                 >
                   <span class="palette-row-tag">
                     {issue.repo_owner}/{issue.repo_name} #{issue.Number}
