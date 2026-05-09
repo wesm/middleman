@@ -110,7 +110,7 @@ describe("EventTimeline", () => {
     expect(bodyStyle.getPropertyValue("border-radius")).toBe("");
   });
 
-  it("renders commit events as compact one-line commit detail rows", () => {
+  it("renders commit events as expanded commit detail rows", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2024-06-01T16:00:00Z"));
 
@@ -127,11 +127,12 @@ describe("EventTimeline", () => {
     });
 
     expect(screen.getByText("abcdef1")).toBeTruthy();
-    expect(screen.getByText("feat: add timeline filters")).toBeTruthy();
-    expect(screen.getByText("Long body")).toBeTruthy();
+    expect(
+      document.querySelector(".commit-body-details")?.textContent?.trim(),
+    ).toBe("feat: add timeline filters\n\nLong body");
     expect(screen.getByText("4h ago")).toBeTruthy();
     expect(document.querySelector(".event--compact")).toBeTruthy();
-    expect(document.querySelector(".commit-title")).toBeTruthy();
+    expect(document.querySelector(".commit-title")).toBeNull();
     expect(
       document.querySelector(".commit-body-details")?.classList.contains("event-body"),
     ).toBe(true);
@@ -141,6 +142,29 @@ describe("EventTimeline", () => {
         ?.lastElementChild
         ?.classList.contains("event-time"),
     ).toBe(true);
+  });
+
+  it("expands single-line commit messages when commit details are shown", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2024-06-01T16:00:00Z"));
+
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            EventType: "commit",
+            Summary: "abcdef1234567890",
+            Body: "refactor: simplify worktree mapping application",
+          }),
+        ],
+      },
+    });
+
+    expect(screen.getByText("abcdef1")).toBeTruthy();
+    expect(
+      document.querySelector(".commit-body-details")?.textContent?.trim(),
+    ).toBe("refactor: simplify worktree mapping application");
+    expect(document.querySelector(".commit-title")).toBeNull();
   });
 
   it("can hide commit body details while keeping the title row", () => {

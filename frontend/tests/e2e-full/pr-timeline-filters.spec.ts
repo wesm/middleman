@@ -35,6 +35,10 @@ async function openTimelineFilters(page: Page): Promise<void> {
   await expect(page.locator(".filter-dropdown")).toBeVisible();
 }
 
+function cacheCommitRow(page: Page) {
+  return page.locator(".event--compact", { hasText: "abc1111" }).first();
+}
+
 test.describe("PR timeline filters", () => {
   test.beforeEach(async ({ page }) => {
     await gotoWithWebKitRetry(page, "/");
@@ -62,13 +66,15 @@ test.describe("PR timeline filters", () => {
   test("keeps commit rows while hiding and restoring system event buckets", async ({ page }) => {
     await openPRTimeline(page);
     await openTimelineFilters(page);
+    const commitRow = cacheCommitRow(page);
 
     await page.getByRole("button", { name: "Commit details" }).click();
-    await expect(page.getByText("feat: add cache store")).toBeVisible();
-    await expect(page.getByText("Cache entries now expire")).not.toBeVisible();
+    await expect(commitRow.locator(".commit-title")).toHaveText("feat: add cache store");
+    await expect(commitRow.locator(".commit-body-details")).toHaveCount(0);
     await page.getByRole("button", { name: "Commit details" }).click();
-    await expect(page.getByText("feat: add cache store")).toBeVisible();
-    await expect(page.getByText("Cache entries now expire")).toBeVisible();
+    await expect(commitRow.locator(".commit-title")).toHaveCount(0);
+    await expect(commitRow.locator(".commit-body-details"))
+      .toContainText("Cache entries now expire");
 
     await page.getByRole("button", { name: "Events" }).click();
     await expect(page.getByText("Widget rendering broken on Safari"))
@@ -118,9 +124,10 @@ test.describe("PR timeline filters", () => {
     await page.getByRole("button", { name: "Commit details" }).click();
     await page.getByRole("button", { name: "Events" }).click();
     await page.getByRole("button", { name: "Force pushes" }).click();
+    const commitRow = cacheCommitRow(page);
 
-    await expect(page.getByText("feat: add cache store")).toBeVisible();
-    await expect(page.getByText("Cache entries now expire")).not.toBeVisible();
+    await expect(commitRow.locator(".commit-title")).toHaveText("feat: add cache store");
+    await expect(commitRow.locator(".commit-body-details")).toHaveCount(0);
     await expect(page.getByText("No activity matches the current filters"))
       .not.toBeVisible();
   });
