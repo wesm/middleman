@@ -32,6 +32,40 @@
     void tick().then(() => inputEl?.focus());
     return cleanup;
   });
+
+  // Focus trap: keep Tab / Shift+Tab cycling within the palette dialog so
+  // focus never escapes to the page underneath while the palette is open.
+  // Initial focus is handled by the effect above via tick(); this trap only
+  // intercepts subsequent Tab navigation.
+  $effect(() => {
+    if (!isPaletteOpen() || !dialogEl) return;
+    const focusable = (): HTMLElement[] =>
+      Array.from(
+        dialogEl!.querySelectorAll<HTMLElement>(
+          "input, button, [tabindex]:not([tabindex='-1'])",
+        ),
+      ).filter((e) => !e.hasAttribute("disabled"));
+    function trap(e: KeyboardEvent): void {
+      if (e.key !== "Tab") return;
+      const els = focusable();
+      if (els.length === 0) return;
+      const first = els[0]!;
+      const last = els[els.length - 1]!;
+      if (e.shiftKey && document.activeElement === first) {
+        last.focus();
+        e.preventDefault();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        first.focus();
+        e.preventDefault();
+      }
+    }
+    // Capture dialogEl into a local before registering so the cleanup
+    // detaches from the same node we attached to, even if dialogEl is
+    // reassigned or unmounted before cleanup runs.
+    const el = dialogEl;
+    el.addEventListener("keydown", trap);
+    return () => el.removeEventListener("keydown", trap);
+  });
 </script>
 
 {#if isPaletteOpen()}
