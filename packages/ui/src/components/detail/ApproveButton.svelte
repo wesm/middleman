@@ -1,8 +1,8 @@
 <script lang="ts">
   import CheckIcon from "@lucide/svelte/icons/check";
-  import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
   import { getClient, getStores } from "../../context.js";
   import ActionButton from "../shared/ActionButton.svelte";
+  import { runApprovePR, type PRDetailActionInput } from "./keyboard-actions.js";
 
   const client = getClient();
   const { detail, pulls } = getStores();
@@ -45,23 +45,31 @@
     error = null;
   });
 
+  function buildInput(): PRDetailActionInput {
+    return {
+      pr: { State: "open", IsDraft: false, MergeableState: "" },
+      ref: { provider, platformHost, owner, name, repoPath },
+      number,
+      viewerCan: {
+        approve: true, merge: false, markReady: false,
+        approveWorkflows: false,
+      },
+      repoSettings: null,
+      stale: disabled,
+      stores: { detail, pulls },
+      client,
+      approveCommentBody: body,
+    };
+  }
+
   async function handleApprove(): Promise<void> {
     if (disabled) return;
     submitting = true;
     error = null;
     try {
-      const ref = { provider, platformHost, owner, name, repoPath };
-      const { error } = await client.POST(providerItemPath("pulls", ref, "/approve"), {
-        params: { path: { ...providerRouteParams(ref), number } },
-        body: { body: body.trim() },
-      });
-      if (error) {
-        throw new Error(error.detail ?? error.title ?? "failed to approve pull request");
-      }
+      await runApprovePR(buildInput());
       body = "";
       expanded = false;
-      await detail.loadDetail(owner, name, number, { provider, platformHost, repoPath });
-      await pulls.loadPulls();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {

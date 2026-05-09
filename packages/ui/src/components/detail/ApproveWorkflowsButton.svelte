@@ -1,8 +1,10 @@
 <script lang="ts">
   import WorkflowIcon from "@lucide/svelte/icons/workflow";
-  import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
   import { getClient, getStores } from "../../context.js";
   import ActionButton from "../shared/ActionButton.svelte";
+  import {
+    runApproveWorkflows, type PRDetailActionInput,
+  } from "./keyboard-actions.js";
 
   const client = getClient();
   const { detail, pulls } = getStores();
@@ -45,32 +47,29 @@
   const tooltip =
     "Approve pending GitHub Actions runs waiting on outside contributor approval";
 
+  function buildInput(): PRDetailActionInput {
+    return {
+      pr: { State: "open", IsDraft: false, MergeableState: "" },
+      ref: { provider, platformHost, owner, name, repoPath },
+      number,
+      viewerCan: {
+        approve: false, merge: false, markReady: false,
+        approveWorkflows: true,
+      },
+      repoSettings: null,
+      stale: disabled,
+      stores: { detail, pulls },
+      client,
+      ...(oncompleted !== undefined && { onCompleted: oncompleted }),
+    };
+  }
+
   async function handleApproveWorkflows(): Promise<void> {
     if (disabled) return;
     submitting = true;
     error = null;
     try {
-      const ref = { provider, platformHost, owner, name, repoPath };
-      const { error: requestError } = await client.POST(
-        providerItemPath("pulls", ref, "/approve-workflows"),
-        {
-          params: { path: { ...providerRouteParams(ref), number } },
-        },
-      );
-      if (requestError) {
-        throw new Error(
-          requestError.detail ??
-            requestError.title ??
-            "failed to approve workflows",
-        );
-      }
-      await detail.refreshDetailOnly(owner, name, number, {
-        provider,
-        platformHost,
-        repoPath,
-      });
-      await pulls.loadPulls();
-      oncompleted?.();
+      await runApproveWorkflows(buildInput());
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {

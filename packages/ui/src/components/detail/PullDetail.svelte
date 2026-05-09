@@ -20,6 +20,10 @@
   import ApproveWorkflowsButton from "./ApproveWorkflowsButton.svelte";
   import MergeModal from "./MergeModal.svelte";
   import ReadyForReviewButton from "./ReadyForReviewButton.svelte";
+  import {
+    runOpenMerge,
+    type PRDetailActionInput,
+  } from "./keyboard-actions.js";
   import ActionButton from "../shared/ActionButton.svelte";
   import SelectDropdown from "../shared/SelectDropdown.svelte";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
@@ -470,6 +474,33 @@
     return pr.State === "open" && pr.MergeableState === "dirty";
   }
 
+  function buildOpenMergeInput(
+    pr: { State: string; IsDraft: boolean; MergeableState: string },
+    capabilities: ProviderCapabilities,
+  ): PRDetailActionInput {
+    return {
+      pr: {
+        State: pr.State,
+        IsDraft: pr.IsDraft,
+        MergeableState: pr.MergeableState,
+      },
+      ref: routeRef,
+      number,
+      viewerCan: {
+        approve: false,
+        merge: capabilities.merge_mutation,
+        markReady: false,
+        approveWorkflows: false,
+      },
+      repoSettings,
+      stale: stalePR,
+      stores: { detail: detailStore, pulls },
+      client,
+      setMergeModalOpen: (open: boolean) => { showMergeModal = open; },
+      onAfterOpenMerge: closeActionMenu,
+    };
+  }
+
   const worktreeLinks = $derived(
     detailStore.getDetail()?.worktree_links ?? [],
   );
@@ -882,11 +913,9 @@
               title={mergeDisabledByConflicts
                 ? "Resolve merge conflicts before merging"
                 : ""}
-              onclick={() => {
-                if (stalePR || mergeDisabledByConflicts) return;
-                showMergeModal = true;
-                closeActionMenu();
-              }}
+              onclick={() =>
+                runOpenMerge(buildOpenMergeInput(pr, capabilities))
+              }
               tone="success"
               surface="solid"
               size="sm"
