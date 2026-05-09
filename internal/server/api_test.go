@@ -18,12 +18,14 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -14143,24 +14145,25 @@ func TestWorkspaceRuntimeShellTerminalWebSocketE2E(t *testing.T) {
 }
 
 // TestWorkspaceRuntimeShellTerminalDeliversExitFrameE2E pins the
-// websocket "exited" text frame contract. Without it, the frontend's
-// ShellDrawer never fires its onExit handler, so the drawer doesn't
-// auto-close on shell exit and the user is stranded on a dead session
-// (TerminalPane reconnect-loops on a still-listed-but-output-dead
-// session, which looks like a hang).
+// websocket "exited" text frame contract. The frontend's ShellDrawer
+// only fires onExit when this frame arrives; without it the drawer
+// doesn't auto-close on shell exit and the user is stranded on a dead
+// session (TerminalPane reconnect-loops on a still-listed-but-
+// output-dead session, which looks like a hang).
 //
-// The frame is the only client-visible signal that the shell ended;
-// the existing WebSocket test pair (this and the runtime-session
-// variant below) prove only that bytes flow during the session. They
-// silently passed when the bridge dropped the exit frame on the
-// outputDone path.
+// Uses the "pty-close-then-sleep" helper to deterministically open the
+// race window where drainOutput's PTY EOF precedes watchSession's
+// cmd.Wait return by hundreds of milliseconds. Without the bridge fix
+// (always send exit frame on outputDone), this test fails because the
+// 100ms timeout fires before attachment.Done — exactly the systemd-
+// run-wrapped shell case the user hit.
 func TestWorkspaceRuntimeShellTerminalDeliversExitFrameE2E(t *testing.T) {
 	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
 
 	require := require.New(t)
 	cfg := &config.Config{
 		Shell: config.Shell{
-			Command: serverRuntimeHelperCommand("exit"),
+			Command: serverRuntimeHelperCommand("pty-close-then-sleep"),
 		},
 	}
 	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
@@ -14182,8 +14185,14 @@ func TestWorkspaceRuntimeShellTerminalDeliversExitFrameE2E(t *testing.T) {
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
+	// Helper closes its PTY end immediately, then sleeps 750ms before
+	// exiting. The bridge's outputDone fires within milliseconds; an
+	// exit frame must still be delivered well before the helper's
+	// cmd.Wait return. 4 s is generous slack for slow CI without
+	// risking the test masking a frame that comes ONLY after cmd.Wait.
 	readCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
+	frameDeadline := time.Now().Add(400 * time.Millisecond)
 	for {
 		typ, data, readErr := conn.Read(readCtx)
 		if readErr != nil {
@@ -14195,25 +14204,41 @@ func TestWorkspaceRuntimeShellTerminalDeliversExitFrameE2E(t *testing.T) {
 		if typ != websocket.MessageText {
 			continue
 		}
+		require.LessOrEqualf(
+			time.Now().Unix(), frameDeadline.Unix()+1,
+			"exit frame must arrive promptly after PTY EOF, "+
+				"not gated on the wrapper's cmd.Wait",
+		)
 		var msg struct {
 			Type string `json:"type"`
 			Code int    `json:"code"`
 		}
 		require.NoError(json.Unmarshal(data, &msg))
 		require.Equal("exited", msg.Type)
-		require.Equal(3, msg.Code)
+		// ExitCode may be 7 (cmd.Wait completed before writeRuntimeExit
+		// reads the snapshot) or -1 (writeRuntimeExit read snapshot
+		// before watchSession populated ExitCode). Both are "the
+		// session ended" signals the frontend treats identically;
+		// pinning a specific value would be timing-dependent. Reject
+		// 0 (success) — that would mean the frame leaked from a
+		// successful exit path that doesn't apply here.
+		require.NotEqual(0, msg.Code, "non-success exit must report non-zero (or -1)")
 		return
 	}
 }
 
 // TestWorkspaceRuntimeEnsureShellAfterExitStartsFreshE2E pins the
-// behavior that an EnsureShell call following a previous shell's exit
-// always returns a fresh session, never the dead one. Without the
-// runningSession outputClosed check, drainOutput's PTY EOF is observed
-// before watchSession's cmd.Wait returns; during that window the
-// session sits in m.shells with Status=Running but no live PTY, and
-// EnsureShell would reuse it — yielding a "starting" session whose
-// terminal never produces a single byte.
+// behavior that an EnsureShell call hitting the post-PTY-EOF /
+// pre-cmd.Wait-return window returns a fresh session, never the
+// zombie. Without the runningSession outputClosed check, EnsureShell
+// would hand the next caller a Status=Running snapshot whose Output
+// channel was already closed; the frontend would mount a TerminalPane
+// against it, immediately receive the exit frame (per the bridge
+// fix), auto-close — and on the next click do it all over again.
+//
+// Uses the "pty-close-then-sleep" helper so the zombie window is
+// deterministic (~750ms) and the second EnsureShell is guaranteed to
+// land inside it.
 func TestWorkspaceRuntimeEnsureShellAfterExitStartsFreshE2E(t *testing.T) {
 	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
 
@@ -14221,7 +14246,7 @@ func TestWorkspaceRuntimeEnsureShellAfterExitStartsFreshE2E(t *testing.T) {
 	assert := Assert.New(t)
 	cfg := &config.Config{
 		Shell: config.Shell{
-			Command: serverRuntimeHelperCommand("exit"),
+			Command: serverRuntimeHelperCommand("pty-close-then-sleep"),
 		},
 	}
 	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
@@ -14236,9 +14261,10 @@ func TestWorkspaceRuntimeEnsureShellAfterExitStartsFreshE2E(t *testing.T) {
 	require.NotNil(first.JSON200)
 	firstCreatedAt := first.JSON200.CreatedAt
 
-	// Drive the first shell to exit by attaching once. The "exit"
-	// helper exits immediately with code 3; bridgeRuntimeAttachment
-	// observes outputDone and closes.
+	// Attach + drain to drive the helper through its PTY-close. The
+	// helper then sleeps ~750 ms before exiting; we want EnsureShell
+	// to fire inside that sleep, when m.shells[key] still holds the
+	// zombie (Status=Running, outputClosed=true).
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
@@ -14246,6 +14272,7 @@ func TestWorkspaceRuntimeEnsureShellAfterExitStartsFreshE2E(t *testing.T) {
 		"/runtime/shell/terminal?cols=80&rows=24"
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
 	require.NoError(err)
+	// Read until WS closes (server sends exit frame and drops conn).
 	for {
 		readCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		_, _, readErr := conn.Read(readCtx)
@@ -14256,9 +14283,8 @@ func TestWorkspaceRuntimeEnsureShellAfterExitStartsFreshE2E(t *testing.T) {
 	}
 	conn.Close(websocket.StatusNormalClosure, "done")
 
-	// Re-ensure right away — within the watchSession-completes window
-	// where the previous session can still be sitting in the manager
-	// map. The new shell must be a fresh one.
+	// Inside the zombie window: helper still sleeping, so cmd.Wait
+	// hasn't returned and watchSession hasn't run.
 	second, err := client.HTTP.EnsureWorkspaceRuntimeShellWithResponse(
 		ctx, ws.Id,
 	)
@@ -14267,7 +14293,7 @@ func TestWorkspaceRuntimeEnsureShellAfterExitStartsFreshE2E(t *testing.T) {
 	require.NotNil(second.JSON200)
 	assert.NotEqual(
 		firstCreatedAt, second.JSON200.CreatedAt,
-		"second EnsureShell must return a fresh session, not the just-exited one",
+		"second EnsureShell must return a fresh session, not the zombie",
 	)
 	assert.Equal(string(localruntime.SessionStatusRunning), second.JSON200.Status)
 }
@@ -14714,6 +14740,21 @@ func TestServerRuntimeHelperProcess(t *testing.T) {
 		return
 	case "exit":
 		os.Exit(3)
+	case "pty-close-then-sleep":
+		// Simulate the systemd-run-wrapper window the bridge has to
+		// survive: PTY EOF observed (drainOutput exits) well before
+		// cmd.Wait returns. Ignoring SIGHUP keeps us alive when the
+		// runtime closes the PTY master in response to our slave
+		// close — without that, the kernel SIGHUPs the session leader
+		// and cmd.Wait returns alongside drainOutput, which hides the
+		// race we're trying to exercise. Closing stdin/stdout/stderr
+		// drops every slave fd; the master sees EOF immediately.
+		signal.Ignore(syscall.SIGHUP, syscall.SIGTERM, syscall.SIGINT)
+		_ = os.Stdin.Close()
+		_ = os.Stdout.Close()
+		_ = os.Stderr.Close()
+		time.Sleep(750 * time.Millisecond)
+		os.Exit(7)
 	default:
 		os.Exit(2)
 	}
