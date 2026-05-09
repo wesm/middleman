@@ -488,7 +488,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			EventType:      "commit",
 			Author:         "alice",
 			Summary:        "abc1111",
-			Body:           "feat: add cache store",
+			Body:           "feat: add cache store\n\nCache entries now expire when pull request detail data is refreshed.",
 			CreatedAt:      commitBase,
 			DedupeKey:      "w1-commit-1",
 		},

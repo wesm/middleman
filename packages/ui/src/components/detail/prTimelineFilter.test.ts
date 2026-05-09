@@ -160,7 +160,7 @@ describe("prTimelineFilter", () => {
         showForcePushes: true,
         hideBots: false,
       }).map((item) => item.ID),
-    ).toEqual([2]);
+    ).toEqual([1, 2]);
   });
 
   it("filters by disabled buckets and bots", () => {
@@ -180,7 +180,7 @@ describe("prTimelineFilter", () => {
         showForcePushes: false,
         hideBots: true,
       }).map((item) => item.ID),
-    ).toEqual([1, 5]);
+    ).toEqual([1, 3, 5]);
   });
 
   it("counts active timeline filters", () => {
