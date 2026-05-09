@@ -115,6 +115,26 @@ func (s *Server) serveRuntimeTerminal(
 		if err := attachment.Resize(cols, rows); err != nil {
 			slog.Warn("runtime terminal initial resize", "err", err)
 		}
+		// pty.Setsize SIGWINCHs the foreground process of the master,
+		// but for tmux-backed sessions the pane refit happens via
+		// async client-to-server IPC. If the bridge starts forwarding
+		// client input before that refit lands, the agent inside the
+		// pane sees the pre-resize geometry. Refresh runs
+		// `tmux refresh-client` against the attached client, which
+		// is a synchronous round-trip to the tmux server and forces
+		// it to drain any pending resize messages from the client
+		// before returning. For non-tmux sessions, refresh is a
+		// no-op. The 2 s budget mirrors the bridge's resize/refresh
+		// control handler.
+		refreshCtx, refreshCancel := context.WithTimeout(
+			r.Context(), 2*time.Second,
+		)
+		if err := attachment.Refresh(refreshCtx); err != nil {
+			slog.Warn(
+				"runtime terminal initial refresh", "err", err,
+			)
+		}
+		refreshCancel()
 	}
 
 	exited := bridgeRuntimeAttachment(r.Context(), conn, attachment)
