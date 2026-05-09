@@ -174,6 +174,26 @@ describe("recents", () => {
     expect(items[1]!.lastSelectedAt).toBe(epoch);
   });
 
+  it("normalizes invalid date strings to epoch", () => {
+    // Strings that pass typeof === "string" but parse to NaN must be
+    // normalized so consumers (sort, diff, pruneStale) never see NaN.
+    localStorage.setItem(
+      RECENTS_KEY,
+      JSON.stringify({
+        version: 1,
+        items: [
+          { kind: "pr", ref: ref(1), lastSelectedAt: "not-a-date" },
+          { kind: "pr", ref: ref(2), lastSelectedAt: "" },
+        ],
+      }),
+    );
+    const items = readRecents().items;
+    expect(items).toHaveLength(2);
+    const epoch = new Date(0).toISOString();
+    expect(items[0]!.lastSelectedAt).toBe(epoch);
+    expect(items[1]!.lastSelectedAt).toBe(epoch);
+  });
+
   it("drops items missing a kind field entirely", () => {
     localStorage.setItem(
       RECENTS_KEY,

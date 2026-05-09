@@ -34,6 +34,15 @@ function isPersistedItem(value: unknown): value is { kind: unknown; ref: unknown
   return typeof value === "object" && value !== null;
 }
 
+function normalizeTimestamp(value: unknown): string {
+  if (typeof value !== "string") return EPOCH;
+  // Reject strings that don't parse as a real date so consumers that sort or
+  // diff by lastSelectedAt never see NaN. pruneStale also needs this — it
+  // filters by Number.isNaN but only after the value has already round-tripped
+  // through a write call.
+  return Number.isNaN(Date.parse(value)) ? EPOCH : value;
+}
+
 function normalizeItems(rawItems: unknown[]): RecentItem[] {
   const normalized: RecentItem[] = [];
   for (const raw of rawItems) {
@@ -42,8 +51,7 @@ function normalizeItems(rawItems: unknown[]): RecentItem[] {
     normalized.push({
       kind: raw.kind,
       ref: raw.ref as RoutedItemRef,
-      lastSelectedAt:
-        typeof raw.lastSelectedAt === "string" ? raw.lastSelectedAt : EPOCH,
+      lastSelectedAt: normalizeTimestamp(raw.lastSelectedAt),
     });
   }
   return normalized;
