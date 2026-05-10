@@ -65,6 +65,7 @@ import {
   getOnRouteChange,
   getUIConfig as getEmbedUIConfig,
   getHost,
+  getInitialRoute,
 } from "./embed-config.svelte.js";
 
 // Runtime base path injected by the Go server (e.g., "/" or "/middleman/").
@@ -395,7 +396,18 @@ function parseRoute(fullPath: string): Route {
   return { page: "activity" };
 }
 
-let route = $state<Route>(parseRoute(currentLocationPath()));
+const configuredInitialRoute = getInitialRoute();
+if (configuredInitialRoute) {
+  history.replaceState(
+    null,
+    "",
+    basePrefix + configuredInitialRoute,
+  );
+}
+
+let route = $state<Route>(
+  parseRoute(configuredInitialRoute ?? currentLocationPath()),
+);
 
 // Fire onRouteChange for the initial route after the module loads.
 // Deferred so the embedder has time to set up the callback.

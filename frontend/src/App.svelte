@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onDestroy } from "svelte";
   import {
     Provider,
     PRListView,
@@ -23,11 +23,7 @@
   import RepoSummaryPage from "./lib/components/repositories/RepoSummaryPage.svelte";
   import SettingsPage from "./lib/components/settings/SettingsPage.svelte";
   import WorkspaceTerminalView from "./lib/components/terminal/WorkspaceTerminalView.svelte";
-  import WorkspaceListSidebar from "./lib/components/terminal/WorkspaceListSidebar.svelte";
-  import WorkspaceEmbedEmptyState from "./lib/components/terminal/WorkspaceEmbedEmptyState.svelte";
-  import WorkspaceFirstRunPanel from "./lib/components/terminal/WorkspaceFirstRunPanel.svelte";
-  import WorkspaceProjectCard from "./lib/components/terminal/WorkspaceProjectCard.svelte";
-  import { WorkspaceRightSidebar } from "@middleman/ui";
+  import WorkspaceEmbedShell from "./lib/components/terminal/WorkspaceEmbedShell.svelte";
   import DesignSystemPage from "./lib/components/design-system/DesignSystemPage.svelte";
   import FlashBanner from "./lib/components/FlashBanner.svelte";
   import { SpinnerIcon } from "./lib/icons.ts";
@@ -63,7 +59,6 @@
     isDiffView,
     getDetailTab,
     getSelectedPRFromRoute,
-    isWorkspaceEmbedPage,
   } from "./lib/stores/router.svelte.ts";
   import {
     buildActivitySelectionSearch,
@@ -84,23 +79,32 @@
     emitWorkspaceCommand,
     isHeaderHidden,
     isStatusBarHidden,
-    getInitialRoute,
     emitLayoutChanged,
     initWorkspaceBridge,
   } from "./lib/stores/embed-config.svelte.js";
   import { getSettings } from "./lib/api/settings.js";
+  import { shouldUseFullAppShell } from "./lib/utils/appShell.js";
 
   let stores = $state<StoreInstances | undefined>();
   let appReady = $state(false);
+  let cleanupFullAppShell: (() => void) | undefined;
+  let fullShellStores: StoreInstances | undefined;
 
-  onMount(() => {
+  function stopFullAppShell() {
+    fullShellStores?.events.disconnect();
+    cleanupFullAppShell?.();
+    cleanupFullAppShell = undefined;
+    fullShellStores = undefined;
+    appReady = false;
+  }
+
+  function startFullAppShell(startupStores: StoreInstances) {
+    if (cleanupFullAppShell) return;
+    fullShellStores = startupStores;
+    appReady = false;
     initTheme();
     initSidebar();
     initWorkspaceBridge();
-    const initialRoute = getInitialRoute();
-    if (initialRoute) {
-      replaceUrl(initialRoute);
-    }
     const ui = getUIConfig();
     applyConfigRepo(ui.repo, ui.hideRepoSelector);
     const appEl = document.getElementById("app")!;
@@ -108,7 +112,7 @@
     const cleanupItemRefs = initItemRefHandler();
     const cancelStartup = runAppStartup({
       getSettings,
-      getStores: () => stores,
+      getStores: () => startupStores,
       onReady: () => {
         appReady = true;
       },
@@ -117,7 +121,7 @@
       stores?.events.disconnect();
     };
     window.addEventListener("beforeunload", onBeforeUnload);
-    return () => {
+    cleanupFullAppShell = () => {
       cancelStartup();
       cleanupTheme();
       cleanupContainer();
@@ -127,11 +131,23 @@
         onBeforeUnload,
       );
     };
+  }
+
+  $effect(() => {
+    if (!shouldUseFullAppShell(getPage())) {
+      stopFullAppShell();
+      return;
+    }
+    if (stores && stores !== fullShellStores) {
+      stopFullAppShell();
+      startFullAppShell(stores);
+    }
   });
 
   let lastRepo: string | undefined;
 
   onDestroy(() => {
+    stopFullAppShell();
     stores?.events.disconnect();
   });
 
@@ -157,6 +173,7 @@
   });
 
   $effect(() => {
+    if (!shouldUseFullAppShell(getPage())) return;
     reapplyTheme();
   });
 
@@ -421,6 +438,7 @@
   }
 
   $effect(() => {
+    if (!shouldUseFullAppShell(getPage())) return;
     window.addEventListener("keydown", handleKeydown);
     return () =>
       window.removeEventListener(
@@ -430,92 +448,59 @@
   });
 </script>
 
-<Provider
-  {client}
-  roborevBaseUrl="/api/roborev"
-  onError={showFlash}
-  onNavigate={(e) =>
-    navigate(typeof e === "string" ? e : e.path)}
-  onWorkspaceCommand={emitWorkspaceCommand}
-  actions={{
-    pull: getPullRequestActions().map((a) => ({
-      id: a.id,
-      label: a.label,
-      handler: (ctx) => invokeAction(a, {
-        surface: ctx.surface,
-        owner: ctx.owner,
-        name: ctx.name,
-        number: ctx.number,
-        ...ctx.meta != null && { meta: ctx.meta },
-      }),
-    })),
-    issue: getIssueActions().map((a) => ({
-      id: a.id,
-      label: a.label,
-      handler: (ctx) => invokeAction(a, {
-        surface: ctx.surface,
-        owner: ctx.owner,
-        name: ctx.name,
-        number: ctx.number,
-        ...ctx.meta != null && { meta: ctx.meta },
-      }),
-    })),
-  }}
-  hostState={{
-    getGlobalRepo,
-    getGroupByRepo: () => stores?.grouping.getGroupByRepo() ?? true,
-    getView,
-    getActiveWorktreeKey,
-  }}
-  config={{
-    hideStar: getUIConfig().hideStar,
-    basePath: getBasePath(),
-  }}
-  {getPage}
-  sidebar={{
-    isEmbedded,
-    isSidebarToggleEnabled,
-    toggleSidebar,
-  }}
-  bind:stores
->
-  {#if isWorkspaceEmbedPage(getPage())}
-    {@const r = getRoute()}
-    <main class="embed-layout">
-      {#if r.page === "embed-workspace-list"}
-        <WorkspaceListSidebar selectedId="" />
-      {:else if r.page === "embed-workspace-terminal"}
-        <WorkspaceTerminalView
-          workspaceId={r.workspaceId}
-          hideWorkspaceList={true}
-          hideRightSidebar={true}
-        />
-      {:else if r.page === "embed-workspace-detail"}
-        <WorkspaceRightSidebar
-          activeTab={r.tab ??
-            (r.itemType === "issue" ? "issue" : "pr")}
-          workspaceID=""
-          provider={r.provider}
-          platformHost={r.platformHost}
-          repoOwner={r.owner}
-          repoName={r.name}
-          repoPath={r.repoPath}
-          ownerItemType={r.itemType === "issue" ? "issue" : "pull_request"}
-          ownerItemNumber={r.number}
-          associatedPRNumber={r.itemType === "pr" ? r.number : null}
-          branch={r.branch ?? ""}
-          roborevBaseUrl={getBasePath().replace(/\/$/, "") +
-            "/api/roborev"}
-        />
-      {:else if r.page === "embed-workspace-empty"}
-        <WorkspaceEmbedEmptyState reason={r.reason} />
-      {:else if r.page === "embed-workspace-first-run"}
-        <WorkspaceFirstRunPanel />
-      {:else if r.page === "embed-workspace-project"}
-        <WorkspaceProjectCard projectId={r.projectId} />
-      {/if}
-    </main>
-  {:else if getPage() === "focus"}
+{#if !shouldUseFullAppShell(getPage())}
+  <WorkspaceEmbedShell />
+{:else}
+  <Provider
+    {client}
+    roborevBaseUrl="/api/roborev"
+    onError={showFlash}
+    onNavigate={(e) =>
+      navigate(typeof e === "string" ? e : e.path)}
+    onWorkspaceCommand={emitWorkspaceCommand}
+    actions={{
+      pull: getPullRequestActions().map((a) => ({
+        id: a.id,
+        label: a.label,
+        handler: (ctx) => invokeAction(a, {
+          surface: ctx.surface,
+          owner: ctx.owner,
+          name: ctx.name,
+          number: ctx.number,
+          ...ctx.meta != null && { meta: ctx.meta },
+        }),
+      })),
+      issue: getIssueActions().map((a) => ({
+        id: a.id,
+        label: a.label,
+        handler: (ctx) => invokeAction(a, {
+          surface: ctx.surface,
+          owner: ctx.owner,
+          name: ctx.name,
+          number: ctx.number,
+          ...ctx.meta != null && { meta: ctx.meta },
+        }),
+      })),
+    }}
+    hostState={{
+      getGlobalRepo,
+      getGroupByRepo: () => stores?.grouping.getGroupByRepo() ?? true,
+      getView,
+      getActiveWorktreeKey,
+    }}
+    config={{
+      hideStar: getUIConfig().hideStar,
+      basePath: getBasePath(),
+    }}
+    {getPage}
+    sidebar={{
+      isEmbedded,
+      isSidebarToggleEnabled,
+      toggleSidebar,
+    }}
+    bind:stores
+  >
+  {#if getPage() === "focus"}
     {@const r = getRoute()}
     {#if r.page === "focus"}
       <main class="focus-layout">
@@ -646,7 +631,8 @@
       <StatusBar />
     {/if}
   {/if}
-</Provider>
+  </Provider>
+{/if}
 
 <style>
   .focus-layout {
@@ -655,19 +641,6 @@
     background: var(--bg-primary);
     display: flex;
     flex-direction: column;
-  }
-
-  /* Embed routes render a single workspace component at full
-     bleed. The host (e.g. a WKWebView) provides the surrounding
-     chrome. Hidden overflow lets the inner component manage its
-     own scrolling without leaking onto the host. */
-  .embed-layout {
-    flex: 1;
-    overflow: hidden;
-    background: var(--bg-primary);
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
   }
 
   .app-main {
