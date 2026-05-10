@@ -285,7 +285,7 @@ test.describe("PR detail merge modal route reset", () => {
     );
 
     await page.goto(
-      `/pulls/detail?provider=github&platform_host=github.com&repo_path=${conflictedPR.repo_owner}%2F${conflictedPR.repo_name}&number=${conflictedPR.Number}`,
+      `/pulls/github/${conflictedPR.repo_owner}/${conflictedPR.repo_name}/${conflictedPR.Number}`,
     );
 
     await expect(page.locator(".detail-title")).toContainText(
@@ -323,7 +323,7 @@ test.describe("PR detail merge modal route reset", () => {
     }
 
     await page.goto(
-      `/pulls/detail?provider=github&platform_host=github.com&repo_path=${prA.repo_owner}%2F${prA.repo_name}&number=${prA.Number}`,
+      `/pulls/github/${prA.repo_owner}/${prA.repo_name}/${prA.Number}`,
     );
     await expect(page.locator(".detail-title")).toContainText(prA.Title);
 
@@ -339,7 +339,7 @@ test.describe("PR detail merge modal route reset", () => {
       window.history.pushState(
         null,
         "",
-        `/pulls/detail?provider=github&platform_host=github.com&repo_path=${owner}%2F${name}&number=${number}`,
+        `/pulls/github/${owner}/${name}/${number}`,
       );
       window.dispatchEvent(new PopStateEvent("popstate"));
     }, [prB.repo_owner, prB.repo_name, prB.Number] as const);
@@ -404,7 +404,7 @@ test.describe("PR detail merge modal route reset", () => {
     );
 
     await page.goto(
-      `/pulls/detail?provider=github&platform_host=github.com&repo_path=${prA.repo_owner}%2F${prA.repo_name}&number=${prA.Number}`,
+      `/pulls/github/${prA.repo_owner}/${prA.repo_name}/${prA.Number}`,
     );
     await expect(page.locator(".detail-title")).toContainText(prA.Title);
     await expect(page.locator(".btn--merge")).toBeVisible();
@@ -413,7 +413,7 @@ test.describe("PR detail merge modal route reset", () => {
       window.history.pushState(
         null,
         "",
-        `/pulls/detail?provider=github&platform_host=github.com&repo_path=${owner}%2F${name}&number=${number}`,
+        `/pulls/github/${owner}/${name}/${number}`,
       );
       window.dispatchEvent(new PopStateEvent("popstate"));
     }, [prSquashOnly.repo_owner, prSquashOnly.repo_name, prSquashOnly.Number] as const);
@@ -478,7 +478,7 @@ test.describe("detail load-error banner", () => {
     );
 
     await page.goto(
-      `/pulls/detail?provider=github&platform_host=github.com&repo_path=${prA.repo_owner}%2F${prA.repo_name}&number=${prA.Number}`,
+      `/pulls/github/${prA.repo_owner}/${prA.repo_name}/${prA.Number}`,
     );
     await expect(page.locator(".detail-title")).toContainText(prA.Title);
 
@@ -486,7 +486,7 @@ test.describe("detail load-error banner", () => {
       window.history.pushState(
         null,
         "",
-        `/pulls/detail?provider=github&platform_host=github.com&repo_path=${owner}%2F${name}&number=${number}`,
+        `/pulls/github/${owner}/${name}/${number}`,
       );
       window.dispatchEvent(new PopStateEvent("popstate"));
     }, [prB.repo_owner, prB.repo_name, prB.Number] as const);
@@ -531,7 +531,7 @@ test.describe("detail load-error banner", () => {
     );
 
     await page.goto(
-      `/issues/detail?provider=github&platform_host=github.com&repo_path=${issueX.repo_owner}%2F${issueX.repo_name}&number=${issueX.Number}`,
+      `/issues/github/${issueX.repo_owner}/${issueX.repo_name}/${issueX.Number}`,
     );
     await expect(page.locator(".issue-detail .detail-title")).toContainText(
       issueX.Title,
@@ -541,7 +541,7 @@ test.describe("detail load-error banner", () => {
       window.history.pushState(
         null,
         "",
-        `/issues/detail?provider=github&platform_host=github.com&repo_path=${owner}%2F${name}&number=${number}`,
+        `/issues/github/${owner}/${name}/${number}`,
       );
       window.dispatchEvent(new PopStateEvent("popstate"));
     }, [issueY.repo_owner, issueY.repo_name, issueY.Number] as const);
@@ -560,7 +560,7 @@ test.describe("PR detail stale-action gating", () => {
     const userMutations = recordUserMutations(page);
     const { release } = await setupHeldPR(page, prA, prB);
 
-    await page.goto(`/pulls/detail?provider=github&platform_host=github.com&repo_path=${prA.repo_owner}%2F${prA.repo_name}&number=${prA.Number}`);
+    await page.goto(`/pulls/github/${prA.repo_owner}/${prA.repo_name}/${prA.Number}`);
     await expect(page.locator(".detail-title")).toContainText(prA.Title);
 
     // Trigger an in-place navigation to the slow PR via popstate.
@@ -568,7 +568,7 @@ test.describe("PR detail stale-action gating", () => {
       window.history.pushState(
         null,
         "",
-        `/pulls/detail?provider=github&platform_host=github.com&repo_path=${owner}%2F${name}&number=${number}`,
+        `/pulls/github/${owner}/${name}/${number}`,
       );
       window.dispatchEvent(new PopStateEvent("popstate"));
     }, [prB.repo_owner, prB.repo_name, prB.Number] as const);
@@ -611,7 +611,7 @@ test.describe("issue detail stale-action gating", () => {
     const { release } = await setupHeldIssue(page, issueX, issueY);
 
     await page.goto(
-      `/issues/detail?provider=github&platform_host=github.com&repo_path=${issueX.repo_owner}%2F${issueX.repo_name}&number=${issueX.Number}`,
+      `/issues/github/${issueX.repo_owner}/${issueX.repo_name}/${issueX.Number}`,
     );
     await expect(page.locator(".issue-detail .detail-title")).toContainText(
       issueX.Title,
@@ -621,7 +621,7 @@ test.describe("issue detail stale-action gating", () => {
       window.history.pushState(
         null,
         "",
-        `/issues/detail?provider=github&platform_host=github.com&repo_path=${owner}%2F${name}&number=${number}`,
+        `/issues/github/${owner}/${name}/${number}`,
       );
       window.dispatchEvent(new PopStateEvent("popstate"));
     }, [issueY.repo_owner, issueY.repo_name, issueY.Number] as const);

@@ -10,7 +10,7 @@ test.describe("provider capabilities", () => {
     });
 
     await page.goto(
-      "/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1",
+      "/pulls/github/acme/widgets/1",
     );
 
     await expect(page.locator(".pull-detail")).toBeVisible();
@@ -21,7 +21,7 @@ test.describe("provider capabilities", () => {
 
   test("GitLab issue detail hides timeline edit controls when comments are read-only", async ({ page }) => {
     await page.goto(
-      "/issues/detail?provider=gitlab&platform_host=gitlab.example.com&repo_path=group%2Fproject&number=11",
+      "/host/gitlab.example.com/issues/gitlab/group/project/11",
     );
 
     const detail = page.locator(".issue-detail");

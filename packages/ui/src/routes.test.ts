@@ -25,10 +25,10 @@ describe("route item builders", () => {
     const ref = { ...githubWidgets, number: 42 };
 
     expect(buildPullRequestRoute(ref)).toBe(
-      "/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42",
+      "/pulls/github/acme/widgets/42",
     );
     expect(buildPullRequestFilesRoute(ref)).toBe(
-      "/pulls/detail/files?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42",
+      "/pulls/github/acme/widgets/42/files",
     );
   });
 
@@ -40,7 +40,7 @@ describe("route item builders", () => {
         number: 7,
       }),
     ).toBe(
-      "/issues/detail?provider=github&platform_host=ghe.example.com%2Fteam%20one&repo_path=acme%2Fwidgets&number=7",
+      "/host/ghe.example.com%2Fteam%20one/issues/github/acme/widgets/7",
     );
   });
 
@@ -54,7 +54,7 @@ describe("route item builders", () => {
         number: 7,
       }),
     ).toBe(
-      "/issues/detail?provider=github&repo_path=acme%2Fwidgets&number=7",
+      "/issues/github/acme/widgets/7",
     );
   });
 
@@ -67,13 +67,13 @@ describe("route item builders", () => {
     };
 
     expect(buildProviderPullRequestRoute(deep)).toBe(
-      "/pulls/detail?provider=gitlab&platform_host=gitlab.example.com%3A8443&repo_path=Group%2FSubGroup%2FSubGroup%202%2FMy_Project.v2&number=12",
+      "/host/gitlab.example.com%3A8443/pulls/gitlab/Group%2FSubGroup%2FSubGroup%202/My_Project.v2/12",
     );
     expect(buildProviderPullRequestFilesRoute(deep)).toBe(
-      "/pulls/detail/files?provider=gitlab&platform_host=gitlab.example.com%3A8443&repo_path=Group%2FSubGroup%2FSubGroup%202%2FMy_Project.v2&number=12",
+      "/host/gitlab.example.com%3A8443/pulls/gitlab/Group%2FSubGroup%2FSubGroup%202/My_Project.v2/12/files",
     );
     expect(buildProviderIssueRoute(deep)).toBe(
-      "/issues/detail?provider=gitlab&platform_host=gitlab.example.com%3A8443&repo_path=Group%2FSubGroup%2FSubGroup%202%2FMy_Project.v2&number=12",
+      "/host/gitlab.example.com%3A8443/issues/gitlab/Group%2FSubGroup%2FSubGroup%202/My_Project.v2/12",
     );
   });
 
@@ -84,7 +84,7 @@ describe("route item builders", () => {
         number: 42,
       }),
     ).toBe(
-      "/focus/pr?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42",
+      "/focus/pulls/github/acme/widgets/42",
     );
     expect(
       buildFocusIssueRoute({
@@ -93,7 +93,7 @@ describe("route item builders", () => {
         number: 7,
       }),
     ).toBe(
-      "/focus/issue?provider=github&platform_host=ghe.example.com&repo_path=acme%2Fwidgets&number=7",
+      "/focus/host/ghe.example.com/issues/github/acme/widgets/7",
     );
     expect(buildFocusListRoute({ itemType: "mrs" })).toBe("/focus/mrs");
     expect(buildFocusListRoute({ itemType: "issues" })).toBe("/focus/issues");
@@ -112,16 +112,16 @@ describe("route item builders", () => {
     } as const;
 
     expect(buildRoutedItemRoute(pr)).toBe(
-      "/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42",
+      "/pulls/github/acme/widgets/42",
     );
     expect(buildRoutedItemRoute(issue)).toBe(
-      "/issues/detail?provider=github&platform_host=ghe.example.com&repo_path=acme%2Fwidgets&number=7",
+      "/host/ghe.example.com/issues/github/acme/widgets/7",
     );
     expect(buildRoutedItemRoute(pr, { focus: true })).toBe(
-      "/focus/pr?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42",
+      "/focus/pulls/github/acme/widgets/42",
     );
     expect(buildRoutedItemRoute(issue, { focus: true })).toBe(
-      "/focus/issue?provider=github&platform_host=ghe.example.com&repo_path=acme%2Fwidgets&number=7",
+      "/focus/host/ghe.example.com/issues/github/acme/widgets/7",
     );
   });
 });

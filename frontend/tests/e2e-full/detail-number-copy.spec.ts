@@ -9,7 +9,7 @@ test.describe("detail number link copy", () => {
   }) => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
 
-    await page.goto("/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=1");
+    await page.goto("/pulls/github/acme/widgets/1");
     await page.locator(".pull-detail")
       .waitFor({ state: "visible", timeout: 10_000 });
 
@@ -28,7 +28,7 @@ test.describe("detail number link copy", () => {
   }) => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
 
-    await page.goto("/issues/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=10");
+    await page.goto("/issues/github/acme/widgets/10");
     await page.locator(".issue-detail")
       .waitFor({ state: "visible", timeout: 10_000 });
 
