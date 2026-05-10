@@ -165,3 +165,62 @@ test("provider-explicit embed detail route uses provider in detail request", asy
   await detailRequest;
   await expect(page.getByText("Provider-explicit GitLab issue")).toBeVisible();
 });
+
+test("nested repo_path embed detail route loads matching detail content", async ({ page }) => {
+  const detailRequest = page.waitForRequest(
+    (request) =>
+      request.method() === "GET" &&
+      new URL(request.url()).pathname ===
+        "/api/v1/host/git.example.com/issues/gitlab/group%2Fsubgroup/project/7",
+  );
+  await page.route(
+    "**/api/v1/host/git.example.com/issues/gitlab/group%2Fsubgroup/project/7",
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          issue: {
+            ID: 7,
+            RepoID: 7,
+            GitHubID: 7007,
+            Number: 7,
+            URL: "https://git.example.com/group/subgroup/project/-/issues/7",
+            Title: "Nested GitLab issue",
+            Author: "marius",
+            State: "open",
+            Body: "",
+            CommentCount: 0,
+            LabelsJSON: "[]",
+            CreatedAt: "2026-03-28T14:00:00Z",
+            UpdatedAt: "2026-03-30T14:00:00Z",
+            LastActivityAt: "2026-03-30T14:00:00Z",
+            ClosedAt: null,
+            Starred: false,
+          },
+          repo: {
+            provider: "gitlab",
+            platform_host: "git.example.com",
+            owner: "group/subgroup",
+            name: "project",
+            repo_path: "group/subgroup/project",
+          },
+          events: [],
+          platform_host: "git.example.com",
+          repo_owner: "group/subgroup",
+          repo_name: "project",
+          detail_loaded: true,
+          detail_fetched_at: "2026-03-30T14:00:00Z",
+        }),
+      });
+    },
+  );
+
+  await page.goto(
+    "/workspaces/embed/detail/gitlab/issue/git.example.com/7" +
+      "?repo_path=group%2Fsubgroup%2Fproject",
+  );
+
+  await detailRequest;
+  await expect(page.getByText("Nested GitLab issue")).toBeVisible();
+});

@@ -245,15 +245,16 @@ describe("router embed-workspace routes", () => {
     });
   });
 
-  it("parses /workspaces/embed/detail/:provider/pr/:host/:owner/:name/:number", () => {
+  it("parses /workspaces/embed/detail/:provider/pr/:host/:number with repo_path", () => {
     navigate(
-      "/workspaces/embed/detail/github/pr/github.com/acme/widgets/42",
+      "/workspaces/embed/detail/github/pr/github.com/42?repo_path=acme%2Fwidgets",
     );
     expect(getRoute()).toEqual({
       page: "embed-workspace-detail",
       provider: "github",
       itemType: "pr",
       platformHost: "github.com",
+      repoPath: "acme/widgets",
       owner: "acme",
       name: "widgets",
       number: 42,
@@ -269,6 +270,7 @@ describe("router embed-workspace routes", () => {
       provider: "gitlab",
       itemType: "issue",
       platformHost: "gitlab.example.com",
+      repoPath: "acme/widgets",
       owner: "acme",
       name: "widgets",
       number: 7,
@@ -285,23 +287,42 @@ describe("router embed-workspace routes", () => {
       provider: "github",
       itemType: "pr",
       platformHost: "ghe.example.com",
+      repoPath: "acme/widgets",
       owner: "acme",
       name: "widgets",
       number: 42,
     });
   });
 
+  it("parses legacy provider-explicit detail path without repo_path", () => {
+    navigate(
+      "/workspaces/embed/detail/github/pr/github.com/acme/widgets/42?branch=main",
+    );
+    expect(getRoute()).toEqual({
+      page: "embed-workspace-detail",
+      provider: "github",
+      itemType: "pr",
+      platformHost: "github.com",
+      repoPath: "acme/widgets",
+      owner: "acme",
+      name: "widgets",
+      number: 42,
+      branch: "main",
+    });
+  });
+
   it("parses /workspaces/embed/detail with branch and tab query", () => {
     navigate(
-      "/workspaces/embed/detail/gitlab/issue/git.example.com/org/repo/7" +
-        "?branch=feature%2Fx&tab=reviews",
+      "/workspaces/embed/detail/gitlab/issue/git.example.com/7" +
+        "?repo_path=org%2Fteam%2Frepo&branch=feature%2Fx&tab=reviews",
     );
     expect(getRoute()).toEqual({
       page: "embed-workspace-detail",
       provider: "gitlab",
       itemType: "issue",
       platformHost: "git.example.com",
-      owner: "org",
+      repoPath: "org/team/repo",
+      owner: "org/team",
       name: "repo",
       number: 7,
       branch: "feature/x",
@@ -311,7 +332,7 @@ describe("router embed-workspace routes", () => {
 
   it("ignores unknown tab values on the detail route", () => {
     navigate(
-      "/workspaces/embed/detail/github/pr/github.com/o/n/1?tab=garbage",
+      "/workspaces/embed/detail/github/pr/github.com/1?repo_path=o%2Fn&tab=garbage",
     );
     const route = getRoute();
     expect(route).toEqual({
@@ -319,6 +340,7 @@ describe("router embed-workspace routes", () => {
       provider: "github",
       itemType: "pr",
       platformHost: "github.com",
+      repoPath: "o/n",
       owner: "o",
       name: "n",
       number: 1,
@@ -440,7 +462,7 @@ describe("router navigation events", () => {
     const embedPaths = [
       "/workspaces/embed/list",
       "/workspaces/embed/terminal/ws-1",
-      "/workspaces/embed/detail/github/pr/github.com/acme/widget/42",
+      "/workspaces/embed/detail/github/pr/github.com/42?repo_path=acme%2Fwidget",
       "/workspaces/embed/empty/noWorkspace",
       "/workspaces/embed/first-run",
       "/workspaces/embed/project/prj_abc123",

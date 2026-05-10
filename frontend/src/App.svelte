@@ -499,7 +499,7 @@
           platformHost={r.platformHost}
           repoOwner={r.owner}
           repoName={r.name}
-          repoPath={`${r.owner}/${r.name}`}
+          repoPath={r.repoPath}
           ownerItemType={r.itemType === "issue" ? "issue" : "pull_request"}
           ownerItemNumber={r.number}
           associatedPRNumber={r.itemType === "pr" ? r.number : null}

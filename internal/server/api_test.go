@@ -10082,6 +10082,67 @@ func TestProviderIssueRouteGeneratedClientEscapesGitLabRepoPath(t *testing.T) {
 	assert.Equal(number, resp.JSON200.Issue.Number)
 }
 
+func TestProviderIssueRouteHandlesNestedGitLabRepoPathOverHTTP(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "git.example.com",
+		Owner:        "group/subgroup",
+		Name:         "project",
+		RepoPath:     "group/subgroup/project",
+	})
+	require.NoError(err)
+	_, err = database.UpsertIssue(ctx, &db.Issue{
+		RepoID:         repoID,
+		PlatformID:     7007,
+		Number:         7,
+		URL:            "https://git.example.com/group/subgroup/project/-/issues/7",
+		Title:          "Nested GitLab issue",
+		Author:         "testuser",
+		State:          "open",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/host/git.example.com/issues/gitlab/group%2Fsubgroup/project/7",
+		nil,
+	)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var body struct {
+		Issue struct {
+			Number int64  `json:"number"`
+			Title  string `json:"title"`
+		} `json:"issue"`
+		Repo struct {
+			Provider     string `json:"provider"`
+			PlatformHost string `json:"platform_host"`
+			Owner        string `json:"owner"`
+			Name         string `json:"name"`
+			RepoPath     string `json:"repo_path"`
+		} `json:"repo"`
+	}
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Equal(int64(7), body.Issue.Number)
+	assert.Equal("Nested GitLab issue", body.Issue.Title)
+	assert.Equal("gitlab", body.Repo.Provider)
+	assert.Equal("git.example.com", body.Repo.PlatformHost)
+	assert.Equal("group/subgroup", body.Repo.Owner)
+	assert.Equal("project", body.Repo.Name)
+	assert.Equal("group/subgroup/project", body.Repo.RepoPath)
+}
+
 func TestMRListEmptyLinksWhenNone(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServer(t)
