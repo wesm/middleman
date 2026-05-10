@@ -17,9 +17,10 @@ import (
 // linked repo (a local-only directory with no parseable remote), in which case
 // PlatformIdentity is nil.
 type PlatformIdentity struct {
-	Host  string `json:"platform_host"`
-	Owner string `json:"owner"`
-	Name  string `json:"name"`
+	Platform string `json:"platform"`
+	Host     string `json:"platform_host"`
+	Owner    string `json:"owner"`
+	Name     string `json:"name"`
 }
 
 // Project is the registry record for a local repository checkout middleman
@@ -104,7 +105,7 @@ func (d *DB) CreateProject(ctx context.Context, in CreateProjectInput) (*Project
 
 const projectSelectColumns = `p.id, p.display_name, p.local_path,
         p.default_branch, p.created_at, p.updated_at,
-        r.platform_host, r.owner, r.name`
+        r.platform, r.platform_host, r.owner, r.name`
 
 const projectFromJoin = `FROM middleman_projects p
         LEFT JOIN middleman_repos r ON r.id = p.repo_id`
@@ -270,6 +271,7 @@ func scanProjectFields(scanner interface{ Scan(...any) error }) (*Project, error
 	var (
 		p            Project
 		defaultBr    sql.NullString
+		platform     sql.NullString
 		platformHost sql.NullString
 		repoOwner    sql.NullString
 		repoName     sql.NullString
@@ -277,7 +279,7 @@ func scanProjectFields(scanner interface{ Scan(...any) error }) (*Project, error
 	err := scanner.Scan(
 		&p.ID, &p.DisplayName, &p.LocalPath,
 		&defaultBr, &p.CreatedAt, &p.UpdatedAt,
-		&platformHost, &repoOwner, &repoName,
+		&platform, &platformHost, &repoOwner, &repoName,
 	)
 	if err != nil {
 		return nil, err
@@ -287,9 +289,10 @@ func scanProjectFields(scanner interface{ Scan(...any) error }) (*Project, error
 	}
 	if platformHost.Valid {
 		p.PlatformIdentity = &PlatformIdentity{
-			Host:  platformHost.String,
-			Owner: repoOwner.String,
-			Name:  repoName.String,
+			Platform: platform.String,
+			Host:     platformHost.String,
+			Owner:    repoOwner.String,
+			Name:     repoName.String,
 		}
 	}
 	return &p, nil

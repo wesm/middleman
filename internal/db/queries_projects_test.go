@@ -41,7 +41,7 @@ func TestCreateProjectLinkedToRepo(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 
-	repoID, err := d.UpsertRepo(ctx, "github.com", "wesm", "examplerepo")
+	repoID, err := d.UpsertRepo(ctx, GitHubRepoIdentity("github.com", "wesm", "examplerepo"))
 	require.NoError(err)
 
 	project, err := d.CreateProject(ctx, CreateProjectInput{
@@ -71,7 +71,7 @@ func TestCreateProjectFKSetNullOnRepoDelete(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 
-	repoID, err := d.UpsertRepo(ctx, "github.com", "wesm", "examplerepo")
+	repoID, err := d.UpsertRepo(ctx, GitHubRepoIdentity("github.com", "wesm", "examplerepo"))
 	require.NoError(err)
 
 	project, err := d.CreateProject(ctx, CreateProjectInput{

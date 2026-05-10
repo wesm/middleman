@@ -2219,6 +2219,7 @@ export interface components {
         PlatformIdentityPayload: {
             name: string;
             owner: string;
+            platform: string;
             platform_host: string;
         };
         PostCommentHostInputBody: {

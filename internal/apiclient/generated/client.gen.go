@@ -665,6 +665,7 @@ type MrImportMetadataResponse struct {
 type PlatformIdentityPayload struct {
 	Name         string `json:"name"`
 	Owner        string `json:"owner"`
+	Platform     string `json:"platform"`
 	PlatformHost string `json:"platform_host"`
 }
 

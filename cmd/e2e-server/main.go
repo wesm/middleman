@@ -439,14 +439,14 @@ func run(
 	)
 	for _, repo := range startupResolved.Expanded {
 		if _, err := database.UpsertRepo(
-			ctx, repo.PlatformHost, repo.Owner, repo.Name,
+			ctx, db.GitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name),
 		); err != nil {
 			return fmt.Errorf("seed startup repo %s/%s: %w", repo.Owner, repo.Name, err)
 		}
 	}
 	if !strings.EqualFold(defaultPlatformHost, "github.com") {
 		if _, err := database.UpsertRepo(
-			ctx, defaultPlatformHost, "enterprise", "service",
+			ctx, db.GitHubRepoIdentity(defaultPlatformHost, "enterprise", "service"),
 		); err != nil {
 			return fmt.Errorf("seed default-host repo: %w", err)
 		}

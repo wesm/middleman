@@ -17,6 +17,7 @@ import (
 )
 
 type platformIdentityPayload struct {
+	Platform     string `json:"platform"`
 	PlatformHost string `json:"platform_host"`
 	Owner        string `json:"owner"`
 	Name         string `json:"name"`
@@ -141,7 +142,12 @@ func (s *Server) registerProject(
 
 	var repoID sql.NullInt64
 	if identity != nil {
-		id, upsertErr := s.db.UpsertRepo(ctx, identity.Host, identity.Owner, identity.Name)
+		id, upsertErr := s.db.UpsertRepo(ctx, db.RepoIdentity{
+			Platform:     identity.Platform,
+			PlatformHost: identity.Host,
+			Owner:        identity.Owner,
+			Name:         identity.Name,
+		})
 		if upsertErr != nil {
 			return nil, huma.Error500InternalServerError(
 				"upsert repo identity: " + upsertErr.Error(),
@@ -178,23 +184,50 @@ func (s *Server) resolveProjectIdentity(
 	abs string,
 ) (*db.PlatformIdentity, error) {
 	if caller != nil {
+		platform := strings.TrimSpace(caller.Platform)
 		host := strings.TrimSpace(caller.PlatformHost)
 		owner := strings.TrimSpace(caller.Owner)
 		name := strings.TrimSpace(caller.Name)
-		if host == "" || owner == "" || name == "" {
+		if platform == "" || host == "" || owner == "" || name == "" {
 			return nil, huma.Error400BadRequest(
-				"platform_identity requires platform_host, owner, and name",
+				"platform_identity requires platform, platform_host, owner, and name",
 			)
 		}
-		return &db.PlatformIdentity{Host: host, Owner: owner, Name: name}, nil
+		return &db.PlatformIdentity{Platform: platform, Host: host, Owner: owner, Name: name}, nil
 	}
-	resolved, err := projects.ResolveIdentityFromPath(ctx, abs)
+	resolved, err := projects.ResolveIdentityFromPathWithKnownPlatforms(
+		ctx, abs, s.knownProjectPlatformHosts(),
+	)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(
 			"resolve platform identity: " + err.Error(),
 		)
 	}
 	return resolved, nil
+}
+
+func (s *Server) knownProjectPlatformHosts() []projects.KnownPlatformHost {
+	if s.cfg == nil {
+		return nil
+	}
+	known := make([]projects.KnownPlatformHost, 0, len(s.cfg.Platforms)+len(s.cfg.Repos)+1)
+	known = append(known, projects.KnownPlatformHost{
+		Platform: "github",
+		Host:     s.cfg.DefaultPlatformHost,
+	})
+	for _, platform := range s.cfg.Platforms {
+		known = append(known, projects.KnownPlatformHost{
+			Platform: platform.Type,
+			Host:     platform.Host,
+		})
+	}
+	for _, repo := range s.cfg.Repos {
+		known = append(known, projects.KnownPlatformHost{
+			Platform: repo.PlatformOrDefault(),
+			Host:     repo.PlatformHostOrDefault(),
+		})
+	}
+	return known
 }
 
 func (s *Server) listProjects(
@@ -310,6 +343,7 @@ func projectResponseFromDB(p *db.Project) projectResponse {
 	}
 	if p.PlatformIdentity != nil {
 		resp.PlatformIdentity = &platformIdentityPayload{
+			Platform:     p.PlatformIdentity.Platform,
 			PlatformHost: p.PlatformIdentity.Host,
 			Owner:        p.PlatformIdentity.Owner,
 			Name:         p.PlatformIdentity.Name,

@@ -705,7 +705,7 @@ func seedPR(t *testing.T, database *db.DB, owner, name string, number int, opts 
 	t.Helper()
 	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(ctx, "github.com", owner, name)
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", owner, name))
 	require.NoError(t, err)
 
 	numberText := strconv.Itoa(number)
@@ -1875,7 +1875,7 @@ func TestAPIGetPullNoDiffWarningWhenSHAsPresent(t *testing.T) {
 
 	seedPR(t, database, "acme", "widget", 2)
 
-	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	headSHA := "deadbeef00000000000000000000000000000001"
 	baseSHA := "deadbeef00000000000000000000000000000010"
@@ -1927,7 +1927,7 @@ func TestAPIGetPullEmitsStaleDiffWarning(t *testing.T) {
 
 	seedPR(t, database, "acme", "widget", 3)
 
-	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	// Platform reports the latest head; the recorded diff SHAs are from
 	// an earlier push that no longer matches.
@@ -1981,7 +1981,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnBaseDrift(t *testing.T) {
 
 	seedPR(t, database, "acme", "widget", 4)
 
-	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	// Head matches, but the platform base advanced past the recorded
 	// diff base — for example a merge landed on main after the diff
@@ -2038,7 +2038,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnMergedPR(t *testing.T) {
 
 	seedPR(t, database, "acme", "widget", 5)
 
-	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	mergedAt := now
@@ -2094,7 +2094,7 @@ func TestAPIGetPullEmitsDiffWarningWhenSHAsMissingClosed(t *testing.T) {
 
 	seedPR(t, database, "acme", "widget", 6)
 
-	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	closedAt := now
@@ -2144,7 +2144,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnClosedPR(t *testing.T) {
 
 	seedPR(t, database, "acme", "widget", 7)
 
-	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	closedAt := now
@@ -2198,7 +2198,7 @@ func TestAPIGetPullNoDiffWarningOnMergedPRWithBaseDrift(t *testing.T) {
 
 	seedPR(t, database, "acme", "widget", 8)
 
-	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	mergedAt := now
@@ -2296,7 +2296,7 @@ func TestAPISyncPRSanitizesDiffFailureWarning(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
-	_, err = database.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(
@@ -2367,7 +2367,7 @@ func TestAPIListRepos(t *testing.T) {
 	srv, database := setupTestServer(t)
 	client := setupTestClient(t, srv)
 
-	_, err := database.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	resp, err := client.HTTP.ListReposWithResponse(t.Context())
@@ -3141,7 +3141,7 @@ platform_host = "ghe.example.com"
 `, &mockGH{})
 
 	_, err := database.UpsertRepo(
-		t.Context(), "ghe.example.com", "acme", "widgets",
+		t.Context(), db.GitHubRepoIdentity("ghe.example.com", "acme", "widgets"),
 	)
 	require.NoError(err)
 	srv.syncer.SetRepos([]ghclient.RepoRef{{
@@ -3357,7 +3357,7 @@ func TestAPIListRepoSummariesClearsStaleOverviewWhenTagFallbackFails(t *testing.
 	require.NoError(err)
 	t.Cleanup(func() { require.NoError(database.Close()) })
 
-	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "tagless")
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "tagless"))
 	require.NoError(err)
 
 	publishedAt := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
@@ -3484,7 +3484,7 @@ func TestAPICreateIssue(t *testing.T) {
 	)
 	client := setupTestClient(t, srv)
 
-	_, err := database.UpsertRepo(context.Background(), "github.com", "acme", "widgets")
+	_, err := database.UpsertRepo(context.Background(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 
 	resp, err := client.HTTP.CreateIssueWithResponse(
@@ -3540,7 +3540,7 @@ func TestAPICreateIssueRejectsNilProviderPayload(t *testing.T) {
 	)
 	client := setupTestClient(t, srv)
 
-	repoID, err := database.UpsertRepo(t.Context(), "github.com", "acme", "widgets")
+	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 
 	resp, err := client.HTTP.CreateIssueWithResponse(
@@ -3850,9 +3850,9 @@ func TestAPICreateIssueUsesPlatformHost(t *testing.T) {
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
-	_, err = database.UpsertRepo(context.Background(), "github.com", "acme", "widgets")
+	_, err = database.UpsertRepo(context.Background(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
-	enterpriseRepoID, err := database.UpsertRepo(context.Background(), "ghe.example.com", "acme", "widgets")
+	enterpriseRepoID, err := database.UpsertRepo(context.Background(), db.GitHubRepoIdentity("ghe.example.com", "acme", "widgets"))
 	require.NoError(err)
 
 	client := setupTestClient(t, srv)
@@ -4096,7 +4096,7 @@ func TestAPICommentAutocomplete(t *testing.T) {
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	prID, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:         repoID,
@@ -4165,7 +4165,7 @@ func TestAPICommentAutocompleteUsesRepoPlatformHost(t *testing.T) {
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
 
-	githubRepoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	githubRepoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:         githubRepoID,
@@ -4183,7 +4183,7 @@ func TestAPICommentAutocompleteUsesRepoPlatformHost(t *testing.T) {
 	})
 	require.NoError(err)
 
-	repoID, err := database.UpsertRepo(ctx, "ghe.example.com", "acme", "widget")
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("ghe.example.com", "acme", "widget"))
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:         repoID,
@@ -4365,7 +4365,7 @@ func TestAPIReadyForReview(t *testing.T) {
 	)
 	client := setupTestClient(t, srv)
 
-	repoID, err := database.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -4487,7 +4487,7 @@ func TestOpenAPIEndpointReflectsHumaContract(t *testing.T) {
 func seedIssue(t *testing.T, database *db.DB, owner, name string, number int, state string) int64 {
 	t.Helper()
 	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, "github.com", owner, name)
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", owner, name))
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -4523,7 +4523,7 @@ func seedIssueOnHost(
 	t.Helper()
 	ctx := context.Background()
 
-	repoID, err := database.UpsertRepo(ctx, host, owner, name)
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity(host, owner, name))
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -5127,7 +5127,7 @@ func TestAPIReadyForReviewDoesNotGetRevertedByStaleSync(t *testing.T) {
 	srv, database := setupTestServerWithMock(t, mock)
 	client := setupTestClient(t, srv)
 
-	repoID, err := database.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	prID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
@@ -6040,7 +6040,7 @@ func TestAPIIssueDataFromGraphQLSync(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	// Seed DB directly — same shape as GraphQL sync output.
-	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -6293,7 +6293,7 @@ func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
 	// detector's slower execution) the fresh GraphQL data would be
 	// blocked and the assertion below would read back the stale 5
 	// — a test-only flake, not a production bug.
-	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	stale := now.Add(-time.Second)
 	_, err = database.UpsertIssue(ctx, &db.Issue{
@@ -7702,7 +7702,7 @@ func TestAPISetIssueGitHubStateReturns404WhenNoClientConfigured(t *testing.T) {
 	srv, database := setupTestServerWithRepos(t, &mockGH{}, repos)
 	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(ctx, "ghe.corp.com", "acme", "widget")
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("ghe.corp.com", "acme", "widget"))
 	require.NoError(err)
 	_, err = database.UpsertIssue(ctx, &db.Issue{
 		RepoID:         repoID,
@@ -8089,7 +8089,7 @@ func TestResolveItem_NotFoundOnGitHub(t *testing.T) {
 	}
 	repos := []ghclient.RepoRef{{Owner: "acme", Name: "widget"}}
 	srv, database := setupTestServerWithRepos(t, mock, repos)
-	_, err := database.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	client := setupTestClient(t, srv)
 
@@ -8112,7 +8112,7 @@ func TestResolveItem_GitHubServerError(t *testing.T) {
 	}
 	repos := []ghclient.RepoRef{{Owner: "acme", Name: "widget"}}
 	srv, database := setupTestServerWithRepos(t, mock, repos)
-	_, err := database.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	client := setupTestClient(t, srv)
 
@@ -8162,7 +8162,7 @@ func TestAPIGetMRImportMetadata(t *testing.T) {
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -10174,7 +10174,12 @@ func TestAPIGetFilesAndDiffMarkGeneratedFilesE2E(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	seedPR(t, database, "acme", "widget", 1)
-	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+	})
 	require.NoError(err)
 	require.NoError(database.UpdateDiffSHAs(ctx, repoID, 1, headSHA, mergeBase, mergeBase))
 
@@ -10680,7 +10685,7 @@ func TestAPIGetPullDetailLoaded(t *testing.T) {
 	// Insert a second PR with DetailFetchedAt set.
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
-	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:          repoID,
@@ -10715,7 +10720,7 @@ func TestAPIGetPullDetailIncludesDiffSummaryRevisionFields(t *testing.T) {
 
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -10806,7 +10811,7 @@ func TestAPIActivityStartupRepairsLegacyTimestampStorage(t *testing.T) {
 	database, err := db.Open(path)
 	require.NoError(err)
 
-	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	prID, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:            repoID,
@@ -11088,7 +11093,7 @@ func setupTestServerWithClonesAndServer(t *testing.T) (
 
 	seedPR(t, database, "acme", "widget", 1)
 	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "widget")
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(t, err)
 	require.NoError(t, database.UpdateDiffSHAs(ctx, repoID, 1, headSHA, mergeBase, mergeBase))
 
@@ -11299,7 +11304,7 @@ func TestAPIGetDiff_RootCommit(t *testing.T) {
 
 	seedPR(t, database, "acme", "rootrepo", 1)
 	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, "github.com", "acme", "rootrepo")
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "rootrepo"))
 	require.NoError(err)
 	require.NoError(database.UpdateDiffSHAs(ctx, repoID, 1, headSHA, "4b825dc642cb6eb9a060e54bf8d69288fbee4904", "4b825dc642cb6eb9a060e54bf8d69288fbee4904"))
 
@@ -11411,7 +11416,7 @@ func seedStackedPRDraft(
 ) int64 {
 	t.Helper()
 	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, "github.com", owner, name)
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", owner, name))
 	require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Second)
 	pr := &db.MergeRequest{
@@ -15687,7 +15692,7 @@ func seedPROnHost(
 	t.Helper()
 	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(ctx, host, owner, name)
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity(host, owner, name))
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Second)

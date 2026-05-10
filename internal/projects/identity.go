@@ -16,7 +16,13 @@ import (
 
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitenv"
+	platformpkg "github.com/wesm/middleman/internal/platform"
 )
+
+type KnownPlatformHost struct {
+	Platform string
+	Host     string
+}
 
 // ResolveIdentityFromPath runs `git remote get-url origin` in path and parses
 // the result into an optional PlatformIdentity. Returns (nil, nil) when no
@@ -26,6 +32,14 @@ import (
 // responsibility. Per the consolidation spec's Decision 7, unknown identity
 // is allowed and does not block registration.
 func ResolveIdentityFromPath(ctx context.Context, path string) (*db.PlatformIdentity, error) {
+	return ResolveIdentityFromPathWithKnownPlatforms(ctx, path, nil)
+}
+
+func ResolveIdentityFromPathWithKnownPlatforms(
+	ctx context.Context,
+	path string,
+	known []KnownPlatformHost,
+) (*db.PlatformIdentity, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, fmt.Errorf("path is required")
 	}
@@ -46,14 +60,18 @@ func ResolveIdentityFromPath(ctx context.Context, path string) (*db.PlatformIden
 		}
 		return nil, fmt.Errorf("git remote get-url origin: %w", err)
 	}
-	return ParseRemoteURL(string(out)), nil
+	return ParseRemoteURLWithKnownPlatforms(string(out), known), nil
 }
 
 // ParseRemoteURL recognizes the common remote URL shapes (HTTPS, SSH SCP-style,
 // ssh://) and extracts a PlatformIdentity. Returns nil for anything it does
-// not recognize, including local paths, file:// URLs, and remotes whose path
-// does not contain exactly two segments (owner/name).
+// not recognize, including local paths, file:// URLs, unknown self-hosted
+// hosts, and nested owner paths on platforms that do not support them.
 func ParseRemoteURL(remote string) *db.PlatformIdentity {
+	return ParseRemoteURLWithKnownPlatforms(remote, nil)
+}
+
+func ParseRemoteURLWithKnownPlatforms(remote string, known []KnownPlatformHost) *db.PlatformIdentity {
 	remote = strings.TrimSpace(remote)
 	if remote == "" {
 		return nil
@@ -64,22 +82,48 @@ func ParseRemoteURL(remote string) *db.PlatformIdentity {
 		return nil
 	}
 
+	host = strings.ToLower(host)
 	path = strings.TrimSuffix(path, "/")
 	path = strings.TrimSuffix(path, ".git")
 	parts := strings.Split(path, "/")
-	if len(parts) != 2 {
+	platform, ok := resolvePlatform(host, known)
+	if !ok {
 		return nil
 	}
-	owner, name := parts[0], parts[1]
+	if len(parts) < 2 || (len(parts) > 2 && !platformpkg.AllowsNestedOwner(platformpkg.Kind(platform))) {
+		return nil
+	}
+	owner, name := strings.Join(parts[:len(parts)-1], "/"), parts[len(parts)-1]
 	if owner == "" || name == "" {
 		return nil
 	}
 
 	return &db.PlatformIdentity{
-		Host:  strings.ToLower(host),
-		Owner: strings.ToLower(owner),
-		Name:  strings.ToLower(name),
+		Platform: platform,
+		Host:     host,
+		Owner:    strings.ToLower(owner),
+		Name:     strings.ToLower(name),
 	}
+}
+
+func resolvePlatform(host string, known []KnownPlatformHost) (string, bool) {
+	for _, candidate := range known {
+		if strings.EqualFold(candidate.Host, host) && strings.TrimSpace(candidate.Platform) != "" {
+			return strings.ToLower(strings.TrimSpace(candidate.Platform)), true
+		}
+	}
+	for _, kind := range []platformpkg.Kind{
+		platformpkg.KindGitHub,
+		platformpkg.KindGitLab,
+		platformpkg.KindForgejo,
+		platformpkg.KindGitea,
+	} {
+		defaultHost, ok := platformpkg.DefaultHost(kind)
+		if ok && strings.EqualFold(defaultHost, host) {
+			return string(kind), true
+		}
+	}
+	return "", false
 }
 
 // splitRemote separates a remote URL into (host, path) without hard-coding
@@ -97,7 +141,10 @@ func splitRemote(remote string) (host, path string) {
 		if u.Scheme == "file" {
 			return "", ""
 		}
-		return u.Hostname(), strings.TrimPrefix(u.Path, "/")
+		if u.Scheme == "ssh" && u.Port() == "22" {
+			return u.Hostname(), strings.TrimPrefix(u.Path, "/")
+		}
+		return u.Host, strings.TrimPrefix(u.Path, "/")
 	}
 
 	atIdx := strings.Index(remote, "@")

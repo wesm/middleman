@@ -167,7 +167,7 @@ func SetupDiffRepo(
 
 	// Seed database with the real SHAs for acme/widgets PR #1.
 	repoID, err := d.UpsertRepo(
-		ctx, "github.com", "acme", "widgets")
+		ctx, db.GitHubRepoIdentity("github.com", "acme", "widgets"))
 	if err != nil {
 		return nil, fmt.Errorf("upsert repo: %w", err)
 	}
