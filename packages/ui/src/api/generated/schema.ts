@@ -665,6 +665,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list-projects"];
+        put?: never;
+        post: operations["register-project"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get-project"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/launch-targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list-launch-targets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/worktrees": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list-worktrees"];
+        put?: never;
+        post: operations["register-worktree"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pulls": {
         parameters: {
             query?: never;
@@ -1919,6 +1983,24 @@ export interface components {
             old_num?: number;
             type: string;
         };
+        ListLaunchTargetsOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ListLaunchTargetsOutputBody.json
+             */
+            readonly $schema?: string;
+            launch_targets: components["schemas"]["LaunchTarget"][] | null;
+        };
+        ListProjectsOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ListProjectsOutputBody.json
+             */
+            readonly $schema?: string;
+            projects: components["schemas"]["ProjectResponse"][] | null;
+        };
         ListWorkspacesOutputBody: {
             /**
              * Format: uri
@@ -1927,6 +2009,15 @@ export interface components {
              */
             readonly $schema?: string;
             workspaces: components["schemas"]["WorkspaceResponse"][] | null;
+        };
+        ListWorktreesOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ListWorktreesOutputBody.json
+             */
+            readonly $schema?: string;
+            worktrees: components["schemas"]["WorktreeResponse"][] | null;
         };
         MREvent: {
             /**
@@ -2125,6 +2216,11 @@ export interface components {
             state: string;
             title: string;
         };
+        PlatformIdentityPayload: {
+            name: string;
+            owner: string;
+            platform_host: string;
+        };
         PostCommentHostInputBody: {
             /**
              * Format: uri
@@ -2160,6 +2256,23 @@ export interface components {
              */
             readonly $schema?: string;
             body: string;
+        };
+        ProjectResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ProjectResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: date-time */
+            created_at: string;
+            default_branch?: string;
+            display_name: string;
+            id: string;
+            local_path: string;
+            platform_identity?: components["schemas"]["PlatformIdentityPayload"];
+            /** Format: date-time */
+            updated_at: string;
         };
         ProviderCapabilitiesResponse: {
             comment_mutation: boolean;
@@ -2216,6 +2329,28 @@ export interface components {
             hosts: {
                 [key: string]: components["schemas"]["RateLimitHostStatus"];
             };
+        };
+        RegisterProjectInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RegisterProjectInputBody.json
+             */
+            readonly $schema?: string;
+            default_branch?: string;
+            display_name?: string;
+            local_path: string;
+            platform_identity?: components["schemas"]["PlatformIdentityPayload"];
+        };
+        RegisterWorktreeInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RegisterWorktreeInputBody.json
+             */
+            readonly $schema?: string;
+            branch: string;
+            path: string;
         };
         RepoPreviewRequest: {
             /**
@@ -2586,6 +2721,22 @@ export interface components {
             worktree_branch?: string;
             worktree_key: string;
             worktree_path?: string;
+        };
+        WorktreeResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/WorktreeResponse.json
+             */
+            readonly $schema?: string;
+            branch: string;
+            /** Format: date-time */
+            created_at: string;
+            id: string;
+            path: string;
+            project_id: string;
+            /** Format: date-time */
+            updated_at: string;
         };
     };
     responses: never;
@@ -4116,6 +4267,196 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkspaceResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "list-projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListProjectsOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "register-project": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterProjectInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-project": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "list-launch-targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListLaunchTargetsOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "list-worktrees": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListWorktreesOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "register-worktree": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterWorktreeInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorktreeResponse"];
                 };
             };
             /** @description Error */

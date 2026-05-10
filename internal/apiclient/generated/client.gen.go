@@ -474,11 +474,32 @@ type Line struct {
 	Type      string `json:"type"`
 }
 
+// ListLaunchTargetsOutputBody defines model for ListLaunchTargetsOutputBody.
+type ListLaunchTargetsOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema        *string         `json:"$schema,omitempty"`
+	LaunchTargets *[]LaunchTarget `json:"launch_targets"`
+}
+
+// ListProjectsOutputBody defines model for ListProjectsOutputBody.
+type ListProjectsOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema   *string            `json:"$schema,omitempty"`
+	Projects *[]ProjectResponse `json:"projects"`
+}
+
 // ListWorkspacesOutputBody defines model for ListWorkspacesOutputBody.
 type ListWorkspacesOutputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema     *string              `json:"$schema,omitempty"`
 	Workspaces *[]WorkspaceResponse `json:"workspaces"`
+}
+
+// ListWorktreesOutputBody defines model for ListWorktreesOutputBody.
+type ListWorktreesOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string             `json:"$schema,omitempty"`
+	Worktrees *[]WorktreeResponse `json:"worktrees"`
 }
 
 // MREvent defines model for MREvent.
@@ -640,6 +661,13 @@ type MrImportMetadataResponse struct {
 	Title            string  `json:"title"`
 }
 
+// PlatformIdentityPayload defines model for PlatformIdentityPayload.
+type PlatformIdentityPayload struct {
+	Name         string `json:"name"`
+	Owner        string `json:"owner"`
+	PlatformHost string `json:"platform_host"`
+}
+
 // PostCommentHostInputBody defines model for PostCommentHostInputBody.
 type PostCommentHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -666,6 +694,19 @@ type PostIssueCommentInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string `json:"$schema,omitempty"`
 	Body   string  `json:"body"`
+}
+
+// ProjectResponse defines model for ProjectResponse.
+type ProjectResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema           *string                  `json:"$schema,omitempty"`
+	CreatedAt        time.Time                `json:"created_at"`
+	DefaultBranch    *string                  `json:"default_branch,omitempty"`
+	DisplayName      string                   `json:"display_name"`
+	Id               string                   `json:"id"`
+	LocalPath        string                   `json:"local_path"`
+	PlatformIdentity *PlatformIdentityPayload `json:"platform_identity,omitempty"`
+	UpdatedAt        time.Time                `json:"updated_at"`
 }
 
 // ProviderCapabilitiesResponse defines model for ProviderCapabilitiesResponse.
@@ -712,6 +753,24 @@ type RateLimitsResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string                        `json:"$schema,omitempty"`
 	Hosts  map[string]RateLimitHostStatus `json:"hosts"`
+}
+
+// RegisterProjectInputBody defines model for RegisterProjectInputBody.
+type RegisterProjectInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema           *string                  `json:"$schema,omitempty"`
+	DefaultBranch    *string                  `json:"default_branch,omitempty"`
+	DisplayName      *string                  `json:"display_name,omitempty"`
+	LocalPath        string                   `json:"local_path"`
+	PlatformIdentity *PlatformIdentityPayload `json:"platform_identity,omitempty"`
+}
+
+// RegisterWorktreeInputBody defines model for RegisterWorktreeInputBody.
+type RegisterWorktreeInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Branch string  `json:"branch"`
+	Path   string  `json:"path"`
 }
 
 // RepoPreviewRequest defines model for RepoPreviewRequest.
@@ -1043,6 +1102,18 @@ type WorktreeLinkResponse struct {
 	WorktreePath   *string `json:"worktree_path,omitempty"`
 }
 
+// WorktreeResponse defines model for WorktreeResponse.
+type WorktreeResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string   `json:"$schema,omitempty"`
+	Branch    string    `json:"branch"`
+	CreatedAt time.Time `json:"created_at"`
+	Id        string    `json:"id"`
+	Path      string    `json:"path"`
+	ProjectId string    `json:"project_id"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 // GetActivityParams defines parameters for GetActivity.
 type GetActivityParams struct {
 	Repo   *string   `form:"repo,omitempty" json:"repo,omitempty"`
@@ -1226,6 +1297,12 @@ type SetIssueGithubStateJSONRequestBody = GithubStateInputBody
 
 // CreateIssueWorkspaceJSONRequestBody defines body for CreateIssueWorkspace for application/json ContentType.
 type CreateIssueWorkspaceJSONRequestBody = CreateIssueWorkspaceInputBody
+
+// RegisterProjectJSONRequestBody defines body for RegisterProject for application/json ContentType.
+type RegisterProjectJSONRequestBody = RegisterProjectInputBody
+
+// RegisterWorktreeJSONRequestBody defines body for RegisterWorktree for application/json ContentType.
+type RegisterWorktreeJSONRequestBody = RegisterWorktreeInputBody
 
 // EditPrContentJSONRequestBody defines body for EditPrContent for application/json ContentType.
 type EditPrContentJSONRequestBody = EditPRContentInputBody
@@ -1504,6 +1581,28 @@ type ClientInterface interface {
 	CreateIssueWorkspaceWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	CreateIssueWorkspace(ctx context.Context, provider string, owner string, name string, number int64, body CreateIssueWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListProjects request
+	ListProjects(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RegisterProjectWithBody request with any body
+	RegisterProjectWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	RegisterProject(ctx context.Context, body RegisterProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetProject request
+	GetProject(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListLaunchTargets request
+	ListLaunchTargets(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListWorktrees request
+	ListWorktrees(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RegisterWorktreeWithBody request with any body
+	RegisterWorktreeWithBody(ctx context.Context, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	RegisterWorktree(ctx context.Context, projectId string, body RegisterWorktreeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListPulls request
 	ListPulls(ctx context.Context, params *ListPullsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2384,6 +2483,102 @@ func (c *Client) CreateIssueWorkspaceWithBody(ctx context.Context, provider stri
 
 func (c *Client) CreateIssueWorkspace(ctx context.Context, provider string, owner string, name string, number int64, body CreateIssueWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateIssueWorkspaceRequest(c.Server, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListProjects(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListProjectsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RegisterProjectWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRegisterProjectRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RegisterProject(ctx context.Context, body RegisterProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRegisterProjectRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetProject(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetProjectRequest(c.Server, projectId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListLaunchTargets(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListLaunchTargetsRequest(c.Server, projectId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListWorktrees(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListWorktreesRequest(c.Server, projectId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RegisterWorktreeWithBody(ctx context.Context, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRegisterWorktreeRequestWithBody(c.Server, projectId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RegisterWorktree(ctx context.Context, projectId string, body RegisterWorktreeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRegisterWorktreeRequest(c.Server, projectId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -6199,6 +6394,222 @@ func NewCreateIssueWorkspaceRequestWithBody(server string, provider string, owne
 	return req, nil
 }
 
+// NewListProjectsRequest generates requests for ListProjects
+func NewListProjectsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/projects")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRegisterProjectRequest calls the generic RegisterProject builder with application/json body
+func NewRegisterProjectRequest(server string, body RegisterProjectJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRegisterProjectRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewRegisterProjectRequestWithBody generates requests for RegisterProject with any type of body
+func NewRegisterProjectRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/projects")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetProjectRequest generates requests for GetProject
+func NewGetProjectRequest(server string, projectId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/projects/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListLaunchTargetsRequest generates requests for ListLaunchTargets
+func NewListLaunchTargetsRequest(server string, projectId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/projects/%s/launch-targets", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListWorktreesRequest generates requests for ListWorktrees
+func NewListWorktreesRequest(server string, projectId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/projects/%s/worktrees", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRegisterWorktreeRequest calls the generic RegisterWorktree builder with application/json body
+func NewRegisterWorktreeRequest(server string, projectId string, body RegisterWorktreeJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRegisterWorktreeRequestWithBody(server, projectId, "application/json", bodyReader)
+}
+
+// NewRegisterWorktreeRequestWithBody generates requests for RegisterWorktree with any type of body
+func NewRegisterWorktreeRequestWithBody(server string, projectId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/projects/%s/worktrees", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewListPullsRequest generates requests for ListPulls
 func NewListPullsRequest(server string, params *ListPullsParams) (*http.Request, error) {
 	var err error
@@ -9085,6 +9496,28 @@ type ClientWithResponsesInterface interface {
 
 	CreateIssueWorkspaceWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body CreateIssueWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIssueWorkspaceResponse, error)
 
+	// ListProjectsWithResponse request
+	ListProjectsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListProjectsResponse, error)
+
+	// RegisterProjectWithBodyWithResponse request with any body
+	RegisterProjectWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RegisterProjectResponse, error)
+
+	RegisterProjectWithResponse(ctx context.Context, body RegisterProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*RegisterProjectResponse, error)
+
+	// GetProjectWithResponse request
+	GetProjectWithResponse(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*GetProjectResponse, error)
+
+	// ListLaunchTargetsWithResponse request
+	ListLaunchTargetsWithResponse(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*ListLaunchTargetsResponse, error)
+
+	// ListWorktreesWithResponse request
+	ListWorktreesWithResponse(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*ListWorktreesResponse, error)
+
+	// RegisterWorktreeWithBodyWithResponse request with any body
+	RegisterWorktreeWithBodyWithResponse(ctx context.Context, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RegisterWorktreeResponse, error)
+
+	RegisterWorktreeWithResponse(ctx context.Context, projectId string, body RegisterWorktreeJSONRequestBody, reqEditors ...RequestEditorFn) (*RegisterWorktreeResponse, error)
+
 	// ListPullsWithResponse request
 	ListPullsWithResponse(ctx context.Context, params *ListPullsParams, reqEditors ...RequestEditorFn) (*ListPullsResponse, error)
 
@@ -10198,6 +10631,144 @@ func (r CreateIssueWorkspaceResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r CreateIssueWorkspaceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListProjectsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ListProjectsOutputBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r ListProjectsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListProjectsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RegisterProjectResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON201                       *ProjectResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r RegisterProjectResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RegisterProjectResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetProjectResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ProjectResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetProjectResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetProjectResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListLaunchTargetsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ListLaunchTargetsOutputBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r ListLaunchTargetsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListLaunchTargetsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListWorktreesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ListWorktreesOutputBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r ListWorktreesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListWorktreesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RegisterWorktreeResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON201                       *WorktreeResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r RegisterWorktreeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RegisterWorktreeResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -11849,6 +12420,76 @@ func (c *ClientWithResponses) CreateIssueWorkspaceWithResponse(ctx context.Conte
 		return nil, err
 	}
 	return ParseCreateIssueWorkspaceResponse(rsp)
+}
+
+// ListProjectsWithResponse request returning *ListProjectsResponse
+func (c *ClientWithResponses) ListProjectsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListProjectsResponse, error) {
+	rsp, err := c.ListProjects(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListProjectsResponse(rsp)
+}
+
+// RegisterProjectWithBodyWithResponse request with arbitrary body returning *RegisterProjectResponse
+func (c *ClientWithResponses) RegisterProjectWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RegisterProjectResponse, error) {
+	rsp, err := c.RegisterProjectWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRegisterProjectResponse(rsp)
+}
+
+func (c *ClientWithResponses) RegisterProjectWithResponse(ctx context.Context, body RegisterProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*RegisterProjectResponse, error) {
+	rsp, err := c.RegisterProject(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRegisterProjectResponse(rsp)
+}
+
+// GetProjectWithResponse request returning *GetProjectResponse
+func (c *ClientWithResponses) GetProjectWithResponse(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*GetProjectResponse, error) {
+	rsp, err := c.GetProject(ctx, projectId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetProjectResponse(rsp)
+}
+
+// ListLaunchTargetsWithResponse request returning *ListLaunchTargetsResponse
+func (c *ClientWithResponses) ListLaunchTargetsWithResponse(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*ListLaunchTargetsResponse, error) {
+	rsp, err := c.ListLaunchTargets(ctx, projectId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListLaunchTargetsResponse(rsp)
+}
+
+// ListWorktreesWithResponse request returning *ListWorktreesResponse
+func (c *ClientWithResponses) ListWorktreesWithResponse(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*ListWorktreesResponse, error) {
+	rsp, err := c.ListWorktrees(ctx, projectId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListWorktreesResponse(rsp)
+}
+
+// RegisterWorktreeWithBodyWithResponse request with arbitrary body returning *RegisterWorktreeResponse
+func (c *ClientWithResponses) RegisterWorktreeWithBodyWithResponse(ctx context.Context, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RegisterWorktreeResponse, error) {
+	rsp, err := c.RegisterWorktreeWithBody(ctx, projectId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRegisterWorktreeResponse(rsp)
+}
+
+func (c *ClientWithResponses) RegisterWorktreeWithResponse(ctx context.Context, projectId string, body RegisterWorktreeJSONRequestBody, reqEditors ...RequestEditorFn) (*RegisterWorktreeResponse, error) {
+	rsp, err := c.RegisterWorktree(ctx, projectId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRegisterWorktreeResponse(rsp)
 }
 
 // ListPullsWithResponse request returning *ListPullsResponse
@@ -13726,6 +14367,204 @@ func ParseCreateIssueWorkspaceResponse(rsp *http.Response) (*CreateIssueWorkspac
 			return nil, err
 		}
 		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListProjectsResponse parses an HTTP response from a ListProjectsWithResponse call
+func ParseListProjectsResponse(rsp *http.Response) (*ListProjectsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListProjectsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ListProjectsOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRegisterProjectResponse parses an HTTP response from a RegisterProjectWithResponse call
+func ParseRegisterProjectResponse(rsp *http.Response) (*RegisterProjectResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RegisterProjectResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest ProjectResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetProjectResponse parses an HTTP response from a GetProjectWithResponse call
+func ParseGetProjectResponse(rsp *http.Response) (*GetProjectResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetProjectResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProjectResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListLaunchTargetsResponse parses an HTTP response from a ListLaunchTargetsWithResponse call
+func ParseListLaunchTargetsResponse(rsp *http.Response) (*ListLaunchTargetsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListLaunchTargetsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ListLaunchTargetsOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListWorktreesResponse parses an HTTP response from a ListWorktreesWithResponse call
+func ParseListWorktreesResponse(rsp *http.Response) (*ListWorktreesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListWorktreesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ListWorktreesOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRegisterWorktreeResponse parses an HTTP response from a RegisterWorktreeWithResponse call
+func ParseRegisterWorktreeResponse(rsp *http.Response) (*RegisterWorktreeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RegisterWorktreeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest WorktreeResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorModel

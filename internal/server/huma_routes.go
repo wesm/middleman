@@ -509,6 +509,39 @@ func (s *Server) registerAPI(api huma.API) {
 		Path:          "/workspaces/{id}",
 		DefaultStatus: http.StatusNoContent,
 	}, s.deleteWorkspace)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "register-project",
+		Method:        http.MethodPost,
+		Path:          "/projects",
+		DefaultStatus: http.StatusCreated,
+	}, s.registerProject)
+	huma.Register(api, huma.Operation{
+		OperationID: "list-projects",
+		Method:      http.MethodGet,
+		Path:        "/projects",
+	}, s.listProjects)
+	huma.Register(api, huma.Operation{
+		OperationID: "get-project",
+		Method:      http.MethodGet,
+		Path:        "/projects/{project_id}",
+	}, s.getProject)
+	huma.Register(api, huma.Operation{
+		OperationID:   "register-worktree",
+		Method:        http.MethodPost,
+		Path:          "/projects/{project_id}/worktrees",
+		DefaultStatus: http.StatusCreated,
+	}, s.registerWorktree)
+	huma.Register(api, huma.Operation{
+		OperationID: "list-worktrees",
+		Method:      http.MethodGet,
+		Path:        "/projects/{project_id}/worktrees",
+	}, s.listWorktrees)
+	huma.Register(api, huma.Operation{
+		OperationID: "list-launch-targets",
+		Method:      http.MethodGet,
+		Path:        "/projects/{project_id}/launch-targets",
+	}, s.listLaunchTargets)
 }
 
 func (s *Server) registerProviderRepoAPI(api huma.API) {

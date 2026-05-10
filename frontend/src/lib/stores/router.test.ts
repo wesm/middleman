@@ -222,6 +222,115 @@ describe("router basic routes", () => {
   });
 });
 
+describe("router embed-workspace routes", () => {
+  it("parses /workspaces/embed/list", () => {
+    navigate("/workspaces/embed/list");
+    expect(getRoute()).toEqual({ page: "embed-workspace-list" });
+    expect(getPage()).toBe("embed-workspace-list");
+  });
+
+  it("parses /workspaces/embed/terminal without an id", () => {
+    navigate("/workspaces/embed/terminal");
+    expect(getRoute()).toEqual({
+      page: "embed-workspace-terminal",
+      workspaceId: "",
+    });
+  });
+
+  it("parses /workspaces/embed/terminal/:workspaceId", () => {
+    navigate("/workspaces/embed/terminal/abc-123");
+    expect(getRoute()).toEqual({
+      page: "embed-workspace-terminal",
+      workspaceId: "abc-123",
+    });
+  });
+
+  it("parses /workspaces/embed/detail/pr/:host/:owner/:name/:number", () => {
+    navigate(
+      "/workspaces/embed/detail/pr/github.com/acme/widgets/42",
+    );
+    expect(getRoute()).toEqual({
+      page: "embed-workspace-detail",
+      itemType: "pr",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widgets",
+      number: 42,
+    });
+  });
+
+  it("parses /workspaces/embed/detail with branch and tab query", () => {
+    navigate(
+      "/workspaces/embed/detail/issue/ghe.example.com/org/repo/7" +
+        "?branch=feature%2Fx&tab=reviews",
+    );
+    expect(getRoute()).toEqual({
+      page: "embed-workspace-detail",
+      itemType: "issue",
+      platformHost: "ghe.example.com",
+      owner: "org",
+      name: "repo",
+      number: 7,
+      branch: "feature/x",
+      tab: "reviews",
+    });
+  });
+
+  it("ignores unknown tab values on the detail route", () => {
+    navigate(
+      "/workspaces/embed/detail/pr/github.com/o/n/1?tab=garbage",
+    );
+    const route = getRoute();
+    expect(route).toEqual({
+      page: "embed-workspace-detail",
+      itemType: "pr",
+      platformHost: "github.com",
+      owner: "o",
+      name: "n",
+      number: 1,
+    });
+  });
+
+  it("parses /workspaces/embed/empty/:reason for each known reason", () => {
+    for (const reason of [
+      "noSelection",
+      "noRepo",
+      "noWorkspace",
+    ] as const) {
+      navigate(`/workspaces/embed/empty/${reason}`);
+      expect(getRoute()).toEqual({
+        page: "embed-workspace-empty",
+        reason,
+      });
+    }
+  });
+
+  it("falls back to the standalone workspaces page for unknown empty reasons", () => {
+    navigate("/workspaces/embed/empty/garbage");
+    expect(getRoute()).toEqual({ page: "workspaces" });
+  });
+
+  it("parses /workspaces/embed/first-run", () => {
+    navigate("/workspaces/embed/first-run");
+    expect(getRoute()).toEqual({ page: "embed-workspace-first-run" });
+    expect(getPage()).toBe("embed-workspace-first-run");
+  });
+
+  it("parses /workspaces/embed/project/:project_id", () => {
+    navigate("/workspaces/embed/project/prj_abc123");
+    expect(getRoute()).toEqual({
+      page: "embed-workspace-project",
+      projectId: "prj_abc123",
+    });
+    expect(getPage()).toBe("embed-workspace-project");
+  });
+
+  it("falls back to the standalone workspaces page for unknown project_id shapes", () => {
+    navigate("/workspaces/embed/project/has slash/extra");
+    expect(getRoute()).toEqual({ page: "workspaces" });
+  });
+});
+
 describe("router navigation events", () => {
   beforeEach(() => {
     navigate("/pulls");
@@ -288,5 +397,56 @@ describe("router navigation events", () => {
     const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
     expect(payload.type).toBe("activity");
     expect(payload.view).toBe("/design-system");
+  });
+
+  it("maps every embed-workspace route to a workspaces navigation event", () => {
+    const spy = vi.fn();
+    installOnNavigate(spy);
+
+    const embedPaths = [
+      "/workspaces/embed/list",
+      "/workspaces/embed/terminal/ws-1",
+      "/workspaces/embed/detail/pr/github.com/acme/widget/42",
+      "/workspaces/embed/empty/noWorkspace",
+      "/workspaces/embed/first-run",
+      "/workspaces/embed/project/prj_abc123",
+    ];
+
+    for (const path of embedPaths) {
+      spy.mockClear();
+      navigate(path);
+      const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
+      expect(payload.type, `type for ${path}`).toBe("workspaces");
+      expect(payload.focus, `focus for ${path}`).toBe(false);
+    }
+  });
+});
+
+describe("router window bridges", () => {
+  beforeEach(() => {
+    navigate("/pulls");
+  });
+
+  it("exposes __middleman_navigate_to_route as a window global", () => {
+    const bridge = (window as unknown as {
+      __middleman_navigate_to_route?: (route: string) => void;
+    }).__middleman_navigate_to_route;
+    expect(typeof bridge).toBe("function");
+  });
+
+  it("__middleman_navigate_to_route updates the SPA route", () => {
+    const bridge = (window as unknown as {
+      __middleman_navigate_to_route: (route: string) => void;
+    }).__middleman_navigate_to_route;
+
+    bridge("/workspaces/embed/first-run");
+    expect(getRoute()).toEqual({ page: "embed-workspace-first-run" });
+    expect(getPage()).toBe("embed-workspace-first-run");
+
+    bridge("/workspaces/embed/project/prj_xyz");
+    expect(getRoute()).toEqual({
+      page: "embed-workspace-project",
+      projectId: "prj_xyz",
+    });
   });
 });
