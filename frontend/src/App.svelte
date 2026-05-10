@@ -495,9 +495,7 @@
           activeTab={r.tab ??
             (r.itemType === "issue" ? "issue" : "pr")}
           workspaceID=""
-          provider={r.platformHost.toLowerCase().includes("gitlab")
-            ? "gitlab"
-            : "github"}
+          provider={r.provider}
           platformHost={r.platformHost}
           repoOwner={r.owner}
           repoName={r.name}
