@@ -46,6 +46,7 @@ export type Route =
       provider: string;
       itemType: "pr" | "issue";
       platformHost: string;
+      repoPath: string;
       owner: string;
       name: string;
       number: number;
@@ -147,6 +148,15 @@ function parseHostProviderNumberedPath(
 
 function inferLegacyEmbedProvider(platformHost: string): string {
   return platformHost.toLowerCase().includes("gitlab") ? "gitlab" : "github";
+}
+
+function splitRepoPath(repoPath: string): { owner: string; name: string } | undefined {
+  const pathParts = repoPath.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
+  if (pathParts.length < 2) return undefined;
+  return {
+    owner: pathParts.slice(0, -1).join("/"),
+    name: pathParts[pathParts.length - 1]!,
+  };
 }
 
 function parseRoute(fullPath: string): Route {
@@ -274,10 +284,15 @@ function parseRoute(fullPath: string): Route {
     };
   }
   const embedDetailMatch = path.match(
-    /^\/workspaces\/embed\/detail\/([^/]+)\/(pr|issue)\/([^/]+)\/([^/]+)\/([^/]+)\/(\d+)$/,
+    /^\/workspaces\/embed\/detail\/([^/]+)\/(pr|issue)\/([^/]+)\/(\d+)$/,
   );
   if (embedDetailMatch) {
     const sp = new URLSearchParams(search);
+    const repoPath = sp.get("repo_path")?.trim();
+    const repo = repoPath ? splitRepoPath(repoPath) : undefined;
+    if (!repoPath || !repo) {
+      return { page: "workspaces" };
+    }
     const branch = sp.get("branch") ?? undefined;
     const tabParam = sp.get("tab");
     const tab: EmbedDetailTab | undefined =
@@ -289,9 +304,37 @@ function parseRoute(fullPath: string): Route {
       provider: embedDetailMatch[1]!,
       itemType: embedDetailMatch[2] as "pr" | "issue",
       platformHost: embedDetailMatch[3]!,
-      owner: embedDetailMatch[4]!,
-      name: embedDetailMatch[5]!,
-      number: parseInt(embedDetailMatch[6]!, 10),
+      repoPath,
+      owner: repo.owner,
+      name: repo.name,
+      number: parseInt(embedDetailMatch[4]!, 10),
+    };
+    if (branch) r.branch = branch;
+    if (tab) r.tab = tab;
+    return r;
+  }
+  const legacyProviderEmbedDetailMatch = path.match(
+    /^\/workspaces\/embed\/detail\/([^/]+)\/(pr|issue)\/([^/]+)\/([^/]+)\/([^/]+)\/(\d+)$/,
+  );
+  if (legacyProviderEmbedDetailMatch) {
+    const sp = new URLSearchParams(search);
+    const branch = sp.get("branch") ?? undefined;
+    const tabParam = sp.get("tab");
+    const tab: EmbedDetailTab | undefined =
+      tabParam === "pr" || tabParam === "issue" || tabParam === "reviews"
+        ? tabParam
+        : undefined;
+    const owner = legacyProviderEmbedDetailMatch[4]!;
+    const name = legacyProviderEmbedDetailMatch[5]!;
+    const r: Route = {
+      page: "embed-workspace-detail",
+      provider: legacyProviderEmbedDetailMatch[1]!,
+      itemType: legacyProviderEmbedDetailMatch[2] as "pr" | "issue",
+      platformHost: legacyProviderEmbedDetailMatch[3]!,
+      repoPath: `${owner}/${name}`,
+      owner,
+      name,
+      number: parseInt(legacyProviderEmbedDetailMatch[6]!, 10),
     };
     if (branch) r.branch = branch;
     if (tab) r.tab = tab;
@@ -309,13 +352,16 @@ function parseRoute(fullPath: string): Route {
         ? tabParam
         : undefined;
     const platformHost = legacyEmbedDetailMatch[2]!;
+    const owner = legacyEmbedDetailMatch[3]!;
+    const name = legacyEmbedDetailMatch[4]!;
     const r: Route = {
       page: "embed-workspace-detail",
       provider: inferLegacyEmbedProvider(platformHost),
       itemType: legacyEmbedDetailMatch[1] as "pr" | "issue",
       platformHost,
-      owner: legacyEmbedDetailMatch[3]!,
-      name: legacyEmbedDetailMatch[4]!,
+      repoPath: `${owner}/${name}`,
+      owner,
+      name,
       number: parseInt(legacyEmbedDetailMatch[5]!, 10),
     };
     if (branch) r.branch = branch;
