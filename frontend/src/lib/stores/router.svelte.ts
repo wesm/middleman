@@ -43,6 +43,7 @@ export type Route =
   | { page: "embed-workspace-terminal"; workspaceId: string }
   | {
       page: "embed-workspace-detail";
+      provider: string;
       itemType: "pr" | "issue";
       platformHost: string;
       owner: string;
@@ -142,6 +143,10 @@ function parseHostProviderNumberedPath(
     return parseProviderNumberedPath(parts, start + 3, platformHost);
   }
   return undefined;
+}
+
+function inferLegacyEmbedProvider(platformHost: string): string {
+  return platformHost.toLowerCase().includes("gitlab") ? "gitlab" : "github";
 }
 
 function parseRoute(fullPath: string): Route {
@@ -269,7 +274,7 @@ function parseRoute(fullPath: string): Route {
     };
   }
   const embedDetailMatch = path.match(
-    /^\/workspaces\/embed\/detail\/(pr|issue)\/([^/]+)\/([^/]+)\/([^/]+)\/(\d+)$/,
+    /^\/workspaces\/embed\/detail\/([^/]+)\/(pr|issue)\/([^/]+)\/([^/]+)\/([^/]+)\/(\d+)$/,
   );
   if (embedDetailMatch) {
     const sp = new URLSearchParams(search);
@@ -281,11 +286,37 @@ function parseRoute(fullPath: string): Route {
         : undefined;
     const r: Route = {
       page: "embed-workspace-detail",
-      itemType: embedDetailMatch[1] as "pr" | "issue",
-      platformHost: embedDetailMatch[2]!,
-      owner: embedDetailMatch[3]!,
-      name: embedDetailMatch[4]!,
-      number: parseInt(embedDetailMatch[5]!, 10),
+      provider: embedDetailMatch[1]!,
+      itemType: embedDetailMatch[2] as "pr" | "issue",
+      platformHost: embedDetailMatch[3]!,
+      owner: embedDetailMatch[4]!,
+      name: embedDetailMatch[5]!,
+      number: parseInt(embedDetailMatch[6]!, 10),
+    };
+    if (branch) r.branch = branch;
+    if (tab) r.tab = tab;
+    return r;
+  }
+  const legacyEmbedDetailMatch = path.match(
+    /^\/workspaces\/embed\/detail\/(pr|issue)\/([^/]+)\/([^/]+)\/([^/]+)\/(\d+)$/,
+  );
+  if (legacyEmbedDetailMatch) {
+    const sp = new URLSearchParams(search);
+    const branch = sp.get("branch") ?? undefined;
+    const tabParam = sp.get("tab");
+    const tab: EmbedDetailTab | undefined =
+      tabParam === "pr" || tabParam === "issue" || tabParam === "reviews"
+        ? tabParam
+        : undefined;
+    const platformHost = legacyEmbedDetailMatch[2]!;
+    const r: Route = {
+      page: "embed-workspace-detail",
+      provider: inferLegacyEmbedProvider(platformHost),
+      itemType: legacyEmbedDetailMatch[1] as "pr" | "issue",
+      platformHost,
+      owner: legacyEmbedDetailMatch[3]!,
+      name: legacyEmbedDetailMatch[4]!,
+      number: parseInt(legacyEmbedDetailMatch[5]!, 10),
     };
     if (branch) r.branch = branch;
     if (tab) r.tab = tab;

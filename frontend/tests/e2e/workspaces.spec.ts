@@ -107,3 +107,61 @@ test("workspace bridge methods are registered on startup", async ({ page }) => {
     updateHostState: "function",
   });
 });
+
+test("provider-explicit embed detail route uses provider in detail request", async ({ page }) => {
+  const detailRequest = page.waitForRequest(
+    (request) =>
+      request.method() === "GET" &&
+      new URL(request.url()).pathname ===
+        "/api/v1/host/git.example.com/issues/gitlab/group/project/7",
+  );
+  await page.route(
+    "**/api/v1/host/git.example.com/issues/gitlab/group/project/7",
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          issue: {
+            ID: 7,
+            RepoID: 7,
+            GitHubID: 7007,
+            Number: 7,
+            URL: "https://git.example.com/group/project/-/issues/7",
+            Title: "Provider-explicit GitLab issue",
+            Author: "marius",
+            State: "open",
+            Body: "",
+            CommentCount: 0,
+            LabelsJSON: "[]",
+            CreatedAt: "2026-03-28T14:00:00Z",
+            UpdatedAt: "2026-03-30T14:00:00Z",
+            LastActivityAt: "2026-03-30T14:00:00Z",
+            ClosedAt: null,
+            Starred: false,
+          },
+          repo: {
+            provider: "gitlab",
+            platform_host: "git.example.com",
+            owner: "group",
+            name: "project",
+            repo_path: "group/project",
+          },
+          events: [],
+          platform_host: "git.example.com",
+          repo_owner: "group",
+          repo_name: "project",
+          detail_loaded: true,
+          detail_fetched_at: "2026-03-30T14:00:00Z",
+        }),
+      });
+    },
+  );
+
+  await page.goto(
+    "/workspaces/embed/detail/gitlab/issue/git.example.com/group/project/7",
+  );
+
+  await detailRequest;
+  await expect(page.getByText("Provider-explicit GitLab issue")).toBeVisible();
+});

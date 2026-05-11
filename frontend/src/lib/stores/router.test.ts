@@ -245,12 +245,13 @@ describe("router embed-workspace routes", () => {
     });
   });
 
-  it("parses /workspaces/embed/detail/pr/:host/:owner/:name/:number", () => {
+  it("parses /workspaces/embed/detail/:provider/pr/:host/:owner/:name/:number", () => {
     navigate(
-      "/workspaces/embed/detail/pr/github.com/acme/widgets/42",
+      "/workspaces/embed/detail/github/pr/github.com/acme/widgets/42",
     );
     expect(getRoute()).toEqual({
       page: "embed-workspace-detail",
+      provider: "github",
       itemType: "pr",
       platformHost: "github.com",
       owner: "acme",
@@ -259,15 +260,47 @@ describe("router embed-workspace routes", () => {
     });
   });
 
+  it("parses legacy /workspaces/embed/detail/:type/:host/:owner/:name/:number", () => {
+    navigate(
+      "/workspaces/embed/detail/issue/gitlab.example.com/acme/widgets/7?tab=issue",
+    );
+    expect(getRoute()).toEqual({
+      page: "embed-workspace-detail",
+      provider: "gitlab",
+      itemType: "issue",
+      platformHost: "gitlab.example.com",
+      owner: "acme",
+      name: "widgets",
+      number: 7,
+      tab: "issue",
+    });
+  });
+
+  it("keeps legacy GitHub Enterprise embed detail URLs on GitHub", () => {
+    navigate(
+      "/workspaces/embed/detail/pr/ghe.example.com/acme/widgets/42",
+    );
+    expect(getRoute()).toEqual({
+      page: "embed-workspace-detail",
+      provider: "github",
+      itemType: "pr",
+      platformHost: "ghe.example.com",
+      owner: "acme",
+      name: "widgets",
+      number: 42,
+    });
+  });
+
   it("parses /workspaces/embed/detail with branch and tab query", () => {
     navigate(
-      "/workspaces/embed/detail/issue/ghe.example.com/org/repo/7" +
+      "/workspaces/embed/detail/gitlab/issue/git.example.com/org/repo/7" +
         "?branch=feature%2Fx&tab=reviews",
     );
     expect(getRoute()).toEqual({
       page: "embed-workspace-detail",
+      provider: "gitlab",
       itemType: "issue",
-      platformHost: "ghe.example.com",
+      platformHost: "git.example.com",
       owner: "org",
       name: "repo",
       number: 7,
@@ -278,11 +311,12 @@ describe("router embed-workspace routes", () => {
 
   it("ignores unknown tab values on the detail route", () => {
     navigate(
-      "/workspaces/embed/detail/pr/github.com/o/n/1?tab=garbage",
+      "/workspaces/embed/detail/github/pr/github.com/o/n/1?tab=garbage",
     );
     const route = getRoute();
     expect(route).toEqual({
       page: "embed-workspace-detail",
+      provider: "github",
       itemType: "pr",
       platformHost: "github.com",
       owner: "o",
@@ -406,7 +440,7 @@ describe("router navigation events", () => {
     const embedPaths = [
       "/workspaces/embed/list",
       "/workspaces/embed/terminal/ws-1",
-      "/workspaces/embed/detail/pr/github.com/acme/widget/42",
+      "/workspaces/embed/detail/github/pr/github.com/acme/widget/42",
       "/workspaces/embed/empty/noWorkspace",
       "/workspaces/embed/first-run",
       "/workspaces/embed/project/prj_abc123",
