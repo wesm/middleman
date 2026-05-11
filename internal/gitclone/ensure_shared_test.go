@@ -2,7 +2,6 @@ package gitclone
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -186,36 +185,5 @@ func TestEnsureCloneSharedDetachedContextSurvivesCancel(t *testing.T) {
 		require.NoError(err)
 	case <-time.After(2 * time.Second):
 		assert.Fail("second caller did not complete after fn returned")
-	}
-}
-
-// TestEnsureCloneSharedPropagatesError verifies the underlying error
-// is surfaced to every shared caller.
-func TestEnsureCloneSharedPropagatesError(t *testing.T) {
-	assert := assert.New(t)
-
-	mgr := New(t.TempDir(), nil)
-	sentinel := errors.New("sentinel failure")
-
-	fn := func(ctx context.Context) error {
-		return sentinel
-	}
-
-	const callers = 4
-	var wg sync.WaitGroup
-	errs := make([]error, callers)
-	for i := range callers {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			errs[i] = mgr.ensureCloneShared(
-				t.Context(), "github.com", "acme", "widget", fn,
-			)
-		}(i)
-	}
-	wg.Wait()
-
-	for i, err := range errs {
-		assert.ErrorIs(err, sentinel, "caller %d", i)
 	}
 }

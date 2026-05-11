@@ -1,7 +1,6 @@
 package gitclone
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -92,26 +91,10 @@ func fastBackOff() *backoff.ExponentialBackOff {
 	return bo
 }
 
-func TestRetryTransientSucceedsAfterTransientFailures(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-
-	calls := 0
-	transient := errors.New("fatal: The requested URL returned error: 500")
-	got, err := retryTransientWithBackOff(t.Context(), "test", fastBackOff(),
-		func() (string, error) {
-			calls++
-			if calls < 3 {
-				return "", transient
-			}
-			return "ok", nil
-		})
-
-	require.NoError(err)
-	assert.Equal("ok", got)
-	assert.Equal(3, calls)
-}
-
+// TestRetryTransientStopsOnPermanentError pins the policy decision that
+// non-transient errors are wrapped in backoff.Permanent. Library code
+// short-circuits on Permanent on its own; this test fails if a future
+// refactor stops doing the wrap.
 func TestRetryTransientStopsOnPermanentError(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -128,6 +111,8 @@ func TestRetryTransientStopsOnPermanentError(t *testing.T) {
 	assert.Equal(1, calls, "permanent error should not retry")
 }
 
+// TestRetryTransientExhaustsBudget pins the retryAttempts constant. If
+// someone bumps or drops it, this test surfaces the change.
 func TestRetryTransientExhaustsBudget(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -141,41 +126,5 @@ func TestRetryTransientExhaustsBudget(t *testing.T) {
 		})
 
 	require.ErrorIs(err, transient)
-	assert.Equal(retryAttempts, calls, "should retry exactly retryAttempts times")
-}
-
-func TestRetryTransientHonorsContextCancellation(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-
-	ctx, cancel := context.WithCancel(t.Context())
-	calls := 0
-	transient := errors.New("remote: Internal Server Error")
-	_, err := retryTransientWithBackOff(ctx, "test", fastBackOff(),
-		func() (string, error) {
-			calls++
-			if calls == 1 {
-				cancel()
-			}
-			return "", transient
-		})
-
-	require.ErrorIs(err, context.Canceled)
-	assert.LessOrEqual(calls, retryAttempts)
-}
-
-func TestRetryTransientSuccessFirstTry(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-
-	calls := 0
-	got, err := retryTransientWithBackOff(t.Context(), "test", fastBackOff(),
-		func() (int, error) {
-			calls++
-			return 42, nil
-		})
-
-	require.NoError(err)
-	assert.Equal(42, got)
-	assert.Equal(1, calls)
+	assert.Equal(retryAttempts, calls)
 }

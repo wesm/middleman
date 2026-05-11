@@ -47,10 +47,12 @@ the cause, retry just absorbs the effect.
 
 ## Tests
 
-- Retry: inject a fake op; cover success-after-recovery, permanent
-  short-circuit, budget exhaustion, ctx cancellation. See
-  `TestRetryTransient*`.
-- Singleflight: two-phase. Leader takes the slot and blocks inside `fn`;
-  signal "started"; only then spawn followers. Run with `-race` —
-  singleflight bugs show up as slot-map data races. See
-  `TestEnsureCloneShared*`.
+Test the policy decisions, not the library. For retry that means the
+matcher (`TestIsTransientGitError`), the `backoff.Permanent` wrap, and
+the budget constant. Skip tests that assert "the library loops" or
+"ctx.Done short-circuits" — those are upstream's contract.
+
+Singleflight tests follow a two-phase pattern: the leader takes the
+slot and blocks inside `fn`, signals "started", and only then does the
+test spawn followers. Run with `-race` — slot-map data races are the
+common failure mode. See `TestEnsureCloneShared*`.
