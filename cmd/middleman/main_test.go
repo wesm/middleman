@@ -88,9 +88,9 @@ func TestResolveStartupReposFallsBackToDBForOfflineGlobs(t *testing.T) {
 	t.Cleanup(func() { database.Close() })
 
 	ctx := t.Context()
-	_, err = database.UpsertRepo(ctx, "github.com", "acme", "widgets")
+	_, err = database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
-	_, err = database.UpsertRepo(ctx, "github.com", "acme", "tools")
+	_, err = database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "tools"))
 	require.NoError(err)
 
 	cfg := &config.Config{
@@ -271,11 +271,11 @@ func TestStartupFallbackKeepsPersistedGlobMatchesInAPIs(t *testing.T) {
 	t.Cleanup(func() { database.Close() })
 
 	_, err = database.UpsertRepo(
-		t.Context(), "github.com", "roborev-dev", "middleman",
+		t.Context(), db.GitHubRepoIdentity("github.com", "roborev-dev", "middleman"),
 	)
 	require.NoError(err)
 	_, err = database.UpsertRepo(
-		t.Context(), "github.com", "roborev-dev", "worker",
+		t.Context(), db.GitHubRepoIdentity("github.com", "roborev-dev", "worker"),
 	)
 	require.NoError(err)
 

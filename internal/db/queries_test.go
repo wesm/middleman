@@ -113,7 +113,7 @@ func TestStartWorkspaceRetryPreservesBranchUntilCleanupSucceeds(t *testing.T) {
 
 func insertTestRepo(t *testing.T, d *DB, owner, name string) int64 {
 	t.Helper()
-	id, err := d.UpsertRepo(t.Context(), "github.com", owner, name)
+	id, err := d.UpsertRepo(t.Context(), GitHubRepoIdentity("github.com", owner, name))
 	require.NoErrorf(t, err, "UpsertRepo(%s/%s)", owner, name)
 	return id
 }
@@ -529,14 +529,14 @@ func TestUpsertAndListRepos(t *testing.T) {
 	d := openTestDB(t)
 	ctx := t.Context()
 
-	id1, err := d.UpsertRepo(ctx, "github.com", "alice", "alpha")
+	id1, err := d.UpsertRepo(ctx, GitHubRepoIdentity("github.com", "alice", "alpha"))
 	require.NoError(err)
-	id2, err := d.UpsertRepo(ctx, "github.com", "bob", "beta")
+	id2, err := d.UpsertRepo(ctx, GitHubRepoIdentity("github.com", "bob", "beta"))
 	require.NoError(err)
 	assert.NotEqual(id1, id2)
 
 	// Idempotency: re-inserting should return the same ID.
-	id1Again, err := d.UpsertRepo(ctx, "github.com", "alice", "alpha")
+	id1Again, err := d.UpsertRepo(ctx, GitHubRepoIdentity("github.com", "alice", "alpha"))
 	require.NoError(err)
 	assert.Equal(id1, id1Again)
 
@@ -556,7 +556,7 @@ func TestUpsertRepoDefaultsToGitHubIdentity(t *testing.T) {
 	d := openTestDB(t)
 	ctx := t.Context()
 
-	id, err := d.UpsertRepo(ctx, "github.com", "Alice", "Alpha")
+	id, err := d.UpsertRepo(ctx, GitHubRepoIdentity("github.com", "Alice", "Alpha"))
 	require.NoError(err)
 
 	repo, err := d.GetRepoByID(ctx, id)
@@ -1202,10 +1202,10 @@ func TestUpsertRepoCasefoldsOwnerAndName(t *testing.T) {
 	d := openTestDB(t)
 	ctx := t.Context()
 
-	id, err := d.UpsertRepo(ctx, "github.com", "Org", "Foo")
+	id, err := d.UpsertRepo(ctx, GitHubRepoIdentity("github.com", "Org", "Foo"))
 	require.NoError(err)
 
-	sameID, err := d.UpsertRepo(ctx, "github.com", "org", "foo")
+	sameID, err := d.UpsertRepo(ctx, GitHubRepoIdentity("github.com", "org", "foo"))
 	require.NoError(err)
 	assert.Equal(id, sameID)
 
@@ -1542,7 +1542,7 @@ func TestListMergeRequests_AttachesLabels(t *testing.T) {
 	ctx := t.Context()
 	now := baseTime()
 
-	repoID, err := d.UpsertRepo(ctx, "github.com", "acme", "widget")
+	repoID, err := d.UpsertRepo(ctx, GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	_, err = d.UpsertMergeRequest(ctx, &MergeRequest{
@@ -2319,7 +2319,7 @@ func TestListIssues_AttachesLabels(t *testing.T) {
 	ctx := t.Context()
 	now := baseTime()
 
-	repoID, err := d.UpsertRepo(ctx, "github.com", "acme", "widget")
+	repoID, err := d.UpsertRepo(ctx, GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	issueID, err := d.UpsertIssue(ctx, &Issue{
@@ -2498,9 +2498,9 @@ func TestListIssues_UsesRepoScopedLabels(t *testing.T) {
 	ctx := t.Context()
 	now := baseTime()
 
-	repoA, err := d.UpsertRepo(ctx, "github.com", "acme", "widget")
+	repoA, err := d.UpsertRepo(ctx, GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	repoB, err := d.UpsertRepo(ctx, "github.com", "acme", "gadget")
+	repoB, err := d.UpsertRepo(ctx, GitHubRepoIdentity("github.com", "acme", "gadget"))
 	require.NoError(err)
 
 	issueID, err := d.UpsertIssue(ctx, &Issue{

@@ -534,42 +534,9 @@ func (d *DB) PurgeOtherHosts(ctx context.Context, keepHost string) error {
 
 // --- Repos ---
 
-// UpsertRepo inserts a repo if it does not exist, then returns its ID.
-// It accepts either a RepoIdentity or the legacy (host, owner, name) string
-// triple, which is treated as a GitHub identity.
-func (d *DB) UpsertRepo(ctx context.Context, args ...any) (int64, error) {
-	identity, err := repoIdentityFromUpsertArgs(args)
-	if err != nil {
-		return 0, err
-	}
+// UpsertRepo inserts a repo identity if it does not exist, then returns its ID.
+func (d *DB) UpsertRepo(ctx context.Context, identity RepoIdentity) (int64, error) {
 	return d.upsertRepoIdentity(ctx, identity)
-}
-
-func repoIdentityFromUpsertArgs(args []any) (RepoIdentity, error) {
-	switch len(args) {
-	case 1:
-		identity, ok := args[0].(RepoIdentity)
-		if !ok {
-			return RepoIdentity{}, fmt.Errorf("upsert repo: expected RepoIdentity")
-		}
-		return canonicalRepoIdentity(identity), nil
-	case 3:
-		host, ok := args[0].(string)
-		if !ok {
-			return RepoIdentity{}, fmt.Errorf("upsert repo: expected host string")
-		}
-		owner, ok := args[1].(string)
-		if !ok {
-			return RepoIdentity{}, fmt.Errorf("upsert repo: expected owner string")
-		}
-		name, ok := args[2].(string)
-		if !ok {
-			return RepoIdentity{}, fmt.Errorf("upsert repo: expected name string")
-		}
-		return GitHubRepoIdentity(host, owner, name), nil
-	default:
-		return RepoIdentity{}, fmt.Errorf("upsert repo: expected RepoIdentity or host/owner/name")
-	}
 }
 
 func (d *DB) upsertRepoIdentity(ctx context.Context, identity RepoIdentity) (int64, error) {

@@ -29,7 +29,7 @@ func seedRepo(
 ) int64 {
 	t.Helper()
 	id, err := d.UpsertRepo(
-		t.Context(), host, owner, name,
+		t.Context(), db.GitHubRepoIdentity(host, owner, name),
 	)
 	require.NoError(t, err)
 	return id

@@ -525,7 +525,7 @@ func TestOpenRepairsLegacyTimestampStorage(t *testing.T) {
 	d, err := Open(path)
 	require.NoError(err)
 
-	repoID, err := d.UpsertRepo(ctx, "github.com", "acme", "widget")
+	repoID, err := d.UpsertRepo(ctx, GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	mrID, err := d.UpsertMergeRequest(ctx, &MergeRequest{
 		RepoID:            repoID,
@@ -836,7 +836,7 @@ func TestRepoTimestampWritesStoreUTC(t *testing.T) {
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	repoID, err := d.UpsertRepo(ctx, "github.com", "acme", "widget")
+	repoID, err := d.UpsertRepo(ctx, GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	//nolint:forbidigo // Test fixture intentionally uses a non-UTC zone to verify normalization.

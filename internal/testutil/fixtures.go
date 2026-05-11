@@ -25,15 +25,15 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	now := time.Now().UTC()
 
 	// --- Repos ---
-	widgetsID, err := d.UpsertRepo(ctx, "github.com", "acme", "widgets")
+	widgetsID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widgets"))
 	if err != nil {
 		return nil, fmt.Errorf("upsert acme/widgets: %w", err)
 	}
-	toolsID, err := d.UpsertRepo(ctx, "github.com", "acme", "tools")
+	toolsID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "tools"))
 	if err != nil {
 		return nil, fmt.Errorf("upsert acme/tools: %w", err)
 	}
-	_, err = d.UpsertRepo(ctx, "github.com", "acme", "archived")
+	_, err = d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "archived"))
 	if err != nil {
 		return nil, fmt.Errorf("upsert acme/archived: %w", err)
 	}

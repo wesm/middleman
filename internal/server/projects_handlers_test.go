@@ -15,6 +15,7 @@ import (
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wesm/middleman/internal/db"
 )
 
 // TestW1SliceAGate is the falsifiable capability gate from the convergence
@@ -207,6 +208,132 @@ func TestRegisterProject_RejectsMissingPath(t *testing.T) {
 	assert.Contains(string(payload), "local_path")
 }
 
+func TestRegisterProject_PreservesExplicitProviderIdentity(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	srv, database := setupTestServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	repoDir := t.TempDir()
+	require.NoError(initLocalOnlyGitRepo(repoDir))
+
+	body := mustMarshal(t, map[string]any{
+		"local_path": repoDir,
+		"platform_identity": map[string]string{
+			"platform":      "gitlab",
+			"platform_host": "git.example.com",
+			"owner":         "platform",
+			"name":          "runner",
+		},
+	})
+	resp := httpDo(t, ts, http.MethodPost, "/api/v1/projects", body)
+	require.Equal(http.StatusCreated, resp.StatusCode)
+	defer resp.Body.Close()
+
+	var registered struct {
+		ID               string `json:"id"`
+		PlatformIdentity struct {
+			Platform     string `json:"platform"`
+			PlatformHost string `json:"platform_host"`
+			Owner        string `json:"owner"`
+			Name         string `json:"name"`
+		} `json:"platform_identity"`
+	}
+	require.NoError(json.NewDecoder(resp.Body).Decode(&registered))
+	assert.Equal("gitlab", registered.PlatformIdentity.Platform)
+	assert.Equal("git.example.com", registered.PlatformIdentity.PlatformHost)
+
+	project, err := database.GetProjectByID(t.Context(), registered.ID)
+	require.NoError(err)
+	require.NotNil(project.PlatformIdentity)
+	assert.Equal(&db.PlatformIdentity{
+		Platform: "gitlab",
+		Host:     "git.example.com",
+		Owner:    "platform",
+		Name:     "runner",
+	}, project.PlatformIdentity)
+}
+
+func TestRegisterProject_UsesConfiguredProviderForRemoteIdentity(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	srv, _, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[platforms]]
+type = "gitlab"
+host = "code.example.com"
+`, &mockGH{})
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init", "-q")
+	runGit(t, repoDir, "remote", "add", "origin", "git@code.example.com:group/subgroup/project.git")
+
+	body := mustMarshal(t, map[string]any{"local_path": repoDir})
+	resp := httpDo(t, ts, http.MethodPost, "/api/v1/projects", body)
+	require.Equal(http.StatusCreated, resp.StatusCode)
+	defer resp.Body.Close()
+
+	var registered map[string]any
+	require.NoError(json.NewDecoder(resp.Body).Decode(&registered))
+	identity, ok := registered["platform_identity"].(map[string]any)
+	require.True(ok, "platform_identity must be present")
+	assert.Equal("gitlab", identity["platform"])
+	assert.Equal("code.example.com", identity["platform_host"])
+	assert.Equal("group/subgroup", identity["owner"])
+	assert.Equal("project", identity["name"])
+}
+
+func TestRegisterProject_UsesDefaultPlatformHostForRemoteIdentity(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	srv, _, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+default_platform_host = "ghe.example.com"
+host = "127.0.0.1"
+port = 8091
+`, &mockGH{})
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init", "-q")
+	runGit(t, repoDir, "remote", "add", "origin", "git@ghe.example.com:acme/widget.git")
+
+	body := mustMarshal(t, map[string]any{"local_path": repoDir})
+	resp := httpDo(t, ts, http.MethodPost, "/api/v1/projects", body)
+	require.Equal(http.StatusCreated, resp.StatusCode)
+	defer resp.Body.Close()
+
+	var registered map[string]any
+	require.NoError(json.NewDecoder(resp.Body).Decode(&registered))
+	identity, ok := registered["platform_identity"].(map[string]any)
+	require.True(ok, "platform_identity must be present")
+	assert.Equal("github", identity["platform"])
+	assert.Equal("ghe.example.com", identity["platform_host"])
+	assert.Equal("acme", identity["owner"])
+	assert.Equal("widget", identity["name"])
+}
+
 func TestRegisterProject_RejectsNonexistentPath(t *testing.T) {
 	require := require.New(t)
 
@@ -267,6 +394,7 @@ func TestRegisterProject_AcceptsCallerProvidedIdentity(t *testing.T) {
 	body := mustMarshal(t, map[string]any{
 		"local_path": repoDir,
 		"platform_identity": map[string]string{
+			"platform":      "github",
 			"platform_host": "github.com",
 			"owner":         "acme",
 			"name":          "widget",
@@ -279,6 +407,7 @@ func TestRegisterProject_AcceptsCallerProvidedIdentity(t *testing.T) {
 	resp.Body.Close()
 	identity, _ := got["platform_identity"].(map[string]any)
 	require.NotNil(identity)
+	assert.Equal("github", identity["platform"])
 	assert.Equal("github.com", identity["platform_host"])
 	assert.NotContains(identity, "host")
 	assert.Equal("acme", identity["owner"])
@@ -296,6 +425,7 @@ func TestRegisterProject_AcceptsCallerProvidedIdentity(t *testing.T) {
 	resp.Body.Close()
 	identity2, _ := fetched["platform_identity"].(map[string]any)
 	require.NotNil(identity2)
+	assert.Equal("github", identity2["platform"])
 	assert.Equal("github.com", identity2["platform_host"])
 	assert.NotContains(identity2, "host")
 	assert.Equal("acme", identity2["owner"])
@@ -333,6 +463,7 @@ func TestRegisterProject_DoesNotSubscribeRepoToSync(t *testing.T) {
 	body := mustMarshal(t, map[string]any{
 		"local_path": repoDir,
 		"platform_identity": map[string]string{
+			"platform":      "github",
 			"platform_host": "github.com",
 			"owner":         "stranger",
 			"name":          "not-in-toml",
@@ -451,6 +582,7 @@ func TestRegisterProject_RejectsPartialPlatformIdentity(t *testing.T) {
 	missingFieldBody := mustMarshal(t, map[string]any{
 		"local_path": repoDir,
 		"platform_identity": map[string]string{
+			"platform":      "github",
 			"platform_host": "github.com",
 			"owner":         "acme",
 			// missing "name" — Huma's schema rejects with 422
@@ -463,6 +595,7 @@ func TestRegisterProject_RejectsPartialPlatformIdentity(t *testing.T) {
 	whitespaceBody := mustMarshal(t, map[string]any{
 		"local_path": repoDir,
 		"platform_identity": map[string]string{
+			"platform":      "github",
 			"platform_host": "github.com",
 			"owner":         "acme",
 			"name":          "   ",

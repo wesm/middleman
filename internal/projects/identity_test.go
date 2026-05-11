@@ -48,7 +48,6 @@ func TestParseRemoteURL_OtherHosts(t *testing.T) {
 	}{
 		{"gitlab", "git@gitlab.com:group/project.git", "gitlab.com/group/project"},
 		{"codeberg", "https://codeberg.org/owner/repo.git", "codeberg.org/owner/repo"},
-		{"self_hosted", "git@git.example.com:team/svc.git", "git.example.com/team/svc"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -59,6 +58,57 @@ func TestParseRemoteURL_OtherHosts(t *testing.T) {
 			assert.Equal(tc.want, got.Host+"/"+got.Owner+"/"+got.Name)
 		})
 	}
+}
+
+func TestParseRemoteURL_ConfiguredSelfHostedGitLab(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	got := ParseRemoteURLWithKnownPlatforms(
+		"git@code.example.com:group/project.git",
+		[]KnownPlatformHost{{Platform: "gitlab", Host: "code.example.com"}},
+	)
+
+	require.NotNil(got)
+	assert.Equal("gitlab", got.Platform)
+	assert.Equal("code.example.com", got.Host)
+	assert.Equal("group", got.Owner)
+	assert.Equal("project", got.Name)
+}
+
+func TestParseRemoteURL_ConfiguredSelfHostedGitLabWithURLPort(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	got := ParseRemoteURLWithKnownPlatforms(
+		"https://gitlab.example.com:8443/group/project.git",
+		[]KnownPlatformHost{{Platform: "gitlab", Host: "gitlab.example.com:8443"}},
+	)
+
+	require.NotNil(got)
+	assert.Equal("gitlab", got.Platform)
+	assert.Equal("gitlab.example.com:8443", got.Host)
+	assert.Equal("group", got.Owner)
+	assert.Equal("project", got.Name)
+}
+
+func TestParseRemoteURL_NestedGitLabRepoPath(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	got := ParseRemoteURL("git@gitlab.com:group/subgroup/project.git")
+
+	require.NotNil(got)
+	assert.Equal("gitlab", got.Platform)
+	assert.Equal("gitlab.com", got.Host)
+	assert.Equal("group/subgroup", got.Owner)
+	assert.Equal("project", got.Name)
+}
+
+func TestParseRemoteURL_UnknownSelfHostedRemoteIsLocalOnly(t *testing.T) {
+	assert := Assert.New(t)
+
+	assert.Nil(ParseRemoteURL("git@code.example.com:group/project.git"))
 }
 
 func TestParseRemoteURL_Unrecognized(t *testing.T) {

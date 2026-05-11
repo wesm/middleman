@@ -1673,9 +1673,12 @@ components:
           type: string
         owner:
           type: string
+        platform:
+          type: string
         platform_host:
           type: string
       required:
+        - platform
         - platform_host
         - owner
         - name

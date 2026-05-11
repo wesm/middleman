@@ -167,7 +167,7 @@ func TestRunDetection(t *testing.T) {
 	d := openTestDB(t)
 	ctx := t.Context()
 
-	repoID, err := d.UpsertRepo(ctx, "", "org", "repo")
+	repoID, err := d.UpsertRepo(ctx, realdb.GitHubRepoIdentity("", "org", "repo"))
 	require.NoError(err)
 
 	// Create a 3-PR chain.
@@ -207,7 +207,7 @@ func TestRunDetection_FullyMergedStackDeleted(t *testing.T) {
 	d := openTestDB(t)
 	ctx := t.Context()
 
-	repoID, err := d.UpsertRepo(ctx, "", "org", "repo")
+	repoID, err := d.UpsertRepo(ctx, realdb.GitHubRepoIdentity("", "org", "repo"))
 	require.NoError(err)
 
 	now := time.Now()

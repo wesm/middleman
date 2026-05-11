@@ -712,7 +712,7 @@ func TestSyncRepoOverviewPreservesTimelineWhenCloneUnavailable(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
-	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 
 	oldPublishedAt := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
@@ -792,7 +792,7 @@ func TestSyncRepoOverviewUsesTagsWhenRepoHasNoReleases(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
-	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 
 	tagName := "v1.2.3"
@@ -844,7 +844,7 @@ func TestSyncRepoOverviewClearsReleasesWhenTagFallbackFails(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
-	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 
 	publishedAt := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
@@ -4685,7 +4685,7 @@ func TestRefreshCIStatusAlwaysFetchesCombined(t *testing.T) {
 		nil,
 	)
 
-	repoID, _ := d.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	repoID, _ := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	err := syncer.refreshCIStatus(
 		t.Context(),
 		RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
@@ -4722,7 +4722,7 @@ func TestRefreshCIStatusFallsBackToCombinedWhenNoCheckRuns(t *testing.T) {
 		nil,
 	)
 
-	repoID, _ := d.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	repoID, _ := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	err := syncer.refreshCIStatus(
 		t.Context(),
 		RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
@@ -4744,7 +4744,7 @@ func TestSyncer_OnStatusChangeCallback(t *testing.T) {
 	assert := Assert.New(t)
 	mock := &mockClient{openPRs: []*gh.PullRequest{}}
 	d := openTestDB(t)
-	_, err := d.UpsertRepo(t.Context(), "github.com", "o", "n")
+	_, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "o", "n"))
 	require.NoError(t, err)
 	repos := []RepoRef{{Owner: "o", Name: "n", PlatformHost: "github.com"}}
 	s := NewSyncer(
@@ -4779,7 +4779,7 @@ func TestSyncer_TriggerRunRunsRunOnce(t *testing.T) {
 	assert := Assert.New(t)
 	mock := &mockClient{openPRs: []*gh.PullRequest{}}
 	d := openTestDB(t)
-	_, err := d.UpsertRepo(t.Context(), "github.com", "o", "n")
+	_, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "o", "n"))
 	require.NoError(t, err)
 	repos := []RepoRef{{Owner: "o", Name: "n", PlatformHost: "github.com"}}
 	s := NewSyncer(
@@ -5089,7 +5089,7 @@ func TestFetchAndUpdateClosedRefreshesPRLabels(t *testing.T) {
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 	now := time.Date(2024, 6, 5, 12, 0, 0, 0, time.UTC)
 	pr := buildOpenPR(7, now)
@@ -5131,9 +5131,9 @@ func TestFetchAndUpdateClosedRefreshesPRLabelsWithSameRepoOnAnotherHost(t *testi
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	otherRepoID, err := d.UpsertRepo(ctx, "ghe.corp.com", "owner", "repo")
+	otherRepoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("ghe.corp.com", "owner", "repo"))
 	require.NoError(err)
-	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 	now := time.Date(2024, 6, 5, 12, 0, 0, 0, time.UTC)
 
@@ -5202,7 +5202,7 @@ func TestFetchAndUpdateClosedRefreshesIssueLabels(t *testing.T) {
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
 	issueNumber := 9
@@ -5241,9 +5241,9 @@ func TestFetchAndUpdateClosedRefreshesIssueLabelsWithSameRepoOnAnotherHost(t *te
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	otherRepoID, err := d.UpsertRepo(ctx, "ghe.corp.com", "owner", "repo")
+	otherRepoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("ghe.corp.com", "owner", "repo"))
 	require.NoError(err)
-	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
 	issueNumber := 9
@@ -5308,7 +5308,7 @@ func TestBackfillRepoPersistsPRLabels(t *testing.T) {
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 	repoRow, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
 	require.NoError(err)
@@ -5338,7 +5338,7 @@ func TestBackfillRepoPersistsIssueLabels(t *testing.T) {
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	_, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	_, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 	repoRow, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
 	require.NoError(err)
@@ -5467,7 +5467,7 @@ func TestBackfillRepoStoresCompletionTimestampsInUTC(t *testing.T) {
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	_, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	_, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 	repoRow, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
 	require.NoError(err)
@@ -5512,7 +5512,7 @@ func TestBackfillRepoDoesNotAdvancePRCursorWhenLabelPersistenceFails(t *testing.
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 	repoRow, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
 	require.NoError(err)
@@ -5563,7 +5563,7 @@ func TestBackfillRepoDoesNotAdvanceIssueCursorWhenLabelPersistenceFails(t *testi
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 	repoRow, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
 	require.NoError(err)
@@ -6289,7 +6289,7 @@ func TestFetchMRDetailRemovesDeletedCommentDuringFullRefresh(t *testing.T) {
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 
 	now := time.Date(2024, 6, 2, 12, 0, 0, 0, time.UTC)
@@ -6365,7 +6365,7 @@ func TestFetchIssueDetailRemovesDeletedCommentDuringFullRefresh(t *testing.T) {
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 
 	now := time.Date(2024, 6, 2, 12, 0, 0, 0, time.UTC)
@@ -6455,7 +6455,7 @@ func TestSyncOpenMRFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *test
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 
 	now := time.Date(2024, 6, 3, 12, 0, 0, 0, time.UTC)
@@ -6530,7 +6530,7 @@ func TestSyncOpenMRFromBulkUpdatesCommentFieldsWhenOnlyCommentsAreComplete(t *te
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 
 	now := time.Date(2024, 6, 3, 13, 0, 0, 0, time.UTC)
@@ -6601,7 +6601,7 @@ func TestSyncOpenMRFromBulkStoresTimelineEvents(t *testing.T) {
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 
 	now := time.Date(2024, 6, 3, 14, 0, 0, 0, time.UTC)
@@ -6658,7 +6658,7 @@ func TestSyncOpenMRFromBulkClearsCIWhenHeadSHAChanges(t *testing.T) {
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 
 	// Seed an existing MR with the old head SHA and stored CI status.
@@ -6718,7 +6718,7 @@ func TestSyncOpenMRFromBulkPreservesCIWhenHeadSHAUnchanged(t *testing.T) {
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 
 	// Same head SHA as buildOpenPR uses by default.
@@ -6778,7 +6778,7 @@ func TestSyncOpenIssueFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *t
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 
 	now := time.Date(2024, 6, 3, 12, 0, 0, 0, time.UTC)
@@ -6871,7 +6871,7 @@ func TestSyncRepoGraphQLIssues(t *testing.T) {
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -7187,7 +7187,7 @@ func TestSyncRepoGraphQLIssuesCommentsIncomplete(t *testing.T) {
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -7265,7 +7265,7 @@ func TestSyncRepoGraphQLIssuesClosureDetection(t *testing.T) {
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -7336,7 +7336,7 @@ func TestSyncRepoGraphQLIssuesPreservesExistingFields(t *testing.T) {
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -7415,7 +7415,7 @@ func TestSyncRepoGraphQLIssuesClearsDetailFetchedAtOnFailedFallback(t *testing.T
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -7693,7 +7693,7 @@ func TestRefreshRepoPRCommentsUsesFullFetchForLargeThreads(t *testing.T) {
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -7744,7 +7744,7 @@ func TestRefreshRepoIssueCommentsUsesFullFetchForLargeThreads(t *testing.T) {
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -8055,7 +8055,7 @@ func TestDeferredCommentRefreshYieldsBudgetToDetailDrain(t *testing.T) {
 
 	now := time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)
 	budget := testBudget(11)
-	repoID, err := d.UpsertRepo(ctx, "github.com", "owner", "repo")
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
 
