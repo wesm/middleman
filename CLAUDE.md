@@ -108,6 +108,7 @@ make vet        # go vet
 - Tests should be fast and isolated
 - No emojis in code or output
 - For database schema changes, follow `context/db-migrations.md`; `internal/db/migrations/` is the source of truth for schema evolution.
+- For retries, exponential backoff, and single-flight dedup against flaky upstreams, follow `context/retries-and-backoffs.md`; reuse `gitclone.retryTransient` (cenkalti/backoff/v5) and `Manager.ensureCloneShared` (golang.org/x/sync/singleflight) rather than rolling new retry loops or sync.Map dedup by hand.
 - For frontend UI and TypeScript/Svelte conventions, follow `context/ui-design-system.md`; prefer extending shared UI primitives over adding one-off local badge/chip/button styling, and name reused domain object shapes instead of repeating anonymous inline types.
 - Datetimes are UTC across storage and API boundaries. Store timestamps in UTC, emit API timestamps as UTC RFC3339, and only convert to local time in the Svelte UI presentation layer.
 
