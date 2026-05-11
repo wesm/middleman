@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"golang.org/x/sync/singleflight"
+
 	"github.com/wesm/middleman/internal/gitenv"
 	"github.com/wesm/middleman/internal/procutil"
 )
@@ -24,6 +26,13 @@ var ErrNotFound = errors.New("git object not found")
 type Manager struct {
 	baseDir string            // directory to store clones
 	tokens  map[string]string // host -> token (e.g., "github.com" -> "ghp_...")
+
+	// ensureSF deduplicates concurrent EnsureClone calls for the same
+	// (host, owner, name). Without it, callers like the periodic syncer,
+	// per-PR detail syncs, and workspace setup race each other on the
+	// same bare clone and trigger a stampede of identical git fetches,
+	// which GitHub's smart-HTTP edge throttles with sporadic 5xx.
+	ensureSF singleflight.Group
 }
 
 // New creates a Manager that stores bare clones under baseDir.
@@ -93,7 +102,45 @@ func validateClonePathValue(label, value string, allowSlash, allowEmpty bool) er
 // EnsureClone creates or fetches a bare clone for the given repo.
 // remoteURL is the HTTPS clone URL (e.g., https://github.com/owner/name.git).
 // On first call, clones the repo. On subsequent calls, fetches updates.
+//
+// Concurrent callers for the same (host, owner, name) share a single
+// underlying fetch via singleflight so PR detail syncs, the periodic
+// syncer, and workspace setup do not stampede the same bare clone with
+// duplicate git fetches.
 func (m *Manager) EnsureClone(
+	ctx context.Context, host, owner, name, remoteURL string,
+) error {
+	return m.ensureCloneShared(ctx, host, owner, name, func(ctx context.Context) error {
+		return m.ensureCloneLocked(ctx, host, owner, name, remoteURL)
+	})
+}
+
+// ensureCloneShared funnels concurrent callers for the same repo through
+// a singleflight slot. The chosen call runs fn with a detached context so
+// one caller's cancellation cannot abort the fetch for everyone else
+// sharing the slot; individual callers still observe their own
+// cancellation via the select below.
+func (m *Manager) ensureCloneShared(
+	ctx context.Context, host, owner, name string,
+	fn func(context.Context) error,
+) error {
+	key := ensureCloneKey(host, owner, name)
+	ch := m.ensureSF.DoChan(key, func() (any, error) {
+		return nil, fn(context.WithoutCancel(ctx))
+	})
+	select {
+	case res := <-ch:
+		return res.Err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func ensureCloneKey(host, owner, name string) string {
+	return host + "\x00" + owner + "\x00" + name
+}
+
+func (m *Manager) ensureCloneLocked(
 	ctx context.Context, host, owner, name, remoteURL string,
 ) error {
 	if err := validateRemoteURLHost(host, remoteURL); err != nil {
