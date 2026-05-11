@@ -22,24 +22,25 @@ To extend matchers, add a substring to the slice in `retry.go` and a row
 to `retry_test.go`. Keep the matcher conservative — false positives turn
 permanent failures into multi-second hangs.
 
-## Single-flight: `Manager.ensureCloneShared`
+## Single-flight: `Manager.EnsureClone`
 
-[`clone.go`](../internal/gitclone/clone.go). Wraps `EnsureClone` so
-concurrent callers for the same `(host, owner, name)` collapse onto one
-in-flight call via `golang.org/x/sync/singleflight`. Without this, the
-periodic syncer, per-PR detail syncs, and workspace setup stampeded
-GitHub and triggered the 5xx burst the retry above absorbs.
+[`clone.go`](../internal/gitclone/clone.go). `EnsureClone` opens a
+`singleflight` slot keyed on `(host, owner, name)` so concurrent
+callers (periodic syncer, per-PR detail syncs, workspace setup) share
+one underlying clone/fetch instead of stampeding GitHub.
 
-Three invariants to preserve:
+Invariants to preserve:
 
-- **Key shape**: `host \x00 owner \x00 name`. Null separator prevents
-  `foo/barbaz` colliding with `foobar/baz`.
-- **Detached runner context**: the slot uses `context.WithoutCancel`. A
-  canceled leader must not abort the in-flight call for followers
-  attached to the slot; each caller still observes its own ctx via the
-  outer `select`.
-- **`DoChan`, not `Do`**: lets each caller wait on its own
-  `ctx.Done()`.
+- **Pre-check `ctx.Err()`**. A caller whose ctx is already canceled
+  must not enter the slot, or the runner does work for nobody.
+- **Key shape** `host \x00 owner \x00 name`. The null separator
+  prevents `foo/barbaz` colliding with `foobar/baz`.
+- **Detached, bounded runner ctx**. The slot runs with
+  `context.WithTimeout(context.WithoutCancel(ctx), ensureCloneTimeout)`.
+  Detached so one canceled waiter cannot abort work for others;
+  bounded so a stuck git subprocess cannot hold the slot forever.
+- **`DoChan`, not `Do`**, so each caller still observes its own
+  `ctx.Done()` via the outer `select`.
 
 Reach for a singleflight slot whenever multiple in-process call sites
 hit the same upstream resource. Prefer dedup over retry — it removes
@@ -48,11 +49,8 @@ the cause, retry just absorbs the effect.
 ## Tests
 
 Test the policy decisions, not the library. For retry that means the
-matcher (`TestIsTransientGitError`), the `backoff.Permanent` wrap, and
-the budget constant. Skip tests that assert "the library loops" or
-"ctx.Done short-circuits" — those are upstream's contract.
-
-Singleflight tests follow a two-phase pattern: the leader takes the
-slot and blocks inside `fn`, signals "started", and only then does the
-test spawn followers. Run with `-race` — slot-map data races are the
-common failure mode. See `TestEnsureCloneShared*`.
+matcher, the `backoff.Permanent` wrap, and the budget constant. For
+dedup that means the key shape and the integration paths that
+exercise the real cloneBare/fetch. Skip tests that assert "the library
+loops" or "DoChan delivers to every waiter" — those are upstream's
+contract.

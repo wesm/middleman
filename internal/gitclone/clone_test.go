@@ -3,6 +3,7 @@
 package gitclone
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -81,6 +82,31 @@ func TestEnsureClone(t *testing.T) {
 	// Second call should be a no-op fetch, not re-clone.
 	err = mgr.EnsureClone(ctx, "github.com", "testowner", "testrepo", remote)
 	require.NoError(t, err)
+}
+
+// TestEnsureCloneShortCircuitsCanceledContext verifies that a caller
+// with an already-canceled context does not start any clone work. The
+// pre-check exists so a canceled caller cannot trigger background
+// fetches that outlive the request it abandoned.
+func TestEnsureCloneShortCircuitsCanceledContext(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	remote, _ := setupTestRepo(t)
+	clonesDir := t.TempDir()
+	mgr := New(clonesDir, nil)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	err := mgr.EnsureClone(ctx, "github.com", "testowner", "testrepo", remote)
+	require.ErrorIs(err, context.Canceled)
+
+	clonePath := filepath.Join(
+		clonesDir, "github.com", "testowner", "testrepo.git")
+	_, statErr := os.Stat(clonePath)
+	assert.True(os.IsNotExist(statErr),
+		"no clone directory should be created when ctx is already canceled")
 }
 
 // TestEnsureCloneSweepsPartialClone verifies that a previously aborted

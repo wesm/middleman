@@ -114,30 +114,18 @@ func validateClonePathValue(label, value string, allowSlash, allowEmpty bool) er
 // On first call, clones the repo. On subsequent calls, fetches updates.
 //
 // Concurrent callers for the same (host, owner, name) share a single
-// underlying fetch via singleflight so PR detail syncs, the periodic
-// syncer, and workspace setup do not stampede the same bare clone with
-// duplicate git fetches.
+// underlying clone/fetch via singleflight so PR detail syncs, the
+// periodic syncer, and workspace setup do not stampede the same bare
+// clone with duplicate git operations.
+//
+// The shared runner uses a context detached from any individual
+// caller's cancellation, capped at ensureCloneTimeout, so one canceled
+// waiter cannot abort the in-flight work but a stuck git subprocess
+// cannot hold the slot forever either. Callers whose own context is
+// already canceled on entry short-circuit without ever taking the
+// slot.
 func (m *Manager) EnsureClone(
 	ctx context.Context, host, owner, name, remoteURL string,
-) error {
-	return m.ensureCloneShared(ctx, host, owner, name, func(ctx context.Context) error {
-		return m.ensureCloneLocked(ctx, host, owner, name, remoteURL)
-	})
-}
-
-// ensureCloneShared funnels concurrent callers for the same repo through
-// a singleflight slot. The chosen call runs fn with a detached context so
-// one caller's cancellation cannot abort the fetch for everyone else
-// sharing the slot; individual callers still observe their own
-// cancellation via the select below.
-//
-// The runner context is detached from caller cancellation but bounded
-// by ensureCloneTimeout so a stuck git subprocess cannot hold the slot
-// indefinitely. Callers whose context is already canceled when this
-// function is entered short-circuit without starting work.
-func (m *Manager) ensureCloneShared(
-	ctx context.Context, host, owner, name string,
-	fn func(context.Context) error,
 ) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -148,7 +136,7 @@ func (m *Manager) ensureCloneShared(
 			context.WithoutCancel(ctx), ensureCloneTimeout,
 		)
 		defer cancel()
-		return nil, fn(opCtx)
+		return nil, m.ensureCloneNow(opCtx, host, owner, name, remoteURL)
 	})
 	select {
 	case res := <-ch:
@@ -162,7 +150,10 @@ func ensureCloneKey(host, owner, name string) string {
 	return host + "\x00" + owner + "\x00" + name
 }
 
-func (m *Manager) ensureCloneLocked(
+// ensureCloneNow is the unshared inner: it decides whether to create a
+// fresh bare clone or refresh an existing one. Always called from
+// inside the singleflight slot opened by EnsureClone.
+func (m *Manager) ensureCloneNow(
 	ctx context.Context, host, owner, name, remoteURL string,
 ) error {
 	if err := validateRemoteURLHost(host, remoteURL); err != nil {
