@@ -209,7 +209,12 @@ func (m *Manager) cloneBare(
 func (m *Manager) fetch(
 	ctx context.Context, host, clonePath string,
 ) error {
-	if _, err := m.git(ctx, host, clonePath, "fetch", "--prune", "origin"); err != nil {
+	// GitHub's smart-HTTP endpoint sporadically returns 5xx on /info/refs.
+	// Retry inline so a transient blip does not drop the entire sync cycle.
+	_, err := retryTransient(ctx, "git fetch", func() ([]byte, error) {
+		return m.git(ctx, host, clonePath, "fetch", "--prune", "origin")
+	})
+	if err != nil {
 		return fmt.Errorf("git fetch: %w", err)
 	}
 	if _, err := m.git(ctx, host, clonePath, "remote", "set-head", "origin", "-a"); err != nil {
