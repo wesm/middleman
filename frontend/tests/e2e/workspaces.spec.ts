@@ -224,3 +224,193 @@ test("nested repo_path embed detail route loads matching detail content", async 
   await detailRequest;
   await expect(page.getByText("Nested GitLab issue")).toBeVisible();
 });
+
+test("embed initialRoute opens detail surface without full app chrome", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__middleman_config = {
+      embed: {
+        initialRoute:
+          "/workspaces/embed/detail/gitlab/issue/git.example.com/7" +
+          "?repo_path=group%2Fproject",
+      },
+    };
+  });
+
+  const detailRequest = page.waitForRequest(
+    (request) =>
+      request.method() === "GET" &&
+      new URL(request.url()).pathname ===
+        "/api/v1/host/git.example.com/issues/gitlab/group/project/7",
+  );
+  await page.route(
+    "**/api/v1/host/git.example.com/issues/gitlab/group/project/7",
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          issue: {
+            ID: 7,
+            RepoID: 7,
+            GitHubID: 7007,
+            Number: 7,
+            URL: "https://git.example.com/group/project/-/issues/7",
+            Title: "Initial route GitLab issue",
+            Author: "marius",
+            State: "open",
+            Body: "",
+            CommentCount: 0,
+            LabelsJSON: "[]",
+            CreatedAt: "2026-03-28T14:00:00Z",
+            UpdatedAt: "2026-03-30T14:00:00Z",
+            LastActivityAt: "2026-03-30T14:00:00Z",
+            ClosedAt: null,
+            Starred: false,
+          },
+          repo: {
+            provider: "gitlab",
+            platform_host: "git.example.com",
+            owner: "group",
+            name: "project",
+            repo_path: "group/project",
+          },
+          events: [],
+          platform_host: "git.example.com",
+          repo_owner: "group",
+          repo_name: "project",
+          detail_loaded: true,
+          detail_fetched_at: "2026-03-30T14:00:00Z",
+        }),
+      });
+    },
+  );
+
+  await page.goto("/");
+
+  await detailRequest;
+  await expect(page.locator("header.app-header")).toHaveCount(0);
+  await expect(page).toHaveURL(
+    /\/workspaces\/embed\/detail\/gitlab\/issue\/git\.example\.com\/7\?repo_path=group%2Fproject$/,
+  );
+  await expect(page.getByText("Initial route GitLab issue")).toBeVisible();
+});
+
+test("full app initializes after navigating away from an initial embed route", async ({ page }) => {
+  await page.route("**/api/v1/settings", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        repos: [],
+        activity: {
+          view_mode: "threaded",
+          time_range: "7d",
+          hide_closed: false,
+          hide_bots: false,
+        },
+        terminal: {
+          font_family: '"Fira Code", monospace',
+          renderer: "xterm",
+        },
+        agents: [],
+      }),
+    });
+  });
+
+  await page.addInitScript(() => {
+    window.__middleman_config = {
+      embed: {
+        initialRoute: "/workspaces/embed/list",
+      },
+    };
+  });
+
+  await page.goto("/");
+  await expect(page.locator("header.app-header")).toHaveCount(0);
+
+  const pullsResponse = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === "/api/v1/pulls",
+  );
+  await page.evaluate(() => {
+    window.__middleman_navigate_to_route?.("/pulls");
+  });
+
+  await expect(page).toHaveURL(/\/pulls$/);
+  await pullsResponse;
+  await expect(page.locator("header.app-header")).toBeVisible();
+});
+
+test("full app reinitializes after navigating through an embed route", async ({ page }) => {
+  let settingsRequests = 0;
+  await page.addInitScript(() => {
+    const OriginalEventSource = window.EventSource;
+    const created: EventSource[] = [];
+    const closed: EventSource[] = [];
+    class TrackingEventSource extends OriginalEventSource {
+      constructor(url: string | URL, eventSourceInitDict?: EventSourceInit) {
+        super(url, eventSourceInitDict);
+        created.push(this);
+      }
+
+      close(): void {
+        closed.push(this);
+        super.close();
+      }
+    }
+    window.EventSource = TrackingEventSource;
+    Object.defineProperty(window, "__middleman_event_source_counts", {
+      value: () => ({ created: created.length, closed: closed.length }),
+    });
+  });
+  await page.route("**/api/v1/settings", async (route) => {
+    settingsRequests += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        repos: [],
+        activity: {
+          view_mode: "threaded",
+          time_range: "7d",
+          hide_closed: false,
+          hide_bots: false,
+        },
+        terminal: {
+          font_family: '"Fira Code", monospace',
+          renderer: "xterm",
+        },
+        agents: [],
+      }),
+    });
+  });
+
+  await page.goto("/pulls");
+  await expect(page.locator("header.app-header")).toBeVisible();
+  await expect.poll(() => settingsRequests).toBe(1);
+  const initialEventSources = await page.evaluate(() =>
+    window.__middleman_event_source_counts?.().created ?? 0,
+  );
+  expect(initialEventSources).toBeGreaterThan(0);
+
+  await page.evaluate(() => {
+    window.__middleman_navigate_to_route?.("/workspaces/embed/list");
+  });
+  await expect(page).toHaveURL(/\/workspaces\/embed\/list$/);
+  await expect(page.locator("header.app-header")).toHaveCount(0);
+  await expect.poll(async () => page.evaluate(() =>
+    window.__middleman_event_source_counts?.().closed ?? 0,
+  )).toBeGreaterThanOrEqual(initialEventSources);
+
+  await page.evaluate(() => {
+    window.__middleman_navigate_to_route?.("/pulls");
+  });
+  await expect(page).toHaveURL(/\/pulls$/);
+  await expect(page.locator("header.app-header")).toBeVisible();
+  await expect.poll(() => settingsRequests).toBe(2);
+  await expect.poll(async () => page.evaluate(() =>
+    window.__middleman_event_source_counts?.().created ?? 0,
+  )).toBeGreaterThan(initialEventSources);
+  await expect.poll(async () => page.evaluate(() =>
+    window.__middleman_event_source_counts?.().closed ?? 0,
+  )).toBeGreaterThanOrEqual(initialEventSources);
+});
