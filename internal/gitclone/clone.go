@@ -287,9 +287,16 @@ func (m *Manager) fetch(
 	if err != nil {
 		return fmt.Errorf("git fetch: %w", err)
 	}
-	if _, err := m.git(ctx, host, clonePath, "remote", "set-head", "origin", "-a"); err != nil {
+	// set-head -a is networked (it consults the remote's HEAD via
+	// /info/refs) and so subject to the same transient 5xx as fetch.
+	// Failure is non-fatal — bare clone still works — but retrying
+	// reduces stale-HEAD noise across sync cycles.
+	_, setHeadErr := retryTransient(ctx, "git remote set-head", func() ([]byte, error) {
+		return m.git(ctx, host, clonePath, "remote", "set-head", "origin", "-a")
+	})
+	if setHeadErr != nil {
 		slog.Warn("failed to repair origin HEAD",
-			"path", clonePath, "err", err)
+			"path", clonePath, "err", setHeadErr)
 	}
 	return nil
 }
