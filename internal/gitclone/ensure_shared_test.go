@@ -71,13 +71,11 @@ func TestEnsureCloneSharedDedupesConcurrentCallers(t *testing.T) {
 	// Phase 2: followers attach. Their fn must never run because the
 	// leader still holds the slot.
 	for i := 1; i < callers; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
+		wg.Go(func() {
 			errs[i] = mgr.ensureCloneShared(
 				t.Context(), "github.com", "acme", "widget", fn,
 			)
-		}(i)
+		})
 	}
 
 	// Give followers time to reach DoChan and attach to the slot.
@@ -109,13 +107,11 @@ func TestEnsureCloneSharedSeparatesDistinctRepos(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for _, name := range []string{"a", "b", "c", "d"} {
-		wg.Add(1)
-		go func(name string) {
-			defer wg.Done()
+		wg.Go(func() {
 			_ = mgr.ensureCloneShared(
 				t.Context(), "github.com", "acme", name, fn,
 			)
-		}(name)
+		})
 	}
 	wg.Wait()
 
