@@ -130,6 +130,18 @@ func (m *Manager) EnsureClone(
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	// Validate per-caller inputs before entering the singleflight
+	// slot. remoteURL is not part of the slot key (we dedup by
+	// repo identity, not URL spelling), so without an up-front
+	// check a follower with a malformed URL could inherit the
+	// leader's success — or a valid caller could inherit the
+	// leader's validation error.
+	if err := validateRemoteURLHost(host, remoteURL); err != nil {
+		return err
+	}
+	if _, err := m.ClonePath(host, owner, name); err != nil {
+		return err
+	}
 	key := ensureCloneKey(host, owner, name)
 	ch := m.ensureSF.DoChan(key, func() (any, error) {
 		opCtx, cancel := context.WithTimeout(
@@ -152,13 +164,11 @@ func ensureCloneKey(host, owner, name string) string {
 
 // ensureCloneNow is the unshared inner: it decides whether to create a
 // fresh bare clone or refresh an existing one. Always called from
-// inside the singleflight slot opened by EnsureClone.
+// inside the singleflight slot opened by EnsureClone, which has
+// already validated the caller's remoteURL.
 func (m *Manager) ensureCloneNow(
 	ctx context.Context, host, owner, name, remoteURL string,
 ) error {
-	if err := validateRemoteURLHost(host, remoteURL); err != nil {
-		return err
-	}
 	clonePath, err := m.ClonePath(host, owner, name)
 	if err != nil {
 		return err
@@ -167,6 +177,9 @@ func (m *Manager) ensureCloneNow(
 	if _, err := os.Stat(filepath.Join(clonePath, "HEAD")); os.IsNotExist(err) {
 		return m.cloneBare(ctx, host, clonePath, remoteURL)
 	}
+	// On an existing clone, also re-verify the stored origin URL
+	// belongs to the expected host: catches a clone whose config
+	// was rewritten after creation.
 	if out, err := m.git(ctx, host, clonePath, "config", "--get", "remote.origin.url"); err == nil {
 		if err := validateRemoteURLHost(host, strings.TrimSpace(string(out))); err != nil {
 			return err
