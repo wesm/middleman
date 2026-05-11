@@ -63,6 +63,12 @@
     createdAt: string;
   }
 
+  // hideWorkspaceList / hideRightSidebar let an embedding host
+  // render only the terminal/home/empty surface and compose the
+  // workspace list and per-item detail sidebar separately via
+  // the /workspaces/embed/list and /workspaces/embed/detail
+  // routes. Both default to false to preserve the standalone
+  // /workspaces and /terminal/{id} layout.
   interface Props {
     workspaceId: string;
     isSidebarCollapsed?: boolean;
@@ -70,6 +76,8 @@
     onSidebarResize?: (width: number) => void;
     isSidebarToggleEnabled?: boolean;
     onToggleSidebar?: () => void;
+    hideWorkspaceList?: boolean;
+    hideRightSidebar?: boolean;
   }
 
   const {
@@ -79,6 +87,8 @@
     onSidebarResize = undefined,
     isSidebarToggleEnabled = false,
     onToggleSidebar = undefined,
+    hideWorkspaceList = false,
+    hideRightSidebar = false,
   }: Props = $props();
 
   const basePath = (
@@ -892,24 +902,7 @@
 </script>
 
 <div class="terminal-view">
-  <CollapsibleResizableSidebar
-    isCollapsed={isSidebarCollapsed}
-    sidebarWidth={currentWorkspaceListWidth}
-    minSidebarWidth={MIN_WORKSPACE_LIST_WIDTH}
-    maxSidebarWidth={MAX_WORKSPACE_LIST_WIDTH}
-    onSidebarResize={handleWorkspaceListResize}
-    showCollapsedStrip={isSidebarToggleEnabled}
-    onExpand={onToggleSidebar}
-    mainOverflow="hidden"
-  >
-    {#snippet sidebar()}
-      <WorkspaceListSidebar
-        selectedId={workspaceId}
-        {isSidebarToggleEnabled}
-        onCollapseSidebar={onToggleSidebar}
-        onOpenItemSidebar={openItemSidebar}
-      />
-    {/snippet}
+  {#snippet terminalMainContent()}
     <div class="terminal-main">
       {#if !workspaceId}
         <div class="state-message">
@@ -984,42 +977,44 @@
             </code>
           </div>
           <div class="header-right">
-            <div class="seg-control">
-              <button
-                class="seg-btn"
-                class:active={sidebarOpen && sidebarTab === "diff"}
-                onclick={() => handleSegmentClick("diff")}
-              >
-                Diff
-              </button>
-              {#if workspace.item_type === "issue"}
+            {#if !hideRightSidebar}
+              <div class="seg-control">
                 <button
                   class="seg-btn"
-                  class:active={sidebarOpen && sidebarTab === "issue"}
-                  onclick={() => handleSegmentClick("issue")}
+                  class:active={sidebarOpen && sidebarTab === "diff"}
+                  onclick={() => handleSegmentClick("diff")}
                 >
-                  Issue
+                  Diff
                 </button>
-              {/if}
-              {#if getWorkspacePRNumber(workspace) !== null}
-                <button
-                  class="seg-btn"
-                  class:active={sidebarOpen && sidebarTab === "pr"}
-                  onclick={() => handleSegmentClick("pr")}
-                >
-                  PR
-                </button>
-              {/if}
-              {#if workspace.item_type === "pull_request"}
-                <button
-                  class="seg-btn"
-                  class:active={sidebarOpen && sidebarTab === "reviews"}
-                  onclick={() => handleSegmentClick("reviews")}
-                >
-                  Reviews
-                </button>
-              {/if}
-            </div>
+                {#if workspace.item_type === "issue"}
+                  <button
+                    class="seg-btn"
+                    class:active={sidebarOpen && sidebarTab === "issue"}
+                    onclick={() => handleSegmentClick("issue")}
+                  >
+                    Issue
+                  </button>
+                {/if}
+                {#if getWorkspacePRNumber(workspace) !== null}
+                  <button
+                    class="seg-btn"
+                    class:active={sidebarOpen && sidebarTab === "pr"}
+                    onclick={() => handleSegmentClick("pr")}
+                  >
+                    PR
+                  </button>
+                {/if}
+                {#if workspace.item_type === "pull_request"}
+                  <button
+                    class="seg-btn"
+                    class:active={sidebarOpen && sidebarTab === "reviews"}
+                    onclick={() => handleSegmentClick("reviews")}
+                  >
+                    Reviews
+                  </button>
+                {/if}
+              </div>
+            {/if}
             <button
               class="header-btn danger"
               disabled={actionsBlocked}
@@ -1143,7 +1138,7 @@
               />
             </div>
           </div>
-          {#if sidebarOpen && workspace}
+          {#if sidebarOpen && workspace && !hideRightSidebar}
             <SplitResizeHandle
               class="sidebar-resize-handle"
               ariaLabel="Resize workspace details"
@@ -1173,7 +1168,32 @@
         </div>
       {/if}
     </div>
-  </CollapsibleResizableSidebar>
+  {/snippet}
+
+  {#if hideWorkspaceList}
+    {@render terminalMainContent()}
+  {:else}
+    <CollapsibleResizableSidebar
+      isCollapsed={isSidebarCollapsed}
+      sidebarWidth={currentWorkspaceListWidth}
+      minSidebarWidth={MIN_WORKSPACE_LIST_WIDTH}
+      maxSidebarWidth={MAX_WORKSPACE_LIST_WIDTH}
+      onSidebarResize={handleWorkspaceListResize}
+      showCollapsedStrip={isSidebarToggleEnabled}
+      onExpand={onToggleSidebar}
+      mainOverflow="hidden"
+    >
+      {#snippet sidebar()}
+        <WorkspaceListSidebar
+          selectedId={workspaceId}
+          {isSidebarToggleEnabled}
+          onCollapseSidebar={onToggleSidebar}
+          onOpenItemSidebar={openItemSidebar}
+        />
+      {/snippet}
+      {@render terminalMainContent()}
+    </CollapsibleResizableSidebar>
+  {/if}
 </div>
 
 <style>

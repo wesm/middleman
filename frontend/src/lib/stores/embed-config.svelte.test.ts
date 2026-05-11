@@ -10,8 +10,16 @@ import {
   getIssueActions,
   invokeAction,
   getOnNavigate,
+  getProjectActions,
+  getProjectAction,
+  invokeProjectAction,
+  getToolingStatus,
+  initWorkspaceBridge,
 } from "./embed-config.svelte.js";
-import type { ActionHook } from "./embed-config.svelte.js";
+import type {
+  ActionHook,
+  ProjectActionHook,
+} from "./embed-config.svelte.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test helper needs dynamic window access
 const win = window as any;
@@ -216,5 +224,136 @@ describe("onNavigate callback", () => {
     delete win.__middleman_config.onNavigate;
     win.__middleman_notify_config_changed();
     expect(getOnNavigate()).toBeUndefined();
+  });
+});
+
+describe("project actions", () => {
+  it("returns empty array when not configured", () => {
+    expect(getProjectActions()).toEqual([]);
+    expect(getProjectAction("add-existing")).toBeUndefined();
+  });
+
+  it("returns project actions from config", () => {
+    const handler = vi.fn().mockResolvedValue({ ok: true });
+    win.__middleman_config = {
+      actions: {
+        project: [
+          { id: "add-existing", label: "Add existing", handler },
+        ],
+      },
+    };
+    win.__middleman_notify_config_changed();
+    expect(getProjectActions()).toHaveLength(1);
+    expect(getProjectAction("add-existing")?.id).toBe("add-existing");
+    expect(getProjectAction("missing")).toBeUndefined();
+  });
+});
+
+describe("invokeProjectAction", () => {
+  it("passes context to handler and returns its CommandResult", async () => {
+    const handler = vi.fn().mockResolvedValue({ ok: true });
+    const action: ProjectActionHook = {
+      id: "clone", label: "Clone", handler,
+    };
+    const result = await invokeProjectAction(action, {
+      surface: "first-run-panel",
+    });
+    expect(handler).toHaveBeenCalledWith({ surface: "first-run-panel" });
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("propagates handler-supplied failure", async () => {
+    const action: ProjectActionHook = {
+      id: "clone", label: "Clone",
+      handler: () => ({ ok: false, message: "auth failed" }),
+    };
+    const result = await invokeProjectAction(action, {
+      surface: "first-run-panel",
+    });
+    expect(result).toEqual({ ok: false, message: "auth failed" });
+  });
+
+  it("normalizes thrown errors into a failure result", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const action: ProjectActionHook = {
+      id: "clone", label: "Clone",
+      handler: () => { throw new Error("boom"); },
+    };
+    const result = await invokeProjectAction(action, {
+      surface: "first-run-panel",
+    });
+    expect(result).toEqual({ ok: false, message: "boom" });
+    spy.mockRestore();
+  });
+
+  it("normalizes async rejections into a failure result", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const action: ProjectActionHook = {
+      id: "clone", label: "Clone",
+      handler: () => Promise.reject(new Error("async boom")),
+    };
+    const result = await invokeProjectAction(action, {
+      surface: "first-run-panel",
+    });
+    expect(result).toEqual({ ok: false, message: "async boom" });
+    spy.mockRestore();
+  });
+
+  it("treats a void return as ok: true so legacy-shaped handlers do not break", async () => {
+    const action = {
+      id: "noop", label: "Noop",
+      handler: () => undefined,
+    } as unknown as ProjectActionHook;
+    const result = await invokeProjectAction(action, {
+      surface: "test",
+    });
+    expect(result).toEqual({ ok: true });
+  });
+});
+
+describe("tooling status", () => {
+  it("returns undefined when no tooling on embed config", () => {
+    expect(getToolingStatus()).toBeUndefined();
+  });
+
+  it("returns tooling block when set", () => {
+    win.__middleman_config = {
+      embed: {
+        tooling: {
+          git: { available: true, version: "2.45.0" },
+          gh: { available: true, authenticated: false },
+        },
+      },
+    };
+    win.__middleman_notify_config_changed();
+    const tooling = getToolingStatus();
+    expect(tooling?.git?.available).toBe(true);
+    expect(tooling?.gh?.authenticated).toBe(false);
+  });
+
+  it("__middleman_update_tooling pushes new state and notifies", () => {
+    initWorkspaceBridge();
+    win.__middleman_config = {};
+    win.__middleman_notify_config_changed();
+    expect(getToolingStatus()).toBeUndefined();
+
+    win.__middleman_update_tooling({
+      git: { available: false },
+      gh: { available: false, authenticated: false },
+    });
+    expect(getToolingStatus()?.git?.available).toBe(false);
+    expect(getToolingStatus()?.gh?.authenticated).toBe(false);
+  });
+
+  it("__middleman_update_tooling is a no-op when config is unset", () => {
+    initWorkspaceBridge();
+    delete win.__middleman_config;
+    expect(() =>
+      win.__middleman_update_tooling({
+        git: { available: true },
+        gh: { available: true, authenticated: true },
+      }),
+    ).not.toThrow();
+    expect(getToolingStatus()).toBeUndefined();
   });
 });

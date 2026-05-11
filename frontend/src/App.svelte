@@ -23,6 +23,11 @@
   import RepoSummaryPage from "./lib/components/repositories/RepoSummaryPage.svelte";
   import SettingsPage from "./lib/components/settings/SettingsPage.svelte";
   import WorkspaceTerminalView from "./lib/components/terminal/WorkspaceTerminalView.svelte";
+  import WorkspaceListSidebar from "./lib/components/terminal/WorkspaceListSidebar.svelte";
+  import WorkspaceEmbedEmptyState from "./lib/components/terminal/WorkspaceEmbedEmptyState.svelte";
+  import WorkspaceFirstRunPanel from "./lib/components/terminal/WorkspaceFirstRunPanel.svelte";
+  import WorkspaceProjectCard from "./lib/components/terminal/WorkspaceProjectCard.svelte";
+  import { WorkspaceRightSidebar } from "@middleman/ui";
   import DesignSystemPage from "./lib/components/design-system/DesignSystemPage.svelte";
   import FlashBanner from "./lib/components/FlashBanner.svelte";
   import { SpinnerIcon } from "./lib/icons.ts";
@@ -58,6 +63,7 @@
     isDiffView,
     getDetailTab,
     getSelectedPRFromRoute,
+    isWorkspaceEmbedPage,
   } from "./lib/stores/router.svelte.ts";
   import {
     buildActivitySelectionSearch,
@@ -473,7 +479,45 @@
   }}
   bind:stores
 >
-  {#if getPage() === "focus"}
+  {#if isWorkspaceEmbedPage(getPage())}
+    {@const r = getRoute()}
+    <main class="embed-layout">
+      {#if r.page === "embed-workspace-list"}
+        <WorkspaceListSidebar selectedId="" />
+      {:else if r.page === "embed-workspace-terminal"}
+        <WorkspaceTerminalView
+          workspaceId={r.workspaceId}
+          hideWorkspaceList={true}
+          hideRightSidebar={true}
+        />
+      {:else if r.page === "embed-workspace-detail"}
+        <WorkspaceRightSidebar
+          activeTab={r.tab ??
+            (r.itemType === "issue" ? "issue" : "pr")}
+          workspaceID=""
+          provider={r.platformHost.toLowerCase().includes("gitlab")
+            ? "gitlab"
+            : "github"}
+          platformHost={r.platformHost}
+          repoOwner={r.owner}
+          repoName={r.name}
+          repoPath={`${r.owner}/${r.name}`}
+          ownerItemType={r.itemType === "issue" ? "issue" : "pull_request"}
+          ownerItemNumber={r.number}
+          associatedPRNumber={r.itemType === "pr" ? r.number : null}
+          branch={r.branch ?? ""}
+          roborevBaseUrl={getBasePath().replace(/\/$/, "") +
+            "/api/roborev"}
+        />
+      {:else if r.page === "embed-workspace-empty"}
+        <WorkspaceEmbedEmptyState reason={r.reason} />
+      {:else if r.page === "embed-workspace-first-run"}
+        <WorkspaceFirstRunPanel />
+      {:else if r.page === "embed-workspace-project"}
+        <WorkspaceProjectCard projectId={r.projectId} />
+      {/if}
+    </main>
+  {:else if getPage() === "focus"}
     {@const r = getRoute()}
     {#if r.page === "focus"}
       <main class="focus-layout">
@@ -613,6 +657,19 @@
     background: var(--bg-primary);
     display: flex;
     flex-direction: column;
+  }
+
+  /* Embed routes render a single workspace component at full
+     bleed. The host (e.g. a WKWebView) provides the surrounding
+     chrome. Hidden overflow lets the inner component manage its
+     own scrolling without leaking onto the host. */
+  .embed-layout {
+    flex: 1;
+    overflow: hidden;
+    background: var(--bg-primary);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
   }
 
   .app-main {

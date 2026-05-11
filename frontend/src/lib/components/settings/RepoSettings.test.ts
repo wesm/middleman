@@ -2,7 +2,6 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/sv
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mockRefreshSyncStatus = vi.fn();
-let mockEmbedded = false;
 
 vi.mock("@middleman/ui", () => ({
   getStores: () => ({
@@ -21,13 +20,16 @@ vi.mock("../../api/settings.js", () => ({
   bulkAddRepos: vi.fn(),
 }));
 
-vi.mock("../../stores/embed-config.svelte.js", () => ({
-  isEmbedded: () => mockEmbedded,
-}));
-
-import { bulkAddRepos, previewRepos } from "../../api/settings.js";
+import {
+  addRepo,
+  bulkAddRepos,
+  previewRepos,
+  refreshRepo,
+} from "../../api/settings.js";
 import RepoSettings from "./RepoSettings.svelte";
 
+const mockAddRepo = vi.mocked(addRepo);
+const mockRefreshRepo = vi.mocked(refreshRepo);
 const mockPreviewRepos = vi.mocked(previewRepos);
 const mockBulkAddRepos = vi.mocked(bulkAddRepos);
 
@@ -35,9 +37,10 @@ describe("RepoSettings", () => {
   afterEach(() => {
     cleanup();
     mockRefreshSyncStatus.mockReset();
+    mockAddRepo.mockReset();
+    mockRefreshRepo.mockReset();
     mockPreviewRepos.mockReset();
     mockBulkAddRepos.mockReset();
-    mockEmbedded = false;
   });
 
   it("renders the glob count and refresh action", () => {
@@ -91,17 +94,57 @@ describe("RepoSettings", () => {
     expect(summary.closest("details")?.hasAttribute("open")).toBe(false);
   });
 
-  it("hides import and direct add controls in embedded mode", () => {
-    mockEmbedded = true;
+  it("forwards add/refresh through the settings API", async () => {
+    mockAddRepo.mockResolvedValue({
+      repos: [],
+      activity: {
+        view_mode: "threaded",
+        time_range: "7d",
+        hide_closed: false,
+        hide_bots: false,
+      },
+      terminal: { font_family: "", renderer: "xterm" },
+      agents: [],
+    });
+    mockRefreshRepo.mockResolvedValue({
+      repos: [],
+      activity: {
+        view_mode: "threaded",
+        time_range: "7d",
+        hide_closed: false,
+        hide_bots: false,
+      },
+      terminal: { font_family: "", renderer: "xterm" },
+      agents: [],
+    });
+
     render(RepoSettings, {
       props: {
-        repos: [],
+        repos: [{
+          provider: "github",
+          platform_host: "github.com",
+          owner: "acme",
+          name: "*",
+          repo_path: "acme/*",
+          is_glob: true,
+          matched_repo_count: 1,
+        }],
         onUpdate: vi.fn(),
       },
     });
 
-    expect(screen.queryByRole("button", { name: "Add repositories…" })).toBeNull();
-    expect(screen.queryByText("Advanced: add exact repo or tracking glob directly")).toBeNull();
+    const input = screen.getByPlaceholderText("owner/name");
+    await fireEvent.input(input, { target: { value: "github/acme/widget" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(mockAddRepo).toHaveBeenCalledWith("acme", "widget", {
+      provider: "github",
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(mockRefreshRepo).toHaveBeenCalledWith("acme", "*", {
+      provider: "github",
+      host: "github.com",
+    });
   });
 
   it("updates repos and refreshes sync status after import", async () => {

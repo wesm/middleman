@@ -50,6 +50,7 @@ interface MiddlemanConfig {
   actions?: {
     pullRequest?: ActionHookDef[];
     issue?: ActionHookDef[];
+    project?: ProjectActionDef[];
   };
   workspace?: WorkspaceData;
   onWorkspaceCommand?: WorkspaceCommandHandler;
@@ -61,6 +62,7 @@ interface MiddlemanConfig {
     activePlatformHost?: string | null;
     panelMode?: boolean;
     hoverCardsEnabled?: boolean;
+    tooling?: ToolingStatus;
   };
   onLayoutChanged?: (layout: {
     sidebar: { width: number };
@@ -80,6 +82,44 @@ interface ActionHookDef {
     number: number;
     meta?: Record<string, unknown>;
   }) => void | Promise<void>;
+}
+
+// ProjectActionDef is the registry shape for project-scoped actions
+// (add-existing, clone, connect-github, new-worktree). The handler MUST
+// return a CommandResult so the firing surface can render success/failure
+// instead of a fire-and-forget click. The action ID is the identifier the
+// surface uses to look up the handler.
+interface ProjectActionDef {
+  id: string;
+  label: string;
+  handler: (context: {
+    surface: string;
+    projectId?: string;
+    meta?: Record<string, unknown>;
+  }) => CommandResult | Promise<CommandResult>;
+}
+
+// ToolingStatus reports the embedding host's view of git/gh availability.
+// The First Run Panel and the New Worktree sheet read this to gate the
+// GitHub-dependent surfaces and surface specific recovery copy when a
+// tool is missing.
+interface ToolingStatus {
+  git?: {
+    available: boolean;
+    version?: string;
+  };
+  gh?: {
+    available: boolean;
+    authenticated: boolean;
+    user?: string;
+    host?: string;
+  };
+  glab?: {
+    available: boolean;
+    authenticated: boolean;
+    user?: string;
+    host?: string;
+  };
 }
 
 interface WorkspaceHost {
@@ -209,4 +249,5 @@ interface Window {
       resources?: WorkspaceResources | null;
     },
   ) => void;
+  __middleman_update_tooling?: (tooling: ToolingStatus) => void;
 }

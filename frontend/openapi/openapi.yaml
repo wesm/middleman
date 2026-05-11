@@ -1103,6 +1103,44 @@ components:
         - type
         - content
       type: object
+    ListLaunchTargetsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ListLaunchTargetsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        launch_targets:
+          items:
+            $ref: "#/components/schemas/LaunchTarget"
+          type:
+            - array
+            - "null"
+      required:
+        - launch_targets
+      type: object
+    ListProjectsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ListProjectsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        projects:
+          items:
+            $ref: "#/components/schemas/ProjectResponse"
+          type:
+            - array
+            - "null"
+      required:
+        - projects
+      type: object
     ListWorkspacesOutputBody:
       additionalProperties: false
       properties:
@@ -1121,6 +1159,25 @@ components:
             - "null"
       required:
         - workspaces
+      type: object
+    ListWorktreesOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ListWorktreesOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        worktrees:
+          items:
+            $ref: "#/components/schemas/WorktreeResponse"
+          type:
+            - array
+            - "null"
+      required:
+        - worktrees
       type: object
     MREvent:
       additionalProperties: false
@@ -1609,6 +1666,20 @@ components:
         - is_draft
         - title
       type: object
+    PlatformIdentityPayload:
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        owner:
+          type: string
+        platform_host:
+          type: string
+      required:
+        - platform_host
+        - owner
+        - name
+      type: object
     PostCommentHostInputBody:
       additionalProperties: false
       properties:
@@ -1668,6 +1739,39 @@ components:
           type: string
       required:
         - body
+      type: object
+    ProjectResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ProjectResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        default_branch:
+          type: string
+        display_name:
+          type: string
+        id:
+          type: string
+        local_path:
+          type: string
+        platform_identity:
+          $ref: "#/components/schemas/PlatformIdentityPayload"
+        updated_at:
+          format: date-time
+          type: string
+      required:
+        - id
+        - display_name
+        - local_path
+        - created_at
+        - updated_at
       type: object
     ProviderCapabilitiesResponse:
       additionalProperties: false
@@ -1798,6 +1902,45 @@ components:
           type: object
       required:
         - hosts
+      type: object
+    RegisterProjectInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/RegisterProjectInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        default_branch:
+          type: string
+        display_name:
+          type: string
+        local_path:
+          type: string
+        platform_identity:
+          $ref: "#/components/schemas/PlatformIdentityPayload"
+      required:
+        - local_path
+      type: object
+    RegisterWorktreeInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/RegisterWorktreeInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        branch:
+          type: string
+        path:
+          type: string
+      required:
+        - branch
+        - path
       type: object
     RepoPreviewRequest:
       additionalProperties: false
@@ -2655,6 +2798,38 @@ components:
           type: string
       required:
         - worktree_key
+      type: object
+    WorktreeResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/WorktreeResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        branch:
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        id:
+          type: string
+        path:
+          type: string
+        project_id:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+      required:
+        - id
+        - project_id
+        - branch
+        - path
+        - created_at
+        - updated_at
       type: object
 info:
   title: middleman API
@@ -4558,6 +4733,136 @@ paths:
               schema:
                 $ref: "#/components/schemas/WorkspaceResponse"
           description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /projects:
+    get:
+      operationId: list-projects
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListProjectsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+    post:
+      operationId: register-project
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterProjectInputBody"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectResponse"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /projects/{project_id}:
+    get:
+      operationId: get-project
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /projects/{project_id}/launch-targets:
+    get:
+      operationId: list-launch-targets
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListLaunchTargetsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /projects/{project_id}/worktrees:
+    get:
+      operationId: list-worktrees
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListWorktreesOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+    post:
+      operationId: register-worktree
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterWorktreeInputBody"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorktreeResponse"
+          description: Created
         default:
           content:
             application/problem+json:

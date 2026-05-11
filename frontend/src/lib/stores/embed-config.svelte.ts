@@ -23,6 +23,25 @@ export interface ActionContext {
   meta?: Record<string, unknown>;
 }
 
+export interface ProjectActionContext {
+  surface: string;
+  projectId?: string;
+  meta?: Record<string, unknown>;
+}
+
+export interface ProjectActionHook {
+  id: string;
+  label: string;
+  handler: (
+    context: ProjectActionContext,
+  ) => CommandResult | Promise<CommandResult>;
+}
+
+// Re-export ToolingStatus from the global ambient module so .svelte
+// files can import it explicitly. Lint in .svelte files does not pick
+// up ambient globals declared in vite-env.d.ts.
+export type ToolingStatusValue = ToolingStatus;
+
 interface UIDefaults {
   hideSync: boolean;
   hideRepoSelector: boolean;
@@ -115,6 +134,20 @@ export function getIssueActions(): ActionHook[] {
   return readConfig()?.actions?.issue ?? [];
 }
 
+export function getProjectActions(): ProjectActionHook[] {
+  return readConfig()?.actions?.project ?? [];
+}
+
+export function getProjectAction(
+  id: string,
+): ProjectActionHook | undefined {
+  return getProjectActions().find((action) => action.id === id);
+}
+
+export function getToolingStatus(): ToolingStatus | undefined {
+  return readConfig()?.embed?.tooling;
+}
+
 export function getOnNavigate():
   ((event: MiddlemanNavigateEvent) => void) | undefined {
   return readConfig()?.onNavigate;
@@ -136,6 +169,36 @@ export function invokeAction(
     });
   } catch (err) {
     console.error("Embedding action error:", err);
+  }
+}
+
+// invokeProjectAction is the ack-aware project-action runner. The firing
+// surface awaits the returned CommandResult to render in-flight, success,
+// and failure states - this is the contract that fixes "button click does
+// nothing" for project actions. Handlers that throw are normalized into
+// { ok: false, message } so callers never see an unhandled rejection.
+export async function invokeProjectAction(
+  action: ProjectActionHook,
+  context: ProjectActionContext,
+): Promise<CommandResult> {
+  try {
+    const result = await action.handler(context);
+    if (
+      result &&
+      typeof result === "object" &&
+      "ok" in result &&
+      typeof result.ok === "boolean"
+    ) {
+      return result;
+    }
+    return { ok: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(
+      `Embedding project action "${action.id}" failed:`,
+      err,
+    );
+    return { ok: false, message };
   }
 }
 
@@ -278,6 +341,13 @@ export function initWorkspaceBridge(): void {
     const hosts = [...config.workspace.hosts];
     hosts[hostIdx] = updated;
     config.workspace = { ...config.workspace, hosts };
+    window.__middleman_notify_config_changed?.();
+  };
+  window.__middleman_update_tooling = (tooling: ToolingStatus) => {
+    const config = window.__middleman_config;
+    if (!config) return;
+    const embed = { ...(config.embed ?? {}), tooling };
+    config.embed = embed;
     window.__middleman_notify_config_changed?.();
   };
 }

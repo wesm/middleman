@@ -12,19 +12,50 @@ export type NumberedItemRef = NumberedRouteItemRef;
 export type HostedItemRef = IssueRouteRef;
 export type RoutableItemRef = RoutedItemRef;
 
+export type EmbedEmptyReason = "noSelection" | "noRepo" | "noWorkspace";
+
+export type EmbedDetailTab = "pr" | "issue" | "reviews";
+
 export type Route =
   | { page: "activity" }
   | { page: "design-system" }
   | { page: "repos" }
   | { page: "workspaces" }
-  | { page: "pulls"; view: "list" | "board"; selected?: NumberedItemRef; tab?: "files" }
+  | {
+      page: "pulls";
+      view: "list" | "board";
+      selected?: NumberedItemRef;
+      tab?: "files";
+    }
   | { page: "issues"; selected?: HostedItemRef }
   | { page: "settings" }
   | ({ page: "focus" } & RoutableItemRef)
   | { page: "focus"; itemType: "mrs"; repo?: string }
   | { page: "focus"; itemType: "issues"; repo?: string }
   | { page: "reviews"; jobId?: number }
-  | { page: "terminal"; workspaceId: string };
+  | { page: "terminal"; workspaceId: string }
+  // Embed-targetable workspace surfaces. Hosts mount these
+  // routes to render a single component of the workspaces UX
+  // (list, terminal, per-item detail, empty placeholder, the
+  // empty-registry First Run Panel, or a per-project card)
+  // without the surrounding app chrome.
+  | { page: "embed-workspace-list" }
+  | { page: "embed-workspace-terminal"; workspaceId: string }
+  | {
+      page: "embed-workspace-detail";
+      itemType: "pr" | "issue";
+      platformHost: string;
+      owner: string;
+      name: string;
+      number: number;
+      branch?: string;
+      tab?: EmbedDetailTab;
+    }
+  | { page: "embed-workspace-empty"; reason: EmbedEmptyReason }
+  | { page: "embed-workspace-first-run" }
+  | { page: "embed-workspace-project"; projectId: string };
+
+export type Page = Route["page"];
 
 import {
   isEmbedded,
@@ -223,15 +254,71 @@ function parseRoute(fullPath: string): Route {
       workspaceId: terminalMatch[1]!,
     };
   }
+  // Embed routes must be matched before the generic /workspaces
+  // catch-all so they don't fall back to the standalone page.
+  if (path === "/workspaces/embed/list") {
+    return { page: "embed-workspace-list" };
+  }
+  const embedTerminalMatch = path.match(
+    /^\/workspaces\/embed\/terminal(?:\/([^/]+))?$/,
+  );
+  if (embedTerminalMatch) {
+    return {
+      page: "embed-workspace-terminal",
+      workspaceId: embedTerminalMatch[1] ?? "",
+    };
+  }
+  const embedDetailMatch = path.match(
+    /^\/workspaces\/embed\/detail\/(pr|issue)\/([^/]+)\/([^/]+)\/([^/]+)\/(\d+)$/,
+  );
+  if (embedDetailMatch) {
+    const sp = new URLSearchParams(search);
+    const branch = sp.get("branch") ?? undefined;
+    const tabParam = sp.get("tab");
+    const tab: EmbedDetailTab | undefined =
+      tabParam === "pr" || tabParam === "issue" || tabParam === "reviews"
+        ? tabParam
+        : undefined;
+    const r: Route = {
+      page: "embed-workspace-detail",
+      itemType: embedDetailMatch[1] as "pr" | "issue",
+      platformHost: embedDetailMatch[2]!,
+      owner: embedDetailMatch[3]!,
+      name: embedDetailMatch[4]!,
+      number: parseInt(embedDetailMatch[5]!, 10),
+    };
+    if (branch) r.branch = branch;
+    if (tab) r.tab = tab;
+    return r;
+  }
+  const embedEmptyMatch = path.match(
+    /^\/workspaces\/embed\/empty\/(noSelection|noRepo|noWorkspace)$/,
+  );
+  if (embedEmptyMatch) {
+    return {
+      page: "embed-workspace-empty",
+      reason: embedEmptyMatch[1] as EmbedEmptyReason,
+    };
+  }
+  if (path === "/workspaces/embed/first-run") {
+    return { page: "embed-workspace-first-run" };
+  }
+  const embedProjectMatch = path.match(
+    /^\/workspaces\/embed\/project\/([A-Za-z0-9_-]+)$/,
+  );
+  if (embedProjectMatch) {
+    return {
+      page: "embed-workspace-project",
+      projectId: embedProjectMatch[1]!,
+    };
+  }
   if (path === "/workspaces" || path.startsWith("/workspaces/")) {
     return { page: "workspaces" };
   }
   return { page: "activity" };
 }
 
-let route = $state<Route>(
-  parseRoute(currentLocationPath()),
-);
+let route = $state<Route>(parseRoute(currentLocationPath()));
 
 // Fire onRouteChange for the initial route after the module loads.
 // Deferred so the embedder has time to set up the callback.
@@ -243,9 +330,7 @@ export function getRoute(): Route {
   return route;
 }
 
-export function getPage():
-  "activity" | "design-system" | "repos" | "pulls" | "issues" | "settings"
-  | "focus" | "reviews" | "workspaces" | "terminal" {
+export function getPage(): Page {
   return route.page;
 }
 
@@ -284,10 +369,7 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     navType = "repos";
   } else if (r.page === "reviews") {
     navType = "reviews";
-  } else if (
-    r.page === "workspaces" ||
-    r.page === "terminal"
-  ) {
+  } else if (isWorkspacePage(r.page)) {
     navType = "workspaces";
   } else if (r.page === "design-system") {
     navType = "activity";
@@ -333,6 +415,26 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
   return event;
 }
 
+export function isWorkspacePage(page: Page): boolean {
+  return (
+    page === "workspaces" || page === "terminal" || isWorkspaceEmbedPage(page)
+  );
+}
+
+export function isWorkspaceEmbedPage(page: Page): boolean {
+  switch (page) {
+    case "embed-workspace-list":
+    case "embed-workspace-terminal":
+    case "embed-workspace-detail":
+    case "embed-workspace-empty":
+    case "embed-workspace-first-run":
+    case "embed-workspace-project":
+      return true;
+    default:
+      return false;
+  }
+}
+
 function fireMiddlemanNavigateEvent(r: Route): void {
   const cb = getOnNavigate();
   if (cb) cb(buildRouteEvent(r));
@@ -370,7 +472,8 @@ if (typeof window !== "undefined") {
 export type DetailTab = "conversation" | "files";
 
 export function getDetailTab(): DetailTab {
-  if (route.page === "pulls" && "tab" in route && route.tab === "files") return "files";
+  if (route.page === "pulls" && "tab" in route && route.tab === "files")
+    return "files";
   return "conversation";
 }
 
@@ -388,7 +491,9 @@ export type View = "list" | "board";
 export type Tab = "pulls" | "issues";
 
 export function getView(): View {
-  return route.page === "pulls" && "view" in route && route.view === "board" ? "board" : "list";
+  return route.page === "pulls" && "view" in route && route.view === "board"
+    ? "board"
+    : "list";
 }
 
 export function setView(v: View): void {
