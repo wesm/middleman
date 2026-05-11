@@ -83,6 +83,39 @@ func TestEnsureClone(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestEnsureCloneSweepsPartialClone verifies that a previously aborted
+// clone attempt — manifesting as a non-empty directory at the clone
+// path that lacks the HEAD file — is cleaned out before the retry runs
+// git clone --bare. Without the sweep, git refuses to write into the
+// non-empty destination and every retry would fail with "destination
+// path already exists and is not an empty directory."
+func TestEnsureCloneSweepsPartialClone(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	remote, _ := setupTestRepo(t)
+	clonesDir := t.TempDir()
+	mgr := New(clonesDir, nil)
+
+	// Simulate a partial clone left behind by a failed attempt: the
+	// target directory exists with stray files but no HEAD.
+	clonePath := filepath.Join(
+		clonesDir, "github.com", "testowner", "testrepo.git")
+	require.NoError(os.MkdirAll(clonePath, 0o755))
+	require.NoError(os.WriteFile(
+		filepath.Join(clonePath, "stray"), []byte("junk"), 0o644))
+
+	require.NoError(mgr.EnsureClone(
+		t.Context(), "github.com", "testowner", "testrepo", remote))
+
+	// Verify the partial state was cleaned out and replaced with a
+	// real bare clone.
+	_, err := os.Stat(filepath.Join(clonePath, "HEAD"))
+	require.NoError(err, "real bare clone should exist after sweep")
+	_, err = os.Stat(filepath.Join(clonePath, "stray"))
+	assert.True(os.IsNotExist(err), "stray file from partial clone should be gone")
+}
+
 // TestEnsureCloneInstallsBothRefspecs verifies that a fresh clone gets both
 // the remote-tracking and pull refspecs configured. Without the remote-
 // tracking refspec, git fetch never updates origin/* and branch tips

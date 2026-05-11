@@ -118,6 +118,62 @@ func TestEnsureCloneSharedSeparatesDistinctRepos(t *testing.T) {
 	assert.Equal(int32(4), calls.Load(), "distinct repos must not share a slot")
 }
 
+// TestEnsureCloneSharedShortCircuitsCanceledContext verifies that a
+// caller with an already-canceled context does not enter the
+// singleflight slot. Without the pre-check, EnsureClone would still
+// kick off the underlying work and only the caller's select would
+// observe the cancellation, leaving work running in the background
+// the caller has logically abandoned.
+func TestEnsureCloneSharedShortCircuitsCanceledContext(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	mgr := New(t.TempDir(), nil)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	var called atomic.Bool
+	err := mgr.ensureCloneShared(
+		ctx, "github.com", "acme", "widget",
+		func(ctx context.Context) error {
+			called.Store(true)
+			return nil
+		},
+	)
+
+	require.ErrorIs(err, context.Canceled)
+	assert.False(called.Load(), "fn must not run when caller ctx is already canceled")
+}
+
+// TestEnsureCloneSharedRunnerHasDeadline verifies that the runner
+// context carries a deadline so a stuck git subprocess cannot hold
+// the singleflight slot indefinitely.
+func TestEnsureCloneSharedRunnerHasDeadline(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	mgr := New(t.TempDir(), nil)
+
+	var observedDeadline time.Time
+	var hadDeadline bool
+	err := mgr.ensureCloneShared(
+		t.Context(), "github.com", "acme", "widget",
+		func(ctx context.Context) error {
+			observedDeadline, hadDeadline = ctx.Deadline()
+			return nil
+		},
+	)
+
+	require.NoError(err)
+	require.True(hadDeadline, "runner ctx must carry a deadline")
+	assert.WithinDuration(
+		time.Now().Add(ensureCloneTimeout), observedDeadline,
+		time.Minute,
+		"deadline should be ~ensureCloneTimeout from now",
+	)
+}
+
 // TestEnsureCloneSharedDetachedContextSurvivesCancel verifies that a
 // canceled caller does not abort the in-flight fetch for the other
 // waiters sharing the slot.

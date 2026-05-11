@@ -12,12 +12,22 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"golang.org/x/sync/singleflight"
 
 	"github.com/wesm/middleman/internal/gitenv"
 	"github.com/wesm/middleman/internal/procutil"
 )
+
+// ensureCloneTimeout caps how long a single bare-clone create-or-fetch
+// is allowed to run inside the singleflight slot. The slot is detached
+// from caller cancellation so one canceled waiter cannot abort work for
+// others; the timeout is what prevents a stuck git subprocess from
+// holding the slot forever. Generous enough to cover large initial
+// clones over slow links, short enough to recover from a wedged
+// network connection inside one sync interval.
+const ensureCloneTimeout = 15 * time.Minute
 
 // ErrNotFound is returned when a git ref or object cannot be resolved.
 var ErrNotFound = errors.New("git object not found")
@@ -120,13 +130,25 @@ func (m *Manager) EnsureClone(
 // one caller's cancellation cannot abort the fetch for everyone else
 // sharing the slot; individual callers still observe their own
 // cancellation via the select below.
+//
+// The runner context is detached from caller cancellation but bounded
+// by ensureCloneTimeout so a stuck git subprocess cannot hold the slot
+// indefinitely. Callers whose context is already canceled when this
+// function is entered short-circuit without starting work.
 func (m *Manager) ensureCloneShared(
 	ctx context.Context, host, owner, name string,
 	fn func(context.Context) error,
 ) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	key := ensureCloneKey(host, owner, name)
 	ch := m.ensureSF.DoChan(key, func() (any, error) {
-		return nil, fn(context.WithoutCancel(ctx))
+		opCtx, cancel := context.WithTimeout(
+			context.WithoutCancel(ctx), ensureCloneTimeout,
+		)
+		defer cancel()
+		return nil, fn(opCtx)
 	})
 	select {
 	case res := <-ch:
@@ -232,7 +254,17 @@ func (m *Manager) cloneBare(
 		return fmt.Errorf("mkdir for clone: %w", err)
 	}
 	slog.Info("cloning bare repo", "path", clonePath)
-	_, err := m.git(ctx, host, "", "clone", "--bare", remoteURL, clonePath)
+	// Initial clones hit the same flaky smart-HTTP /info/refs that
+	// fetches do, so wrap the clone command in the same retry helper.
+	// git clone refuses to write into a non-empty destination, so a
+	// partial directory from a previous failed attempt would poison
+	// every retry — sweep it out before re-running.
+	_, err := retryTransient(ctx, "git clone --bare", func() ([]byte, error) {
+		if err := os.RemoveAll(clonePath); err != nil {
+			return nil, fmt.Errorf("cleanup partial clone: %w", err)
+		}
+		return m.git(ctx, host, "", "clone", "--bare", remoteURL, clonePath)
+	})
 	if err != nil {
 		return fmt.Errorf("git clone --bare: %w", err)
 	}
