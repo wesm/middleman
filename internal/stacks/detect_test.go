@@ -1,13 +1,13 @@
 package stacks
 
 import (
-	"path/filepath"
 	"testing"
 	"time"
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	realdb "github.com/wesm/middleman/internal/db"
+	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
 func makePR(id int64, number int, head, base, state string) realdb.MergeRequest {
@@ -153,12 +153,7 @@ func TestDeriveStackName(t *testing.T) {
 
 func openTestDB(t *testing.T) *realdb.DB {
 	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "test.db")
-	d, err := realdb.Open(path)
-	require.NoError(t, err, "open test db")
-	t.Cleanup(func() { d.Close() })
-	return d
+	return dbtest.Open(t)
 }
 
 func TestRunDetection(t *testing.T) {

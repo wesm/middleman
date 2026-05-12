@@ -1,4 +1,4 @@
-package server
+package e2etest
 
 import (
 	"bytes"
@@ -18,11 +18,26 @@ import (
 	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
 	ghclient "github.com/wesm/middleman/internal/github"
+	"github.com/wesm/middleman/internal/server"
+	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
 func TestTriggerSyncE2EBypassesCooldown(t *testing.T) {
 	require := require.New(t)
 
+	var syncCalls atomic.Int32
+	secondSync := make(chan struct{})
+	var secondSyncClosed atomic.Bool
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(
+			_ context.Context, _, _ string,
+		) ([]*gh.PullRequest, error) {
+			if syncCalls.Add(1) == 2 && secondSyncClosed.CompareAndSwap(false, true) {
+				close(secondSync)
+			}
+			return nil, nil
+		},
+	}
 	baseURL, client, database := startSyncCooldownE2EServer(t, `
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
@@ -32,7 +47,7 @@ port = 8091
 [[repos]]
 owner = "acme"
 name = "widget"
-`, &mockGH{})
+`, mock)
 
 	status, body := postJSON(
 		t, client, baseURL+"/api/v1/sync", nil,
@@ -42,17 +57,16 @@ name = "widget"
 	first := waitForRepoSynced(t, database, "acme", "widget", nil)
 	require.NotNil(first.LastSyncCompletedAt)
 
-	time.Sleep(10 * time.Millisecond)
-
 	status, body = postJSON(
 		t, client, baseURL+"/api/v1/sync", nil,
 	)
 	require.Equal(http.StatusAccepted, status, body)
 
-	second := waitForRepoSynced(
-		t, database, "acme", "widget", first.LastSyncCompletedAt,
-	)
-	require.NotNil(second.LastSyncCompletedAt)
+	select {
+	case <-secondSync:
+	case <-time.After(2 * time.Second):
+		require.Fail("second explicit sync did not bypass cooldown")
+	}
 }
 
 func TestAddRepoE2ETriggersImmediateSyncDuringCooldown(t *testing.T) {
@@ -154,9 +168,7 @@ func startSyncCooldownE2EServer(
 	require := require.New(t)
 
 	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	cfgPath := filepath.Join(dir, "config.toml")
 	require.NoError(os.WriteFile(cfgPath, []byte(cfgContent), 0o644))
@@ -179,9 +191,9 @@ func startSyncCooldownE2EServer(
 	)
 	t.Cleanup(syncer.Stop)
 
-	srv := NewWithConfig(
+	srv := server.NewWithConfig(
 		database, syncer, nil, nil, cfg, cfgPath,
-		ServerOptions{},
+		server.ServerOptions{},
 	)
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

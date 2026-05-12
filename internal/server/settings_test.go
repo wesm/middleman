@@ -22,6 +22,7 @@ import (
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/platform"
 	"github.com/wesm/middleman/internal/platform/gitealike"
+	"github.com/wesm/middleman/internal/testutil/dbtest"
 	"github.com/wesm/middleman/internal/workspace/localruntime"
 )
 
@@ -48,11 +49,9 @@ func setupTestServerWithConfigContent(
 	t.Helper()
 
 	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 	cfgPath := filepath.Join(dir, "config.toml")
-	err = os.WriteFile(cfgPath, []byte(cfgContent), 0o644)
+	err := os.WriteFile(cfgPath, []byte(cfgContent), 0o644)
 	require.NoError(t, err)
 
 	cfg, err := config.Load(cfgPath)
@@ -83,11 +82,9 @@ func setupTestServerWithConfigProviders(
 	t.Helper()
 
 	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 	cfgPath := filepath.Join(dir, "config.toml")
-	err = os.WriteFile(cfgPath, []byte(cfgContent), 0o644)
+	err := os.WriteFile(cfgPath, []byte(cfgContent), 0o644)
 	require.NoError(t, err)
 
 	cfg, err := config.Load(cfgPath)
@@ -551,9 +548,7 @@ func TestHandleAddRepoTriggersImmediateSyncDuringCooldown(t *testing.T) {
 	require := require.New(t)
 
 	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	cfgPath := filepath.Join(dir, "config.toml")
 	require.NoError(os.WriteFile(cfgPath, []byte(`
@@ -676,9 +671,7 @@ func TestGetSettingsWithoutPersistence(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	cfg := &config.Config{
 		SyncInterval:   "5m",
@@ -1102,9 +1095,7 @@ func TestGetSettingsDoesNotCallGitHub(t *testing.T) {
 	// its startup call to ResolveConfiguredRepos, which would
 	// trip the failing mock during seeding.
 	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 	cfgPath := filepath.Join(dir, "config.toml")
 	require.NoError(os.WriteFile(cfgPath, []byte(`
 sync_interval = "5m"

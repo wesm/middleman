@@ -18,14 +18,12 @@ import (
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitclone"
 	"github.com/wesm/middleman/internal/gitenv"
+	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
 func openTestDB(t *testing.T) *db.DB {
 	t.Helper()
-	d, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { d.Close() })
-	return d
+	return dbtest.Open(t)
 }
 
 func seedRepo(

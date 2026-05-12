@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/wesm/middleman/internal/db"
+	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
 // TestSetupDiffRepoDoesNotLeakIntoHostGitDir guards against regression
@@ -41,9 +41,7 @@ func TestSetupDiffRepoDoesNotLeakIntoHostGitDir(t *testing.T) {
 	t.Setenv("GIT_WORK_TREE", host)
 
 	fixtureDir := t.TempDir()
-	database, err := db.Open(filepath.Join(fixtureDir, "test.db"))
-	r.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.OpenAt(t, filepath.Join(fixtureDir, "test.db"))
 
 	// Run the fixture. Ignore any error so the contamination check
 	// still runs even if the leak makes a subsequent git operation

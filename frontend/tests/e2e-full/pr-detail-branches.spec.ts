@@ -37,8 +37,10 @@ test.describe("PR detail branch info", () => {
 
     await headBtn.click();
 
-    await expect(headBtn).toHaveClass(/branch-name-btn--copied/);
-    await expect(headBtn).toHaveAttribute("title", "Copied!");
+    await expect.poll(async () => headBtn.evaluate((element) =>
+      element.classList.contains("branch-name-btn--copied") &&
+      element.getAttribute("title") === "Copied!"
+    )).toBe(true);
   });
 
   test("summarizes changed lines by category in the popover", async ({ page }) => {

@@ -1,7 +1,6 @@
 package ratelimit
 
 import (
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -9,14 +8,12 @@ import (
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wesm/middleman/internal/db"
+	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
 func openTestDB(t *testing.T) *db.DB {
 	t.Helper()
-	database, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, database.Close()) })
-	return database
+	return dbtest.Open(t)
 }
 
 func newGitHubRateTracker(d *db.DB, host string, apiType string) *RateTracker {

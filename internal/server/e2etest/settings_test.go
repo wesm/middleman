@@ -1,4 +1,4 @@
-package server
+package e2etest
 
 import (
 	"bytes"
@@ -13,6 +13,7 @@ import (
 	gh "github.com/google/go-github/v84/github"
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wesm/middleman/internal/apiclient/generated"
 	"github.com/wesm/middleman/internal/config"
 )
 
@@ -55,17 +56,18 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 	defer getResp.Body.Close()
 	require.Equal(http.StatusOK, getResp.StatusCode)
 
-	var settings settingsResponse
+	var settings generated.SettingsResponse
 	require.NoError(json.NewDecoder(getResp.Body).Decode(&settings))
-	require.Len(settings.Repos, 1)
-	assert.Equal("acme", settings.Repos[0].Owner)
+	require.NotNil(settings.Repos)
+	require.Len(*settings.Repos, 1)
+	assert.Equal("acme", (*settings.Repos)[0].Owner)
 	assert.Equal("threaded", settings.Activity.ViewMode)
 
 	invalidResp := doServerJSON(
 		t, ts.Client(), http.MethodPut,
 		ts.URL+"/api/v1/settings",
-		updateSettingsRequest{
-			Activity: &config.Activity{
+		generated.UpdateSettingsRequest{
+			Activity: &generated.Activity{
 				ViewMode:  "kanban",
 				TimeRange: "7d",
 			},
@@ -81,14 +83,14 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 	updateResp := doServerJSON(
 		t, ts.Client(), http.MethodPut,
 		ts.URL+"/api/v1/settings",
-		updateSettingsRequest{
-			Activity: &config.Activity{
+		generated.UpdateSettingsRequest{
+			Activity: &generated.Activity{
 				ViewMode:   "flat",
 				TimeRange:  "30d",
 				HideClosed: true,
 				HideBots:   true,
 			},
-			Terminal: &config.Terminal{
+			Terminal: &generated.Terminal{
 				FontFamily: "\"Iosevka Term\", monospace",
 			},
 		},
@@ -185,7 +187,7 @@ func TestRepoConfigAPIE2ERefreshGlobAndErrors(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, syncer := setupTestServerWithConfigContentAndSyncer(t, `
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -206,8 +208,8 @@ name = "widget-*"
 	)
 	defer refreshResp.Body.Close()
 	require.Equal(t, http.StatusOK, refreshResp.StatusCode)
-	assert.True(srv.syncer.IsTrackedRepo("acme", "widget-one"))
-	assert.False(srv.syncer.IsTrackedRepo("acme", "tooling"))
+	assert.True(syncer.IsTrackedRepo("acme", "widget-one"))
+	assert.False(syncer.IsTrackedRepo("acme", "tooling"))
 
 	nonGlob, _, _ := setupTestServerWithConfig(t)
 	nonGlobTS := httptest.NewServer(nonGlob)

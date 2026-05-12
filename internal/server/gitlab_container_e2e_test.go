@@ -22,6 +22,7 @@ import (
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/platform"
 	platformgitlab "github.com/wesm/middleman/internal/platform/gitlab"
+	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
 type gitLabContainerManifest struct {
@@ -129,10 +130,7 @@ func TestGitLabContainerE2E(t *testing.T) {
 	registry, err := platform.NewRegistry(client)
 	require.NoError(err)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 	repo := ghclient.RepoRef{
 		Platform:           platform.KindGitLab,
 		PlatformHost:       manifest.Host,

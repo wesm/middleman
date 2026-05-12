@@ -32,6 +32,8 @@ linters:
           msg: Do not add backend timezone loading for storage or API paths. Local timezone conversion belongs in the Svelte UI.
         - pattern: '^time\.FixedZone$'
           msg: Do not create backend timezone conversions outside tests.
+        - pattern: '^db\.Open$'
+          msg: Use internal/testutil/dbtest fixtures in tests instead of db.Open.
       analyze-types: true
   exclusions:
     generated: lax
@@ -44,6 +46,14 @@ linters:
       - linters:
           - errcheck
         path: _test\.go
+      - linters:
+          - forbidigo
+        path-except: _test\.go
+        text: Use internal/testutil/dbtest fixtures in tests instead of db.Open.
+      - linters:
+          - forbidigo
+        path: internal/db/.*_test\.go
+        text: Use internal/testutil/dbtest fixtures in tests instead of db.Open.
     paths:
       - third_party$
       - builtin$

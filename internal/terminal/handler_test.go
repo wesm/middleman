@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -12,15 +11,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wesm/middleman/internal/db"
+	"github.com/wesm/middleman/internal/testutil/dbtest"
 	"github.com/wesm/middleman/internal/workspace"
 )
 
 func openTestDB(t *testing.T) *db.DB {
 	t.Helper()
-	d, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { d.Close() })
-	return d
+	return dbtest.Open(t)
 }
 
 func seedRepo(

@@ -32,6 +32,34 @@ notice the regression:
 Regenerate OpenAPI and generated clients with `make api-generate` after Huma
 route or API type changes.
 
+## Race test runtime
+
+Use `make race-times` and CI's race timing artifact before guessing at slow
+packages. Keep `go test -race` fast by splitting large black-box flows into
+separate packages and leaving only unexported-internal coverage in the source
+package.
+
+Current split targets:
+
+- `internal/server/apitest`: generated-client HTTP API behavior;
+- `internal/server/workspacetest`: workspace, runtime, terminal, and tmux HTTP
+  flows;
+- `internal/github/syncertest`: exported syncer contracts;
+- `internal/db/projecttest`: DB behavior that can avoid core `internal/db`.
+
+Use migrated SQLite template fixtures for non-migration DB tests:
+`internal/testutil/dbtest.Open(t)` outside `internal/db`, and package-local
+`openTestDB(t)` inside `internal/db`. Keep migration, legacy repair, dirty
+migration, and schema-history tests behind `dbtest.OpenWithMigrationsAt(t, path)`
+or package-local `openDBWithMigrations(t)`.
+
+Do not use sleeps for synchronization. Prefer explicit events, callbacks,
+readiness channels, or immediate-check polling with a bounded ticker.
+`testing/synctest` is only for pure in-process goroutines and timers created
+inside the bubble; do not use it with HTTP servers, WebSockets, tmux, PTYs, git,
+shell commands, external-process filesystem polling, or nested `t.Run`,
+`t.Parallel`, or `t.Deadline`.
+
 ## Related context
 
 - [`context/provider-architecture.md`](./provider-architecture.md) documents the

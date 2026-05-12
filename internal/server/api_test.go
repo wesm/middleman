@@ -46,6 +46,7 @@ import (
 	"github.com/wesm/middleman/internal/platform/gitealike"
 	"github.com/wesm/middleman/internal/stacks"
 	"github.com/wesm/middleman/internal/testutil"
+	"github.com/wesm/middleman/internal/testutil/dbtest"
 	"github.com/wesm/middleman/internal/workspace"
 	"github.com/wesm/middleman/internal/workspace/localruntime"
 )
@@ -576,10 +577,7 @@ func setupTestServerWithRepos(
 ) (*Server, *db.DB) {
 	t.Helper()
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, repos, time.Minute, nil, nil)
 	// Drain any TriggerRun goroutines (fired by handlers like
@@ -686,10 +684,6 @@ func (e *staleReadyForReviewError) IsStaleState() bool { return true }
 
 type seedPROpt func(*db.MergeRequest)
 
-func withSeedPRLabels(labels []db.Label) seedPROpt {
-	return func(pr *db.MergeRequest) { pr.Labels = labels }
-}
-
 func withSeedPRHeadSHA(headSHA string) seedPROpt {
 	return func(pr *db.MergeRequest) { pr.PlatformHeadSHA = headSHA }
 }
@@ -745,11 +739,6 @@ func seedPR(t *testing.T, database *db.DB, owner, name string, number int, opts 
 	require.NoError(t, database.EnsureKanbanState(ctx, prID))
 
 	return prID
-}
-
-func seedPRWithLabels(t *testing.T, database *db.DB, owner, name string, number int, labels []db.Label) int64 {
-	t.Helper()
-	return seedPR(t, database, owner, name, number, withSeedPRLabels(labels))
 }
 
 func seedPRWithHeadSHA(t *testing.T, database *db.DB, owner, name string, number int, headSHA string) int64 {
@@ -1041,150 +1030,6 @@ func TestAPIListPulls(t *testing.T) {
 	assert.Equal("github", body[0].Repo.Provider)
 	assert.Equal("github.com", body[0].Repo.PlatformHost)
 	assert.Equal("acme/widget", body[0].Repo.RepoPath)
-}
-
-func TestAPIListPullsIncludesLabels(t *testing.T) {
-	require := require.New(t)
-	srv, database := setupTestServer(t)
-	description := "Needs a fix"
-	seedPRWithLabels(t, database, "acme", "widget", 1, []db.Label{{
-		Name:        "bug",
-		Description: description,
-		Color:       "d73a4a",
-		IsDefault:   true,
-	}})
-	client := setupTestClient(t, srv)
-
-	resp, err := client.HTTP.ListPullsWithResponse(t.Context(), nil)
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
-	require.NotNil(resp.JSON200)
-	require.Len(*resp.JSON200, 1)
-	require.NotNil((*resp.JSON200)[0].Labels)
-	require.Equal([]generated.Label{{
-		Name:        "bug",
-		Description: &description,
-		Color:       "d73a4a",
-		IsDefault:   true,
-	}}, *(*resp.JSON200)[0].Labels)
-}
-
-func TestAPIGetPull(t *testing.T) {
-	require := require.New(t)
-	srv, database := setupTestServer(t)
-	seedPRWithHeadSHA(t, database, "acme", "widget", 1, "abc123def456")
-	client := setupTestClient(t, srv)
-
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
-	require.NotNil(resp.JSON200)
-	require.NotNil(resp.JSON200.MergeRequest)
-	require.EqualValues(1, resp.JSON200.MergeRequest.Number)
-	require.Equal("acme", resp.JSON200.RepoOwner)
-	require.Equal("widget", resp.JSON200.RepoName)
-	require.Equal("abc123def456", resp.JSON200.PlatformHeadSha)
-}
-
-func TestAPIGetPullAcceptsMixedCaseRepoPath(t *testing.T) {
-	require := require.New(t)
-	srv, database := setupTestServer(t)
-	seedPR(t, database, "acme", "widget", 1)
-	client := setupTestClient(t, srv)
-
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
-		t.Context(), "gh", "Acme", "Widget", 1,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
-	require.NotNil(resp.JSON200)
-	require.Equal("acme", resp.JSON200.RepoOwner)
-	require.Equal("widget", resp.JSON200.RepoName)
-}
-
-func TestAPIListPullsAcceptsMixedCaseRepoFilter(t *testing.T) {
-	require := require.New(t)
-	srv, database := setupTestServer(t)
-	seedPR(t, database, "acme", "widget", 1)
-	client := setupTestClient(t, srv)
-
-	repo := "Acme/Widget"
-	resp, err := client.HTTP.ListPullsWithResponse(
-		t.Context(), &generated.ListPullsParams{Repo: &repo},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
-	require.NotNil(resp.JSON200)
-	require.Len(*resp.JSON200, 1)
-	require.Equal("acme", (*resp.JSON200)[0].RepoOwner)
-	require.Equal("widget", (*resp.JSON200)[0].RepoName)
-}
-
-func TestAPIListPullsAcceptsHostQualifiedRepoFilter(t *testing.T) {
-	require := require.New(t)
-	assert := Assert.New(t)
-
-	srv, database := setupTestServer(t)
-	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
-	seedPROnHost(t, database, "ghe.example.com", "acme", "widget", 2)
-	client := setupTestClient(t, srv)
-
-	repo := "ghe.example.com/acme/widget"
-	resp, err := client.HTTP.ListPullsWithResponse(
-		t.Context(), &generated.ListPullsParams{Repo: &repo},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
-	require.NotNil(resp.JSON200)
-	require.Len(*resp.JSON200, 1)
-	assert.Equal("ghe.example.com", (*resp.JSON200)[0].PlatformHost)
-	assert.Equal("acme", (*resp.JSON200)[0].RepoOwner)
-	assert.Equal("widget", (*resp.JSON200)[0].RepoName)
-	assert.EqualValues(2, (*resp.JSON200)[0].Number)
-}
-
-func TestAPIGetPullIncludesBranches(t *testing.T) {
-	require := require.New(t)
-	srv, database := setupTestServer(t)
-	seedPR(t, database, "acme", "widget", 1)
-	client := setupTestClient(t, srv)
-
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
-	require.NotNil(resp.JSON200)
-	mr := resp.JSON200.MergeRequest
-	require.NotNil(mr)
-	require.Equal("feature", mr.HeadBranch)
-	require.Equal("main", mr.BaseBranch)
-}
-
-func TestAPIGetPullIncludesLabels(t *testing.T) {
-	require := require.New(t)
-	srv, database := setupTestServer(t)
-	seedPRWithLabels(t, database, "acme", "widget", 1, []db.Label{{
-		Name:      "enhancement",
-		Color:     "a2eeef",
-		IsDefault: false,
-	}})
-	client := setupTestClient(t, srv)
-
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
-	require.NotNil(resp.JSON200)
-	require.NotNil(resp.JSON200.MergeRequest.Labels)
-	require.Equal([]generated.Label{{
-		Name:      "enhancement",
-		Color:     "a2eeef",
-		IsDefault: false,
-	}}, *resp.JSON200.MergeRequest.Labels)
 }
 
 func TestAPIGetPullIsDBOnly(t *testing.T) {
@@ -1815,10 +1660,7 @@ func TestAPIGetPullEmitsDiffWarningWhenSHAsMissing(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	// HasDiffSync gates the inferred warning, so the syncer must be
 	// constructed with a non-nil clone manager. The manager itself is
@@ -1862,10 +1704,7 @@ func TestAPIGetPullNoDiffWarningWhenSHAsPresent(t *testing.T) {
 	assert := Assert.New(t)
 	ctx := t.Context()
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
@@ -1914,10 +1753,7 @@ func TestAPIGetPullEmitsStaleDiffWarning(t *testing.T) {
 	assert := Assert.New(t)
 	ctx := t.Context()
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
@@ -1968,10 +1804,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnBaseDrift(t *testing.T) {
 	assert := Assert.New(t)
 	ctx := t.Context()
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
@@ -2025,10 +1858,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnMergedPR(t *testing.T) {
 	assert := Assert.New(t)
 	ctx := t.Context()
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
@@ -2081,10 +1911,7 @@ func TestAPIGetPullEmitsDiffWarningWhenSHAsMissingClosed(t *testing.T) {
 	assert := Assert.New(t)
 	ctx := t.Context()
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
@@ -2131,10 +1958,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnClosedPR(t *testing.T) {
 	assert := Assert.New(t)
 	ctx := t.Context()
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
@@ -2185,10 +2009,7 @@ func TestAPIGetPullNoDiffWarningOnMergedPRWithBaseDrift(t *testing.T) {
 	assert := Assert.New(t)
 	ctx := t.Context()
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
@@ -2243,10 +2064,7 @@ func TestAPISyncPRSanitizesDiffFailureWarning(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	// Create a clone base dir that cannot be used: 0o000 blocks every
 	// git command rooted under it, so syncMRDiff fails at the clone
@@ -2298,7 +2116,7 @@ func TestAPISyncPRSanitizesDiffFailureWarning(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
-	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(
@@ -2387,10 +2205,7 @@ func TestAPIGitLabConfiguredRepoSyncThroughProviderRegistry(t *testing.T) {
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	ref := platform.RepoRef{
 		Platform:           platform.KindGitLab,
@@ -2459,7 +2274,7 @@ func TestAPIGitLabConfiguredRepoSyncThroughProviderRegistry(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 	srv := NewWithConfig(
 		database, syncer, nil, nil, cfg,
-		filepath.Join(dir, "config.toml"), ServerOptions{},
+		filepath.Join(t.TempDir(), "config.toml"), ServerOptions{},
 	)
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
@@ -2503,10 +2318,7 @@ func TestGitLabSyncCoversRepositoryItemsEventsOverviewAndCI(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	publishedAt := now.Add(-72 * time.Hour)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 
 	ref := platform.RepoRef{
 		Platform:           platform.KindGitLab,
@@ -2737,10 +2549,7 @@ func TestProviderRefSyncEndpointsUseGitLabNestedRepoPath(t *testing.T) {
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 
 	ref := platform.RepoRef{
 		Platform:           platform.KindGitLab,
@@ -2960,10 +2769,7 @@ func TestProviderRefSyncEndpointsUseGitLabNestedRepoPath(t *testing.T) {
 func TestGitLabSyncUsesTagsForRepoOverviewWhenReleasesAreAbsent(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 
 	ref := platform.RepoRef{
 		Platform:           platform.KindGitLab,
@@ -3167,10 +2973,7 @@ func TestAPIListRepoSummariesIncludesSyncedReleaseTimeline(t *testing.T) {
 	assert := Assert.New(t)
 	ctx := t.Context()
 	dir := t.TempDir()
-
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 
 	remote := filepath.Join(dir, "remote.git")
 	work := filepath.Join(dir, "work")
@@ -3281,11 +3084,7 @@ func TestAPIListRepoSummariesUsesTagsWhenNoReleases(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 	ctx := t.Context()
-	dir := t.TempDir()
-
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 
 	tagName := "v0.5.0"
 	sha := "1234567890abcdef1234567890abcdef12345678"
@@ -3353,11 +3152,8 @@ func TestAPIListRepoSummariesClearsStaleOverviewWhenTagFallbackFails(t *testing.
 	require := require.New(t)
 	assert := Assert.New(t)
 	ctx := t.Context()
-	dir := t.TempDir()
 
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 
 	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "tagless"))
 	require.NoError(err)
@@ -3799,10 +3595,7 @@ func TestAPICreateIssueUsesPlatformHost(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	githubCalled := false
 	enterpriseCalled := false
@@ -3852,7 +3645,7 @@ func TestAPICreateIssueUsesPlatformHost(t *testing.T) {
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
-	_, err = database.UpsertRepo(context.Background(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	_, err := database.UpsertRepo(context.Background(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	enterpriseRepoID, err := database.UpsertRepo(context.Background(), db.GitHubRepoIdentity("ghe.example.com", "acme", "widgets"))
 	require.NoError(err)
@@ -4231,12 +4024,18 @@ func TestAPISyncStatus(t *testing.T) {
 
 func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 	require := require.New(t)
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
-	mock := &mockGH{}
+	syncReachedGitHub := make(chan struct{})
+	var syncReachedGitHubOnce sync.Once
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(
+			_ context.Context, _, _ string,
+		) ([]*gh.PullRequest, error) {
+			syncReachedGitHubOnce.Do(func() { close(syncReachedGitHub) })
+			return nil, nil
+		},
+	}
 	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, []ghclient.RepoRef{{
 		Owner:        "acme",
 		Name:         "widget",
@@ -4259,33 +4058,34 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 
 	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
 
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		repos, err := database.ListRepos(t.Context())
-		require.NoError(err)
-		if len(repos) == 1 && repos[0].Owner == "acme" && repos[0].Name == "widget" {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
+	select {
+	case <-syncReachedGitHub:
+	case <-time.After(2 * time.Second):
+		require.Fail("expected sync to reach GitHub despite request context cancellation")
 	}
 
-	Assert.Fail(t, "expected sync to complete despite request context cancellation")
+	repos, err := database.ListRepos(t.Context())
+	require.NoError(err)
+	require.Len(repos, 1)
+	Assert.Equal(t, "acme", repos[0].Owner)
+	Assert.Equal(t, "widget", repos[0].Name)
 }
 
 func TestAPITriggerSyncBypassesNextSyncAfter(t *testing.T) {
 	require := require.New(t)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	var listCalls atomic.Int32
+	secondSync := make(chan struct{})
+	var secondSyncOnce sync.Once
 	mock := &mockGH{
 		listOpenPullRequestsFn: func(
 			_ context.Context, _, _ string,
 		) ([]*gh.PullRequest, error) {
-			listCalls.Add(1)
+			if listCalls.Add(1) == 2 {
+				secondSyncOnce.Do(func() { close(secondSync) })
+			}
 			return nil, nil
 		},
 	}
@@ -4323,17 +4123,16 @@ func TestAPITriggerSyncBypassesNextSyncAfter(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusAccepted, resp.StatusCode())
 
-	require.Eventually(func() bool {
-		return listCalls.Load() == 2
-	}, 2*time.Second, 10*time.Millisecond)
+	select {
+	case <-secondSync:
+	case <-time.After(2 * time.Second):
+		require.Fail("expected explicit sync request to bypass background cooldown")
+	}
 }
 
 func TestAPIReadyForReview(t *testing.T) {
 	require := require.New(t)
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	mock := &mockGH{
 		markReadyForReviewFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
@@ -5352,47 +5151,6 @@ func TestAPISyncIssueNilUpdatedAtFallsBackToCreatedAt(t *testing.T) {
 	assert.Equal(createdAt, getResp.JSON200.Issue.LastActivityAt.UTC())
 }
 
-func TestAPIListPullsStateFilter(t *testing.T) {
-	require := require.New(t)
-	srv, database := setupTestServer(t)
-	ctx := t.Context()
-
-	seedPR(t, database, "acme", "widget", 1) // open
-	seedPR(t, database, "acme", "widget", 2) // will close
-	seedPR(t, database, "acme", "widget", 3) // will merge
-
-	repo, _ := database.GetRepoByOwnerName(ctx, "acme", "widget")
-	now := time.Now()
-	_ = database.UpdateMRState(ctx, repo.ID, 2, "closed", nil, &now)
-	_ = database.UpdateMRState(ctx, repo.ID, 3, "merged", &now, &now)
-
-	client := setupTestClient(t, srv)
-
-	// Default (open)
-	resp, err := client.HTTP.ListPullsWithResponse(ctx, nil)
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
-	require.Len(*resp.JSON200, 1)
-
-	// Closed (includes merged)
-	state := "closed"
-	resp, err = client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsParams{State: &state})
-	require.NoError(err)
-	require.Len(*resp.JSON200, 2)
-
-	// All
-	state = "all"
-	resp, err = client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsParams{State: &state})
-	require.NoError(err)
-	require.Len(*resp.JSON200, 3)
-
-	// Invalid
-	state = "bogus"
-	resp, err = client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsParams{State: &state})
-	require.NoError(err)
-	require.Equal(http.StatusBadRequest, resp.StatusCode())
-}
-
 func TestAPIListPullsSearchByNumber(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -5519,10 +5277,7 @@ func TestAPIListPullsReportsBackfilledMergedPRFromMergedAt(t *testing.T) {
 		},
 	}
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
@@ -5575,34 +5330,6 @@ func TestAPIListPullsCasefoldsRepoNames(t *testing.T) {
 	assert.Equal("foo", (*resp.JSON200)[0].RepoName)
 }
 
-func TestAPIListIssuesStateFilter(t *testing.T) {
-	require := require.New(t)
-	srv, database := setupTestServer(t)
-	ctx := t.Context()
-
-	seedIssue(t, database, "acme", "widget", 1, "open")
-	seedIssue(t, database, "acme", "widget", 2, "closed")
-
-	client := setupTestClient(t, srv)
-
-	// Default (open)
-	resp, err := client.HTTP.ListIssuesWithResponse(ctx, nil)
-	require.NoError(err)
-	require.Len(*resp.JSON200, 1)
-
-	// Closed
-	state := "closed"
-	resp, err = client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesParams{State: &state})
-	require.NoError(err)
-	require.Len(*resp.JSON200, 1)
-
-	// All
-	state = "all"
-	resp, err = client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesParams{State: &state})
-	require.NoError(err)
-	require.Len(*resp.JSON200, 2)
-}
-
 func TestAPIListIssuesIncludesLabels(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -5624,33 +5351,6 @@ func TestAPIListIssuesIncludesLabels(t *testing.T) {
 		Color:     "fbca04",
 		IsDefault: false,
 	}}, *(*resp.JSON200)[0].Labels)
-}
-
-func TestAPIGetIssueIncludesLabels(t *testing.T) {
-	require := require.New(t)
-	srv, database := setupTestServer(t)
-	description := "Customer reported"
-	seedIssueWithLabels(t, database, "acme", "widget", 5, "open", []db.Label{{
-		Name:        "bug",
-		Description: description,
-		Color:       "d73a4a",
-		IsDefault:   true,
-	}})
-	client := setupTestClient(t, srv)
-
-	resp, err := client.HTTP.GetIssuesByProviderByOwnerByNameByNumberWithResponse(
-		t.Context(), "gh", "acme", "widget", 5,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
-	require.NotNil(resp.JSON200)
-	require.NotNil(resp.JSON200.Issue.Labels)
-	require.Equal([]generated.Label{{
-		Name:        "bug",
-		Description: &description,
-		Color:       "d73a4a",
-		IsDefault:   true,
-	}}, *resp.JSON200.Issue.Labels)
 }
 
 func TestAPIGetIssueAcceptsMixedCaseRepoPath(t *testing.T) {
@@ -5714,11 +5414,7 @@ func TestAPIGetIssueUsesPlatformHostQuery(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 
-	database, err := db.Open(
-		filepath.Join(t.TempDir(), "test.db"),
-	)
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	seedIssueOnHost(
 		t, database,
@@ -5781,11 +5477,7 @@ func TestAPISyncIssueUsesPlatformHostQuery(t *testing.T) {
 	assert := Assert.New(t)
 	ctx := context.Background()
 
-	database, err := db.Open(
-		filepath.Join(t.TempDir(), "test.db"),
-	)
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	seedIssueOnHost(
 		t, database,
@@ -5910,11 +5602,7 @@ func TestAPISetIssueStateUsesPlatformHostBody(t *testing.T) {
 	assert := Assert.New(t)
 	ctx := context.Background()
 
-	database, err := db.Open(
-		filepath.Join(t.TempDir(), "test.db"),
-	)
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	seedIssueOnHost(
 		t, database,
@@ -6411,10 +6099,7 @@ func TestE2EPRDetailRefreshesEditedCommentBody(t *testing.T) {
 		return mockComments, nil
 	}
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
@@ -6544,10 +6229,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
 		return mockComments, nil
 	}
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
@@ -6698,10 +6380,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenAnotherPRChanges(t *testing.T) {
 		},
 	}
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
@@ -6810,10 +6489,7 @@ func TestE2EIssueDetailRefreshesEditedCommentBody(t *testing.T) {
 		return mockComments, nil
 	}
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
@@ -6928,10 +6604,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenIssueListIsUnchanged(t *testing.
 		return mockComments, nil
 	}
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
@@ -7073,10 +6746,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenAnotherIssueChanges(t *testing.T
 		},
 	}
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
@@ -7177,10 +6847,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 		},
 	}
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
@@ -7276,10 +6943,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 		},
 	}
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
@@ -7391,10 +7055,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 		},
 	}
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
@@ -8651,10 +8312,7 @@ func TestAPIGitealikeReadSyncPersistsThroughServer(t *testing.T) {
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry,
@@ -8785,10 +8443,7 @@ func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry,
@@ -9062,10 +8717,7 @@ func TestAPIGiteaActionsSyncPersistsThroughServer(t *testing.T) {
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry,
@@ -9180,10 +8832,7 @@ func TestAPIGitealikeMergeConflictReturnsConflict(t *testing.T) {
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry,
@@ -9593,10 +9242,7 @@ func setupGitLabCapabilityServer(t *testing.T) (*Server, *db.DB) {
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 
 	ref := platform.RepoRef{
 		Platform:           platform.KindGitLab,
@@ -9738,10 +9384,7 @@ func TestAPIGitealikeLockedPRPersistsThroughServer(t *testing.T) {
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry,
@@ -9842,10 +9485,7 @@ func TestAPIGitealikeDraftPRFieldsPersistThroughServer(t *testing.T) {
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry,
@@ -10180,9 +9820,7 @@ func TestAPIGetFilesAndDiffMarkGeneratedFilesE2E(t *testing.T) {
 	ctx := t.Context()
 
 	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	bareDir := filepath.Join(dir, "clones")
 	bare := filepath.Join(bareDir, "github.com", "acme", "widget.git")
@@ -10292,10 +9930,7 @@ func TestSetActiveWorktreeKey(t *testing.T) {
 func TestAPIRateLimits(t *testing.T) {
 	assert := Assert.New(t)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	rt := ghclient.NewRateTracker(database, "github.com", "rest")
 
@@ -10343,10 +9978,7 @@ func TestAPISyncPRIncrementsRequestCount(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	rt := ghclient.NewRateTracker(database, "github.com", "rest")
 
@@ -10404,10 +10036,7 @@ func TestAPISyncPRIncrementsRequestCount(t *testing.T) {
 func TestAPIRateLimitsWithBudget(t *testing.T) {
 	assert := Assert.New(t)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	rt := ghclient.NewRateTracker(database, "github.com", "rest")
 
@@ -10451,10 +10080,7 @@ func TestAPIRateLimitsWithBudget(t *testing.T) {
 func TestAPIRateLimitsResetExpiredBudgetWindow(t *testing.T) {
 	assert := Assert.New(t)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	rt := ghclient.NewRateTracker(database, "github.com", "rest")
 	budget := ghclient.NewSyncBudget(500)
@@ -10503,10 +10129,7 @@ func TestAPIRateLimitsResetExpiredBudgetWindow(t *testing.T) {
 func TestAPIRateLimitsWithGQL(t *testing.T) {
 	assert := Assert.New(t)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	restRT := ghclient.NewRateTracker(database, "github.com", "rest")
 	gqlRT := ghclient.NewRateTracker(database, "github.com", "graphql")
@@ -10561,10 +10184,7 @@ func TestAPIRateLimitsWithGQL(t *testing.T) {
 func TestAPIRateLimitsGQLDefaultsUnknown(t *testing.T) {
 	assert := Assert.New(t)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	rt := ghclient.NewRateTracker(database, "github.com", "rest")
 	syncer := ghclient.NewSyncer(
@@ -10603,10 +10223,7 @@ func TestAPIRateLimitsGQLDefaultsUnknown(t *testing.T) {
 func TestAPIRateLimitsMultiHostMixed(t *testing.T) {
 	assert := Assert.New(t)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	// Two hosts: github.com has GQL data, ghe.example.com does not.
 	ghRT := ghclient.NewRateTracker(database, "github.com", "rest")
@@ -10673,10 +10290,7 @@ func TestAPIRateLimitsMultiHostMixed(t *testing.T) {
 func TestAPIRateLimitsScopesSameHostByProvider(t *testing.T) {
 	assert := Assert.New(t)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	host := "code.example.com"
 	ghRT := ghclient.NewPlatformRateTracker(database, "github", host, "rest")
@@ -10871,8 +10485,7 @@ func TestAPIActivityStartupRepairsLegacyTimestampStorage(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.db")
 
-	database, err := db.Open(path)
-	require.NoError(err)
+	database := dbtest.OpenAt(t, path)
 
 	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
@@ -11027,9 +10640,7 @@ func TestAPIActivityStartupRepairsLegacyTimestampStorage(t *testing.T) {
 	require.NoError(err)
 	require.NoError(raw.Close())
 
-	reopened, err := db.Open(path)
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(reopened.Close()) })
+	reopened := dbtest.OpenWithMigrationsAt(t, path)
 
 	srv := setupTestServerWithDatabase(t, reopened, defaultTestRepos)
 	client := setupTestClient(t, srv)
@@ -11109,9 +10720,7 @@ func setupTestServerWithClonesAndServer(t *testing.T) (
 	t.Helper()
 
 	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	database = dbtest.Open(t)
 
 	bareDir := filepath.Join(dir, "clones")
 	require.NoError(t, os.MkdirAll(bareDir, 0o755))
@@ -11231,9 +10840,7 @@ func TestAPIGetFilePreview_ReturnsDeletedFileContent(t *testing.T) {
 	ctx := t.Context()
 
 	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	seedPR(t, database, "acme", "widgets", 1)
 	diffRepo, err := testutil.SetupDiffRepo(ctx, dir, database)
@@ -11334,9 +10941,7 @@ func TestAPIGetDiff_RootCommit(t *testing.T) {
 	require := require.New(t)
 
 	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	bareDir := filepath.Join(dir, "clones")
 	require.NoError(os.MkdirAll(bareDir, 0o755))
@@ -11995,9 +11600,7 @@ func setupWorkspaceServerFixtureWithHost(
 	}
 
 	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	remoteDir := filepath.Join(dir, "remote")
 	require.NoError(t, os.MkdirAll(remoteDir, 0o755))
@@ -12135,25 +11738,45 @@ func waitForWorkspaceReady(
 	wsID string,
 ) *generated.WorkspaceResponse {
 	t.Helper()
+	return waitForWorkspaceStatus(t, ctx, client, wsID, "ready")
+}
 
-	var ready *generated.WorkspaceResponse
-	for range 50 {
-		time.Sleep(100 * time.Millisecond)
+func waitForWorkspaceStatus(
+	t *testing.T,
+	ctx context.Context,
+	client *apiclient.Client,
+	wsID string,
+	status string,
+) *generated.WorkspaceResponse {
+	t.Helper()
+
+	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
 		getResp, err := client.HTTP.GetWorkspacesByIdWithResponse(
 			ctx, wsID,
 		)
 		require.NoError(t, err)
-		if getResp.StatusCode() != http.StatusOK || getResp.JSON200 == nil {
-			continue
+		if getResp.StatusCode() == http.StatusOK &&
+			getResp.JSON200 != nil &&
+			getResp.JSON200.Status == status {
+			return getResp.JSON200
 		}
-		if getResp.JSON200.Status == "ready" {
-			ready = getResp.JSON200
-			break
+
+		select {
+		case <-waitCtx.Done():
+			require.NoError(
+				t, waitCtx.Err(),
+				"workspace %s never reached %q status",
+				wsID, status,
+			)
+		case <-ticker.C:
 		}
 	}
-
-	require.NotNil(t, ready, "workspace never became ready: %s", wsID)
-	return ready
 }
 
 func TestWorkspaceServerFixtureCleansUpTmuxSessions(t *testing.T) {
@@ -12217,9 +11840,7 @@ func TestCleanupWorkspaceServerFixtureArtifactsKeepsDeletingAfterError(
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 	t.Setenv("TMUX_RECORD", record)
 
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	manager := workspace.NewManager(database, filepath.Join(dir, "worktrees"))
 	manager.SetTmuxCommand([]string{script})
@@ -12238,7 +11859,6 @@ func TestCleanupWorkspaceServerFixtureArtifactsKeepsDeletingAfterError(
 		TmuxSession:     "middleman-succeeds",
 		Status:          "ready",
 	}))
-	time.Sleep(time.Millisecond)
 	require.NoError(database.InsertWorkspace(ctx, &workspace.Workspace{
 		ID:              "ws-fails",
 		PlatformHost:    "github.com",
@@ -12252,6 +11872,14 @@ func TestCleanupWorkspaceServerFixtureArtifactsKeepsDeletingAfterError(
 		TmuxSession:     "middleman-fails",
 		Status:          "ready",
 	}))
+	_, err := database.WriteDB().ExecContext(ctx, `
+		UPDATE middleman_workspaces
+		SET created_at = CASE id
+			WHEN 'ws-succeeds' THEN datetime('now')
+			WHEN 'ws-fails' THEN datetime('now', '+1 second')
+		END
+		WHERE id IN ('ws-succeeds', 'ws-fails')`)
+	require.NoError(err)
 
 	err = cleanupWorkspaceServerFixtureArtifactsWithContext(ctx, srv, database)
 	require.Error(err)
@@ -12269,64 +11897,6 @@ func TestCleanupWorkspaceServerFixtureArtifactsKeepsDeletingAfterError(
 		killedSessions["middleman-succeeds"],
 		"cleanup stopped before later workspace tmux session",
 	)
-}
-
-func TestWorkspaceRuntimeTargetsE2E(t *testing.T) {
-	require := require.New(t)
-	assert := Assert.New(t)
-
-	client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, nil)
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, client)
-
-	resp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.Id)
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
-	require.NotNil(resp.JSON200)
-	require.NotNil(resp.JSON200.LaunchTargets)
-	require.NotNil(resp.JSON200.Sessions)
-	assert.NotEmpty(*resp.JSON200.LaunchTargets)
-	assert.Empty(*resp.JSON200.Sessions)
-	assert.Nil(resp.JSON200.ShellSession)
-	assertWorkspaceRuntimeTarget(
-		t, *resp.JSON200.LaunchTargets, "plain_shell",
-	)
-	assertWorkspaceRuntimeTarget(t, *resp.JSON200.LaunchTargets, "tmux")
-}
-
-func TestWorkspaceRuntimeTargetsUseConfiguredTmuxCommandE2E(t *testing.T) {
-	require := require.New(t)
-	assert := Assert.New(t)
-
-	dir := t.TempDir()
-	tmuxPath := filepath.Join(dir, "tmux-wrapper")
-	require.NoError(os.WriteFile(
-		tmuxPath,
-		[]byte("#!/bin/sh\nexit 0\n"),
-		0o755,
-	))
-	cfg := &config.Config{Tmux: config.Tmux{
-		Command: []string{tmuxPath, "--scope", "tmux"},
-	}}
-	client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, client)
-
-	resp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.Id)
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
-	require.NotNil(resp.JSON200)
-	require.NotNil(resp.JSON200.LaunchTargets)
-
-	var tmux generated.LaunchTarget
-	for _, target := range *resp.JSON200.LaunchTargets {
-		if target.Key == "tmux" {
-			tmux = target
-			break
-		}
-	}
-	assert.Equal([]string{tmuxPath, "--scope", "tmux"}, *tmux.Command)
-	assert.True(tmux.Available)
 }
 
 func TestWorkspaceRuntimeTargetsRefreshAfterSettingsUpdateE2E(t *testing.T) {
@@ -12393,61 +11963,6 @@ func TestWorkspaceRuntimeTargetsRefreshAfterSettingsUpdateE2E(t *testing.T) {
 	assert.True(codex.Available)
 	require.NotNil(codex.Command)
 	assert.Equal([]string{agentPath, "--full-auto"}, *codex.Command)
-}
-
-func TestWorkspaceRuntimeLaunchUnavailableTargetE2E(t *testing.T) {
-	disabled := false
-	cfg := &config.Config{Agents: []config.Agent{{
-		Key:     "disabled",
-		Label:   "Disabled",
-		Enabled: &disabled,
-	}}}
-	client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, client)
-
-	resp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "disabled",
-		},
-	)
-
-	require.NoError(t, err)
-	require.Equal(t, http.StatusBadRequest, resp.StatusCode())
-	require.Contains(t, string(resp.Body), "not available")
-}
-
-func TestWorkspaceRuntimeLaunchPlainShellUsesShellSessionE2E(t *testing.T) {
-	require := require.New(t)
-	assert := Assert.New(t)
-
-	client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, nil)
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, client)
-
-	resp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
-		ctx, ws.Id,
-		generated.LaunchWorkspaceRuntimeSessionInputBody{
-			TargetKey: "plain_shell",
-		},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
-	require.NotNil(resp.JSON200)
-	shell := resp.JSON200
-	assert.Equal("plain_shell", shell.TargetKey)
-	assert.Equal(string(localruntime.LaunchTargetPlainShell), shell.Kind)
-	assert.Equal(string(localruntime.SessionStatusRunning), shell.Status)
-
-	getResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.Id)
-	require.NoError(err)
-	require.Equal(http.StatusOK, getResp.StatusCode())
-	require.NotNil(getResp.JSON200)
-	require.NotNil(getResp.JSON200.ShellSession)
-	require.NotNil(getResp.JSON200.Sessions)
-	assert.Equal(shell.Key, getResp.JSON200.ShellSession.Key)
-	assert.Empty(*getResp.JSON200.Sessions)
 }
 
 func TestWorkspaceRuntimeLaunchSingletonAndStopE2E(t *testing.T) {
@@ -12644,9 +12159,7 @@ esac
 exit 0
 `), 0o755))
 
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 	seedPR(t, database, "acme", "widget", 1)
 	worktreeDir := filepath.Join(dir, "worktrees")
 	cfg := &config.Config{Agents: []config.Agent{{
@@ -12859,9 +12372,7 @@ exit 0
 `), 0o755))
 	t.Setenv("TMUX_RECORD", record)
 
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 	seedPR(t, database, "acme", "widget", 1)
 
 	worktreeDir := filepath.Join(dir, "worktrees")
@@ -12945,9 +12456,7 @@ exit 0
 `), 0o755))
 	t.Setenv("TMUX_RECORD", record)
 
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 	seedPR(t, database, "acme", "widget", 1)
 
 	worktreeDir := filepath.Join(dir, "worktrees")
@@ -14678,10 +14187,13 @@ func TestWorkspaceRuntimeSessionTerminalTmuxBackedWebSocketE2E(
 	dir := t.TempDir()
 	agentPath := filepath.Join(dir, "size-agent")
 	require.NoError(os.WriteFile(agentPath, []byte(`#!/bin/sh
-IFS= read -r line
-set -- $(stty size 2>/dev/null || printf '0 0')
-printf 'size:%s:%s:%s\n' "$1" "$2" "$line"
-sleep 1
+while IFS= read -r line; do
+	set -- $(stty size 2>/dev/null || printf '0 0')
+	printf 'size:%s:%s:%s\n' "$1" "$2" "$line"
+	if [ "$1:$2:$line" = "40:177:size" ]; then
+		exit 0
+	fi
+done
 `), 0o755))
 	cfg := &config.Config{
 		Agents: []config.Agent{{
@@ -14723,9 +14235,18 @@ sleep 1
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
-	require.NoError(conn.Write(
-		ctx, websocket.MessageBinary, []byte("size\n"),
-	))
+	requestSize := func() {
+		t.Helper()
+		resize, err := json.Marshal(map[string]any{
+			"type": "resize",
+			"cols": 177,
+			"rows": 41,
+		})
+		require.NoError(err)
+		require.NoError(conn.Write(ctx, websocket.MessageText, resize))
+		require.NoError(conn.Write(ctx, websocket.MessageBinary, []byte("size\n")))
+	}
+	requestSize()
 	readCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	var got strings.Builder
@@ -14743,6 +14264,9 @@ sleep 1
 		// preserving the requested column count.
 		if strings.Contains(got.String(), "size:40:177:size") {
 			return
+		}
+		if strings.Contains(got.String(), "size:") {
+			requestSize()
 		}
 	}
 	require.Contains(got.String(), "size:40:177:size")
@@ -14768,21 +14292,6 @@ func createReadyWorkspace(
 	require.Equal(t, http.StatusAccepted, createResp.StatusCode())
 	require.NotNil(t, createResp.JSON202)
 	return waitForWorkspaceReady(t, ctx, client, createResp.JSON202.Id)
-}
-
-func assertWorkspaceRuntimeTarget(
-	t *testing.T,
-	targets []generated.LaunchTarget,
-	key string,
-) {
-	t.Helper()
-
-	for _, target := range targets {
-		if target.Key == key {
-			return
-		}
-	}
-	require.Failf(t, "runtime target not found", "key %q", key)
 }
 
 func serverRuntimeHelperCommand(mode string) []string {
@@ -16047,11 +15556,7 @@ func TestWorkspacePRDetailPlatformHost(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 
-	database, err := db.Open(
-		filepath.Join(t.TempDir(), "test.db"),
-	)
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	// Seed same owner/name on different hosts to test ambiguity.
 	seedPROnHost(
@@ -16173,24 +15678,8 @@ func TestWorkspaceDeleteDirty(t *testing.T) {
 	require.NotNil(createResp.JSON202)
 	wsID := createResp.JSON202.Id
 
-	// Poll until workspace is ready.
-	var wsPath string
-	for range 50 {
-		time.Sleep(100 * time.Millisecond)
-		getResp, gErr := client.HTTP.GetWorkspacesByIdWithResponse(
-			ctx, wsID,
-		)
-		require.NoError(gErr)
-		if getResp.StatusCode() != http.StatusOK {
-			continue
-		}
-		if getResp.JSON200 != nil &&
-			getResp.JSON200.Status == "ready" {
-			wsPath = getResp.JSON200.WorktreePath
-			break
-		}
-	}
-	require.NotEmpty(wsPath, "workspace never became ready")
+	ready := waitForWorkspaceReady(t, ctx, client, wsID)
+	wsPath := ready.WorktreePath
 
 	// Write a dirty file into the worktree.
 	require.NoError(os.WriteFile(
@@ -16237,18 +15726,8 @@ func TestWorkspaceDeleteDirty(t *testing.T) {
 	require.Equal(http.StatusAccepted, create2.StatusCode())
 	ws2ID := create2.JSON202.Id
 
-	// Poll until ready.
-	var ws2Path string
-	for range 50 {
-		time.Sleep(100 * time.Millisecond)
-		g, gErr := client.HTTP.GetWorkspacesByIdWithResponse(ctx, ws2ID)
-		require.NoError(gErr)
-		if g.JSON200 != nil && g.JSON200.Status == "ready" {
-			ws2Path = g.JSON200.WorktreePath
-			break
-		}
-	}
-	require.NotEmpty(ws2Path, "workspace 2 never became ready")
+	ready2 := waitForWorkspaceReady(t, ctx, client, ws2ID)
+	ws2Path := ready2.WorktreePath
 
 	// Nuke the worktree directory to simulate corruption.
 	require.NoError(os.RemoveAll(ws2Path))

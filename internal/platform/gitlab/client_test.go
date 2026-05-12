@@ -7,16 +7,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/platform"
 	"github.com/wesm/middleman/internal/ratelimit"
+	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
 func TestClientLooksUpProjectByRawPathAndUsesNumericIDAfterLookup(t *testing.T) {
@@ -69,10 +68,7 @@ func TestClientLooksUpProjectByRawPathAndUsesNumericIDAfterLookup(t *testing.T) 
 func TestClientRecordsRateLimitRequests(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 
 	resetAt := time.Now().Add(30 * time.Minute).Unix()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -90,7 +86,7 @@ func TestClientRecordsRateLimitRequests(t *testing.T) {
 
 	rt := ratelimit.NewPlatformRateTracker(database, "gitlab", "gitlab.example.com", "rest")
 	client := newTestClient(t, server.URL, WithRateTracker(rt))
-	_, err = client.GetRepository(context.Background(), platform.RepoRef{
+	_, err := client.GetRepository(context.Background(), platform.RepoRef{
 		Platform: platform.KindGitLab,
 		Host:     "gitlab.example.com",
 		RepoPath: "group/project",
