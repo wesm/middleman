@@ -1,13 +1,24 @@
-package db
+package projecttest
 
 import (
 	"context"
 	"database/sql"
+	"path/filepath"
 	"testing"
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/wesm/middleman/internal/db"
 )
+
+func openTestDB(t *testing.T) *db.DB {
+	t.Helper()
+	database, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, database.Close()) })
+	return database
+}
 
 func TestCreateProjectWithoutPlatformIdentity(t *testing.T) {
 	assert := Assert.New(t)
@@ -15,7 +26,7 @@ func TestCreateProjectWithoutPlatformIdentity(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 
-	project, err := d.CreateProject(ctx, CreateProjectInput{
+	project, err := d.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "myrepo",
 		LocalPath:   "/tmp/myrepo",
 	})
@@ -41,10 +52,10 @@ func TestCreateProjectLinkedToRepo(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 
-	repoID, err := d.UpsertRepo(ctx, GitHubRepoIdentity("github.com", "wesm", "examplerepo"))
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "wesm", "examplerepo"))
 	require.NoError(err)
 
-	project, err := d.CreateProject(ctx, CreateProjectInput{
+	project, err := d.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName:   "examplerepo",
 		LocalPath:     "/Users/example/code/examplerepo",
 		RepoID:        sql.NullInt64{Int64: repoID, Valid: true},
@@ -71,10 +82,10 @@ func TestCreateProjectFKSetNullOnRepoDelete(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 
-	repoID, err := d.UpsertRepo(ctx, GitHubRepoIdentity("github.com", "wesm", "examplerepo"))
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "wesm", "examplerepo"))
 	require.NoError(err)
 
-	project, err := d.CreateProject(ctx, CreateProjectInput{
+	project, err := d.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "examplerepo",
 		LocalPath:   "/tmp/examplerepo",
 		RepoID:      sql.NullInt64{Int64: repoID, Valid: true},
@@ -104,14 +115,14 @@ func TestCreateProjectRejectsBlankRequiredFields(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 
-	_, err := d.CreateProject(ctx, CreateProjectInput{
+	_, err := d.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "",
 		LocalPath:   "/tmp/x",
 	})
 	require.Error(err)
 	assert.Contains(err.Error(), "display_name")
 
-	_, err = d.CreateProject(ctx, CreateProjectInput{
+	_, err = d.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "ok",
 		LocalPath:   "",
 	})
@@ -125,18 +136,18 @@ func TestCreateProjectDuplicateLocalPath(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 
-	_, err := d.CreateProject(ctx, CreateProjectInput{
+	_, err := d.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "first",
 		LocalPath:   "/tmp/repo",
 	})
 	require.NoError(err)
 
-	_, err = d.CreateProject(ctx, CreateProjectInput{
+	_, err = d.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "second",
 		LocalPath:   "/tmp/repo",
 	})
 	require.Error(err)
-	assert.ErrorIs(err, ErrProjectPathTaken)
+	assert.ErrorIs(err, db.ErrProjectPathTaken)
 }
 
 func TestGetProjectByIDNotFound(t *testing.T) {
@@ -147,7 +158,7 @@ func TestGetProjectByIDNotFound(t *testing.T) {
 
 	_, err := d.GetProjectByID(ctx, "prj_doesnotexist")
 	require.Error(err)
-	assert.ErrorIs(err, ErrProjectNotFound)
+	assert.ErrorIs(err, db.ErrProjectNotFound)
 }
 
 func TestGetProjectByLocalPath(t *testing.T) {
@@ -156,7 +167,7 @@ func TestGetProjectByLocalPath(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 
-	created, err := d.CreateProject(ctx, CreateProjectInput{
+	created, err := d.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "myrepo",
 		LocalPath:   "/tmp/myrepo",
 	})
@@ -167,7 +178,7 @@ func TestGetProjectByLocalPath(t *testing.T) {
 	assert.Equal(created.ID, found.ID)
 
 	_, err = d.GetProjectByLocalPath(ctx, "/tmp/nope")
-	assert.ErrorIs(err, ErrProjectNotFound)
+	assert.ErrorIs(err, db.ErrProjectNotFound)
 }
 
 func TestListProjectsOrdersByDisplayName(t *testing.T) {
@@ -176,7 +187,7 @@ func TestListProjectsOrdersByDisplayName(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 
-	for _, p := range []CreateProjectInput{
+	for _, p := range []db.CreateProjectInput{
 		{DisplayName: "Zeta", LocalPath: "/tmp/zeta"},
 		{DisplayName: "alpha", LocalPath: "/tmp/alpha"},
 		{DisplayName: "Mu", LocalPath: "/tmp/mu"},
@@ -199,13 +210,13 @@ func TestCreateProjectWorktreeRoundTrip(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 
-	project, err := d.CreateProject(ctx, CreateProjectInput{
+	project, err := d.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "myrepo",
 		LocalPath:   "/tmp/myrepo",
 	})
 	require.NoError(err)
 
-	worktree, err := d.CreateProjectWorktree(ctx, CreateProjectWorktreeInput{
+	worktree, err := d.CreateProjectWorktree(ctx, db.CreateProjectWorktreeInput{
 		ProjectID: project.ID,
 		Branch:    "feature-x",
 		Path:      "/tmp/myrepo-worktrees/feature-x",
@@ -226,13 +237,13 @@ func TestCreateProjectWorktreeRejectsUnknownProject(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 
-	_, err := d.CreateProjectWorktree(ctx, CreateProjectWorktreeInput{
+	_, err := d.CreateProjectWorktree(ctx, db.CreateProjectWorktreeInput{
 		ProjectID: "prj_doesnotexist",
 		Branch:    "feature-x",
 		Path:      "/tmp/x",
 	})
 	require.Error(err)
-	assert.ErrorIs(err, ErrProjectNotFound)
+	assert.ErrorIs(err, db.ErrProjectNotFound)
 }
 
 func TestCreateProjectWorktreeRejectsDuplicatePath(t *testing.T) {
@@ -241,26 +252,26 @@ func TestCreateProjectWorktreeRejectsDuplicatePath(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 
-	project, err := d.CreateProject(ctx, CreateProjectInput{
+	project, err := d.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "myrepo",
 		LocalPath:   "/tmp/myrepo",
 	})
 	require.NoError(err)
 
-	_, err = d.CreateProjectWorktree(ctx, CreateProjectWorktreeInput{
+	_, err = d.CreateProjectWorktree(ctx, db.CreateProjectWorktreeInput{
 		ProjectID: project.ID,
 		Branch:    "feature-x",
 		Path:      "/tmp/wt",
 	})
 	require.NoError(err)
 
-	_, err = d.CreateProjectWorktree(ctx, CreateProjectWorktreeInput{
+	_, err = d.CreateProjectWorktree(ctx, db.CreateProjectWorktreeInput{
 		ProjectID: project.ID,
 		Branch:    "feature-y",
 		Path:      "/tmp/wt",
 	})
 	require.Error(err)
-	assert.ErrorIs(err, ErrWorktreePathTaken)
+	assert.ErrorIs(err, db.ErrWorktreePathTaken)
 }
 
 func TestListProjectWorktreesScopedToProject(t *testing.T) {
@@ -269,16 +280,16 @@ func TestListProjectWorktreesScopedToProject(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 
-	a, err := d.CreateProject(ctx, CreateProjectInput{
+	a, err := d.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "a", LocalPath: "/tmp/a",
 	})
 	require.NoError(err)
-	b, err := d.CreateProject(ctx, CreateProjectInput{
+	b, err := d.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "b", LocalPath: "/tmp/b",
 	})
 	require.NoError(err)
 
-	for _, in := range []CreateProjectWorktreeInput{
+	for _, in := range []db.CreateProjectWorktreeInput{
 		{ProjectID: a.ID, Branch: "wip", Path: "/tmp/a-wt-1"},
 		{ProjectID: a.ID, Branch: "wip2", Path: "/tmp/a-wt-2"},
 		{ProjectID: b.ID, Branch: "wip", Path: "/tmp/b-wt-1"},
@@ -296,7 +307,7 @@ func TestListProjectWorktreesScopedToProject(t *testing.T) {
 	assert.Len(bList, 1)
 
 	_, err = d.ListProjectWorktrees(ctx, "prj_doesnotexist")
-	assert.ErrorIs(err, ErrProjectNotFound)
+	assert.ErrorIs(err, db.ErrProjectNotFound)
 }
 
 func TestProjectWorktreeCascadesOnProjectDelete(t *testing.T) {
@@ -305,11 +316,11 @@ func TestProjectWorktreeCascadesOnProjectDelete(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 
-	project, err := d.CreateProject(ctx, CreateProjectInput{
+	project, err := d.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "myrepo", LocalPath: "/tmp/myrepo",
 	})
 	require.NoError(err)
-	_, err = d.CreateProjectWorktree(ctx, CreateProjectWorktreeInput{
+	_, err = d.CreateProjectWorktree(ctx, db.CreateProjectWorktreeInput{
 		ProjectID: project.ID, Branch: "wip", Path: "/tmp/wt",
 	})
 	require.NoError(err)
