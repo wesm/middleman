@@ -16,8 +16,13 @@ import (
 
 func openTestDB(t *testing.T) *DB {
 	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "test.db")
+	return openTemplateTestDB(t)
+}
+
+func openDBWithMigrations(t *testing.T) *DB {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "test.db")
 	d, err := Open(path)
 	require.NoError(t, err)
 	t.Cleanup(func() { d.Close() })
@@ -25,7 +30,7 @@ func openTestDB(t *testing.T) *DB {
 }
 
 func TestOpenAndSchema(t *testing.T) {
-	d := openTestDB(t)
+	d := openDBWithMigrations(t)
 	tables := []string{
 		"middleman_repos",
 		"middleman_merge_requests",
@@ -80,7 +85,7 @@ func TestOpenIdempotent(t *testing.T) {
 
 func TestOpenCreatesSchemaMigrationsTable(t *testing.T) {
 	require := require.New(t)
-	d := openTestDB(t)
+	d := openDBWithMigrations(t)
 
 	version := latestMigrationVersionForTest(t)
 	var actualVersion int

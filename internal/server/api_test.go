@@ -13890,10 +13890,13 @@ func TestWorkspaceRuntimeSessionTerminalTmuxBackedWebSocketE2E(
 	dir := t.TempDir()
 	agentPath := filepath.Join(dir, "size-agent")
 	require.NoError(os.WriteFile(agentPath, []byte(`#!/bin/sh
-IFS= read -r line
-set -- $(stty size 2>/dev/null || printf '0 0')
-printf 'size:%s:%s:%s\n' "$1" "$2" "$line"
-sleep 1
+while IFS= read -r line; do
+	set -- $(stty size 2>/dev/null || printf '0 0')
+	printf 'size:%s:%s:%s\n' "$1" "$2" "$line"
+	if [ "$1:$2:$line" = "40:177:size" ]; then
+		exit 0
+	fi
+done
 `), 0o755))
 	cfg := &config.Config{
 		Agents: []config.Agent{{
@@ -13935,9 +13938,18 @@ sleep 1
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
-	require.NoError(conn.Write(
-		ctx, websocket.MessageBinary, []byte("size\n"),
-	))
+	requestSize := func() {
+		t.Helper()
+		resize, err := json.Marshal(map[string]any{
+			"type": "resize",
+			"cols": 177,
+			"rows": 41,
+		})
+		require.NoError(err)
+		require.NoError(conn.Write(ctx, websocket.MessageText, resize))
+		require.NoError(conn.Write(ctx, websocket.MessageBinary, []byte("size\n")))
+	}
+	requestSize()
 	readCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	var got strings.Builder
@@ -13955,6 +13967,9 @@ sleep 1
 		// preserving the requested column count.
 		if strings.Contains(got.String(), "size:40:177:size") {
 			return
+		}
+		if strings.Contains(got.String(), "size:") {
+			requestSize()
 		}
 	}
 	require.Contains(got.String(), "size:40:177:size")
