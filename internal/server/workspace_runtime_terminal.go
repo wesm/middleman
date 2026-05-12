@@ -115,6 +115,26 @@ func (s *Server) serveRuntimeTerminal(
 		if err := attachment.Resize(cols, rows); err != nil {
 			slog.Warn("runtime terminal initial resize", "err", err)
 		}
+		// pty.Setsize SIGWINCHs the foreground process of the master,
+		// but for tmux-backed sessions the pane refit happens via
+		// async client-to-server IPC. If the bridge starts forwarding
+		// client input before that refit lands, the agent inside the
+		// pane sees the pre-resize geometry. Refresh runs
+		// `tmux refresh-client` against the attached client, which
+		// is a synchronous round-trip to the tmux server and forces
+		// it to drain any pending resize messages from the client
+		// before returning. For non-tmux sessions, refresh is a
+		// no-op. The 2 s budget mirrors the bridge's resize/refresh
+		// control handler.
+		refreshCtx, refreshCancel := context.WithTimeout(
+			r.Context(), 2*time.Second,
+		)
+		if err := attachment.Refresh(refreshCtx); err != nil {
+			slog.Warn(
+				"runtime terminal initial refresh", "err", err,
+			)
+		}
+		refreshCancel()
 	}
 
 	exited := bridgeRuntimeAttachment(r.Context(), conn, attachment)
@@ -263,22 +283,48 @@ func bridgeRuntimeAttachment(
 		case <-outputDone:
 		case <-time.After(100 * time.Millisecond):
 		}
-		cancel()
+		// Write the frame BEFORE cancel: coder/websocket tears down
+		// the underlying connection when the input goroutine's
+		// Read context is canceled, which races our Write.
 		writeRuntimeExit(conn, attachment.Info())
+		cancel()
 		return true
 	case <-inputDone:
 		cancel()
 		return false
 	case <-outputDone:
-		select {
-		case <-attachment.Done:
-			cancel()
+		// outputDone fires when the per-subscriber Output channel
+		// closes. There are two distinct reasons that can happen:
+		//
+		//   1. drainOutput observed PTY EOF and closed every
+		//      subscriber via closeSubscribers. The session itself
+		//      is over; send the "exited" frame so the client's
+		//      onExit fires. attachment.Done follows in a separate
+		//      goroutine and can lag noticeably for wrapped sessions
+		//      (systemd-run --wait collecting the transient unit),
+		//      so we do NOT gate the frame on attachment.Done —
+		//      ExitCode may be nil and writeRuntimeExit emits -1,
+		//      which the frontend treats identically.
+		//
+		//   2. broadcast dropped this subscriber because its 64-slot
+		//      buffer filled (slow client, congested writer, etc.).
+		//      The session is still running, and reporting "exited"
+		//      here would auto-close the drawer on a healthy shell.
+		//      Close the websocket without an exit frame; the client
+		//      can reconnect and resubscribe from the replay buffer.
+		//
+		// Order matters: write the exit frame BEFORE cancel(). The
+		// input goroutine's conn.Read uses ctx, and coder/websocket
+		// tears down the underlying TCP connection when that ctx is
+		// canceled. Cancelling first races writeRuntimeExit's Write
+		// against socket teardown — the Write loses ~25 % of the
+		// time and the frame never reaches the client.
+		closed := attachment.SessionOutputClosed()
+		if closed {
 			writeRuntimeExit(conn, attachment.Info())
-			return true
-		case <-time.After(100 * time.Millisecond):
-			cancel()
-			return false
 		}
+		cancel()
+		return closed
 	case <-ctx.Done():
 		return false
 	}

@@ -946,6 +946,166 @@ func TestManagerShellSingletonPerWorkspace(t *testing.T) {
 	assert.Empty(mgr.ListSessions("ws-1"))
 }
 
+// TestManagerEnsureShellSkipsZombieSessions pins the runningSession
+// outputClosed check that prevents EnsureShell from returning a
+// session whose drainOutput already saw PTY EOF but whose
+// watchSession's cmd.Wait hasn't fired yet.
+//
+// Wrapped shells (systemd-run --wait, etc.) routinely sit in this
+// "output dead, status still Running" window after the inner zsh
+// exits while the wrapper does its cleanup. Without this guard,
+// EnsureShell would hand the next caller a snapshot of the zombie:
+// status=Running, but a closed Output channel that yields nothing.
+// The frontend then mounts a TerminalPane, attaches, gets the exit
+// frame instantly, auto-closes — and on the user's next click does
+// it all over again until the zombie is finally collected. From the
+// user's seat that looks like a hang.
+func TestManagerEnsureShellSkipsZombieSessions(t *testing.T) {
+	requirePTYAvailable(t)
+	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+	mgr := NewManager(Options{
+		ShellCommand: helperCommand("sleep"),
+	})
+	t.Cleanup(mgr.Shutdown)
+
+	first, err := mgr.EnsureShell(ctx, "ws-1", t.TempDir())
+	require.NoError(err)
+	require.Equal(SessionStatusRunning, first.Status)
+
+	// Reach into the manager state and synthesize the zombie window:
+	// outputClosed flipped while the watchSession goroutine is still
+	// blocked on cmd.Wait (the helperCommand("sleep") process never
+	// exits, so cmd.Wait won't return until Shutdown kills it).
+	mgr.mu.Lock()
+	s := mgr.shells[first.Key]
+	mgr.mu.Unlock()
+	require.NotNil(s, "shell session should be in m.shells")
+	s.mu.Lock()
+	s.outputClosed = true
+	s.mu.Unlock()
+
+	second, err := mgr.EnsureShell(ctx, "ws-1", t.TempDir())
+	require.NoError(err)
+	assert.Equal(SessionStatusRunning, second.Status)
+	assert.NotEqual(
+		first.CreatedAt, second.CreatedAt,
+		"EnsureShell after a zombie must return a fresh session",
+	)
+	// The new session replaces the zombie in the map.
+	mgr.mu.Lock()
+	current := mgr.shells[first.Key]
+	mgr.mu.Unlock()
+	assert.NotSame(s, current,
+		"the zombie should have been replaced, not reused")
+
+	// Once the zombie is no longer in the map, Manager.Shutdown
+	// can't reach it. EnsureShell must therefore reap it inline:
+	// SIGKILL the process group so cmd.Wait returns and the
+	// per-session watchSession goroutine completes (closing s.done).
+	// helperCommand("sleep") would otherwise block forever.
+	require.Eventually(func() bool {
+		select {
+		case <-s.done:
+			return true
+		default:
+			return false
+		}
+	}, 2*time.Second, 20*time.Millisecond,
+		"zombie's process must be killed and reaped, not orphaned")
+}
+
+// TestAttachmentSessionOutputClosedDistinguishesSubscriberDrop covers
+// the contract bridges rely on to tell a real session exit from a
+// dropped subscriber: a closed Output channel can mean either, and
+// auto-closing the drawer on the latter would hang the user out on a
+// healthy shell.
+//
+// broadcast drops a subscriber when its 64-slot buffer can't accept
+// another chunk (slow client / congested writer). drainOutput's PTY
+// EOF, in contrast, runs closeSubscribers which flips s.outputClosed
+// before closing every subscriber channel. SessionOutputClosed
+// exposes that distinction to bridge code.
+func TestAttachmentSessionOutputClosedDistinguishesSubscriberDrop(t *testing.T) {
+	requirePTYAvailable(t)
+	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+	mgr := NewManager(Options{ShellCommand: helperCommand("sleep")})
+	t.Cleanup(mgr.Shutdown)
+
+	shell, err := mgr.EnsureShell(ctx, "ws-1", t.TempDir())
+	require.NoError(err)
+
+	attach, err := mgr.AttachShell("ws-1")
+	require.NoError(err)
+	t.Cleanup(attach.Close)
+	require.Equal(shell.Key, attach.Info().Key)
+
+	// Healthy session: SessionOutputClosed must report false.
+	assert.False(attach.SessionOutputClosed(),
+		"freshly-attached session should not look output-closed")
+
+	mgr.mu.Lock()
+	s := mgr.shells[shell.Key]
+	mgr.mu.Unlock()
+	require.NotNil(s)
+
+	// Force the broadcast-drops-subscriber path: the channel buffer
+	// is 64, so the 65th broadcast that can't enqueue takes the
+	// `default` branch and closes the channel. Run the broadcasts
+	// synchronously WITHOUT a concurrent consumer — a parallel
+	// reader could drain the buffer faster than we fill it and the
+	// drop would never trigger. Drain afterward to confirm closure.
+	for range 200 {
+		s.broadcast([]byte("x"))
+	}
+	drained := 0
+drain:
+	for {
+		// Bound the receive: if broadcast regresses and never
+		// closes the channel, the buffered messages drain and the
+		// next receive would block forever, hanging the test
+		// process instead of failing it.
+		select {
+		case _, ok := <-attach.Output:
+			if !ok {
+				break drain
+			}
+			drained++
+			require.Less(drained, 200,
+				"channel never closed; broadcast did not "+
+					"drop the slow subscriber")
+		case <-time.After(2 * time.Second):
+			require.Fail(
+				"timed out waiting for channel close; " +
+					"broadcast did not drop the slow subscriber",
+			)
+		}
+	}
+	assert.LessOrEqual(drained, 64,
+		"buffer is 64; drop should fire by the 65th broadcast")
+
+	// Subscriber dropped, but the session itself is still healthy
+	// (helperCommand("sleep") is still running and drainOutput has
+	// not seen PTY EOF). SessionOutputClosed must NOT be true here —
+	// otherwise the bridge would emit "exited" on a live shell.
+	assert.False(attach.SessionOutputClosed(),
+		"subscriber drop must not be misreported as session exit")
+
+	// Now simulate the real session-exit path. closeSubscribers is
+	// what drainOutput calls on PTY EOF; it flips outputClosed.
+	s.closeSubscribers()
+	assert.True(attach.SessionOutputClosed(),
+		"after drainOutput's closeSubscribers, the bridge must see "+
+			"the session as output-closed and emit the exit frame")
+}
+
 func TestManagerShellConcurrentStartsOneProcess(t *testing.T) {
 	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
