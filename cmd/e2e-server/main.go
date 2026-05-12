@@ -168,6 +168,9 @@ func (p e2eStaticProvider) ListIssueEvents(
 type globRefreshContextKey struct{}
 
 func e2eGit(dir string, args ...string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("git: no args")
+	}
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
 	cmd.Env = append(gitenv.StripAll(os.Environ()),
