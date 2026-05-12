@@ -62,6 +62,38 @@ vi.mock("@middleman/ui", async (importOriginal) => {
 
 import RepoSummaryPage from "./RepoSummaryPage.svelte";
 
+function repoSummaryFixture({
+  provider,
+  platformHost,
+  owner,
+  name,
+}: {
+  provider: string;
+  platformHost: string;
+  owner: string;
+  name: string;
+}) {
+  return {
+    owner,
+    name,
+    platform_host: platformHost,
+    repo: {
+      provider,
+      platform_host: platformHost,
+      owner,
+      name,
+      repo_path: `${owner}/${name}`,
+    },
+    cached_pr_count: 0,
+    open_pr_count: 0,
+    draft_pr_count: 0,
+    cached_issue_count: 0,
+    open_issue_count: 0,
+    active_authors: [],
+    recent_issues: [],
+  };
+}
+
 describe("RepoSummaryPage", () => {
   beforeEach(() => {
     mockGet.mockReset();
@@ -246,6 +278,57 @@ describe("RepoSummaryPage", () => {
     await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
     expect(screen.queryByText("github.com")).toBeNull();
     expect(screen.getByText("ghe.example.com")).toBeTruthy();
+  });
+
+  it("shows provider brand icons on repo cards when multiple providers are present", async () => {
+    mockGet.mockResolvedValue({
+      data: [
+        repoSummaryFixture({
+          provider: "github",
+          platformHost: "github.com",
+          owner: "acme",
+          name: "widgets",
+        }),
+        repoSummaryFixture({
+          provider: "gitlab",
+          platformHost: "gitlab.com",
+          owner: "platform",
+          name: "api",
+        }),
+      ],
+      error: undefined,
+    });
+
+    render(RepoSummaryPage);
+
+    await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
+    expect(screen.getByRole("img", { name: "GitHub" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "GitLab" })).toBeTruthy();
+  });
+
+  it("hides provider brand icons on repo cards for a single provider", async () => {
+    mockGet.mockResolvedValue({
+      data: [
+        repoSummaryFixture({
+          provider: "github",
+          platformHost: "github.com",
+          owner: "acme",
+          name: "widgets",
+        }),
+        repoSummaryFixture({
+          provider: "github",
+          platformHost: "ghe.example.com",
+          owner: "enterprise",
+          name: "service",
+        }),
+      ],
+      error: undefined,
+    });
+
+    render(RepoSummaryPage);
+
+    await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
+    expect(screen.queryByRole("img", { name: "GitHub" })).toBeNull();
   });
 
   it("keeps cached output visible when a sync issue exists", async () => {

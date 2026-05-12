@@ -7,9 +7,17 @@
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
   import { client } from "../../api/runtime.js";
   import { LeftSidebarToggle } from "@middleman/ui";
+  import ProviderIcon from "../provider/ProviderIcon.svelte";
 
   interface Workspace {
     id: string;
+    repo?: {
+      provider: string;
+      platform_host: string;
+      owner: string;
+      name: string;
+      repo_path: string;
+    };
     platform_host: string;
     repo_owner: string;
     repo_name: string;
@@ -78,6 +86,15 @@
       }
     }
     return map;
+  });
+
+  const showProviderIcons = $derived.by(() => {
+    const providers = new Set<string>();
+    for (const ws of workspaces) {
+      const provider = workspaceProvider(ws);
+      if (provider) providers.add(provider.toLowerCase());
+    }
+    return providers.size > 1;
   });
 
   async function fetchWorkspaces(): Promise<void> {
@@ -154,6 +171,10 @@
     return repoKey;
   }
 
+  function workspaceProvider(ws: Workspace): string | undefined {
+    return ws.repo?.provider;
+  }
+
   function handleItemBubbleClick(
     e: MouseEvent | KeyboardEvent,
     ws: Workspace,
@@ -217,6 +238,13 @@
           strokeWidth="2.25"
           aria-hidden="true"
         />
+        {#if showProviderIcons && workspaceProvider(items[0]!)}
+          <ProviderIcon
+            provider={workspaceProvider(items[0]!)!}
+            size={14}
+            class="group-provider-icon"
+          />
+        {/if}
         <span class="group-label">{shortRepo(repoKey)}</span>
         <span class="group-count">{items.length}</span>
       </button>
@@ -441,6 +469,10 @@
     color: var(--text-muted);
     flex-shrink: 0;
     transition: transform 100ms ease;
+  }
+
+  :global(.group-provider-icon) {
+    color: var(--text-secondary);
   }
 
   .group-header.collapsed :global(.group-chevron) {

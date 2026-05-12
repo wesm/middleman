@@ -2,6 +2,7 @@
   import { ActionButton, Chip } from "@middleman/ui";
   import { timeAgo } from "@middleman/ui/utils/time";
   import { ExternalLinkIcon } from "../../icons.js";
+  import ProviderIcon from "../provider/ProviderIcon.svelte";
   import RepoMetricGrid from "./RepoMetricGrid.svelte";
   import {
     displayReleaseName,
@@ -25,6 +26,7 @@
 
   interface Props {
     summary: RepoSummaryCard;
+    showProviderIcon?: boolean;
     onviewprs: () => void;
     onviewissues: () => void;
     onopencomposer: () => void;
@@ -33,6 +35,7 @@
 
   let {
     summary,
+    showProviderIcon = false,
     onviewprs,
     onviewissues,
     onopencomposer,
@@ -179,8 +182,15 @@
 
 <article class="repo-card" aria-labelledby={`repo-${stateKey}`} bind:this={cardElement}>
   <div class="repo-card__header">
-    <div class="repo-card__identity">
+      <div class="repo-card__identity">
       <div class="repo-card__name-row">
+        {#if showProviderIcon}
+          <ProviderIcon
+            provider={summary.repo.provider}
+            size={16}
+            class="repo-card__provider-icon"
+          />
+        {/if}
         <button
           id={`repo-${stateKey}`}
           class="repo-card__name"
@@ -393,6 +403,10 @@
     min-width: 0;
     gap: 6px;
     color: var(--text-muted);
+  }
+
+  :global(.repo-card__provider-icon) {
+    color: var(--text-secondary);
   }
 
   .repo-card__name {

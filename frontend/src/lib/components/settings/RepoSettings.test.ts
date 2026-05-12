@@ -63,6 +63,67 @@ describe("RepoSettings", () => {
     expect(screen.getByRole("button", { name: "Refresh" })).toBeTruthy();
   });
 
+  it("shows provider icons when configured repos use multiple providers", () => {
+    render(RepoSettings, {
+      props: {
+        repos: [
+          {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "widgets",
+            repo_path: "acme/widgets",
+            is_glob: false,
+            matched_repo_count: 1,
+          },
+          {
+            provider: "forgejo",
+            platform_host: "codeberg.org",
+            owner: "forge",
+            name: "service",
+            repo_path: "forge/service",
+            is_glob: false,
+            matched_repo_count: 1,
+          },
+        ],
+        onUpdate: vi.fn(),
+      },
+    });
+
+    expect(screen.getByRole("img", { name: "GitHub" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Forgejo" })).toBeTruthy();
+  });
+
+  it("hides provider icons when configured repos use one provider", () => {
+    render(RepoSettings, {
+      props: {
+        repos: [
+          {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "widgets",
+            repo_path: "acme/widgets",
+            is_glob: false,
+            matched_repo_count: 1,
+          },
+          {
+            provider: "github",
+            platform_host: "ghe.example.com",
+            owner: "enterprise",
+            name: "service",
+            repo_path: "enterprise/service",
+            is_glob: false,
+            matched_repo_count: 1,
+          },
+        ],
+        onUpdate: vi.fn(),
+      },
+    });
+
+    expect(screen.queryByRole("img", { name: "GitHub" })).toBeNull();
+  });
+
   it("opens the repository import modal and restores focus on close", async () => {
     render(RepoSettings, {
       props: {

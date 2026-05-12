@@ -150,6 +150,13 @@
     });
   });
 
+  const showProviderIcons = $derived.by(() => {
+    const providers = new Set(
+      summaries.map((summary) => summary.repo.provider.toLowerCase()),
+    );
+    return providers.size > 1;
+  });
+
   function dateValue(value: string | undefined): number {
     if (!value) return 0;
     return new Date(value).getTime();
@@ -449,6 +456,7 @@
       {#each filteredSummaries as summary (repoStateKey(summary))}
         <RepoSummaryCard
           {summary}
+          showProviderIcon={showProviderIcons}
           onviewprs={() =>
             filterAndNavigate(summary, "/pulls")}
           onviewissues={() =>
