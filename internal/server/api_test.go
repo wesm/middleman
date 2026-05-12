@@ -14945,6 +14945,12 @@ func TestWorkspaceCRUDE2E(t *testing.T) {
 	assert.Equal(db.WorkspaceItemTypePullRequest, createResp.JSON202.ItemType)
 	assert.Equal(int64(1), createResp.JSON202.ItemNumber)
 
+	// Wait for the async clone to finish before exercising the rest of the
+	// flow. Deleting (or letting the test end) while the clone subprocess is
+	// still writing into the workspace's TempDir races t.TempDir cleanup,
+	// which then fails with "directory not empty".
+	waitForWorkspaceReady(t, ctx, client, wsID)
+
 	// 3. Get workspace by ID.
 	getResp, err := client.HTTP.GetWorkspacesByIdWithResponse(
 		ctx, wsID,
