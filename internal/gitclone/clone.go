@@ -136,7 +136,7 @@ func (m *Manager) EnsureClone(
 	// check a follower with a malformed URL could inherit the
 	// leader's success — or a valid caller could inherit the
 	// leader's validation error.
-	if err := validateRemoteURLHost(host, remoteURL); err != nil {
+	if err := validateRemoteURLIdentity(host, owner, name, remoteURL); err != nil {
 		return err
 	}
 	if _, err := m.ClonePath(host, owner, name); err != nil {
@@ -181,7 +181,7 @@ func (m *Manager) ensureCloneNow(
 	// belongs to the expected host: catches a clone whose config
 	// was rewritten after creation.
 	if out, err := m.git(ctx, host, clonePath, "config", "--get", "remote.origin.url"); err == nil {
-		if err := validateRemoteURLHost(host, strings.TrimSpace(string(out))); err != nil {
+		if err := validateRemoteURLIdentity(host, owner, name, strings.TrimSpace(string(out))); err != nil {
 			return err
 		}
 	}
@@ -360,6 +360,24 @@ func validateRemoteURLHost(expectedHost, remoteURL string) error {
 	return nil
 }
 
+func validateRemoteURLIdentity(expectedHost, owner, name, remoteURL string) error {
+	if err := validateRemoteURLHost(expectedHost, remoteURL); err != nil {
+		return err
+	}
+	actualRepo := remoteURLRepoPath(remoteURL)
+	if actualRepo == "" {
+		return nil
+	}
+	expectedRepo := strings.Trim(strings.TrimSpace(owner)+"/"+strings.TrimSpace(name), "/")
+	if !strings.EqualFold(actualRepo, expectedRepo) {
+		return fmt.Errorf(
+			"clone remote repo %q does not match configured repo %q",
+			actualRepo, expectedRepo,
+		)
+	}
+	return nil
+}
+
 func remoteURLHost(remoteURL string) string {
 	remoteURL = strings.TrimSpace(remoteURL)
 	if remoteURL == "" {
@@ -376,6 +394,29 @@ func remoteURLHost(remoteURL string) string {
 		prefix = prefix[at+1:]
 	}
 	return prefix
+}
+
+func remoteURLRepoPath(remoteURL string) string {
+	remoteURL = strings.TrimSpace(remoteURL)
+	if remoteURL == "" {
+		return ""
+	}
+	var repoPath string
+	if u, err := url.Parse(remoteURL); err == nil && u.Host != "" {
+		repoPath = u.Path
+	} else {
+		prefix, path, ok := strings.Cut(remoteURL, ":")
+		if !ok || strings.Contains(prefix, "/") {
+			return ""
+		}
+		repoPath = path
+	}
+	repoPath = strings.Trim(strings.TrimSpace(repoPath), "/")
+	repoPath = strings.TrimSuffix(repoPath, ".git")
+	if repoPath == "" || strings.Contains(repoPath, "\\") {
+		return ""
+	}
+	return repoPath
 }
 
 func normalizeCloneHost(host string) string {

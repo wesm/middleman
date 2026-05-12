@@ -108,3 +108,19 @@ func TestEnsureCloneValidatesRemoteURLPerCaller(t *testing.T) {
 	assert.Contains(err.Error(), "does not match")
 	assert.Contains(err.Error(), "evil.example.com")
 }
+
+func TestEnsureCloneValidatesRemoteURLRepoPerCaller(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr := New(t.TempDir(), nil)
+
+	err := mgr.EnsureClone(
+		t.Context(), "github.com", "acme", "widget",
+		"https://github.com/other/widget.git",
+	)
+
+	require.Error(err)
+	assert.Contains(err.Error(), "does not match")
+	assert.Contains(err.Error(), "other/widget")
+	assert.Contains(err.Error(), "acme/widget")
+}
