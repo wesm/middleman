@@ -89,7 +89,7 @@ describe("RepoSettings", () => {
       },
     });
 
-    const summary = screen.getByText("Advanced: add exact repo or tracking glob directly");
+    const summary = screen.getByText("Advanced: add provider-scoped repo or tracking glob directly");
     expect(summary).toBeTruthy();
     expect(summary.closest("details")?.hasAttribute("open")).toBe(false);
   });
@@ -133,7 +133,7 @@ describe("RepoSettings", () => {
       },
     });
 
-    const input = screen.getByPlaceholderText("owner/name");
+    const input = screen.getByPlaceholderText("provider/owner/name");
     await fireEvent.input(input, { target: { value: "github/acme/widget" } });
     await fireEvent.click(screen.getByRole("button", { name: "Add" }));
     expect(mockAddRepo).toHaveBeenCalledWith("acme", "widget", {
