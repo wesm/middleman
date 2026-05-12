@@ -32,6 +32,70 @@ notice the regression:
 Regenerate OpenAPI and generated clients with `make api-generate` after Huma
 route or API type changes.
 
+## Race test runtime
+
+Treat `go test -race` runtime as a test architecture concern, not a CI-only
+concern. The main levers are:
+
+- keep large black-box flows in separate test packages so Go can schedule them
+  as separate race test binaries;
+- replace fixed sleeps with explicit events, callbacks, readiness channels, or
+  short polling loops that check immediately before waiting;
+- reuse migrated SQLite template databases for isolated non-migration tests;
+- add `t.Parallel` only after proving the test does not touch process-global
+  state, fixed external resources, shared tmux sessions, or shared database
+  files.
+
+Use `make race-times` to get a local package timing baseline for the current
+slow packages. CI also writes race timing JSON and summarizes slow packages and
+tests in the `go test -race` job summary. When a PR regresses race runtime, use
+the CI timing artifact rather than guessing from local timings alone.
+
+Keep splitting new high-volume tests into the existing black-box packages when
+they do not need unexported internals:
+
+- `internal/server/apitest` for HTTP API behavior through the generated client;
+- `internal/server/workspacetest` for workspace, runtime, terminal, and
+  tmux-heavy HTTP flows;
+- `internal/github/syncertest` for exported syncer contract behavior;
+- `internal/db/projecttest` for project-package DB behavior that can avoid the
+  core `internal/db` package.
+
+Leave tests in the source package when they exercise unexported helpers,
+migration state, dirty database handling, or other internal invariants.
+
+### SQLite fixtures
+
+Use the copied-template database fixture for ordinary DB-backed tests that only
+need a fresh migrated schema:
+
+- outside `internal/db`, prefer `internal/testutil/dbtest.Open(t)`;
+- inside `internal/db`, use the package-local `openTestDB(t)` from
+  `fixture_test.go`;
+- keep migration, legacy repair, dirty migration, and schema-history tests on
+  `db.Open` or the package-local `openDBWithMigrations(t)`.
+
+The template fixture migrates once, checkpoints WAL, copies the database file
+into each test's `t.TempDir`, and opens the copy with `OpenPreparedForTest`.
+That preserves per-test isolation without paying migration setup for every
+fixture.
+
+### Sleep and timer tests
+
+Do not add sleeps as a synchronization mechanism. Prefer a channel closed by
+the fake or callback that observed the exact event under test. If the behavior
+is inherently observable only by polling, check once immediately, then poll with
+a short ticker bounded by a context deadline.
+
+`testing/synctest` is appropriate only when all goroutines and timers under test
+are pure in-process work created inside the `synctest.Run` bubble. Good
+candidates include fake-client backoff, cooldown, cancellation, and event-hub
+tests. Do not use `synctest` around `httptest.Server`, WebSockets, tmux, PTYs,
+git, shell commands, filesystem polling driven by external processes, or tests
+that call `t.Run`, `t.Parallel`, or `t.Deadline` inside the bubble.
+`synctest.Wait` is race-detector synchronization, so it is useful under
+`go test -race` when the test is structurally eligible.
+
 ## Related context
 
 - [`context/provider-architecture.md`](./provider-architecture.md) documents the
