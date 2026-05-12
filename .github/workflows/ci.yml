@@ -259,7 +259,23 @@ jobs:
         run: go build -o ./cmd/e2e-server/e2e-server ./cmd/e2e-server
 
       - name: Install Playwright browser
-        run: cd frontend && bunx playwright install --with-deps ${{ matrix.browser }}
+        env:
+          PLAYWRIGHT_BROWSER: ${{ matrix.browser }}
+        run: |
+          cd frontend
+          for attempt in 1 2 3; do
+            echo "Installing Playwright browser ${PLAYWRIGHT_BROWSER} (attempt ${attempt}/3)"
+            if timeout --kill-after=30s 5m bunx playwright install --with-deps "${PLAYWRIGHT_BROWSER}"; then
+              exit 0
+            fi
+
+            status=$?
+            if [ "${attempt}" -eq 3 ]; then
+              exit "${status}"
+            fi
+
+            sleep 15
+          done
 
       - name: Run E2E tests
         run: cd frontend && bun run playwright test --config=playwright-e2e.config.ts --project=${{ matrix.browser }}
