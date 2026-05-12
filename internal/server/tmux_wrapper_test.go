@@ -869,7 +869,7 @@ func TestWorkspaceListTmuxActivityStressDoesNotLeakProcesses(t *testing.T) {
 		`    if [ "$active" -gt "$TMUX_MAX_ACTIVE" ]; then` + "\n" +
 		`      printf '%s\n' "$active" >> "$TMUX_VIOLATION"` + "\n" +
 		`    fi` + "\n" +
-		`    sleep 0.05` + "\n" +
+		`    sleep 0.005` + "\n" +
 		`    if [ "$a" = "display-message" ]; then` + "\n" +
 		`      printf 'workspace\n'` + "\n" +
 		`      exit 0` + "\n" +
