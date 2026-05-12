@@ -38,6 +38,64 @@ async function selectPullGrouping(page: Page, label: string): Promise<void> {
     .click();
 }
 
+const longRepoName = "widgets-with-an-extremely-long-repository-name";
+const longRepoPath = `acme/${longRepoName}`;
+
+async function mockLongPullRepoSlug(page: Page): Promise<void> {
+  await page.route(
+    (url) =>
+      url.pathname.endsWith("/api/v1/pulls")
+      && url.searchParams.get("state") === "open",
+    async (route) => {
+      const response = await route.fetch();
+      const pulls = await response.json() as Array<{
+        repo?: { owner?: string; name?: string; repo_path?: string };
+        repo_owner?: string;
+        repo_name?: string;
+      }>;
+      const firstPull = pulls[0];
+      if (firstPull) {
+        firstPull.repo_owner = "acme";
+        firstPull.repo_name = longRepoName;
+        if (firstPull.repo) {
+          firstPull.repo.owner = "acme";
+          firstPull.repo.name = longRepoName;
+          firstPull.repo.repo_path = longRepoPath;
+        }
+      }
+      await route.fulfill({ response, json: pulls });
+    },
+  );
+}
+
+async function expectRepoChipToClipSafely(
+  item: ReturnType<Page["locator"]>,
+  repoChip: ReturnType<Page["locator"]>,
+  expectedRepoPath: string,
+): Promise<void> {
+  await item.evaluate((node) => {
+    (node as HTMLElement).style.width = "180px";
+  });
+
+  await expect(repoChip.locator(".chip__label")).toHaveText(expectedRepoPath);
+  await expect(repoChip).toHaveAttribute("title", expectedRepoPath);
+  await expect(repoChip).toHaveCSS("justify-content", "flex-start");
+
+  const chipBox = await repoChip.boundingBox();
+  const itemBox = await item.boundingBox();
+  expect(chipBox).not.toBeNull();
+  expect(itemBox).not.toBeNull();
+  if (chipBox !== null && itemBox !== null) {
+    expect(chipBox.x + chipBox.width).toBeLessThanOrEqual(itemBox.x + itemBox.width + 1);
+  }
+
+  const labelOverflow = await repoChip.locator(".chip__label").evaluate((node) => ({
+    clientWidth: (node as HTMLElement).clientWidth,
+    scrollWidth: (node as HTMLElement).scrollWidth,
+  }));
+  expect(labelOverflow.scrollWidth).toBeGreaterThan(labelOverflow.clientWidth);
+}
+
 test.describe("PR list view", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/pulls");
@@ -67,13 +125,15 @@ test.describe("PR list view", () => {
     await page.goto("/pulls");
     await waitForPullList(page);
 
+    await mockLongPullRepoSlug(page);
+    await page.goto("/pulls");
+    await waitForPullList(page);
+
     await selectPullGrouping(page, "All");
     const firstItem = page.locator(".pull-item").first();
     const repoChip = firstItem.locator(".repo-chip");
     await expect(repoChip).toBeVisible();
-    await expect(repoChip.locator(".chip__label")).toHaveText("acme/widgets");
-    await expect(repoChip).toHaveAttribute("title", "acme/widgets");
-    await expect(repoChip).toHaveCSS("justify-content", "flex-start");
+    await expectRepoChipToClipSafely(firstItem, repoChip, longRepoPath);
     await expect(firstItem.locator(".status-chip")).toBeVisible();
   });
 
