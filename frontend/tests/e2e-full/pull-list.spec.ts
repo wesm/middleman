@@ -69,7 +69,11 @@ test.describe("PR list view", () => {
 
     await selectPullGrouping(page, "All");
     const firstItem = page.locator(".pull-item").first();
-    await expect(firstItem.locator(".repo-chip")).toBeVisible();
+    const repoChip = firstItem.locator(".repo-chip");
+    await expect(repoChip).toBeVisible();
+    await expect(repoChip.locator(".chip__label")).toHaveText("acme/widgets");
+    await expect(repoChip).toHaveAttribute("title", "acme/widgets");
+    await expect(repoChip).toHaveCSS("justify-content", "flex-start");
     await expect(firstItem.locator(".status-chip")).toBeVisible();
   });
 

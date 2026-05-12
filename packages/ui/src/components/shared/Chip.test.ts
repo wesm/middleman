@@ -26,4 +26,19 @@ describe("Chip", () => {
     expect(chip?.classList.contains("chip--tone-success")).toBe(true);
     expect(chip?.querySelector(".chip__dot")).not.toBeNull();
   });
+
+  it("wraps content in a truncation label", () => {
+    render(Chip, {
+      props: {
+        children: createRawSnippet(() => ({
+          render: () => "<span>acme/widgets</span>",
+        })),
+      },
+    });
+
+    const chip = screen.getByText("acme/widgets").closest(".chip");
+    expect(chip?.querySelector(".chip__label")?.textContent).toBe(
+      "acme/widgets",
+    );
+  });
 });

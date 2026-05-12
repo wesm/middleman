@@ -61,7 +61,11 @@ test.describe("issue list view", () => {
 
     await selectIssueGrouping(page, "All");
     const firstItem = page.locator(".issue-item").first();
-    await expect(firstItem.locator(".repo-chip")).toBeVisible();
+    const repoChip = firstItem.locator(".repo-chip");
+    await expect(repoChip).toBeVisible();
+    await expect(repoChip.locator(".chip__label")).toHaveText("acme/widgets");
+    await expect(repoChip).toHaveAttribute("title", "acme/widgets");
+    await expect(repoChip).toHaveCSS("justify-content", "flex-start");
     await expect(firstItem.locator(".state-chip")).toBeVisible();
   });
 

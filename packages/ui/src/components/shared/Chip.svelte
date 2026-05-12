@@ -65,7 +65,7 @@
     aria-expanded={expanded}
     {disabled}
     onclick={onclick}
-  >{#if dot}<span class="chip__dot" aria-hidden="true"></span>{/if}{#if children}{@render children()}{/if}</button>
+  >{#if dot}<span class="chip__dot" aria-hidden="true"></span>{/if}{#if children}<span class="chip__label">{@render children()}</span>{/if}</button>
 {:else}
   <span
     class={[
@@ -79,7 +79,7 @@
     ]}
     {title}
     {style}
-  >{#if dot}<span class="chip__dot" aria-hidden="true"></span>{/if}{#if children}{@render children()}{/if}</span>
+  >{#if dot}<span class="chip__dot" aria-hidden="true"></span>{/if}{#if children}<span class="chip__label">{@render children()}</span>{/if}</span>
 {/if}
 
 <style>
@@ -147,6 +147,13 @@
     border-radius: 50%;
     background: currentColor;
     flex-shrink: 0;
+  }
+
+  .chip__label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .chip--xs .chip__dot {
