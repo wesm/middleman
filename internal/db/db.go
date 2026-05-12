@@ -18,6 +18,18 @@ type DB struct {
 // Open opens (or creates) a SQLite database at path, enables WAL mode, and
 // runs embedded schema migrations before returning database handles.
 func Open(path string) (*DB, error) {
+	return open(path, true)
+}
+
+// OpenPreparedForTest opens a database file that was already initialized from
+// a migrated test template. It intentionally skips migration checks so large
+// test suites can keep per-test DB isolation without paying migration setup on
+// every fixture.
+func OpenPreparedForTest(path string) (*DB, error) {
+	return open(path, false)
+}
+
+func open(path string, initialize bool) (*DB, error) {
 	rw, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)")
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
@@ -32,7 +44,10 @@ func Open(path string) (*DB, error) {
 	ro.SetMaxOpenConns(4)
 
 	d := &DB{rw: rw, ro: ro}
-	if err := d.init(); err != nil {
+	if initialize {
+		err = d.init()
+	}
+	if err != nil {
 		d.Close()
 		return nil, err
 	}

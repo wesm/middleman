@@ -44,6 +44,7 @@ import (
 	"github.com/wesm/middleman/internal/platform/gitealike"
 	"github.com/wesm/middleman/internal/stacks"
 	"github.com/wesm/middleman/internal/testutil"
+	"github.com/wesm/middleman/internal/testutil/dbtest"
 	"github.com/wesm/middleman/internal/workspace"
 	"github.com/wesm/middleman/internal/workspace/localruntime"
 )
@@ -574,10 +575,7 @@ func setupTestServerWithRepos(
 ) (*Server, *db.DB) {
 	t.Helper()
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, repos, time.Minute, nil, nil)
 	// Drain any TriggerRun goroutines (fired by handlers like
@@ -1660,10 +1658,7 @@ func TestAPIGetPullEmitsDiffWarningWhenSHAsMissing(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	// HasDiffSync gates the inferred warning, so the syncer must be
 	// constructed with a non-nil clone manager. The manager itself is
@@ -1707,10 +1702,7 @@ func TestAPIGetPullNoDiffWarningWhenSHAsPresent(t *testing.T) {
 	assert := Assert.New(t)
 	ctx := t.Context()
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
@@ -1759,10 +1751,7 @@ func TestAPIGetPullEmitsStaleDiffWarning(t *testing.T) {
 	assert := Assert.New(t)
 	ctx := t.Context()
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
@@ -1813,10 +1802,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnBaseDrift(t *testing.T) {
 	assert := Assert.New(t)
 	ctx := t.Context()
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
@@ -1870,10 +1856,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnMergedPR(t *testing.T) {
 	assert := Assert.New(t)
 	ctx := t.Context()
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
@@ -1926,10 +1909,7 @@ func TestAPIGetPullEmitsDiffWarningWhenSHAsMissingClosed(t *testing.T) {
 	assert := Assert.New(t)
 	ctx := t.Context()
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
@@ -1976,10 +1956,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnClosedPR(t *testing.T) {
 	assert := Assert.New(t)
 	ctx := t.Context()
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
@@ -2030,10 +2007,7 @@ func TestAPIGetPullNoDiffWarningOnMergedPRWithBaseDrift(t *testing.T) {
 	assert := Assert.New(t)
 	ctx := t.Context()
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
@@ -2088,10 +2062,7 @@ func TestAPISyncPRSanitizesDiffFailureWarning(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	// Create a clone base dir that cannot be used: 0o000 blocks every
 	// git command rooted under it, so syncMRDiff fails at the clone
@@ -2143,7 +2114,7 @@ func TestAPISyncPRSanitizesDiffFailureWarning(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 
-	_, err = database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	_, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(
@@ -2232,10 +2203,7 @@ func TestAPIGitLabConfiguredRepoSyncThroughProviderRegistry(t *testing.T) {
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	ref := platform.RepoRef{
 		Platform:           platform.KindGitLab,
@@ -2304,7 +2272,7 @@ func TestAPIGitLabConfiguredRepoSyncThroughProviderRegistry(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 	srv := NewWithConfig(
 		database, syncer, nil, nil, cfg,
-		filepath.Join(dir, "config.toml"), ServerOptions{},
+		filepath.Join(t.TempDir(), "config.toml"), ServerOptions{},
 	)
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
@@ -2348,10 +2316,7 @@ func TestGitLabSyncCoversRepositoryItemsEventsOverviewAndCI(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	publishedAt := now.Add(-72 * time.Hour)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 
 	ref := platform.RepoRef{
 		Platform:           platform.KindGitLab,
@@ -2582,10 +2547,7 @@ func TestProviderRefSyncEndpointsUseGitLabNestedRepoPath(t *testing.T) {
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 
 	ref := platform.RepoRef{
 		Platform:           platform.KindGitLab,
@@ -2805,10 +2767,7 @@ func TestProviderRefSyncEndpointsUseGitLabNestedRepoPath(t *testing.T) {
 func TestGitLabSyncUsesTagsForRepoOverviewWhenReleasesAreAbsent(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 
 	ref := platform.RepoRef{
 		Platform:           platform.KindGitLab,
@@ -3012,10 +2971,7 @@ func TestAPIListRepoSummariesIncludesSyncedReleaseTimeline(t *testing.T) {
 	assert := Assert.New(t)
 	ctx := t.Context()
 	dir := t.TempDir()
-
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 
 	remote := filepath.Join(dir, "remote.git")
 	work := filepath.Join(dir, "work")
@@ -3126,11 +3082,7 @@ func TestAPIListRepoSummariesUsesTagsWhenNoReleases(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 	ctx := t.Context()
-	dir := t.TempDir()
-
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 
 	tagName := "v0.5.0"
 	sha := "1234567890abcdef1234567890abcdef12345678"
@@ -3198,11 +3150,8 @@ func TestAPIListRepoSummariesClearsStaleOverviewWhenTagFallbackFails(t *testing.
 	require := require.New(t)
 	assert := Assert.New(t)
 	ctx := t.Context()
-	dir := t.TempDir()
 
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 
 	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "tagless"))
 	require.NoError(err)
@@ -3644,10 +3593,7 @@ func TestAPICreateIssueUsesPlatformHost(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	githubCalled := false
 	enterpriseCalled := false
@@ -3697,7 +3643,7 @@ func TestAPICreateIssueUsesPlatformHost(t *testing.T) {
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
-	_, err = database.UpsertRepo(context.Background(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	_, err := database.UpsertRepo(context.Background(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	enterpriseRepoID, err := database.UpsertRepo(context.Background(), db.GitHubRepoIdentity("ghe.example.com", "acme", "widgets"))
 	require.NoError(err)
@@ -4076,10 +4022,7 @@ func TestAPISyncStatus(t *testing.T) {
 
 func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 	require := require.New(t)
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	syncReachedGitHub := make(chan struct{})
 	var syncReachedGitHubOnce sync.Once
@@ -4129,10 +4072,7 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 func TestAPITriggerSyncBypassesNextSyncAfter(t *testing.T) {
 	require := require.New(t)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	var listCalls atomic.Int32
 	secondSync := make(chan struct{})
@@ -4190,10 +4130,7 @@ func TestAPITriggerSyncBypassesNextSyncAfter(t *testing.T) {
 
 func TestAPIReadyForReview(t *testing.T) {
 	require := require.New(t)
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	mock := &mockGH{
 		markReadyForReviewFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
@@ -5338,10 +5275,7 @@ func TestAPIListPullsReportsBackfilledMergedPRFromMergedAt(t *testing.T) {
 		},
 	}
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
@@ -5478,11 +5412,7 @@ func TestAPIGetIssueUsesPlatformHostQuery(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 
-	database, err := db.Open(
-		filepath.Join(t.TempDir(), "test.db"),
-	)
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	seedIssueOnHost(
 		t, database,
@@ -5545,11 +5475,7 @@ func TestAPISyncIssueUsesPlatformHostQuery(t *testing.T) {
 	assert := Assert.New(t)
 	ctx := context.Background()
 
-	database, err := db.Open(
-		filepath.Join(t.TempDir(), "test.db"),
-	)
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	seedIssueOnHost(
 		t, database,
@@ -5674,11 +5600,7 @@ func TestAPISetIssueStateUsesPlatformHostBody(t *testing.T) {
 	assert := Assert.New(t)
 	ctx := context.Background()
 
-	database, err := db.Open(
-		filepath.Join(t.TempDir(), "test.db"),
-	)
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	seedIssueOnHost(
 		t, database,
@@ -6175,10 +6097,7 @@ func TestE2EPRDetailRefreshesEditedCommentBody(t *testing.T) {
 		return mockComments, nil
 	}
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
@@ -6308,10 +6227,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
 		return mockComments, nil
 	}
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
@@ -6462,10 +6378,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenAnotherPRChanges(t *testing.T) {
 		},
 	}
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
@@ -6574,10 +6487,7 @@ func TestE2EIssueDetailRefreshesEditedCommentBody(t *testing.T) {
 		return mockComments, nil
 	}
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
@@ -6692,10 +6602,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenIssueListIsUnchanged(t *testing.
 		return mockComments, nil
 	}
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
@@ -6837,10 +6744,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenAnotherIssueChanges(t *testing.T
 		},
 	}
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
@@ -6941,10 +6845,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 		},
 	}
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
@@ -7040,10 +6941,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 		},
 	}
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
@@ -7155,10 +7053,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 		},
 	}
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
@@ -8415,10 +8310,7 @@ func TestAPIGitealikeReadSyncPersistsThroughServer(t *testing.T) {
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry,
@@ -8549,10 +8441,7 @@ func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry,
@@ -8826,10 +8715,7 @@ func TestAPIGiteaActionsSyncPersistsThroughServer(t *testing.T) {
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry,
@@ -8944,10 +8830,7 @@ func TestAPIGitealikeMergeConflictReturnsConflict(t *testing.T) {
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry,
@@ -9357,10 +9240,7 @@ func setupGitLabCapabilityServer(t *testing.T) (*Server, *db.DB) {
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 
 	ref := platform.RepoRef{
 		Platform:           platform.KindGitLab,
@@ -9502,10 +9382,7 @@ func TestAPIGitealikeLockedPRPersistsThroughServer(t *testing.T) {
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry,
@@ -9606,10 +9483,7 @@ func TestAPIGitealikeDraftPRFieldsPersistThroughServer(t *testing.T) {
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry,
@@ -9944,9 +9818,7 @@ func TestAPIGetFilesAndDiffMarkGeneratedFilesE2E(t *testing.T) {
 	ctx := t.Context()
 
 	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	bareDir := filepath.Join(dir, "clones")
 	bare := filepath.Join(bareDir, "github.com", "acme", "widget.git")
@@ -10056,10 +9928,7 @@ func TestSetActiveWorktreeKey(t *testing.T) {
 func TestAPIRateLimits(t *testing.T) {
 	assert := Assert.New(t)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	rt := ghclient.NewRateTracker(database, "github.com", "rest")
 
@@ -10107,10 +9976,7 @@ func TestAPISyncPRIncrementsRequestCount(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	rt := ghclient.NewRateTracker(database, "github.com", "rest")
 
@@ -10168,10 +10034,7 @@ func TestAPISyncPRIncrementsRequestCount(t *testing.T) {
 func TestAPIRateLimitsWithBudget(t *testing.T) {
 	assert := Assert.New(t)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	rt := ghclient.NewRateTracker(database, "github.com", "rest")
 
@@ -10215,10 +10078,7 @@ func TestAPIRateLimitsWithBudget(t *testing.T) {
 func TestAPIRateLimitsResetExpiredBudgetWindow(t *testing.T) {
 	assert := Assert.New(t)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	rt := ghclient.NewRateTracker(database, "github.com", "rest")
 	budget := ghclient.NewSyncBudget(500)
@@ -10267,10 +10127,7 @@ func TestAPIRateLimitsResetExpiredBudgetWindow(t *testing.T) {
 func TestAPIRateLimitsWithGQL(t *testing.T) {
 	assert := Assert.New(t)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	restRT := ghclient.NewRateTracker(database, "github.com", "rest")
 	gqlRT := ghclient.NewRateTracker(database, "github.com", "graphql")
@@ -10325,10 +10182,7 @@ func TestAPIRateLimitsWithGQL(t *testing.T) {
 func TestAPIRateLimitsGQLDefaultsUnknown(t *testing.T) {
 	assert := Assert.New(t)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	rt := ghclient.NewRateTracker(database, "github.com", "rest")
 	syncer := ghclient.NewSyncer(
@@ -10367,10 +10221,7 @@ func TestAPIRateLimitsGQLDefaultsUnknown(t *testing.T) {
 func TestAPIRateLimitsMultiHostMixed(t *testing.T) {
 	assert := Assert.New(t)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	// Two hosts: github.com has GQL data, ghe.example.com does not.
 	ghRT := ghclient.NewRateTracker(database, "github.com", "rest")
@@ -10437,10 +10288,7 @@ func TestAPIRateLimitsMultiHostMixed(t *testing.T) {
 func TestAPIRateLimitsScopesSameHostByProvider(t *testing.T) {
 	assert := Assert.New(t)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	host := "code.example.com"
 	ghRT := ghclient.NewPlatformRateTracker(database, "github", host, "rest")
@@ -10873,9 +10721,7 @@ func setupTestServerWithClonesAndServer(t *testing.T) (
 	t.Helper()
 
 	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	database = dbtest.Open(t)
 
 	bareDir := filepath.Join(dir, "clones")
 	require.NoError(t, os.MkdirAll(bareDir, 0o755))
@@ -10995,9 +10841,7 @@ func TestAPIGetFilePreview_ReturnsDeletedFileContent(t *testing.T) {
 	ctx := t.Context()
 
 	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	seedPR(t, database, "acme", "widgets", 1)
 	diffRepo, err := testutil.SetupDiffRepo(ctx, dir, database)
@@ -11098,9 +10942,7 @@ func TestAPIGetDiff_RootCommit(t *testing.T) {
 	require := require.New(t)
 
 	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	bareDir := filepath.Join(dir, "clones")
 	require.NoError(os.MkdirAll(bareDir, 0o755))
@@ -11759,9 +11601,7 @@ func setupWorkspaceServerFixtureWithHost(
 	}
 
 	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	remoteDir := filepath.Join(dir, "remote")
 	require.NoError(t, os.MkdirAll(remoteDir, 0o755))
@@ -12001,9 +11841,7 @@ func TestCleanupWorkspaceServerFixtureArtifactsKeepsDeletingAfterError(
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 	t.Setenv("TMUX_RECORD", record)
 
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	manager := workspace.NewManager(database, filepath.Join(dir, "worktrees"))
 	manager.SetTmuxCommand([]string{script})
@@ -12035,7 +11873,7 @@ func TestCleanupWorkspaceServerFixtureArtifactsKeepsDeletingAfterError(
 		TmuxSession:     "middleman-fails",
 		Status:          "ready",
 	}))
-	_, err = database.WriteDB().ExecContext(ctx, `
+	_, err := database.WriteDB().ExecContext(ctx, `
 		UPDATE middleman_workspaces
 		SET created_at = CASE id
 			WHEN 'ws-succeeds' THEN datetime('now')
@@ -12322,9 +12160,7 @@ esac
 exit 0
 `), 0o755))
 
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 	seedPR(t, database, "acme", "widget", 1)
 	worktreeDir := filepath.Join(dir, "worktrees")
 	cfg := &config.Config{Agents: []config.Agent{{
@@ -12537,9 +12373,7 @@ exit 0
 `), 0o755))
 	t.Setenv("TMUX_RECORD", record)
 
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 	seedPR(t, database, "acme", "widget", 1)
 
 	worktreeDir := filepath.Join(dir, "worktrees")
@@ -12623,9 +12457,7 @@ exit 0
 `), 0o755))
 	t.Setenv("TMUX_RECORD", record)
 
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 	seedPR(t, database, "acme", "widget", 1)
 
 	worktreeDir := filepath.Join(dir, "worktrees")
@@ -15347,11 +15179,7 @@ func TestWorkspacePRDetailPlatformHost(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 
-	database, err := db.Open(
-		filepath.Join(t.TempDir(), "test.db"),
-	)
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	// Seed same owner/name on different hosts to test ambiguity.
 	seedPROnHost(

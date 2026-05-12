@@ -3,21 +3,18 @@ package projecttest
 import (
 	"context"
 	"database/sql"
-	"path/filepath"
 	"testing"
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/wesm/middleman/internal/db"
+	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
 func openTestDB(t *testing.T) *db.DB {
 	t.Helper()
-	database, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, database.Close()) })
-	return database
+	return dbtest.Open(t)
 }
 
 func TestCreateProjectWithoutPlatformIdentity(t *testing.T) {

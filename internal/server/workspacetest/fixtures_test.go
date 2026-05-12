@@ -22,6 +22,7 @@ import (
 	"github.com/wesm/middleman/internal/gitenv"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/server"
+	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
 type workspaceServerFixture struct {
@@ -43,9 +44,7 @@ func setupWorkspaceServerFixture(
 	}
 
 	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	remoteDir := filepath.Join(dir, "remote")
 	require.NoError(t, os.MkdirAll(remoteDir, 0o755))

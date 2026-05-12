@@ -19,6 +19,7 @@ import (
 	"github.com/wesm/middleman/internal/db"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/server"
+	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
 func TestTriggerSyncE2EBypassesCooldown(t *testing.T) {
@@ -167,9 +168,7 @@ func startSyncCooldownE2EServer(
 	require := require.New(t)
 
 	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	cfgPath := filepath.Join(dir, "config.toml")
 	require.NoError(os.WriteFile(cfgPath, []byte(cfgContent), 0o644))

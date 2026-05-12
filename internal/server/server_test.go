@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -17,15 +16,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wesm/middleman/internal/db"
+	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
 func openTestDB(t *testing.T) *db.DB {
 	t.Helper()
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoErrorf(t, err, "open db")
-	t.Cleanup(func() { database.Close() })
-	return database
+	return dbtest.Open(t)
 }
 
 func newTestServer(t *testing.T) *Server {

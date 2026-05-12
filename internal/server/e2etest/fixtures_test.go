@@ -13,6 +13,7 @@ import (
 	"github.com/wesm/middleman/internal/db"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/server"
+	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
 type localHealthResponse struct {
@@ -21,9 +22,7 @@ type localHealthResponse struct {
 
 func setupTestServer(t *testing.T) (*server.Server, *db.DB) {
 	t.Helper()
-	database, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, database.Close()) })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
@@ -34,9 +33,7 @@ func setupTestServer(t *testing.T) (*server.Server, *db.DB) {
 
 func setupWithBasePath(t *testing.T, basePath string, _ any) *server.Server {
 	t.Helper()
-	database, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, database.Close()) })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
@@ -78,9 +75,7 @@ func setupTestServerWithConfigContentAndSyncer(
 	t.Helper()
 
 	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, database.Close()) })
+	database := dbtest.Open(t)
 
 	cfgPath := filepath.Join(dir, "config.toml")
 	require.NoError(t, os.WriteFile(cfgPath, []byte(cfgContent), 0o644))

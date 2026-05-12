@@ -28,6 +28,7 @@ import (
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
+	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
 type lockedBuffer struct {
@@ -193,10 +194,7 @@ func setupWrapperServerWithScriptAndDBAndServer(
 	}
 
 	dir := t.TempDir()
-	var err error
-	database, err = db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	database = dbtest.Open(t)
 
 	bareDir := filepath.Join(dir, "clones")
 	require.NoError(t, os.MkdirAll(bareDir, 0o755))

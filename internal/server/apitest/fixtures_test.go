@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -17,6 +16,7 @@ import (
 	"github.com/wesm/middleman/internal/db"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/server"
+	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
 var defaultTestRepos = []ghclient.RepoRef{
@@ -26,9 +26,7 @@ var defaultTestRepos = []ghclient.RepoRef{
 func setupTestServer(t *testing.T) (*server.Server, *db.DB) {
 	t.Helper()
 
-	database, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	syncer := ghclient.NewSyncer(nil, database, nil, defaultTestRepos, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)

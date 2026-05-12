@@ -26,17 +26,13 @@ import (
 	"github.com/wesm/middleman/internal/gitclone"
 	"github.com/wesm/middleman/internal/gitenv"
 	"github.com/wesm/middleman/internal/platform"
+	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
 // openTestDB opens a temporary SQLite database for the duration of the test.
 func openTestDB(t *testing.T) *db.DB {
 	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "test.db")
-	d, err := db.Open(path)
-	require.NoError(t, err)
-	t.Cleanup(func() { d.Close() })
-	return d
+	return dbtest.Open(t)
 }
 
 func setupBareRemoteForSyncTest(t *testing.T) string {
