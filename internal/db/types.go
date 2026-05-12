@@ -167,11 +167,12 @@ func (mr MergeRequest) Compare(other MergeRequest) int {
 
 // CICheck represents a single CI check run.
 type CICheck struct {
-	Name       string `json:"name"`
-	Status     string `json:"status"`     // queued, in_progress, completed
-	Conclusion string `json:"conclusion"` // success, failure, neutral, cancelled, skipped, timed_out, action_required, or empty
-	URL        string `json:"url"`        // link to the check run details page
-	App        string `json:"app"`        // app name (e.g., "GitHub Actions")
+	Name            string `json:"name"`
+	Status          string `json:"status"`     // queued, in_progress, completed
+	Conclusion      string `json:"conclusion"` // success, failure, neutral, cancelled, skipped, timed_out, action_required, or empty
+	URL             string `json:"url"`        // link to the check run details page
+	App             string `json:"app"`        // app name (e.g., "GitHub Actions")
+	DurationSeconds *int64 `json:"duration_seconds,omitempty"`
 }
 
 func (c CICheck) Compare(other CICheck) int {

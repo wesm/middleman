@@ -144,14 +144,27 @@ func DBCIChecks(checks []CICheck) []db.CICheck {
 	out := make([]db.CICheck, 0, len(checks))
 	for _, check := range checks {
 		out = append(out, db.CICheck{
-			Name:       check.Name,
-			Status:     check.Status,
-			Conclusion: check.Conclusion,
-			URL:        check.URL,
-			App:        check.App,
+			Name:            check.Name,
+			Status:          check.Status,
+			Conclusion:      check.Conclusion,
+			URL:             check.URL,
+			App:             check.App,
+			DurationSeconds: CICheckDurationSeconds(check),
 		})
 	}
 	return out
+}
+
+func CICheckDurationSeconds(check CICheck) *int64 {
+	if check.StartedAt == nil || check.CompletedAt == nil {
+		return nil
+	}
+	duration := check.CompletedAt.Sub(*check.StartedAt)
+	if duration < 0 {
+		return nil
+	}
+	seconds := int64(duration.Seconds())
+	return &seconds
 }
 
 func itemLabelUpdatedAt(updatedAt, createdAt time.Time) time.Time {

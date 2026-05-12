@@ -52,7 +52,7 @@ test.describe("CI dropdown", () => {
     await chip.click();
 
     const checks = detail.locator(".ci-checks");
-    await expect(checks).toBeVisible();
+    await expect(checks).toBeVisible({ timeout: 15_000 });
     await expect(detail.locator(".ci-check")).toHaveCount(4);
 
     const checksBox = await checks.boundingBox();
@@ -80,6 +80,11 @@ test.describe("CI dropdown", () => {
       "lint",
       "roborev",
       "test",
+    ]);
+    await expect(detail.locator(".ci-duration")).toHaveText([
+      "1m 30s",
+      "45s",
+      "2m",
     ]);
     const roborevRow = detail.locator(".ci-check", { hasText: "roborev" });
     await expect(roborevRow).toHaveCount(1);

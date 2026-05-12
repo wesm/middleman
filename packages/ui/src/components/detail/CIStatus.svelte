@@ -63,9 +63,28 @@
     if (chipStatus === "pending") return "chip--amber";
     return "chip--muted";
   }
+
+  function formatDuration(seconds: number | undefined): string {
+    if (seconds === undefined || seconds < 0 || !Number.isFinite(seconds)) {
+      return "";
+    }
+    const wholeSeconds = Math.floor(seconds);
+    if (wholeSeconds < 60) return `${wholeSeconds}s`;
+    const minutes = Math.floor(wholeSeconds / 60);
+    const remainingSeconds = wholeSeconds % 60;
+    if (minutes < 60) {
+      return remainingSeconds === 0
+        ? `${minutes}m`
+        : `${minutes}m ${remainingSeconds}s`;
+    }
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    return remainingMinutes === 0 ? `${hours}h` : `${hours}h ${remainingMinutes}m`;
+  }
 </script>
 
 {#snippet checkRow(check: CICheck)}
+  {@const duration = formatDuration(check.duration_seconds)}
   {#if check.url}
     <a
       class="ci-check"
@@ -75,6 +94,9 @@
     >
       <span class="ci-icon" style="color: {checkColor(check)}">{checkIcon(check)}</span>
       <span class="ci-name">{check.name}</span>
+      {#if duration}
+        <span class="ci-duration">{duration}</span>
+      {/if}
       {#if check.app}
         <span class="ci-app">{check.app}</span>
       {/if}
@@ -84,6 +106,9 @@
     <div class="ci-check ci-check--static">
       <span class="ci-icon" style="color: {checkColor(check)}">{checkIcon(check)}</span>
       <span class="ci-name">{check.name}</span>
+      {#if duration}
+        <span class="ci-duration">{duration}</span>
+      {/if}
       {#if check.app}
         <span class="ci-app">{check.app}</span>
       {/if}
@@ -230,6 +255,13 @@
   }
 
   .ci-app {
+    font-size: 10px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .ci-duration {
+    font-variant-numeric: tabular-nums;
     font-size: 10px;
     color: var(--text-muted);
     flex-shrink: 0;

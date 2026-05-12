@@ -41,21 +41,27 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	// --- Pull Requests ---
 
 	const widgetsPR1HeadSHA = "1111111111111111111111111111111111111111"
+	buildDuration := int64(90)
+	lintDuration := int64(45)
+	testDuration := int64(120)
+	checkStarted := now.Add(-10 * time.Minute)
 
 	ciChecksJSON, err := json.Marshal([]db.CICheck{
 		{
-			Name:       "build",
-			Status:     "completed",
-			Conclusion: "success",
-			URL:        "https://github.com/acme/widgets/actions/runs/1/job/1",
-			App:        "GitHub Actions",
+			Name:            "build",
+			Status:          "completed",
+			Conclusion:      "success",
+			URL:             "https://github.com/acme/widgets/actions/runs/1/job/1",
+			App:             "GitHub Actions",
+			DurationSeconds: &buildDuration,
 		},
 		{
-			Name:       "lint",
-			Status:     "completed",
-			Conclusion: "success",
-			URL:        "https://github.com/acme/widgets/actions/runs/1/job/3",
-			App:        "GitHub Actions",
+			Name:            "lint",
+			Status:          "completed",
+			Conclusion:      "success",
+			URL:             "https://github.com/acme/widgets/actions/runs/1/job/3",
+			App:             "GitHub Actions",
+			DurationSeconds: &lintDuration,
 		},
 		{
 			Name:       "roborev",
@@ -65,11 +71,12 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			App:        "roborev",
 		},
 		{
-			Name:       "test",
-			Status:     "completed",
-			Conclusion: "success",
-			URL:        "https://github.com/acme/widgets/actions/runs/1/job/2",
-			App:        "GitHub Actions",
+			Name:            "test",
+			Status:          "completed",
+			Conclusion:      "success",
+			URL:             "https://github.com/acme/widgets/actions/runs/1/job/2",
+			App:             "GitHub Actions",
+			DurationSeconds: &testDuration,
 		},
 	})
 	if err != nil {
@@ -734,25 +741,31 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 				CheckRuns: map[string][]*gh.CheckRun{
 					refKey("acme", "widgets", widgetsPR1HeadSHA): {
 						{
-							Name:       new("build"),
-							Status:     new("completed"),
-							Conclusion: new("success"),
-							HTMLURL:    new("https://github.com/acme/widgets/actions/runs/1/job/1"),
-							App:        &gh.App{Name: new("GitHub Actions")},
+							Name:        new("build"),
+							Status:      new("completed"),
+							Conclusion:  new("success"),
+							HTMLURL:     new("https://github.com/acme/widgets/actions/runs/1/job/1"),
+							StartedAt:   &gh.Timestamp{Time: checkStarted},
+							CompletedAt: &gh.Timestamp{Time: checkStarted.Add(time.Duration(buildDuration) * time.Second)},
+							App:         &gh.App{Name: new("GitHub Actions")},
 						},
 						{
-							Name:       new("test"),
-							Status:     new("completed"),
-							Conclusion: new("success"),
-							HTMLURL:    new("https://github.com/acme/widgets/actions/runs/1/job/2"),
-							App:        &gh.App{Name: new("GitHub Actions")},
+							Name:        new("test"),
+							Status:      new("completed"),
+							Conclusion:  new("success"),
+							HTMLURL:     new("https://github.com/acme/widgets/actions/runs/1/job/2"),
+							StartedAt:   &gh.Timestamp{Time: checkStarted},
+							CompletedAt: &gh.Timestamp{Time: checkStarted.Add(time.Duration(testDuration) * time.Second)},
+							App:         &gh.App{Name: new("GitHub Actions")},
 						},
 						{
-							Name:       new("lint"),
-							Status:     new("completed"),
-							Conclusion: new("success"),
-							HTMLURL:    new("https://github.com/acme/widgets/actions/runs/1/job/3"),
-							App:        &gh.App{Name: new("GitHub Actions")},
+							Name:        new("lint"),
+							Status:      new("completed"),
+							Conclusion:  new("success"),
+							HTMLURL:     new("https://github.com/acme/widgets/actions/runs/1/job/3"),
+							StartedAt:   &gh.Timestamp{Time: checkStarted},
+							CompletedAt: &gh.Timestamp{Time: checkStarted.Add(time.Duration(lintDuration) * time.Second)},
+							App:         &gh.App{Name: new("GitHub Actions")},
 						},
 						{
 							Name:       new("roborev"),

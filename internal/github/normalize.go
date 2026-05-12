@@ -357,20 +357,7 @@ func dbLabels(labels []platform.Label, updatedAt time.Time) []db.Label {
 }
 
 func dbCIChecks(checks []platform.CICheck) []db.CICheck {
-	if len(checks) == 0 {
-		return nil
-	}
-	out := make([]db.CICheck, 0, len(checks))
-	for _, check := range checks {
-		out = append(out, db.CICheck{
-			Name:       check.Name,
-			Status:     check.Status,
-			Conclusion: check.Conclusion,
-			URL:        check.URL,
-			App:        check.App,
-		})
-	}
-	return out
+	return platform.DBCIChecks(checks)
 }
 
 // NormalizeIssueCommentEvent converts a GitHub IssueComment to a db.IssueEvent.

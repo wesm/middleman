@@ -18,6 +18,7 @@ describe("CIStatus", () => {
             conclusion: "success",
             url: "https://example.com/build",
             app: "GitHub Actions",
+            duration_seconds: 135,
           },
           {
             name: "test",
@@ -57,5 +58,6 @@ describe("CIStatus", () => {
     expect(document.querySelectorAll(".ci-check")).toHaveLength(4);
     expect(document.querySelectorAll("a.ci-check")).toHaveLength(3);
     expect(document.querySelector(".ci-check--static")).toBeTruthy();
+    expect(screen.getByText("2m 15s")).toBeTruthy();
   });
 });
