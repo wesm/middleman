@@ -55,6 +55,7 @@ export interface CICheck {
   conclusion: string;
   url: string;
   app: string;
+  duration_seconds?: number;
 }
 
 export interface ActivitySettings {

@@ -669,6 +669,37 @@ func TestNormalizeCheckRuns_SortsByCasefoldedName(t *testing.T) {
 	assert.Equal("Zebra", checks[2].Name)
 }
 
+func TestNormalizeCheckRunsIncludesDurationWhenTimestampsPresent(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	name := "build"
+	status := "completed"
+	conclusion := "success"
+	started := time.Date(2026, 5, 12, 14, 0, 0, 0, time.UTC)
+	completed := started.Add(2*time.Minute + 15*time.Second)
+
+	raw := NormalizeCheckRuns([]*gh.CheckRun{{
+		Name:        &name,
+		Status:      &status,
+		Conclusion:  &conclusion,
+		StartedAt:   ghTimestamp(started),
+		CompletedAt: ghTimestamp(completed),
+	}})
+	require.NotEmpty(raw)
+
+	var checks []struct {
+		Name            string `json:"name"`
+		DurationSeconds *int64 `json:"duration_seconds,omitempty"`
+	}
+	require.NoError(json.Unmarshal([]byte(raw), &checks))
+	require.Len(checks, 1)
+
+	assert.Equal("build", checks[0].Name)
+	require.NotNil(checks[0].DurationSeconds)
+	assert.Equal(int64(135), *checks[0].DurationSeconds)
+}
+
 func TestNormalizeCIChecks_LatestCheckRunPerNameWins(t *testing.T) {
 	assert := Assert.New(t)
 

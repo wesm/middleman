@@ -1,0 +1,33 @@
+package platform
+
+import (
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestDBCIChecksComputesDurationFromProviderTimestamps(t *testing.T) {
+	assert := assert.New(t)
+	started := time.Date(2026, 5, 12, 14, 0, 0, 0, time.UTC)
+	completed := started.Add(90 * time.Second)
+
+	checks := DBCIChecks([]CICheck{{
+		Name:        "build",
+		Status:      "completed",
+		Conclusion:  "success",
+		StartedAt:   &started,
+		CompletedAt: &completed,
+	}, {
+		Name:        "pending",
+		Status:      "in_progress",
+		StartedAt:   &started,
+		CompletedAt: nil,
+	}})
+
+	require.Len(t, checks, 2)
+	require.NotNil(t, checks[0].DurationSeconds)
+	assert.Equal(int64(90), *checks[0].DurationSeconds)
+	assert.Nil(checks[1].DurationSeconds)
+}
