@@ -1657,6 +1657,394 @@ func TestSyncStatusUpdatedUsesUTC(t *testing.T) {
 	Assert.Equal(t, time.UTC, status.LastRunAt.Location())
 }
 
+// blockingMockClient embeds mockClient but blocks in
+// ListOpenPullRequests until the provided channel is closed.
+type blockingMockClient struct {
+	mockClient
+	entered chan struct{}
+	blocked chan struct{}
+}
+
+func (b *blockingMockClient) ListOpenPullRequests(
+	_ context.Context, _, _ string,
+) ([]*gh.PullRequest, error) {
+	if b.entered != nil {
+		select {
+		case b.entered <- struct{}{}:
+		default:
+		}
+	}
+	<-b.blocked
+	return nil, nil
+}
+
+func TestSyncerStopWaitsForRunOnce(t *testing.T) {
+	entered := make(chan struct{})
+	blocked := make(chan struct{})
+	mock := &blockingMockClient{
+		entered: entered,
+		blocked: blocked,
+	}
+
+	database := openTestDB(t)
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock}, database, nil,
+		[]RepoRef{{
+			Owner: "o", Name: "r", PlatformHost: "github.com",
+			PlatformExternalID: "repo-o-r",
+		}},
+		time.Hour, nil, nil,
+	)
+
+	syncer.Start(t.Context())
+
+	// Wait for the goroutine to enter the blocked ListOpenPullRequests.
+	<-entered
+
+	// Call Stop while RunOnce is still in flight.
+	stopped := make(chan struct{})
+	go func() {
+		syncer.Stop()
+		close(stopped)
+	}()
+
+	// Stop should NOT return yet — RunOnce is still blocked.
+	select {
+	case <-stopped:
+		require.Fail(t, "Stop returned while RunOnce was still in flight")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	// Unblock RunOnce and verify Stop completes.
+	close(blocked)
+
+	select {
+	case <-stopped:
+		// Stop waited for RunOnce to finish.
+	case <-time.After(5 * time.Second):
+		require.Fail(t, "Stop did not return within timeout")
+	}
+}
+
+// parallelMockClient tracks the maximum number of concurrent
+// ListOpenPullRequests calls. Each call blocks until block is
+// closed, so the in-flight count saturates at the worker pool size.
+type parallelMockClient struct {
+	mockClient
+	inflight         atomic.Int32
+	maxInflight      atomic.Int32
+	saturationTarget int32
+	saturated        chan struct{}
+	saturatedOnce    sync.Once
+	block            chan struct{}
+}
+
+func (p *parallelMockClient) ListOpenPullRequests(
+	_ context.Context, _, _ string,
+) ([]*gh.PullRequest, error) {
+	n := p.inflight.Add(1)
+	defer p.inflight.Add(-1)
+	for {
+		current := p.maxInflight.Load()
+		if n <= current || p.maxInflight.CompareAndSwap(current, n) {
+			break
+		}
+	}
+	if n == p.saturationTarget && p.saturated != nil {
+		p.saturatedOnce.Do(func() { close(p.saturated) })
+	}
+	<-p.block
+	return nil, nil
+}
+
+func TestRunOnceSyncesReposInParallel(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+
+	const parallelism = 3
+	const repoCount = 5
+
+	mc := &parallelMockClient{
+		block:            make(chan struct{}),
+		saturated:        make(chan struct{}),
+		saturationTarget: parallelism,
+	}
+	repos := make([]RepoRef, repoCount)
+	for i := range repos {
+		repos[i] = RepoRef{
+			Owner:        "o",
+			Name:         fmt.Sprintf("r%d", i),
+			PlatformHost: "github.com",
+		}
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil, repos,
+		time.Minute, nil, nil,
+	)
+	syncer.SetParallelism(parallelism)
+
+	done := make(chan struct{})
+	go func() {
+		syncer.RunOnce(t.Context())
+		close(done)
+	}()
+
+	select {
+	case <-mc.saturated:
+	case <-time.After(2 * time.Second):
+		require.Failf(
+			"expected worker pool to saturate",
+			"expected %d concurrent syncs, got %d",
+			parallelism, mc.inflight.Load(),
+		)
+	}
+	assert.LessOrEqual(mc.maxInflight.Load(), int32(parallelism),
+		"max concurrency exceeded bound")
+
+	close(mc.block)
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		require.Fail("RunOnce did not complete after unblocking workers")
+	}
+
+	assert.Equal(int32(parallelism), mc.maxInflight.Load(),
+		"should have reached the parallelism bound exactly")
+}
+
+func TestRunOnceCancelDuringBackoffDoesNotReportSuccess(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+
+	// Put the rate tracker into a long backoff window so every
+	// worker blocks on the select inside RunOnce rather than
+	// calling the client.
+	rt := NewRateTracker(d, "github.com", "rest")
+	resetAt := time.Now().Add(time.Hour)
+	rt.UpdateFromRate(Rate{
+		Remaining: 0,
+		Reset:     resetAt,
+	})
+
+	mc := &mockClient{}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
+		time.Minute,
+		map[string]*RateTracker{"github.com": rt}, nil,
+	)
+
+	var completedCalled atomic.Bool
+	syncer.SetOnSyncCompleted(func([]RepoSyncResult) {
+		completedCalled.Store(true)
+	})
+	backoffReached := make(chan struct{})
+	var backoffReachedOnce sync.Once
+	syncer.SetOnStatusChange(func(status *SyncStatus) {
+		if strings.Contains(status.Progress, "rate limited, waiting") {
+			backoffReachedOnce.Do(func() { close(backoffReached) })
+		}
+	})
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() {
+		syncer.RunOnce(ctx)
+		close(done)
+	}()
+
+	select {
+	case <-backoffReached:
+	case <-time.After(2 * time.Second):
+		require.Fail("RunOnce did not reach rate-limit backoff")
+	}
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		require.Fail("RunOnce did not return after ctx cancel")
+	}
+
+	assert.False(completedCalled.Load(),
+		"onSyncCompleted must not fire when RunOnce is canceled")
+	status := syncer.Status()
+	assert.False(status.Running)
+	assert.NotEmpty(status.LastError,
+		"LastError should reflect the cancellation")
+}
+
+func TestRunOnceCancelAfterCompleteReportsSuccess(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+
+	// Empty repo list + pre-canceled context. All work is trivially
+	// "done" (completed == total == 0), so the cancel-cleanup path
+	// must NOT treat the run as a failure. This exercises the gate
+	// that distinguishes "canceled mid-flight" from "canceled after
+	// every worker already finished".
+	mc := &mockClient{}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{}, time.Minute, nil, nil,
+	)
+
+	var completedCalled atomic.Bool
+	syncer.SetOnSyncCompleted(func([]RepoSyncResult) {
+		completedCalled.Store(true)
+	})
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	done := make(chan struct{})
+	go func() {
+		syncer.RunOnce(ctx)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		require.Fail("RunOnce did not return")
+	}
+
+	assert.True(completedCalled.Load(),
+		"onSyncCompleted should fire when no work was outstanding "+
+			"at cancel time")
+	status := syncer.Status()
+	assert.False(status.Running)
+	assert.Empty(status.LastError,
+		"LastError should be empty when all work completed before cancel")
+}
+
+// cancelDuringSyncMockClient blocks ListOpenPullRequests until ctx
+// is canceled, then returns ctx.Err(). This simulates a real
+// network call that respects ctx and aborts mid-sync.
+type cancelDuringSyncMockClient struct {
+	mockClient
+	entered chan struct{}
+}
+
+func (c *cancelDuringSyncMockClient) ListOpenPullRequests(
+	ctx context.Context, _, _ string,
+) ([]*gh.PullRequest, error) {
+	select {
+	case c.entered <- struct{}{}:
+	default:
+	}
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func TestRunOnceCancelDuringSyncRepoDoesNotReportSuccess(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+
+	// Worker is mid-syncRepo when ctx cancels. syncRepo's API call
+	// returns ctx.Err(). The worker must NOT count this repo as
+	// completed, or the cancel-cleanup gate (completed < total) will
+	// incorrectly fall through to the success path and fire
+	// onSyncCompleted on a partially-aborted run.
+	mc := &cancelDuringSyncMockClient{
+		entered: make(chan struct{}, 1),
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+
+	var completedCalled atomic.Bool
+	syncer.SetOnSyncCompleted(func([]RepoSyncResult) {
+		completedCalled.Store(true)
+	})
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() {
+		syncer.RunOnce(ctx)
+		close(done)
+	}()
+
+	select {
+	case <-mc.entered:
+	case <-time.After(2 * time.Second):
+		require.Fail("worker did not enter ListOpenPullRequests")
+	}
+
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		require.Fail("RunOnce did not return")
+	}
+
+	assert.False(completedCalled.Load(),
+		"onSyncCompleted must not fire when syncRepo was canceled "+
+			"mid-flight")
+	status := syncer.Status()
+	assert.False(status.Running)
+	assert.NotEmpty(status.LastError,
+		"LastError should reflect the cancellation")
+}
+
+// deadlineExceededMockClient returns a wrapped context.DeadlineExceeded
+// from ListOpenPullRequests. This simulates a per-request timeout
+// (e.g. http.Client.Timeout firing) where the call's own deadline
+// expired even though the run context is still alive.
+type deadlineExceededMockClient struct {
+	mockClient
+}
+
+func (c *deadlineExceededMockClient) ListOpenPullRequests(
+	_ context.Context, _, _ string,
+) ([]*gh.PullRequest, error) {
+	return nil, fmt.Errorf("list timed out: %w", context.DeadlineExceeded)
+}
+
+func TestRunOncePerRequestDeadlineRecordsError(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+
+	// syncRepo returns a wrapped context.DeadlineExceeded but the
+	// run context is still alive. The worker must NOT mistake this
+	// for a run-cancellation and bail silently — that would drop
+	// the error from lastErr and report a clean status despite a
+	// failed sync. Per-request timeouts must reach the normal
+	// error-handling path so they show up in LastError.
+	mc := &deadlineExceededMockClient{}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+
+	var completedCalled atomic.Bool
+	syncer.SetOnSyncCompleted(func([]RepoSyncResult) {
+		completedCalled.Store(true)
+	})
+
+	syncer.RunOnce(t.Context())
+
+	status := syncer.Status()
+	assert.False(status.Running)
+	assert.NotEmpty(status.LastError,
+		"per-request DeadlineExceeded should be recorded in LastError")
+	assert.Contains(status.LastError, "list timed out",
+		"LastError should preserve the wrapped error message")
+	require.True(completedCalled.Load(),
+		"onSyncCompleted should fire on a finished run with errors")
+}
+
 // syncedWriter wraps an io.Writer with a mutex for safe concurrent
 // writes from multiple goroutines, used to capture slog output in
 // tests where workers run in parallel.
