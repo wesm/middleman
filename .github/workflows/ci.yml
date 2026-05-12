@@ -151,7 +151,31 @@ jobs:
       - name: Run tests (race detector)
         run: |
           mkdir -p tmp
-          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-race-output.json -- -race ./... -shuffle=on
+          go tool gotestsum \
+            --format pkgname-and-test-fails \
+            --jsonfile=tmp/test-race-output.json \
+            --jsonfile-timing-events=tmp/test-race-timing-events.json \
+            -- -race ./... -shuffle=on
+
+      - name: Summarize race test timings
+        if: ${{ !cancelled() && hashFiles('tmp/test-race-output.json') != '' }}
+        run: |
+          {
+            echo "## Slowest race packages"
+            echo
+            echo '```'
+            jq -r '
+              select(.Action == "pass" and .Package and (.Test | not) and .Elapsed)
+              | "\(.Elapsed)s\t\(.Package)"
+            ' tmp/test-race-timing-events.json | sort -rn | head -n 30
+            echo '```'
+            echo
+            echo "## Slowest race tests"
+            echo
+            echo '```'
+            go tool gotestsum tool slowest --jsonfile tmp/test-race-output.json --num 40 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish race test report
         if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
@@ -161,6 +185,16 @@ jobs:
           path: tmp/test-race-output.json
           reporter: golang-json
           fail-on-error: false
+
+      - name: Upload race timing artifacts
+        if: ${{ !cancelled() && hashFiles('tmp/test-race-output.json') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: go-race-timing
+          path: |
+            tmp/test-race-output.json
+            tmp/test-race-timing-events.json
+          retention-days: 7
 
   build:
     runs-on: ubuntu-latest
