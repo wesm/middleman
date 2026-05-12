@@ -441,6 +441,7 @@ func newServer(
 			TmuxOwnerMarker:         s.workspaces.TmuxOwnerMarker(),
 			WrapAgentSessionsInTmux: cfg.TmuxAgentSessionsEnabled(),
 			StripEnvVars:            cfg.TokenEnvNames(),
+			ShellCommand:            cfg.ShellCommand(),
 			OnSessionExit:           s.handleRuntimeSessionExit,
 		})
 		if err := s.restoreRuntimeTmuxSessions(context.Background()); err != nil {

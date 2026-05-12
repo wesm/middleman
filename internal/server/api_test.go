@@ -14085,6 +14085,63 @@ func TestWorkspaceRuntimeEnsureShellE2E(t *testing.T) {
 	assert.Empty(*getResp.JSON200.Sessions)
 }
 
+// TestWorkspaceRuntimeShellTerminalWebSocketE2E exercises the
+// /ws/v1/.../runtime/shell/terminal upgrade path end-to-end with a
+// custom Shell.Command. Hardened deployments (e.g. systemd services
+// with SystemCallFilter=~@privileged) need the override so that
+// zsh's startup setresuid is not SIGSYS'd by the parent's seccomp
+// filter; this test guards both the websocket route and the
+// config.Shell.Command -> manager.Options.ShellCommand wiring.
+func TestWorkspaceRuntimeShellTerminalWebSocketE2E(t *testing.T) {
+	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
+
+	require := require.New(t)
+	cfg := &config.Config{
+		Shell: config.Shell{
+			Command: serverRuntimeHelperCommand("echo"),
+		},
+	}
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	shellResp, err := client.HTTP.EnsureWorkspaceRuntimeShellWithResponse(
+		ctx, ws.Id,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, shellResp.StatusCode())
+
+	ts := httptest.NewServer(srv)
+	t.Cleanup(ts.Close)
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
+		"/ws/v1/workspaces/" + ws.Id +
+		"/runtime/shell/terminal?cols=80&rows=24"
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	require.NoError(err)
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+
+	require.NoError(conn.Write(
+		ctx, websocket.MessageBinary, []byte("ping\n"),
+	))
+	readCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	var got strings.Builder
+	for {
+		typ, data, readErr := conn.Read(readCtx)
+		if readErr != nil {
+			break
+		}
+		if typ != websocket.MessageBinary {
+			continue
+		}
+		got.WriteString(string(data))
+		if strings.Contains(got.String(), "echo:ping") {
+			return
+		}
+	}
+	require.Contains(got.String(), "echo:ping")
+}
+
 func TestWorkspaceRuntimeSessionTerminalWebSocketE2E(t *testing.T) {
 	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
 

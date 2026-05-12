@@ -1748,6 +1748,115 @@ command = ["   ", "extra"]
 	)
 }
 
+func TestLoadShellCommand(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[shell]
+command = ["systemd-run", "--user", "--scope", "zsh"]
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(
+		[]string{"systemd-run", "--user", "--scope", "zsh"},
+		cfg.Shell.Command,
+	)
+	assert.Equal(
+		[]string{"systemd-run", "--user", "--scope", "zsh"},
+		cfg.ShellCommand(),
+	)
+}
+
+func TestLoadShellCommandOmitted(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, ``)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Empty(cfg.Shell.Command)
+	// Unset returns nil, signalling the runtime to fall back to $SHELL.
+	assert.Nil(cfg.ShellCommand())
+}
+
+func TestLoadShellCommandEmptyArray(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[shell]
+command = []
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Nil(cfg.ShellCommand())
+}
+
+func TestShellCommandDefensiveCopy(t *testing.T) {
+	assert := Assert.New(t)
+	cfg := &Config{Shell: Shell{Command: []string{"zsh"}}}
+	first := cfg.ShellCommand()
+	first[0] = "hacked"
+	second := cfg.ShellCommand()
+	assert.Equal([]string{"zsh"}, second)
+}
+
+func TestShellCommandNilReceiver(t *testing.T) {
+	assert := Assert.New(t)
+	var cfg *Config
+	assert.Nil(cfg.ShellCommand())
+}
+
+func TestLoadShellCommandRejectsEmptyFirstElement(t *testing.T) {
+	path := writeConfig(t, `
+[shell]
+command = ["", "zsh"]
+`)
+	_, err := Load(path)
+	require.Error(t, err)
+	require.Contains(
+		t, err.Error(),
+		`config: invalid shell.command`,
+	)
+}
+
+// Whitespace-only first element sneaks past a plain == "" check and
+// exec("   ") fails with a confusing shell-level error rather than
+// the config-load validation message operators actually want.
+func TestLoadShellCommandRejectsWhitespaceFirstElement(t *testing.T) {
+	path := writeConfig(t, `
+[shell]
+command = ["   ", "zsh"]
+`)
+	_, err := Load(path)
+	require.Error(t, err)
+	require.Contains(
+		t, err.Error(),
+		`config: invalid shell.command`,
+	)
+}
+
+func TestSavePreservesShellCommand(t *testing.T) {
+	assert := Assert.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	cfg := &Config{
+		SyncInterval:   "5m",
+		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		Host:           "127.0.0.1",
+		Port:           8091,
+		DataDir:        dir,
+		Activity:       Activity{ViewMode: "threaded", TimeRange: "7d"},
+		Shell: Shell{
+			Command: []string{"systemd-run", "--user", "zsh"},
+		},
+	}
+	require.NoError(t, cfg.Save(path))
+
+	reloaded, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(
+		[]string{"systemd-run", "--user", "zsh"},
+		reloaded.Shell.Command,
+	)
+}
+
 func TestSavePreservesTmuxCommand(t *testing.T) {
 	assert := Assert.New(t)
 	dir := t.TempDir()
