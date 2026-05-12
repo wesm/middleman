@@ -151,11 +151,7 @@ jobs:
       - name: Run tests (race detector)
         run: |
           mkdir -p tmp
-          go tool gotestsum \
-            --format pkgname-and-test-fails \
-            --jsonfile=tmp/test-race-output.json \
-            --jsonfile-timing-events=tmp/test-race-timing-events.json \
-            -- -race ./... -shuffle=on
+          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-race-output.json --jsonfile-timing-events=tmp/test-race-timing-events.json -- -race ./... -shuffle=on
 
       - name: Summarize race test timings
         if: ${{ !cancelled() && hashFiles('tmp/test-race-output.json') != '' }}
@@ -173,7 +169,15 @@ jobs:
             echo "## Slowest race tests"
             echo
             echo '```'
-            go tool gotestsum tool slowest --jsonfile tmp/test-race-output.json --num 40 || true
+            jq -r '
+              select(
+                (.Action == "pass" or .Action == "fail" or .Action == "skip")
+                and .Package
+                and .Test
+                and .Elapsed
+              )
+              | "\(.Elapsed)s\t\(.Package)\t\(.Test)"
+            ' tmp/test-race-timing-events.json | sort -rn | head -n 40
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
