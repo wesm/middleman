@@ -90,6 +90,12 @@ test("settings imports a selected subset from a repository glob", async ({ page 
   await expect(page.locator(".repo-row", { hasText: "import-lab/api" })).toBeVisible();
   await expect(page.locator(".repo-row", { hasText: "import-lab/worker" })).toHaveCount(0);
 
+  const selector = page.getByTitle("Select repository");
+  await expect(selector).toBeVisible();
+  await selector.click();
+  await expect(page.getByRole("option", { name: /import-lab\/api/ })).toBeVisible();
+  await expect(page.getByRole("option", { name: /import-lab\/worker/ })).toHaveCount(0);
+
   if (!api) throw new Error("settings-globs API context not initialized");
   const settingsResponse = await api.get("/api/v1/settings");
   const settings = await settingsResponse.json() as { repos: Array<{ owner: string; name: string; is_glob: boolean }> };

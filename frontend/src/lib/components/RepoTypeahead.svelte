@@ -1,7 +1,8 @@
 <script lang="ts">
   import { tick } from "svelte";
+  import { getStores } from "@middleman/ui";
   import { client } from "../api/runtime.js";
-  import type { Repo } from "@middleman/ui/api/types";
+  import type { ConfigRepo, Repo } from "@middleman/ui/api/types";
   import { ChevronDownIcon } from "../icons.ts";
 
   interface Props {
@@ -11,7 +12,9 @@
 
   let { selected, onchange }: Props = $props();
 
-  let repos = $state<Repo[]>([]);
+  const stores = getStores();
+
+  let fetchedRepos = $state<Repo[]>([]);
   let query = $state("");
   let open = $state(false);
   let highlightIndex = $state(0);
@@ -21,16 +24,41 @@
   $effect(() => {
     void client.GET("/repos").then(({ data, error }) => {
       if (error) return;
-      repos = data ?? [];
+      fetchedRepos = data ?? [];
     });
   });
 
+  const configuredRepos = $derived(
+    stores?.settings?.getConfiguredRepos?.() ?? [],
+  );
+  const settingsLoaded = $derived(
+    stores?.settings?.isSettingsLoaded?.() ?? false,
+  );
+
+  function optionFromRepo(repo: Repo): { value: string; owner: string; name: string } {
+    return {
+      value: `${repo.PlatformHost}/${repo.Owner}/${repo.Name}`,
+      owner: repo.Owner,
+      name: repo.Name,
+    };
+  }
+
+  function optionFromConfigRepo(repo: ConfigRepo): { value: string; owner: string; name: string } {
+    const path = repo.repo_path || `${repo.owner}/${repo.name}`;
+    return {
+      value: `${repo.platform_host}/${path}`,
+      owner: repo.owner,
+      name: repo.name,
+    };
+  }
+
   const options = $derived.by(() => {
-    return repos.map((r) => ({
-      value: `${r.PlatformHost}/${r.Owner}/${r.Name}`,
-      owner: r.Owner,
-      name: r.Name,
-    }));
+    if (settingsLoaded || configuredRepos.length > 0) {
+      return configuredRepos
+        .filter((repo) => !repo.is_glob)
+        .map(optionFromConfigRepo);
+    }
+    return fetchedRepos.map(optionFromRepo);
   });
 
   const filtered = $derived.by(() => {
@@ -143,7 +171,7 @@
         onmousedown={() => select(undefined)}
         onmouseenter={() => (highlightIndex = 0)}
       >All repos</li>
-      {#each filtered as option, i}
+      {#each filtered as option, i (option.value)}
         <li
           class="typeahead-option"
           class:highlighted={i + 1 === highlightIndex}
@@ -153,7 +181,7 @@
           onmousedown={() => select(option.value)}
           onmouseenter={() => (highlightIndex = i + 1)}
         >
-          {#each highlightSegments(option.value, query) as seg}{#if seg.match}<mark class="match">{seg.text}</mark>{:else}{seg.text}{/if}{/each}
+          {#each highlightSegments(option.value, query) as seg, segIndex (`${option.value}-${segIndex}-${seg.text}-${seg.match}`)}{#if seg.match}<mark class="match">{seg.text}</mark>{:else}{seg.text}{/if}{/each}
         </li>
       {:else}
         <li class="typeahead-empty">No matching repos</li>
