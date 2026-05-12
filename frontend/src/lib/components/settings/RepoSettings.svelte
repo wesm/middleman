@@ -191,10 +191,10 @@
 
 {#if !embedded}
   <details class="advanced-add">
-    <summary>Advanced: add exact repo or tracking glob directly</summary>
+    <summary>Advanced: add provider-scoped repo or tracking glob directly</summary>
     <div class="advanced-body">
       <div class="add-form">
-        <input class="add-input" type="text" placeholder="owner/name" bind:value={inputValue} onkeydown={handleInputKeydown} disabled={adding} />
+        <input class="add-input" type="text" placeholder="provider/owner/name" bind:value={inputValue} onkeydown={handleInputKeydown} disabled={adding} />
         <button class="add-btn" onclick={() => void handleAdd()} disabled={adding || !inputValue.trim()}>
           {adding ? "Adding..." : "Add"}
         </button>
