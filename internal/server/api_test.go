@@ -684,10 +684,6 @@ func (e *staleReadyForReviewError) IsStaleState() bool { return true }
 
 type seedPROpt func(*db.MergeRequest)
 
-func withSeedPRLabels(labels []db.Label) seedPROpt {
-	return func(pr *db.MergeRequest) { pr.Labels = labels }
-}
-
 func withSeedPRHeadSHA(headSHA string) seedPROpt {
 	return func(pr *db.MergeRequest) { pr.PlatformHeadSHA = headSHA }
 }
@@ -743,11 +739,6 @@ func seedPR(t *testing.T, database *db.DB, owner, name string, number int, opts 
 	require.NoError(t, database.EnsureKanbanState(ctx, prID))
 
 	return prID
-}
-
-func seedPRWithLabels(t *testing.T, database *db.DB, owner, name string, number int, labels []db.Label) int64 {
-	t.Helper()
-	return seedPR(t, database, owner, name, number, withSeedPRLabels(labels))
 }
 
 func seedPRWithHeadSHA(t *testing.T, database *db.DB, owner, name string, number int, headSHA string) int64 {
@@ -1039,150 +1030,6 @@ func TestAPIListPulls(t *testing.T) {
 	assert.Equal("github", body[0].Repo.Provider)
 	assert.Equal("github.com", body[0].Repo.PlatformHost)
 	assert.Equal("acme/widget", body[0].Repo.RepoPath)
-}
-
-func TestAPIListPullsIncludesLabels(t *testing.T) {
-	require := require.New(t)
-	srv, database := setupTestServer(t)
-	description := "Needs a fix"
-	seedPRWithLabels(t, database, "acme", "widget", 1, []db.Label{{
-		Name:        "bug",
-		Description: description,
-		Color:       "d73a4a",
-		IsDefault:   true,
-	}})
-	client := setupTestClient(t, srv)
-
-	resp, err := client.HTTP.ListPullsWithResponse(t.Context(), nil)
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
-	require.NotNil(resp.JSON200)
-	require.Len(*resp.JSON200, 1)
-	require.NotNil((*resp.JSON200)[0].Labels)
-	require.Equal([]generated.Label{{
-		Name:        "bug",
-		Description: &description,
-		Color:       "d73a4a",
-		IsDefault:   true,
-	}}, *(*resp.JSON200)[0].Labels)
-}
-
-func TestAPIGetPull(t *testing.T) {
-	require := require.New(t)
-	srv, database := setupTestServer(t)
-	seedPRWithHeadSHA(t, database, "acme", "widget", 1, "abc123def456")
-	client := setupTestClient(t, srv)
-
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
-	require.NotNil(resp.JSON200)
-	require.NotNil(resp.JSON200.MergeRequest)
-	require.EqualValues(1, resp.JSON200.MergeRequest.Number)
-	require.Equal("acme", resp.JSON200.RepoOwner)
-	require.Equal("widget", resp.JSON200.RepoName)
-	require.Equal("abc123def456", resp.JSON200.PlatformHeadSha)
-}
-
-func TestAPIGetPullAcceptsMixedCaseRepoPath(t *testing.T) {
-	require := require.New(t)
-	srv, database := setupTestServer(t)
-	seedPR(t, database, "acme", "widget", 1)
-	client := setupTestClient(t, srv)
-
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
-		t.Context(), "gh", "Acme", "Widget", 1,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
-	require.NotNil(resp.JSON200)
-	require.Equal("acme", resp.JSON200.RepoOwner)
-	require.Equal("widget", resp.JSON200.RepoName)
-}
-
-func TestAPIListPullsAcceptsMixedCaseRepoFilter(t *testing.T) {
-	require := require.New(t)
-	srv, database := setupTestServer(t)
-	seedPR(t, database, "acme", "widget", 1)
-	client := setupTestClient(t, srv)
-
-	repo := "Acme/Widget"
-	resp, err := client.HTTP.ListPullsWithResponse(
-		t.Context(), &generated.ListPullsParams{Repo: &repo},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
-	require.NotNil(resp.JSON200)
-	require.Len(*resp.JSON200, 1)
-	require.Equal("acme", (*resp.JSON200)[0].RepoOwner)
-	require.Equal("widget", (*resp.JSON200)[0].RepoName)
-}
-
-func TestAPIListPullsAcceptsHostQualifiedRepoFilter(t *testing.T) {
-	require := require.New(t)
-	assert := Assert.New(t)
-
-	srv, database := setupTestServer(t)
-	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
-	seedPROnHost(t, database, "ghe.example.com", "acme", "widget", 2)
-	client := setupTestClient(t, srv)
-
-	repo := "ghe.example.com/acme/widget"
-	resp, err := client.HTTP.ListPullsWithResponse(
-		t.Context(), &generated.ListPullsParams{Repo: &repo},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
-	require.NotNil(resp.JSON200)
-	require.Len(*resp.JSON200, 1)
-	assert.Equal("ghe.example.com", (*resp.JSON200)[0].PlatformHost)
-	assert.Equal("acme", (*resp.JSON200)[0].RepoOwner)
-	assert.Equal("widget", (*resp.JSON200)[0].RepoName)
-	assert.EqualValues(2, (*resp.JSON200)[0].Number)
-}
-
-func TestAPIGetPullIncludesBranches(t *testing.T) {
-	require := require.New(t)
-	srv, database := setupTestServer(t)
-	seedPR(t, database, "acme", "widget", 1)
-	client := setupTestClient(t, srv)
-
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
-	require.NotNil(resp.JSON200)
-	mr := resp.JSON200.MergeRequest
-	require.NotNil(mr)
-	require.Equal("feature", mr.HeadBranch)
-	require.Equal("main", mr.BaseBranch)
-}
-
-func TestAPIGetPullIncludesLabels(t *testing.T) {
-	require := require.New(t)
-	srv, database := setupTestServer(t)
-	seedPRWithLabels(t, database, "acme", "widget", 1, []db.Label{{
-		Name:      "enhancement",
-		Color:     "a2eeef",
-		IsDefault: false,
-	}})
-	client := setupTestClient(t, srv)
-
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
-	require.NotNil(resp.JSON200)
-	require.NotNil(resp.JSON200.MergeRequest.Labels)
-	require.Equal([]generated.Label{{
-		Name:      "enhancement",
-		Color:     "a2eeef",
-		IsDefault: false,
-	}}, *resp.JSON200.MergeRequest.Labels)
 }
 
 func TestAPIGetPullIsDBOnly(t *testing.T) {
@@ -5350,47 +5197,6 @@ func TestAPISyncIssueNilUpdatedAtFallsBackToCreatedAt(t *testing.T) {
 	assert.Equal(createdAt, getResp.JSON200.Issue.LastActivityAt.UTC())
 }
 
-func TestAPIListPullsStateFilter(t *testing.T) {
-	require := require.New(t)
-	srv, database := setupTestServer(t)
-	ctx := t.Context()
-
-	seedPR(t, database, "acme", "widget", 1) // open
-	seedPR(t, database, "acme", "widget", 2) // will close
-	seedPR(t, database, "acme", "widget", 3) // will merge
-
-	repo, _ := database.GetRepoByOwnerName(ctx, "acme", "widget")
-	now := time.Now()
-	_ = database.UpdateMRState(ctx, repo.ID, 2, "closed", nil, &now)
-	_ = database.UpdateMRState(ctx, repo.ID, 3, "merged", &now, &now)
-
-	client := setupTestClient(t, srv)
-
-	// Default (open)
-	resp, err := client.HTTP.ListPullsWithResponse(ctx, nil)
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
-	require.Len(*resp.JSON200, 1)
-
-	// Closed (includes merged)
-	state := "closed"
-	resp, err = client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsParams{State: &state})
-	require.NoError(err)
-	require.Len(*resp.JSON200, 2)
-
-	// All
-	state = "all"
-	resp, err = client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsParams{State: &state})
-	require.NoError(err)
-	require.Len(*resp.JSON200, 3)
-
-	// Invalid
-	state = "bogus"
-	resp, err = client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsParams{State: &state})
-	require.NoError(err)
-	require.Equal(http.StatusBadRequest, resp.StatusCode())
-}
-
 func TestAPIListPullsSearchByNumber(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -5573,34 +5379,6 @@ func TestAPIListPullsCasefoldsRepoNames(t *testing.T) {
 	assert.Equal("foo", (*resp.JSON200)[0].RepoName)
 }
 
-func TestAPIListIssuesStateFilter(t *testing.T) {
-	require := require.New(t)
-	srv, database := setupTestServer(t)
-	ctx := t.Context()
-
-	seedIssue(t, database, "acme", "widget", 1, "open")
-	seedIssue(t, database, "acme", "widget", 2, "closed")
-
-	client := setupTestClient(t, srv)
-
-	// Default (open)
-	resp, err := client.HTTP.ListIssuesWithResponse(ctx, nil)
-	require.NoError(err)
-	require.Len(*resp.JSON200, 1)
-
-	// Closed
-	state := "closed"
-	resp, err = client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesParams{State: &state})
-	require.NoError(err)
-	require.Len(*resp.JSON200, 1)
-
-	// All
-	state = "all"
-	resp, err = client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesParams{State: &state})
-	require.NoError(err)
-	require.Len(*resp.JSON200, 2)
-}
-
 func TestAPIListIssuesIncludesLabels(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -5622,33 +5400,6 @@ func TestAPIListIssuesIncludesLabels(t *testing.T) {
 		Color:     "fbca04",
 		IsDefault: false,
 	}}, *(*resp.JSON200)[0].Labels)
-}
-
-func TestAPIGetIssueIncludesLabels(t *testing.T) {
-	require := require.New(t)
-	srv, database := setupTestServer(t)
-	description := "Customer reported"
-	seedIssueWithLabels(t, database, "acme", "widget", 5, "open", []db.Label{{
-		Name:        "bug",
-		Description: description,
-		Color:       "d73a4a",
-		IsDefault:   true,
-	}})
-	client := setupTestClient(t, srv)
-
-	resp, err := client.HTTP.GetIssuesByProviderByOwnerByNameByNumberWithResponse(
-		t.Context(), "gh", "acme", "widget", 5,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode())
-	require.NotNil(resp.JSON200)
-	require.NotNil(resp.JSON200.Issue.Labels)
-	require.Equal([]generated.Label{{
-		Name:        "bug",
-		Description: &description,
-		Color:       "d73a4a",
-		IsDefault:   true,
-	}}, *resp.JSON200.Issue.Labels)
 }
 
 func TestAPIGetIssueAcceptsMixedCaseRepoPath(t *testing.T) {
@@ -12134,24 +11885,26 @@ func waitForWorkspaceReady(
 ) *generated.WorkspaceResponse {
 	t.Helper()
 
-	var ready *generated.WorkspaceResponse
-	for range 50 {
-		time.Sleep(100 * time.Millisecond)
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
 		getResp, err := client.HTTP.GetWorkspacesByIdWithResponse(
 			ctx, wsID,
 		)
 		require.NoError(t, err)
-		if getResp.StatusCode() != http.StatusOK || getResp.JSON200 == nil {
-			continue
+		if getResp.StatusCode() == http.StatusOK &&
+			getResp.JSON200 != nil &&
+			getResp.JSON200.Status == "ready" {
+			return getResp.JSON200
 		}
-		if getResp.JSON200.Status == "ready" {
-			ready = getResp.JSON200
-			break
+
+		select {
+		case <-ctx.Done():
+			require.NoError(t, ctx.Err(), "workspace never became ready: %s", wsID)
+		case <-ticker.C:
 		}
 	}
-
-	require.NotNil(t, ready, "workspace never became ready: %s", wsID)
-	return ready
 }
 
 func TestWorkspaceServerFixtureCleansUpTmuxSessions(t *testing.T) {

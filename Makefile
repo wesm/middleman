@@ -26,7 +26,7 @@ DEV_BACKEND_LOG ?= $(DEV_LOG_DIR)/backend-dev.log
 .PHONY: ensure-embed-dir ensure-tmp-dir check-air air-install build build-release install \
         frontend-deps frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
         dev test test-short test-integration test-e2e test-e2e-roborev test-gitlab-container gitlab-fixture-bake vet lint nilaway testify-helper-check \
-        frontend-api-client-check huma-route-check script-tests guardrail-check tidy svelte-skills svelte-skills-sync clean install-hooks help
+        frontend-api-client-check huma-route-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help
 
 # gotestsum prints package names on success and full output on failure,
 # while persisting raw `go test -json` events for downstream reporters.
@@ -170,6 +170,10 @@ test-short: ensure-embed-dir ensure-tmp-dir
 # Run integration tests that execute real git commands (excluded from test-short)
 test-integration: ensure-embed-dir ensure-tmp-dir
 	$(GOTESTSUM)=tmp/test-integration-output.json -- -tags integration ./... -shuffle=on
+
+# Report per-package wall time for the slow race-test packages.
+race-times: ensure-embed-dir
+	./scripts/test-package-times.sh
 
 # Run full-stack E2E tests (Playwright against real Go server, excludes roborev)
 test-e2e: frontend
