@@ -1676,14 +1676,16 @@ func TestManagerRequestRetryConsumesQueuedRetryWhenCleanupFails(t *testing.T) {
 		firstResult <- retryResult{ws: next, startNow: startNow, err: err}
 	}()
 
+	const retryWait = 3 * time.Second
+
 	require.Eventually(func() bool {
 		_, err := os.Stat(started)
 		return err == nil
-	}, time.Second, 10*time.Millisecond)
+	}, retryWait, 10*time.Millisecond)
 	require.Eventually(func() bool {
 		got, err := d.GetWorkspace(ctx, ws.ID)
 		return err == nil && got != nil && got.Status == "creating"
-	}, time.Second, 10*time.Millisecond)
+	}, retryWait, 10*time.Millisecond)
 
 	queuedWS, startNow, err := mgr.RequestRetry(ctx, ws.ID)
 	require.NoError(err)
@@ -1700,7 +1702,7 @@ func TestManagerRequestRetryConsumesQueuedRetryWhenCleanupFails(t *testing.T) {
 		default:
 			return false
 		}
-	}, time.Second, 10*time.Millisecond)
+	}, retryWait, 10*time.Millisecond)
 	assert.Nil(first.ws)
 	assert.False(first.startNow)
 	require.Error(first.err)

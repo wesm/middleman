@@ -10,6 +10,7 @@
   import { onMount } from "svelte";
 
   import { apiErrorMessage, client } from "../../api/runtime.ts";
+  import ProviderIcon from "../provider/ProviderIcon.svelte";
   import {
     getProjectAction,
     invokeProjectAction,
@@ -20,6 +21,7 @@
   }
 
   interface PlatformIdentity {
+    platform?: string;
     platform_host: string;
     owner: string;
     name: string;
@@ -151,6 +153,13 @@
       {#if project.platform_identity}
         <p class="project-card__platform">
           <span class="project-card__platform-chip">
+            {#if project.platform_identity.platform}
+              <ProviderIcon
+                provider={project.platform_identity.platform}
+                size={14}
+                class="project-card__platform-icon"
+              />
+            {/if}
             {platformChip(project.platform_identity)}
           </span>
         </p>
@@ -258,12 +267,18 @@
 
   .project-card__platform-chip {
     display: inline-flex;
+    align-items: center;
+    gap: 6px;
     padding: 2px 8px;
     border-radius: 10px;
     background: var(--bg-inset);
     color: var(--text-secondary);
     font-family: var(--font-mono, monospace);
     font-size: 11px;
+  }
+
+  :global(.project-card__platform-icon) {
+    color: var(--text-secondary);
   }
 
   .project-card__branch {

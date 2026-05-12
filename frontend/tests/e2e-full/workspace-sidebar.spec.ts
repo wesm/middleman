@@ -94,6 +94,71 @@ async function waitForWorkspaceReady(
 test.describe("workspace sidebar full-stack", () => {
   test.describe.configure({ timeout: lockedWorkspaceTestTimeoutMs });
 
+  test("shows provider icons in group headers when workspaces span multiple providers", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({
+        baseURL: isolatedServer.info.base_url,
+      });
+
+      const githubResponse = await api.post(
+        "/api/v1/issues/github/acme/widgets/10/workspace",
+        {
+          data: {},
+        },
+      );
+      expect(githubResponse.status()).toBe(202);
+      const githubWorkspace = await githubResponse.json() as WorkspaceStatusResponse;
+      await waitForWorkspaceReady(api, githubWorkspace.id);
+
+      const gitlabResponse = await api.post(
+        "/api/v1/host/gitlab.example.com/issues/gitlab/group/project/11/workspace",
+        {
+          data: {},
+        },
+      );
+      expect(gitlabResponse.status()).toBe(202);
+      const gitlabWorkspace = await gitlabResponse.json() as WorkspaceStatusResponse;
+      await waitForWorkspaceReady(api, gitlabWorkspace.id);
+
+      const workspacesResponse = await api.get("/api/v1/workspaces");
+      expect(workspacesResponse.ok()).toBe(true);
+      const workspacesPayload = await workspacesResponse.json() as {
+        workspaces: Array<{ repo: { provider: string } }>;
+      };
+      expect(
+        new Set(workspacesPayload.workspaces.map((workspace) => workspace.repo.provider)),
+      ).toEqual(new Set(["github", "gitlab"]));
+
+      await page.goto(
+        `${isolatedServer.info.base_url}/terminal/${githubWorkspace.id}`,
+      );
+
+      const githubGroup = page.locator(
+        ".workspace-list-sidebar .group-header",
+      ).filter({
+        has: page.locator(".group-label", { hasText: "acme/widgets" }),
+      });
+      await expect(
+        githubGroup.getByRole("img", { name: "GitHub" }),
+      ).toBeVisible();
+
+      const gitlabGroup = page.locator(
+        ".workspace-list-sidebar .group-header",
+      ).filter({
+        has: page.locator(".group-label", { hasText: "group/project" }),
+      });
+      await expect(
+        gitlabGroup.getByRole("img", { name: "GitLab" }),
+      ).toBeVisible();
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
   test("issue workspaces expose the Issue tab and hide Reviews", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;

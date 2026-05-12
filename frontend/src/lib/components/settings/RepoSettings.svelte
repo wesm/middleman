@@ -3,6 +3,7 @@
   import { getStores } from "@middleman/ui";
   import type { ConfigRepo } from "@middleman/ui/api/types";
   import { addRepo, removeRepo, getSettings, refreshRepo } from "../../api/settings.js";
+  import ProviderIcon from "../provider/ProviderIcon.svelte";
   import RepoImportModal from "./RepoImportModal.svelte";
 
   const { sync } = getStores();
@@ -27,12 +28,24 @@
   let refreshingByKey = $state<Record<string, boolean>>({});
   let refreshErrors = $state<Record<string, string>>({});
 
+  const showProviderIcons = $derived.by(() => {
+    const providers = new Set(
+      repos.map((repo) => repo.provider.trim().toLowerCase()),
+    );
+    return providers.size > 1;
+  });
+
   function repoKey(repo: ConfigRepo): string {
     return `${repo.provider}/${repo.platform_host}/${repo.repo_path || `${repo.owner}/${repo.name}`}`.toLowerCase();
   }
 
   function repoLabel(repo: ConfigRepo): string {
     return repo.repo_path || `${repo.owner}/${repo.name}`;
+  }
+
+  function repoDisplayLabel(repo: ConfigRepo): string {
+    const label = repoLabel(repo);
+    return repo.is_glob ? `${label} (${repo.matched_repo_count})` : label;
   }
 
   async function handleAdd(): Promise<void> {
@@ -136,15 +149,9 @@
 <div class="repo-list">
   {#each repos as repo (repoKey(repo))}
     {@const key = repoKey(repo)}
-    {@const label = repoLabel(repo)}
     <div class="repo-row">
       <div class="repo-main">
-        <span class="repo-name">
-          {label}
-          {#if repo.is_glob}
-            <span class="repo-count">({repo.matched_repo_count})</span>
-          {/if}
-        </span>
+        <span class="repo-name">{#if showProviderIcons}<ProviderIcon provider={repo.provider} size={16} class="repo-provider-icon" />{/if}{repoDisplayLabel(repo)}</span>
         {#if refreshErrors[key]}
           <div class="error-msg row-error">{refreshErrors[key]}</div>
         {/if}
@@ -222,8 +229,8 @@
   }
   .repo-row:last-child { border-bottom: none; }
   .repo-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-  .repo-name { font-size: 13px; color: var(--text-primary); font-weight: 500; }
-  .repo-count { color: var(--text-muted); margin-left: 4px; }
+  .repo-name { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-primary); font-weight: 500; }
+  :global(.repo-provider-icon) { color: var(--text-secondary); }
   .repo-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
   .refresh-btn {
     padding: 4px 10px; font-size: 12px; font-weight: 500;

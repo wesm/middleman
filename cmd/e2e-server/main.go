@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"slices"
@@ -20,6 +22,7 @@ import (
 	gh "github.com/google/go-github/v84/github"
 	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
+	"github.com/wesm/middleman/internal/gitenv"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/platform"
 	"github.com/wesm/middleman/internal/server"
@@ -164,7 +167,63 @@ func (p e2eStaticProvider) ListIssueEvents(
 
 type globRefreshContextKey struct{}
 
-func gitLabReadOnlyRepoRef() platform.RepoRef {
+func e2eGit(dir string, args ...string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("git: no args")
+	}
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(gitenv.StripAll(os.Environ()),
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_AUTHOR_DATE=2026-04-28T12:00:00Z",
+		"GIT_COMMITTER_DATE=2026-04-28T12:00:00Z",
+	)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git %s: %w: %s", args[0], err, stderr.String())
+	}
+	return nil
+}
+
+func createBareRepoFixture(tmpDir, host, owner, name string) (string, error) {
+	workDir := filepath.Join(tmpDir, "fixture-work", host, owner, name)
+	barePath := filepath.Join(tmpDir, "clones", host, owner, name+".git")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		return "", fmt.Errorf("mkdir fixture workdir: %w", err)
+	}
+	if err := e2eGit(workDir, "init", "-b", "main"); err != nil {
+		return "", fmt.Errorf("init fixture repo: %w", err)
+	}
+	if err := e2eGit(workDir, "config", "user.email", "e2e@example.com"); err != nil {
+		return "", fmt.Errorf("config fixture repo email: %w", err)
+	}
+	if err := e2eGit(workDir, "config", "user.name", "E2E Fixture"); err != nil {
+		return "", fmt.Errorf("config fixture repo name: %w", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(workDir, "README.md"),
+		[]byte("# GitLab fixture\n"),
+		0o644,
+	); err != nil {
+		return "", fmt.Errorf("write fixture file: %w", err)
+	}
+	if err := e2eGit(workDir, "add", "README.md"); err != nil {
+		return "", fmt.Errorf("stage fixture repo: %w", err)
+	}
+	if err := e2eGit(workDir, "commit", "-m", "fixture: seed gitlab repo"); err != nil {
+		return "", fmt.Errorf("commit fixture repo: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(barePath), 0o755); err != nil {
+		return "", fmt.Errorf("mkdir bare fixture parent: %w", err)
+	}
+	if err := e2eGit("", "clone", "--bare", workDir, barePath); err != nil {
+		return "", fmt.Errorf("clone bare fixture repo: %w", err)
+	}
+	return barePath, nil
+}
+
+func gitLabReadOnlyRepoRef(cloneURL string) platform.RepoRef {
 	return platform.RepoRef{
 		Platform:      platform.KindGitLab,
 		Host:          "gitlab.example.com",
@@ -172,13 +231,16 @@ func gitLabReadOnlyRepoRef() platform.RepoRef {
 		Name:          "project",
 		RepoPath:      "group/project",
 		WebURL:        "https://gitlab.example.com/group/project",
-		CloneURL:      "https://gitlab.example.com/group/project.git",
+		CloneURL:      cloneURL,
 		DefaultBranch: "main",
 	}
 }
 
-func gitLabReadOnlyIssueFixture(now time.Time) (platform.Issue, []platform.IssueEvent) {
-	ref := gitLabReadOnlyRepoRef()
+func gitLabReadOnlyIssueFixture(
+	now time.Time,
+	cloneURL string,
+) (platform.Issue, []platform.IssueEvent) {
+	ref := gitLabReadOnlyRepoRef(cloneURL)
 	issue := platform.Issue{
 		Repo:         ref,
 		PlatformID:   7101,
@@ -207,9 +269,13 @@ func gitLabReadOnlyIssueFixture(now time.Time) (platform.Issue, []platform.Issue
 	return issue, events
 }
 
-func seedGitLabReadOnlyCapabilityFixture(ctx context.Context, database *db.DB) error {
+func seedGitLabReadOnlyCapabilityFixture(
+	ctx context.Context,
+	database *db.DB,
+	cloneURL string,
+) error {
 	now := time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC)
-	issue, events := gitLabReadOnlyIssueFixture(now)
+	issue, events := gitLabReadOnlyIssueFixture(now, cloneURL)
 	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
 		Platform:       "gitlab",
 		PlatformHost:   "gitlab.example.com",
@@ -284,7 +350,16 @@ func run(
 	if err != nil {
 		return fmt.Errorf("seed fixtures: %w", err)
 	}
-	if err := seedGitLabReadOnlyCapabilityFixture(ctx, database); err != nil {
+	gitLabCloneURL, err := createBareRepoFixture(
+		tmpDir,
+		"gitlab.example.com",
+		"group",
+		"project",
+	)
+	if err != nil {
+		return fmt.Errorf("create gitlab fixture repo: %w", err)
+	}
+	if err := seedGitLabReadOnlyCapabilityFixture(ctx, database, gitLabCloneURL); err != nil {
 		return fmt.Errorf("seed gitlab capability fixture: %w", err)
 	}
 
@@ -472,6 +547,7 @@ func run(
 
 	gitLabIssue, gitLabIssueEvents := gitLabReadOnlyIssueFixture(
 		time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC),
+		gitLabCloneURL,
 	)
 	forgeUpdated := time.Date(2026, 4, 25, 10, 0, 0, 0, time.UTC)
 	giteaUpdated := time.Date(2026, 4, 26, 10, 0, 0, 0, time.UTC)
