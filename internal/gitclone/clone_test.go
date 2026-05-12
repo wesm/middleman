@@ -3,6 +3,7 @@
 package gitclone
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -81,6 +82,64 @@ func TestEnsureClone(t *testing.T) {
 	// Second call should be a no-op fetch, not re-clone.
 	err = mgr.EnsureClone(ctx, "github.com", "testowner", "testrepo", remote)
 	require.NoError(t, err)
+}
+
+// TestEnsureCloneShortCircuitsCanceledContext verifies that a caller
+// with an already-canceled context does not start any clone work. The
+// pre-check exists so a canceled caller cannot trigger background
+// fetches that outlive the request it abandoned.
+func TestEnsureCloneShortCircuitsCanceledContext(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	remote, _ := setupTestRepo(t)
+	clonesDir := t.TempDir()
+	mgr := New(clonesDir, nil)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	err := mgr.EnsureClone(ctx, "github.com", "testowner", "testrepo", remote)
+	require.ErrorIs(err, context.Canceled)
+
+	clonePath := filepath.Join(
+		clonesDir, "github.com", "testowner", "testrepo.git")
+	_, statErr := os.Stat(clonePath)
+	assert.True(os.IsNotExist(statErr),
+		"no clone directory should be created when ctx is already canceled")
+}
+
+// TestEnsureCloneSweepsPartialClone verifies that a previously aborted
+// clone attempt — manifesting as a non-empty directory at the clone
+// path that lacks the HEAD file — is cleaned out before the retry runs
+// git clone --bare. Without the sweep, git refuses to write into the
+// non-empty destination and every retry would fail with "destination
+// path already exists and is not an empty directory."
+func TestEnsureCloneSweepsPartialClone(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	remote, _ := setupTestRepo(t)
+	clonesDir := t.TempDir()
+	mgr := New(clonesDir, nil)
+
+	// Simulate a partial clone left behind by a failed attempt: the
+	// target directory exists with stray files but no HEAD.
+	clonePath := filepath.Join(
+		clonesDir, "github.com", "testowner", "testrepo.git")
+	require.NoError(os.MkdirAll(clonePath, 0o755))
+	require.NoError(os.WriteFile(
+		filepath.Join(clonePath, "stray"), []byte("junk"), 0o644))
+
+	require.NoError(mgr.EnsureClone(
+		t.Context(), "github.com", "testowner", "testrepo", remote))
+
+	// Verify the partial state was cleaned out and replaced with a
+	// real bare clone.
+	_, err := os.Stat(filepath.Join(clonePath, "HEAD"))
+	require.NoError(err, "real bare clone should exist after sweep")
+	_, err = os.Stat(filepath.Join(clonePath, "stray"))
+	assert.True(os.IsNotExist(err), "stray file from partial clone should be gone")
 }
 
 // TestEnsureCloneInstallsBothRefspecs verifies that a fresh clone gets both

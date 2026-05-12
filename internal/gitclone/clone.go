@@ -12,10 +12,22 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"golang.org/x/sync/singleflight"
 
 	"github.com/wesm/middleman/internal/gitenv"
 	"github.com/wesm/middleman/internal/procutil"
 )
+
+// ensureCloneTimeout caps how long a single bare-clone create-or-fetch
+// is allowed to run inside the singleflight slot. The slot is detached
+// from caller cancellation so one canceled waiter cannot abort work for
+// others; the timeout is what prevents a stuck git subprocess from
+// holding the slot forever. Generous enough to cover large initial
+// clones over slow links, short enough to recover from a wedged
+// network connection inside one sync interval.
+const ensureCloneTimeout = 15 * time.Minute
 
 // ErrNotFound is returned when a git ref or object cannot be resolved.
 var ErrNotFound = errors.New("git object not found")
@@ -24,6 +36,13 @@ var ErrNotFound = errors.New("git object not found")
 type Manager struct {
 	baseDir string            // directory to store clones
 	tokens  map[string]string // host -> token (e.g., "github.com" -> "ghp_...")
+
+	// ensureSF deduplicates concurrent EnsureClone calls for the same
+	// (host, owner, name). Without it, callers like the periodic syncer,
+	// per-PR detail syncs, and workspace setup race each other on the
+	// same bare clone and trigger a stampede of identical git fetches,
+	// which GitHub's smart-HTTP edge throttles with sporadic 5xx.
+	ensureSF singleflight.Group
 }
 
 // New creates a Manager that stores bare clones under baseDir.
@@ -93,12 +112,63 @@ func validateClonePathValue(label, value string, allowSlash, allowEmpty bool) er
 // EnsureClone creates or fetches a bare clone for the given repo.
 // remoteURL is the HTTPS clone URL (e.g., https://github.com/owner/name.git).
 // On first call, clones the repo. On subsequent calls, fetches updates.
+//
+// Concurrent callers for the same (host, owner, name) share a single
+// underlying clone/fetch via singleflight so PR detail syncs, the
+// periodic syncer, and workspace setup do not stampede the same bare
+// clone with duplicate git operations.
+//
+// The shared runner uses a context detached from any individual
+// caller's cancellation, capped at ensureCloneTimeout, so one canceled
+// waiter cannot abort the in-flight work but a stuck git subprocess
+// cannot hold the slot forever either. Callers whose own context is
+// already canceled on entry short-circuit without ever taking the
+// slot.
 func (m *Manager) EnsureClone(
 	ctx context.Context, host, owner, name, remoteURL string,
 ) error {
-	if err := validateRemoteURLHost(host, remoteURL); err != nil {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
+	// Validate per-caller inputs before entering the singleflight
+	// slot. remoteURL is not part of the slot key (we dedup by
+	// repo identity, not URL spelling), so without an up-front
+	// check a follower with a malformed URL could inherit the
+	// leader's success — or a valid caller could inherit the
+	// leader's validation error.
+	if err := validateRemoteURLIdentity(host, owner, name, remoteURL); err != nil {
+		return err
+	}
+	if _, err := m.ClonePath(host, owner, name); err != nil {
+		return err
+	}
+	key := ensureCloneKey(host, owner, name)
+	ch := m.ensureSF.DoChan(key, func() (any, error) {
+		opCtx, cancel := context.WithTimeout(
+			context.WithoutCancel(ctx), ensureCloneTimeout,
+		)
+		defer cancel()
+		return nil, m.ensureCloneNow(opCtx, host, owner, name, remoteURL)
+	})
+	select {
+	case res := <-ch:
+		return res.Err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func ensureCloneKey(host, owner, name string) string {
+	return host + "\x00" + owner + "\x00" + name
+}
+
+// ensureCloneNow is the unshared inner: it decides whether to create a
+// fresh bare clone or refresh an existing one. Always called from
+// inside the singleflight slot opened by EnsureClone, which has
+// already validated the caller's remoteURL.
+func (m *Manager) ensureCloneNow(
+	ctx context.Context, host, owner, name, remoteURL string,
+) error {
 	clonePath, err := m.ClonePath(host, owner, name)
 	if err != nil {
 		return err
@@ -107,8 +177,11 @@ func (m *Manager) EnsureClone(
 	if _, err := os.Stat(filepath.Join(clonePath, "HEAD")); os.IsNotExist(err) {
 		return m.cloneBare(ctx, host, clonePath, remoteURL)
 	}
+	// On an existing clone, also re-verify the stored origin URL
+	// belongs to the expected host: catches a clone whose config
+	// was rewritten after creation.
 	if out, err := m.git(ctx, host, clonePath, "config", "--get", "remote.origin.url"); err == nil {
-		if err := validateRemoteURLHost(host, strings.TrimSpace(string(out))); err != nil {
+		if err := validateRemoteURLIdentity(host, owner, name, strings.TrimSpace(string(out))); err != nil {
 			return err
 		}
 	}
@@ -185,7 +258,17 @@ func (m *Manager) cloneBare(
 		return fmt.Errorf("mkdir for clone: %w", err)
 	}
 	slog.Info("cloning bare repo", "path", clonePath)
-	_, err := m.git(ctx, host, "", "clone", "--bare", remoteURL, clonePath)
+	// Initial clones hit the same flaky smart-HTTP /info/refs that
+	// fetches do, so wrap the clone command in the same retry helper.
+	// git clone refuses to write into a non-empty destination, so a
+	// partial directory from a previous failed attempt would poison
+	// every retry — sweep it out before re-running.
+	_, err := retryTransient(ctx, "git clone --bare", func() ([]byte, error) {
+		if err := os.RemoveAll(clonePath); err != nil {
+			return nil, fmt.Errorf("cleanup partial clone: %w", err)
+		}
+		return m.git(ctx, host, "", "clone", "--bare", remoteURL, clonePath)
+	})
 	if err != nil {
 		return fmt.Errorf("git clone --bare: %w", err)
 	}
@@ -209,12 +292,24 @@ func (m *Manager) cloneBare(
 func (m *Manager) fetch(
 	ctx context.Context, host, clonePath string,
 ) error {
-	if _, err := m.git(ctx, host, clonePath, "fetch", "--prune", "origin"); err != nil {
+	// GitHub's smart-HTTP endpoint sporadically returns 5xx on /info/refs.
+	// Retry inline so a transient blip does not drop the entire sync cycle.
+	_, err := retryTransient(ctx, "git fetch", func() ([]byte, error) {
+		return m.git(ctx, host, clonePath, "fetch", "--prune", "origin")
+	})
+	if err != nil {
 		return fmt.Errorf("git fetch: %w", err)
 	}
-	if _, err := m.git(ctx, host, clonePath, "remote", "set-head", "origin", "-a"); err != nil {
+	// set-head -a is networked (it consults the remote's HEAD via
+	// /info/refs) and so subject to the same transient 5xx as fetch.
+	// Failure is non-fatal — bare clone still works — but retrying
+	// reduces stale-HEAD noise across sync cycles.
+	_, setHeadErr := retryTransient(ctx, "git remote set-head", func() ([]byte, error) {
+		return m.git(ctx, host, clonePath, "remote", "set-head", "origin", "-a")
+	})
+	if setHeadErr != nil {
 		slog.Warn("failed to repair origin HEAD",
-			"path", clonePath, "err", err)
+			"path", clonePath, "err", setHeadErr)
 	}
 	return nil
 }
@@ -265,6 +360,24 @@ func validateRemoteURLHost(expectedHost, remoteURL string) error {
 	return nil
 }
 
+func validateRemoteURLIdentity(expectedHost, owner, name, remoteURL string) error {
+	if err := validateRemoteURLHost(expectedHost, remoteURL); err != nil {
+		return err
+	}
+	actualRepo := remoteURLRepoPath(remoteURL)
+	if actualRepo == "" {
+		return nil
+	}
+	expectedRepo := strings.Trim(strings.TrimSpace(owner)+"/"+strings.TrimSpace(name), "/")
+	if !strings.EqualFold(actualRepo, expectedRepo) {
+		return fmt.Errorf(
+			"clone remote repo %q does not match configured repo %q",
+			actualRepo, expectedRepo,
+		)
+	}
+	return nil
+}
+
 func remoteURLHost(remoteURL string) string {
 	remoteURL = strings.TrimSpace(remoteURL)
 	if remoteURL == "" {
@@ -281,6 +394,29 @@ func remoteURLHost(remoteURL string) string {
 		prefix = prefix[at+1:]
 	}
 	return prefix
+}
+
+func remoteURLRepoPath(remoteURL string) string {
+	remoteURL = strings.TrimSpace(remoteURL)
+	if remoteURL == "" {
+		return ""
+	}
+	var repoPath string
+	if u, err := url.Parse(remoteURL); err == nil && u.Host != "" {
+		repoPath = u.Path
+	} else {
+		prefix, path, ok := strings.Cut(remoteURL, ":")
+		if !ok || strings.Contains(prefix, "/") {
+			return ""
+		}
+		repoPath = path
+	}
+	repoPath = strings.Trim(strings.TrimSpace(repoPath), "/")
+	repoPath = strings.TrimSuffix(repoPath, ".git")
+	if repoPath == "" || strings.Contains(repoPath, "\\") {
+		return ""
+	}
+	return repoPath
 }
 
 func normalizeCloneHost(host string) string {

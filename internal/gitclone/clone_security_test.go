@@ -86,3 +86,41 @@ func TestEnsureCloneRejectsTraversal(t *testing.T) {
 	require.Error(err)
 	assert.Contains(err.Error(), "unsafe clone path")
 }
+
+// TestEnsureCloneValidatesRemoteURLPerCaller pins that the remoteURL
+// is validated before the singleflight slot is taken. Without this,
+// a caller with a mismatched-host URL could share the slot with a
+// valid caller and inherit the leader's result, bypassing the host
+// check entirely. We exercise this by passing a single invalid URL
+// against an empty Manager — the validation must fire synchronously,
+// before any git work, and surface to this caller specifically.
+func TestEnsureCloneValidatesRemoteURLPerCaller(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr := New(t.TempDir(), nil)
+
+	err := mgr.EnsureClone(
+		t.Context(), "github.com", "acme", "widget",
+		"https://evil.example.com/acme/widget.git",
+	)
+
+	require.Error(err)
+	assert.Contains(err.Error(), "does not match")
+	assert.Contains(err.Error(), "evil.example.com")
+}
+
+func TestEnsureCloneValidatesRemoteURLRepoPerCaller(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr := New(t.TempDir(), nil)
+
+	err := mgr.EnsureClone(
+		t.Context(), "github.com", "acme", "widget",
+		"https://github.com/other/widget.git",
+	)
+
+	require.Error(err)
+	assert.Contains(err.Error(), "does not match")
+	assert.Contains(err.Error(), "other/widget")
+	assert.Contains(err.Error(), "acme/widget")
+}

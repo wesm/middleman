@@ -14814,6 +14814,8 @@ func TestWorkspaceMRDetailHasWorkspace(t *testing.T) {
 	assert.Equal(wsID, mrResp.JSON200.Workspace.Id)
 	assert.NotEmpty(mrResp.JSON200.Workspace.Status)
 
+	waitForWorkspaceReady(t, ctx, client, wsID)
+
 	// Clean up: delete the workspace.
 	force := true
 	delResp, err := client.HTTP.DeleteWorkspaceWithResponse(
@@ -14846,6 +14848,45 @@ func TestWorkspaceCreateDuplicate(t *testing.T) {
 	resp2, err := client.HTTP.CreateWorkspaceWithResponse(ctx, body)
 	require.NoError(err)
 	require.Equal(http.StatusConflict, resp2.StatusCode())
+}
+
+func TestWorkspaceCreateFetchesCloneThroughAPI(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	fixture := setupWorkspaceServerFixture(t, nil)
+	ctx := t.Context()
+
+	remoteWork := filepath.Join(t.TempDir(), "remote-work")
+	runGit(t, t.TempDir(), "clone", fixture.remote, remoteWork)
+	runGit(t, remoteWork, "config", "user.email", "test@test.com")
+	runGit(t, remoteWork, "config", "user.name", "Test")
+	runGit(t, remoteWork, "checkout", "feature")
+	require.NoError(os.WriteFile(
+		filepath.Join(remoteWork, "after-fetch.txt"),
+		[]byte("fetched through workspace API\n"),
+		0o644,
+	))
+	runGit(t, remoteWork, "add", ".")
+	runGit(t, remoteWork, "commit", "-m", "feature after fixture clone")
+	runGit(t, remoteWork, "push", "origin", "feature")
+
+	createResp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+
+	ready := waitForWorkspaceReady(t, ctx, fixture.client, createResp.JSON202.Id)
+	assert.Equal("ready", ready.Status)
+	assert.FileExists(filepath.Join(ready.WorktreePath, "after-fetch.txt"))
 }
 
 func TestWorkspaceCreateIssueE2E(t *testing.T) {
