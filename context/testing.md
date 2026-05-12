@@ -64,7 +64,7 @@ they do not need unexported internals:
 Leave tests in the source package when they exercise unexported helpers,
 migration state, dirty database handling, or other internal invariants.
 
-### SQLite fixtures
+### SQLite Fixtures
 
 Use the copied-template database fixture for ordinary DB-backed tests that only
 need a fresh migrated schema:
@@ -81,7 +81,7 @@ into each test's `t.TempDir`, and opens the copy with `OpenPreparedForTest`.
 That preserves per-test isolation without paying migration setup for every
 fixture.
 
-### Sleep and timer tests
+### Sleep And Timer Tests
 
 Do not add sleeps as a synchronization mechanism. Prefer a channel closed by
 the fake or callback that observed the exact event under test. If the behavior
