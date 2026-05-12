@@ -18,7 +18,7 @@
 
 {#if icon}
   <svg
-    class={["provider-icon", className]}
+    class={["provider-icon", className].filter(Boolean).join(" ")}
     role="img"
     aria-label={icon.title}
     viewBox="0 0 24 24"
