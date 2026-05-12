@@ -39,7 +39,12 @@ interface ProjectFixture {
   display_name: string;
   local_path: string;
   default_branch?: string;
-  platform_identity?: { platform_host: string; owner: string; name: string };
+  platform_identity?: {
+    platform?: string;
+    platform_host: string;
+    owner: string;
+    name: string;
+  };
 }
 
 function setProjectResponse(project: ProjectFixture | { error: string }): void {
@@ -128,6 +133,27 @@ describe("WorkspaceProjectCard", () => {
 
     expect(
       await screen.findByText("gitlab.example.com / group/subgroup / project"),
+    ).toBeTruthy();
+  });
+
+  it("renders provider brand icon beside platform identity when platform is present", async () => {
+    setProjectResponse({
+      id: "prj_1",
+      display_name: "remote-repo",
+      local_path: "/tmp/remote-repo",
+      platform_identity: {
+        platform: "gitlab",
+        platform_host: "gitlab.example.com",
+        owner: "group/subgroup",
+        name: "project",
+      },
+    });
+    setWorktreesResponse([]);
+
+    render(WorkspaceProjectCard, { props: { projectId: "prj_1" } });
+
+    expect(
+      await screen.findByRole("img", { name: "GitLab" }),
     ).toBeTruthy();
   });
 
