@@ -17,8 +17,8 @@ import (
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wesm/middleman/internal/config"
-	"github.com/wesm/middleman/internal/db"
 	ghclient "github.com/wesm/middleman/internal/github"
+	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
 // setupTestServerWithRoborev creates a server with the roborev
@@ -29,9 +29,7 @@ func setupTestServerWithRoborev(
 	t.Helper()
 
 	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	cfgContent := fmt.Sprintf(`
 sync_interval = "5m"
@@ -48,7 +46,7 @@ endpoint = %q
 `, roborevEndpoint)
 
 	cfgPath := filepath.Join(dir, "config.toml")
-	err = os.WriteFile(cfgPath, []byte(cfgContent), 0o644)
+	err := os.WriteFile(cfgPath, []byte(cfgContent), 0o644)
 	require.NoError(t, err)
 
 	cfg, err := config.Load(cfgPath)

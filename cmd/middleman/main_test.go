@@ -20,6 +20,7 @@ import (
 	"github.com/wesm/middleman/internal/platform"
 	"github.com/wesm/middleman/internal/server"
 	"github.com/wesm/middleman/internal/testutil"
+	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
 func TestResolveStartupReposExpandsConfiguredGlobs(t *testing.T) {
@@ -82,13 +83,10 @@ func TestResolveStartupReposFallsBackToDBForOfflineGlobs(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	ctx := t.Context()
-	_, err = database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	_, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	_, err = database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "tools"))
 	require.NoError(err)
@@ -167,9 +165,7 @@ func TestBuildProviderStartupKeepsForgeProviderHostsDistinct(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 
-	database, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	callsByProvider := map[string][]providerFactoryInput{}
 	factories := map[string]providerFactory{
@@ -229,9 +225,7 @@ func TestBuildProviderStartupUsesRegisteredFactoryForFutureProvider(t *testing.T
 	require := require.New(t)
 	assert := Assert.New(t)
 
-	database, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	called := false
 	startup, err := buildProviderStartup(
@@ -266,11 +260,9 @@ func TestStartupFallbackKeepsPersistedGlobMatchesInAPIs(t *testing.T) {
 	assert := Assert.New(t)
 
 	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
-	_, err = database.UpsertRepo(
+	_, err := database.UpsertRepo(
 		t.Context(), db.GitHubRepoIdentity("github.com", "roborev-dev", "middleman"),
 	)
 	require.NoError(err)

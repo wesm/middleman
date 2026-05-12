@@ -4,7 +4,6 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -12,16 +11,13 @@ import (
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/wesm/middleman/internal/db"
 	ghclient "github.com/wesm/middleman/internal/github"
+	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
 func setupWithBasePath(t *testing.T, basePath string, frontend fs.FS) *Server {
 	t.Helper()
-	dir := t.TempDir()
-	database, err := db.Open(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { database.Close() })
+	database := dbtest.Open(t)
 
 	mock := &mockGH{}
 	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, nil, time.Minute, nil, nil)

@@ -19,6 +19,7 @@ import (
 	"github.com/wesm/middleman/internal/platform"
 	platformforgejo "github.com/wesm/middleman/internal/platform/forgejo"
 	platformgitea "github.com/wesm/middleman/internal/platform/gitea"
+	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
 type giteaLikeContainerClient interface {
@@ -134,9 +135,7 @@ func assertGiteaLikeContainerSync(
 
 	registry, err := platform.NewRegistry(client)
 	require.NoError(err)
-	database, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	database := dbtest.Open(t)
 	repo := ghclient.RepoRef{
 		Platform:           kind,
 		PlatformHost:       manifest.Host,

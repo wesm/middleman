@@ -28,13 +28,38 @@ type templateState struct {
 func Open(t testing.TB) *db.DB {
 	t.Helper()
 
-	templatePath := templatePath(t)
 	path := filepath.Join(t.TempDir(), "test.db")
+	return OpenAt(t, path)
+}
+
+// OpenAt copies the migrated test template to path and opens that copy.
+func OpenAt(t testing.TB, path string) *db.DB {
+	t.Helper()
+
+	templatePath := templatePath(t)
 	copyFile(t, templatePath, path)
+	return OpenPreparedAt(t, path)
+}
+
+// OpenPreparedAt opens an existing database that was prepared through this
+// fixture without rerunning migrations.
+func OpenPreparedAt(t testing.TB, path string) *db.DB {
+	t.Helper()
 
 	database, err := db.OpenPreparedForTest(path)
 	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, database.Close()) })
+	t.Cleanup(func() { _ = database.Close() })
+	return database
+}
+
+// OpenWithMigrationsAt opens path through the production migration path for
+// tests that specifically exercise migration or startup repair behavior.
+func OpenWithMigrationsAt(t testing.TB, path string) *db.DB {
+	t.Helper()
+
+	database, err := db.Open(path)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = database.Close() })
 	return database
 }
 

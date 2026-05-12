@@ -10483,8 +10483,7 @@ func TestAPIActivityStartupRepairsLegacyTimestampStorage(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.db")
 
-	database, err := db.Open(path)
-	require.NoError(err)
+	database := dbtest.OpenAt(t, path)
 
 	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
@@ -10639,9 +10638,7 @@ func TestAPIActivityStartupRepairsLegacyTimestampStorage(t *testing.T) {
 	require.NoError(err)
 	require.NoError(raw.Close())
 
-	reopened, err := db.Open(path)
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(reopened.Close()) })
+	reopened := dbtest.OpenWithMigrationsAt(t, path)
 
 	srv := setupTestServerWithDatabase(t, reopened, defaultTestRepos)
 	client := setupTestClient(t, srv)
