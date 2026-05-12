@@ -23,6 +23,19 @@ import (
 func TestTriggerSyncE2EBypassesCooldown(t *testing.T) {
 	require := require.New(t)
 
+	var syncCalls atomic.Int32
+	secondSync := make(chan struct{})
+	var secondSyncClosed atomic.Bool
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(
+			_ context.Context, _, _ string,
+		) ([]*gh.PullRequest, error) {
+			if syncCalls.Add(1) == 2 && secondSyncClosed.CompareAndSwap(false, true) {
+				close(secondSync)
+			}
+			return nil, nil
+		},
+	}
 	baseURL, client, database := startSyncCooldownE2EServer(t, `
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
@@ -32,7 +45,7 @@ port = 8091
 [[repos]]
 owner = "acme"
 name = "widget"
-`, &mockGH{})
+`, mock)
 
 	status, body := postJSON(
 		t, client, baseURL+"/api/v1/sync", nil,
@@ -42,17 +55,16 @@ name = "widget"
 	first := waitForRepoSynced(t, database, "acme", "widget", nil)
 	require.NotNil(first.LastSyncCompletedAt)
 
-	time.Sleep(10 * time.Millisecond)
-
 	status, body = postJSON(
 		t, client, baseURL+"/api/v1/sync", nil,
 	)
 	require.Equal(http.StatusAccepted, status, body)
 
-	second := waitForRepoSynced(
-		t, database, "acme", "widget", first.LastSyncCompletedAt,
-	)
-	require.NotNil(second.LastSyncCompletedAt)
+	select {
+	case <-secondSync:
+	case <-time.After(2 * time.Second):
+		require.Fail("second explicit sync did not bypass cooldown")
+	}
 }
 
 func TestAddRepoE2ETriggersImmediateSyncDuringCooldown(t *testing.T) {

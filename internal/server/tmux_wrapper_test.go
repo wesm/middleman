@@ -375,19 +375,7 @@ func TestWorkspaceResponseIncludesTmuxWorkingState(t *testing.T) {
 	require.NotNil(createResp.JSON202)
 	wsID := createResp.JSON202.Id
 
-	var ready *generated.WorkspaceResponse
-	for range 50 {
-		time.Sleep(100 * time.Millisecond)
-		getResp, getErr := client.HTTP.GetWorkspacesByIdWithResponse(
-			ctx, wsID,
-		)
-		require.NoError(getErr)
-		if getResp.JSON200 != nil && getResp.JSON200.Status == "ready" {
-			ready = getResp.JSON200
-			break
-		}
-	}
-	require.NotNil(ready, "workspace never became ready")
+	waitForWorkspaceReady(t, ctx, client, wsID)
 
 	getResp, err := client.HTTP.GetWorkspacesById(ctx, wsID)
 	require.NoError(err)
@@ -456,7 +444,7 @@ func TestWorkspaceResponseTracksTmuxOutputActivity(t *testing.T) {
 	t.Setenv("TMUX_PANE_TITLE", "workspace")
 	t.Setenv("TMUX_PANE_OUTPUT_FILE", outputPath)
 
-	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(
+	client, _, _, srv := setupWrapperServerWithScriptAndDBAndServer(
 		t, script,
 	)
 	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
@@ -477,14 +465,7 @@ func TestWorkspaceResponseTracksTmuxOutputActivity(t *testing.T) {
 	require.NotNil(createResp.JSON202)
 	wsID := createResp.JSON202.Id
 
-	for range 50 {
-		time.Sleep(100 * time.Millisecond)
-		workspace, dbErr := database.GetWorkspace(ctx, wsID)
-		require.NoError(dbErr)
-		if workspace != nil && workspace.Status == "ready" {
-			break
-		}
-	}
+	waitForWorkspaceReady(t, ctx, client, wsID)
 
 	first := getRawWorkspaceActivity(t, client, ctx, wsID)
 	require.NotNil(first.TmuxPaneTitle)
@@ -1084,22 +1065,7 @@ func TestWorkspaceCreateFailureLogsAndPersistsAuditEvent(t *testing.T) {
 	require.NotNil(createResp.JSON202)
 	wsID := createResp.JSON202.Id
 
-	var failed *generated.WorkspaceResponse
-	for range 50 {
-		time.Sleep(100 * time.Millisecond)
-		getResp, getErr := client.HTTP.GetWorkspacesByIdWithResponse(
-			ctx, wsID,
-		)
-		require.NoError(getErr)
-		if getResp.StatusCode() != http.StatusOK || getResp.JSON200 == nil {
-			continue
-		}
-		if getResp.JSON200.Status == "error" {
-			failed = getResp.JSON200
-			break
-		}
-	}
-	require.NotNil(failed, "workspace never entered error status")
+	failed := waitForWorkspaceStatus(t, ctx, client, wsID, "error")
 	require.NotNil(failed.ErrorMessage)
 	assert.Contains(*failed.ErrorMessage, "tmux new-session")
 	assert.Contains(*failed.ErrorMessage, "wrapper failed")
@@ -1550,7 +1516,7 @@ func TestWorkspaceShutdownCancellationDoesNotPersistAfterDeadlineBudgetExhausted
 
 	require.NoError(tx.Rollback())
 
-	time.Sleep(300 * time.Millisecond)
+	require.NoError(<-blockErrCh)
 
 	ws, err := database.GetWorkspace(t.Context(), wsID)
 	require.NoError(err)
@@ -1571,7 +1537,6 @@ func TestWorkspaceShutdownCancellationDoesNotPersistAfterDeadlineBudgetExhausted
 	)
 	defer longCancel()
 	require.NoError(srv.Shutdown(longCtx))
-	require.NoError(<-blockErrCh)
 }
 
 func TestTmuxWrapperAttachSession(t *testing.T) {

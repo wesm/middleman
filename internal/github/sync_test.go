@@ -1323,12 +1323,14 @@ func TestHostForConcurrentSetRepos(t *testing.T) {
 		time.Minute, nil, nil,
 	)
 
-	stop := make(chan struct{})
+	start := make(chan struct{})
 	var wg sync.WaitGroup
+	const iterations = 1000
 
 	// Writer: rotate between three shapes so readers see each
 	// hostFor branch at some point in the run.
 	wg.Go(func() {
+		<-start
 		withHost := []RepoRef{
 			{Owner: "o", Name: "r", PlatformHost: "ghe.example.com"},
 			{Owner: "o2", Name: "r2", PlatformHost: "github.com"},
@@ -1339,12 +1341,7 @@ func TestHostForConcurrentSetRepos(t *testing.T) {
 		orig := []RepoRef{
 			{Owner: "o", Name: "r", PlatformHost: "github.com"},
 		}
-		for {
-			select {
-			case <-stop:
-				return
-			default:
-			}
+		for range iterations {
 			syncer.SetRepos(withHost)
 			syncer.SetRepos(emptyHost)
 			syncer.SetRepos(orig)
@@ -1356,12 +1353,8 @@ func TestHostForConcurrentSetRepos(t *testing.T) {
 	// branch driven by the writer's emptyHost state.
 	for range 4 {
 		wg.Go(func() {
-			for {
-				select {
-				case <-stop:
-					return
-				default:
-				}
+			<-start
+			for range iterations {
 				_ = syncer.HostForRepo("o", "r")
 				_ = syncer.HostForRepo("ghost", "missing")
 				_ = syncer.IsTrackedRepo("o", "r")
@@ -1369,8 +1362,7 @@ func TestHostForConcurrentSetRepos(t *testing.T) {
 		})
 	}
 
-	time.Sleep(50 * time.Millisecond)
-	close(stop)
+	close(start)
 	wg.Wait()
 }
 
@@ -1749,9 +1741,12 @@ func TestSyncerStopWaitsForRunOnce(t *testing.T) {
 // closed, so the in-flight count saturates at the worker pool size.
 type parallelMockClient struct {
 	mockClient
-	inflight    atomic.Int32
-	maxInflight atomic.Int32
-	block       chan struct{}
+	inflight         atomic.Int32
+	maxInflight      atomic.Int32
+	saturationTarget int32
+	saturated        chan struct{}
+	saturatedOnce    sync.Once
+	block            chan struct{}
 }
 
 func (p *parallelMockClient) ListOpenPullRequests(
@@ -1765,6 +1760,9 @@ func (p *parallelMockClient) ListOpenPullRequests(
 			break
 		}
 	}
+	if n == p.saturationTarget && p.saturated != nil {
+		p.saturatedOnce.Do(func() { close(p.saturated) })
+	}
 	<-p.block
 	return nil, nil
 }
@@ -1777,7 +1775,11 @@ func TestRunOnceSyncesReposInParallel(t *testing.T) {
 	const parallelism = 3
 	const repoCount = 5
 
-	mc := &parallelMockClient{block: make(chan struct{})}
+	mc := &parallelMockClient{
+		block:            make(chan struct{}),
+		saturated:        make(chan struct{}),
+		saturationTarget: parallelism,
+	}
 	repos := make([]RepoRef, repoCount)
 	for i := range repos {
 		repos[i] = RepoRef{
@@ -1799,15 +1801,15 @@ func TestRunOnceSyncesReposInParallel(t *testing.T) {
 		close(done)
 	}()
 
-	require.Eventually(func() bool {
-		return mc.inflight.Load() == int32(parallelism)
-	}, 2*time.Second, 5*time.Millisecond,
-		"expected %d concurrent syncs, got %d",
-		parallelism, mc.inflight.Load())
-
-	// Hold the saturation point briefly to ensure no extra workers
-	// sneak past the bound.
-	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-mc.saturated:
+	case <-time.After(2 * time.Second):
+		require.Failf(
+			"expected worker pool to saturate",
+			"expected %d concurrent syncs, got %d",
+			parallelism, mc.inflight.Load(),
+		)
+	}
 	assert.LessOrEqual(mc.maxInflight.Load(), int32(parallelism),
 		"max concurrency exceeded bound")
 
@@ -1850,6 +1852,13 @@ func TestRunOnceCancelDuringBackoffDoesNotReportSuccess(t *testing.T) {
 	syncer.SetOnSyncCompleted(func([]RepoSyncResult) {
 		completedCalled.Store(true)
 	})
+	backoffReached := make(chan struct{})
+	var backoffReachedOnce sync.Once
+	syncer.SetOnStatusChange(func(status *SyncStatus) {
+		if strings.Contains(status.Progress, "rate limited, waiting") {
+			backoffReachedOnce.Do(func() { close(backoffReached) })
+		}
+	})
 
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
@@ -1858,8 +1867,11 @@ func TestRunOnceCancelDuringBackoffDoesNotReportSuccess(t *testing.T) {
 		close(done)
 	}()
 
-	// Give RunOnce time to reach the backoff select.
-	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-backoffReached:
+	case <-time.After(2 * time.Second):
+		require.Fail("RunOnce did not reach rate-limit backoff")
+	}
 	cancel()
 
 	select {
@@ -3726,8 +3738,6 @@ func TestEmptyWatchListNoOp(t *testing.T) {
 		}},
 		time.Hour, nil, nil,
 	)
-	syncer.SetWatchInterval(50 * time.Millisecond)
-
 	callCount := 0
 	syncer.SetOnMRSynced(
 		func(_ string, _ string, _ *db.MergeRequest) {
@@ -3735,12 +3745,7 @@ func TestEmptyWatchListNoOp(t *testing.T) {
 		},
 	)
 
-	// Leave watch list empty.
-	syncer.Start(t.Context())
-
-	// Let several ticks pass.
-	time.Sleep(200 * time.Millisecond)
-	syncer.Stop()
+	syncer.syncWatchedMRs(t.Context())
 
 	Assert.Equal(t, 0, callCount,
 		"empty watch list should not trigger any MR syncs")

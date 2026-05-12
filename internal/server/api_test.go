@@ -4081,7 +4081,16 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 	require.NoError(err)
 	t.Cleanup(func() { database.Close() })
 
-	mock := &mockGH{}
+	syncReachedGitHub := make(chan struct{})
+	var syncReachedGitHubOnce sync.Once
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(
+			_ context.Context, _, _ string,
+		) ([]*gh.PullRequest, error) {
+			syncReachedGitHubOnce.Do(func() { close(syncReachedGitHub) })
+			return nil, nil
+		},
+	}
 	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, []ghclient.RepoRef{{
 		Owner:        "acme",
 		Name:         "widget",
@@ -4104,17 +4113,17 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 
 	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
 
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		repos, err := database.ListRepos(t.Context())
-		require.NoError(err)
-		if len(repos) == 1 && repos[0].Owner == "acme" && repos[0].Name == "widget" {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
+	select {
+	case <-syncReachedGitHub:
+	case <-time.After(2 * time.Second):
+		require.Fail("expected sync to reach GitHub despite request context cancellation")
 	}
 
-	Assert.Fail(t, "expected sync to complete despite request context cancellation")
+	repos, err := database.ListRepos(t.Context())
+	require.NoError(err)
+	require.Len(repos, 1)
+	Assert.Equal(t, "acme", repos[0].Owner)
+	Assert.Equal(t, "widget", repos[0].Name)
 }
 
 func TestAPITriggerSyncBypassesNextSyncAfter(t *testing.T) {
@@ -4126,11 +4135,15 @@ func TestAPITriggerSyncBypassesNextSyncAfter(t *testing.T) {
 	t.Cleanup(func() { database.Close() })
 
 	var listCalls atomic.Int32
+	secondSync := make(chan struct{})
+	var secondSyncOnce sync.Once
 	mock := &mockGH{
 		listOpenPullRequestsFn: func(
 			_ context.Context, _, _ string,
 		) ([]*gh.PullRequest, error) {
-			listCalls.Add(1)
+			if listCalls.Add(1) == 2 {
+				secondSyncOnce.Do(func() { close(secondSync) })
+			}
 			return nil, nil
 		},
 	}
@@ -4168,9 +4181,11 @@ func TestAPITriggerSyncBypassesNextSyncAfter(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusAccepted, resp.StatusCode())
 
-	require.Eventually(func() bool {
-		return listCalls.Load() == 2
-	}, 2*time.Second, 10*time.Millisecond)
+	select {
+	case <-secondSync:
+	case <-time.After(2 * time.Second):
+		require.Fail("expected explicit sync request to bypass background cooldown")
+	}
 }
 
 func TestAPIReadyForReview(t *testing.T) {
@@ -11884,6 +11899,20 @@ func waitForWorkspaceReady(
 	wsID string,
 ) *generated.WorkspaceResponse {
 	t.Helper()
+	return waitForWorkspaceStatus(t, ctx, client, wsID, "ready")
+}
+
+func waitForWorkspaceStatus(
+	t *testing.T,
+	ctx context.Context,
+	client *apiclient.Client,
+	wsID string,
+	status string,
+) *generated.WorkspaceResponse {
+	t.Helper()
+
+	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
@@ -11895,13 +11924,17 @@ func waitForWorkspaceReady(
 		require.NoError(t, err)
 		if getResp.StatusCode() == http.StatusOK &&
 			getResp.JSON200 != nil &&
-			getResp.JSON200.Status == "ready" {
+			getResp.JSON200.Status == status {
 			return getResp.JSON200
 		}
 
 		select {
-		case <-ctx.Done():
-			require.NoError(t, ctx.Err(), "workspace never became ready: %s", wsID)
+		case <-waitCtx.Done():
+			require.NoError(
+				t, waitCtx.Err(),
+				"workspace %s never reached %q status",
+				wsID, status,
+			)
 		case <-ticker.C:
 		}
 	}
@@ -11989,7 +12022,6 @@ func TestCleanupWorkspaceServerFixtureArtifactsKeepsDeletingAfterError(
 		TmuxSession:     "middleman-succeeds",
 		Status:          "ready",
 	}))
-	time.Sleep(time.Millisecond)
 	require.NoError(database.InsertWorkspace(ctx, &workspace.Workspace{
 		ID:              "ws-fails",
 		PlatformHost:    "github.com",
@@ -12003,6 +12035,14 @@ func TestCleanupWorkspaceServerFixtureArtifactsKeepsDeletingAfterError(
 		TmuxSession:     "middleman-fails",
 		Status:          "ready",
 	}))
+	_, err = database.WriteDB().ExecContext(ctx, `
+		UPDATE middleman_workspaces
+		SET created_at = CASE id
+			WHEN 'ws-succeeds' THEN datetime('now')
+			WHEN 'ws-fails' THEN datetime('now', '+1 second')
+		END
+		WHERE id IN ('ws-succeeds', 'ws-fails')`)
+	require.NoError(err)
 
 	err = cleanupWorkspaceServerFixtureArtifactsWithContext(ctx, srv, database)
 	require.Error(err)
@@ -15433,24 +15473,8 @@ func TestWorkspaceDeleteDirty(t *testing.T) {
 	require.NotNil(createResp.JSON202)
 	wsID := createResp.JSON202.Id
 
-	// Poll until workspace is ready.
-	var wsPath string
-	for range 50 {
-		time.Sleep(100 * time.Millisecond)
-		getResp, gErr := client.HTTP.GetWorkspacesByIdWithResponse(
-			ctx, wsID,
-		)
-		require.NoError(gErr)
-		if getResp.StatusCode() != http.StatusOK {
-			continue
-		}
-		if getResp.JSON200 != nil &&
-			getResp.JSON200.Status == "ready" {
-			wsPath = getResp.JSON200.WorktreePath
-			break
-		}
-	}
-	require.NotEmpty(wsPath, "workspace never became ready")
+	ready := waitForWorkspaceReady(t, ctx, client, wsID)
+	wsPath := ready.WorktreePath
 
 	// Write a dirty file into the worktree.
 	require.NoError(os.WriteFile(
@@ -15497,18 +15521,8 @@ func TestWorkspaceDeleteDirty(t *testing.T) {
 	require.Equal(http.StatusAccepted, create2.StatusCode())
 	ws2ID := create2.JSON202.Id
 
-	// Poll until ready.
-	var ws2Path string
-	for range 50 {
-		time.Sleep(100 * time.Millisecond)
-		g, gErr := client.HTTP.GetWorkspacesByIdWithResponse(ctx, ws2ID)
-		require.NoError(gErr)
-		if g.JSON200 != nil && g.JSON200.Status == "ready" {
-			ws2Path = g.JSON200.WorktreePath
-			break
-		}
-	}
-	require.NotEmpty(ws2Path, "workspace 2 never became ready")
+	ready2 := waitForWorkspaceReady(t, ctx, client, ws2ID)
+	ws2Path := ready2.WorktreePath
 
 	// Nuke the worktree directory to simulate corruption.
 	require.NoError(os.RemoveAll(ws2Path))

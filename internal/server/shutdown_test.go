@@ -70,11 +70,11 @@ func TestServerShutdownPreventsNewBackgroundTasks(t *testing.T) {
 	require.NoError(t, srv.Shutdown(ctx))
 
 	var ran atomic.Bool
-	srv.runBackground(func(_ context.Context) {
+	started := srv.runBackground(func(_ context.Context) {
 		ran.Store(true)
 	})
 
-	time.Sleep(20 * time.Millisecond)
+	require.False(t, started, "runBackground must report dropped work after Shutdown")
 	require.False(t, ran.Load(), "runBackground must not spawn work after Shutdown")
 }
 
