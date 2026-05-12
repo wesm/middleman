@@ -34,31 +34,68 @@ route or API type changes.
 
 ## Race test runtime
 
-Use `make race-times` and CI's race timing artifact before guessing at slow
-packages. Keep `go test -race` fast by splitting large black-box flows into
-separate packages and leaving only unexported-internal coverage in the source
-package.
+Treat `go test -race` runtime as a test architecture concern, not a CI-only
+concern. The main levers are:
 
-Current split targets:
+- keep large black-box flows in separate test packages so Go can schedule them
+  as separate race test binaries;
+- replace fixed sleeps with explicit events, callbacks, readiness channels, or
+  short polling loops that check immediately before waiting;
+- reuse migrated SQLite template databases for isolated non-migration tests;
+- add `t.Parallel` only after proving the test does not touch process-global
+  state, fixed external resources, shared tmux sessions, or shared database
+  files.
 
-- `internal/server/apitest`: generated-client HTTP API behavior;
-- `internal/server/workspacetest`: workspace, runtime, terminal, and tmux HTTP
-  flows;
-- `internal/github/syncertest`: exported syncer contracts;
-- `internal/db/projecttest`: DB behavior that can avoid core `internal/db`.
+Use `make race-times` to get a local package timing baseline for the current
+slow packages. CI also writes race timing JSON and summarizes slow packages and
+tests in the `go test -race` job summary. When a PR regresses race runtime, use
+the CI timing artifact rather than guessing from local timings alone.
 
-Use migrated SQLite template fixtures for non-migration DB tests:
-`internal/testutil/dbtest.Open(t)` outside `internal/db`, and package-local
-`openTestDB(t)` inside `internal/db`. Keep migration, legacy repair, dirty
-migration, and schema-history tests behind `dbtest.OpenWithMigrationsAt(t, path)`
-or package-local `openDBWithMigrations(t)`.
+Keep splitting new high-volume tests into the existing black-box packages when
+they do not need unexported internals:
 
-Do not use sleeps for synchronization. Prefer explicit events, callbacks,
-readiness channels, or immediate-check polling with a bounded ticker.
-`testing/synctest` is only for pure in-process goroutines and timers created
-inside the bubble; do not use it with HTTP servers, WebSockets, tmux, PTYs, git,
-shell commands, external-process filesystem polling, or nested `t.Run`,
-`t.Parallel`, or `t.Deadline`.
+- `internal/server/apitest` for HTTP API behavior through the generated client;
+- `internal/server/workspacetest` for workspace, runtime, terminal, and
+  tmux-heavy HTTP flows;
+- `internal/github/syncertest` for exported syncer contract behavior;
+- `internal/db/projecttest` for project-package DB behavior that can avoid the
+  core `internal/db` package.
+
+Leave tests in the source package when they exercise unexported helpers,
+migration state, dirty database handling, or other internal invariants.
+
+### SQLite Fixtures
+
+Use the copied-template database fixture for ordinary DB-backed tests that only
+need a fresh migrated schema:
+
+- outside `internal/db`, prefer `internal/testutil/dbtest.Open(t)`;
+- inside `internal/db`, use the package-local `openTestDB(t)` from
+  `fixture_test.go`;
+- keep migration, legacy repair, dirty migration, and schema-history tests on
+  `dbtest.OpenWithMigrationsAt(t, path)`, `db.Open`, or the package-local
+  `openDBWithMigrations(t)`.
+
+The template fixture migrates once, checkpoints WAL, copies the database file
+into each test's `t.TempDir`, and opens the copy with `OpenPreparedForTest`.
+That preserves per-test isolation without paying migration setup for every
+fixture.
+
+### Sleep And Timer Tests
+
+Do not add sleeps as a synchronization mechanism. Prefer a channel closed by
+the fake or callback that observed the exact event under test. If the behavior
+is inherently observable only by polling, check once immediately, then poll with
+a short ticker bounded by a context deadline.
+
+`testing/synctest` is appropriate only when all goroutines and timers under test
+are pure in-process work created inside the `synctest.Run` bubble. Good
+candidates include fake-client backoff, cooldown, cancellation, and event-hub
+tests. Do not use `synctest` around `httptest.Server`, WebSockets, tmux, PTYs,
+git, shell commands, filesystem polling driven by external processes, or tests
+that call `t.Run`, `t.Parallel`, or `t.Deadline` inside the bubble.
+`synctest.Wait` is race-detector synchronization, so it is useful under
+`go test -race` when the test is structurally eligible.
 
 ## Related context
 

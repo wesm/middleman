@@ -56,6 +56,7 @@
       <Chip
         size="sm"
         uppercase={false}
+        title={repoSlug}
         class="chip--muted repo-chip"
         style={`color: ${repoColor(repoSlug)}; background: color-mix(in srgb, ${repoColor(repoSlug)} 15%, transparent);`}
       >{repoSlug}</Chip>
@@ -139,13 +140,17 @@
   }
 
   .repo-row {
+    display: flex;
+    min-width: 0;
     margin-bottom: 4px;
   }
 
-  :global(.repo-chip) {
+  :global(.chip.repo-chip) {
+    flex: 0 1 auto;
+    justify-content: flex-start;
+    min-width: 0;
     max-width: 100%;
     overflow: hidden;
-    text-overflow: ellipsis;
   }
 
   .meta-right {
