@@ -1,7 +1,6 @@
 package workspacetest
 
 import (
-	"context"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,7 +18,7 @@ func TestWorkspaceRuntimeTargetsE2E(t *testing.T) {
 	assert := Assert.New(t)
 
 	fixture := setupWorkspaceServerFixture(t, nil)
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
 	resp, err := fixture.client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.Id)
@@ -52,7 +51,7 @@ func TestWorkspaceRuntimeTargetsUseConfiguredTmuxCommandE2E(t *testing.T) {
 		Command: []string{tmuxPath, "--scope", "tmux"},
 	}}
 	fixture := setupWorkspaceServerFixture(t, cfg)
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
 	resp, err := fixture.client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.Id)
@@ -80,7 +79,7 @@ func TestWorkspaceRuntimeLaunchUnavailableTargetE2E(t *testing.T) {
 		Enabled: &disabled,
 	}}}
 	fixture := setupWorkspaceServerFixture(t, cfg)
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
 	resp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
@@ -100,7 +99,7 @@ func TestWorkspaceRuntimeLaunchPlainShellUsesShellSessionE2E(t *testing.T) {
 	assert := Assert.New(t)
 
 	fixture := setupWorkspaceServerFixture(t, nil)
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
 	resp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(

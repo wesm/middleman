@@ -94,7 +94,7 @@ func setupWorkspaceServerFixture(
 		WorktreeDir: worktreeDir,
 	})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		require.NoError(t, srv.Shutdown(ctx))
 	})
@@ -237,12 +237,15 @@ func waitForWorkspaceReady(
 ) *generated.WorkspaceResponse {
 	t.Helper()
 
+	waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
 
 	for {
-		getResp, err := client.HTTP.GetWorkspacesByIdWithResponse(ctx, wsID)
-		require.NoError(t, err)
+		getResp, err := client.HTTP.GetWorkspacesByIdWithResponse(waitCtx, wsID)
+		require.NoError(t, err, "polling workspace readiness: %s", wsID)
 		if getResp.StatusCode() == http.StatusOK &&
 			getResp.JSON200 != nil &&
 			getResp.JSON200.Status == "ready" {
@@ -250,8 +253,8 @@ func waitForWorkspaceReady(
 		}
 
 		select {
-		case <-ctx.Done():
-			require.NoError(t, ctx.Err(), "workspace never became ready: %s", wsID)
+		case <-waitCtx.Done():
+			require.NoError(t, waitCtx.Err(), "workspace never became ready: %s", wsID)
 		case <-ticker.C:
 		}
 	}
