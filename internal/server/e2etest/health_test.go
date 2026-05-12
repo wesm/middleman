@@ -1,4 +1,4 @@
-package server
+package e2etest
 
 import (
 	"encoding/json"
@@ -35,7 +35,7 @@ func TestHealthEndpointsE2E_ReturnOKWhenReady(t *testing.T) {
 
 			assert.Equal(http.StatusOK, resp.StatusCode)
 
-			var body healthResponse
+			var body localHealthResponse
 			err = json.NewDecoder(resp.Body).Decode(&body)
 			require.NoError(err)
 
@@ -68,7 +68,7 @@ func TestHealthEndpointsE2E_RemainAvailableAtRootWithBasePath(t *testing.T) {
 
 			assert.Equal(http.StatusOK, resp.StatusCode)
 
-			var body healthResponse
+			var body localHealthResponse
 			err = json.NewDecoder(resp.Body).Decode(&body)
 			require.NoError(err)
 

@@ -1,4 +1,4 @@
-package server
+package e2etest
 
 import (
 	"bytes"
@@ -18,6 +18,7 @@ import (
 	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
 	ghclient "github.com/wesm/middleman/internal/github"
+	"github.com/wesm/middleman/internal/server"
 )
 
 func TestTriggerSyncE2EBypassesCooldown(t *testing.T) {
@@ -191,9 +192,9 @@ func startSyncCooldownE2EServer(
 	)
 	t.Cleanup(syncer.Stop)
 
-	srv := NewWithConfig(
+	srv := server.NewWithConfig(
 		database, syncer, nil, nil, cfg, cfgPath,
-		ServerOptions{},
+		server.ServerOptions{},
 	)
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
