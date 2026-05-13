@@ -1809,7 +1809,6 @@ func (s *session) wasStopRequested() bool {
 
 func (s *session) detach() {
 	s.stopOnce.Do(func() {
-		s.closeProcessHandle()
 		if s.ptmx != nil {
 			_ = s.ptmx.Close()
 		}

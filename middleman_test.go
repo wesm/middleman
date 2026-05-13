@@ -548,3 +548,15 @@ func TestWindowsRuntimeUsesJobObjectKillOnClose(t *testing.T) {
 	assert.Contains(windowsImpl, "AssignProcessToJobObject")
 	assert.Contains(windowsImpl, "JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE")
 }
+
+func TestRuntimeDetachDoesNotCloseWindowsJobObject(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	content, err := os.ReadFile("internal/workspace/localruntime/manager.go")
+	require.NoError(err)
+	manager := string(content)
+
+	assert.Contains(manager, "func (s *session) detach()")
+	assert.NotContains(manager, "func (s *session) detach() {\n\ts.stopOnce.Do(func() {\n\t\ts.closeProcessHandle()")
+}
