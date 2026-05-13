@@ -2,20 +2,10 @@ import { expect, test } from "@playwright/test";
 
 import { mockApi } from "./support/mockApi";
 
-// E2E coverage for the PR-detail palette commands wired in Task 26
-// (`pr.approve`, `pr.ready`, `pr.approveWorkflows`). Task 26 leaves the
-// merge palette command (`pr.merge`) deferred because flipping the
-// MergeModal's open state from outside `PullDetail.svelte` would widen
-// the change beyond the plan's stated scope, so this spec focuses on
-// approve/ready/approve-workflows.
-//
-// Note for the engineer running the e2e suite: local Playwright is not
-// expected to be wired up in this worktree. Task 36 is the catch-all
-// pass that will exercise the full Playwright suite in CI; this spec is
-// checked in here so it runs there as a regression guard. The mockApi
-// fixtures may need to be extended (per-PR `capabilities`,
-// `MergeableState`, an `/approve` POST handler) before this file passes
-// end-to-end — that wiring is Task 36's responsibility, not Task 26's.
+// E2E coverage for the PR-detail palette commands (`pr.approve`,
+// `pr.ready`, `pr.approveWorkflows`). The merge palette command is
+// intentionally not registered (the trigger lives in PullDetail.svelte's
+// local component state).
 
 test.beforeEach(async ({ page }) => {
   await mockApi(page);
