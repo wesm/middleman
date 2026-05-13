@@ -46,6 +46,13 @@ test("settings shows glob match counts and refresh updates tracked repos", async
       .join(",");
   }).toBe("middleman,worker");
 
+  const selector = page.getByTitle("Select repository");
+  await expect(selector).toBeVisible();
+  await selector.click();
+  await expect(page.getByRole("option", { name: /roborev-dev\/middleman/ })).toBeVisible();
+  await expect(page.getByRole("option", { name: /roborev-dev\/worker/ })).toBeVisible();
+  await page.keyboard.press("Escape");
+
   await row.getByRole("button", { name: "Refresh" }).click();
 
   await expect(row).toContainText("(3)");
@@ -90,6 +97,15 @@ test("settings imports a selected subset from a repository glob", async ({ page 
   await expect(page.locator(".repo-row", { hasText: "import-lab/api" })).toBeVisible();
   await expect(page.locator(".repo-row", { hasText: "import-lab/worker" })).toHaveCount(0);
 
+  const selector = page.getByTitle("Select repository");
+  await expect(selector).toBeVisible();
+  await selector.click();
+  const apiOption = page.getByRole("option", { name: /import-lab\/api/ });
+  await expect(apiOption).toBeVisible();
+  await expect(page.getByRole("option", { name: /import-lab\/worker/ })).toHaveCount(0);
+  await apiOption.click();
+  await expect(selector).toContainText("github.com/import-lab/api");
+
   if (!api) throw new Error("settings-globs API context not initialized");
   const settingsResponse = await api.get("/api/v1/settings");
   const settings = await settingsResponse.json() as { repos: Array<{ owner: string; name: string; is_glob: boolean }> };
@@ -107,6 +123,22 @@ test("settings imports a selected subset from a repository glob", async ({ page 
       .sort()
       .join(",");
   }).toBe("api");
+
+  const repoRow = page.locator(".repo-row", { hasText: "import-lab/api" });
+  await repoRow.getByTitle("Remove github/github.com/import-lab/api").click();
+  await repoRow.getByRole("button", { name: "Yes" }).click();
+
+  await expect(repoRow).toHaveCount(0);
+  await expect(selector).toContainText("All repos");
+  await expect.poll(async () => {
+    const response = await api!.get("/api/v1/repos");
+    const repos = await response.json() as RepoSummary[];
+    return repos
+      .filter((repo) => repo.Owner === "import-lab")
+      .map((repo) => repo.Name)
+      .sort()
+      .join(",");
+  }).toBe("");
 });
 
 test("repository import can hide forks and private repositories before adding", async ({ page }) => {

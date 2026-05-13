@@ -1,7 +1,8 @@
 <script lang="ts">
   import { tick } from "svelte";
+  import { getStores } from "@middleman/ui";
   import { client } from "../api/runtime.js";
-  import type { Repo } from "@middleman/ui/api/types";
+  import type { ConfigRepo, Repo } from "@middleman/ui/api/types";
   import { ChevronDownIcon } from "../icons.ts";
 
   interface Props {
@@ -11,26 +12,84 @@
 
   let { selected, onchange }: Props = $props();
 
-  let repos = $state<Repo[]>([]);
+  const stores = getStores();
+
+  let fetchedRepos = $state<Repo[]>([]);
+  let reposLoading = $state(false);
   let query = $state("");
   let open = $state(false);
   let highlightIndex = $state(0);
   let inputEl = $state<HTMLInputElement>();
   let containerEl = $state<HTMLDivElement>();
+  let repoFetchVersion = 0;
+  let latestRepoFetchKey = "";
 
   $effect(() => {
+    const configuredRepoKey = configuredRepos
+      .map((repo) => `${repo.provider}/${repo.platform_host}/${repo.repo_path || `${repo.owner}/${repo.name}`}`)
+      .join("\0");
+    const fetchKey = `${++repoFetchVersion}:${settingsLoaded}:${configuredRepoKey}`;
+
+    latestRepoFetchKey = fetchKey;
+    reposLoading = true;
+    fetchedRepos = [];
+
     void client.GET("/repos").then(({ data, error }) => {
+      if (fetchKey !== latestRepoFetchKey) return;
+      reposLoading = false;
       if (error) return;
-      repos = data ?? [];
+      fetchedRepos = data ?? [];
     });
   });
 
+  const configuredRepos = $derived(
+    stores?.settings?.getConfiguredRepos?.() ?? [],
+  );
+  const settingsLoaded = $derived(
+    stores?.settings?.isSettingsLoaded?.() ?? false,
+  );
+
+  function optionFromRepo(repo: Repo): { value: string; owner: string; name: string } {
+    return {
+      value: `${repo.PlatformHost}/${repo.Owner}/${repo.Name}`,
+      owner: repo.Owner,
+      name: repo.Name,
+    };
+  }
+
+  function optionFromConfigRepo(repo: ConfigRepo): { value: string; owner: string; name: string } {
+    const path = repo.repo_path || `${repo.owner}/${repo.name}`;
+    return {
+      value: `${repo.platform_host}/${path}`,
+      owner: repo.owner,
+      name: repo.name,
+    };
+  }
+
+  function mergeOptions(
+    configured: ConfigRepo[],
+    fetched: Repo[],
+  ): { value: string; owner: string; name: string }[] {
+    const merged = new Map<string, { value: string; owner: string; name: string }>();
+
+    for (const repo of configured.filter((entry) => !entry.is_glob)) {
+      const option = optionFromConfigRepo(repo);
+      merged.set(option.value, option);
+    }
+
+    for (const repo of fetched) {
+      const option = optionFromRepo(repo);
+      merged.set(option.value, option);
+    }
+
+    return Array.from(merged.values());
+  }
+
   const options = $derived.by(() => {
-    return repos.map((r) => ({
-      value: `${r.PlatformHost}/${r.Owner}/${r.Name}`,
-      owner: r.Owner,
-      name: r.Name,
-    }));
+    if (settingsLoaded || configuredRepos.length > 0) {
+      return mergeOptions(configuredRepos, fetchedRepos);
+    }
+    return fetchedRepos.map(optionFromRepo);
   });
 
   const filtered = $derived.by(() => {
@@ -44,6 +103,12 @@
   const displayValue = $derived(
     selected ?? "All repos",
   );
+
+  $effect(() => {
+    if (!selected || reposLoading) return;
+    if (options.some((option) => option.value === selected)) return;
+    onchange(undefined);
+  });
 
   async function openDropdown() {
     query = "";
@@ -143,7 +208,7 @@
         onmousedown={() => select(undefined)}
         onmouseenter={() => (highlightIndex = 0)}
       >All repos</li>
-      {#each filtered as option, i}
+      {#each filtered as option, i (option.value)}
         <li
           class="typeahead-option"
           class:highlighted={i + 1 === highlightIndex}
@@ -153,7 +218,7 @@
           onmousedown={() => select(option.value)}
           onmouseenter={() => (highlightIndex = i + 1)}
         >
-          {#each highlightSegments(option.value, query) as seg}{#if seg.match}<mark class="match">{seg.text}</mark>{:else}{seg.text}{/if}{/each}
+          {#each highlightSegments(option.value, query) as seg, segIndex (`${option.value}-${segIndex}-${seg.text}-${seg.match}`)}{#if seg.match}<mark class="match">{seg.text}</mark>{:else}{seg.text}{/if}{/each}
         </li>
       {:else}
         <li class="typeahead-empty">No matching repos</li>
