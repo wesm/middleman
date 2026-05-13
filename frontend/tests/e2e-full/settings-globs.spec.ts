@@ -120,6 +120,26 @@ test("settings imports a selected subset from a repository glob", async ({ page 
       .sort()
       .join(",");
   }).toBe("api");
+
+  await selector.click();
+  await page.getByRole("option", { name: /import-lab\/api/ }).click();
+  await expect(selector).toContainText("github.com/import-lab/api");
+
+  const repoRow = page.locator(".repo-row", { hasText: "import-lab/api" });
+  await repoRow.getByTitle("Remove github/github.com/import-lab/api").click();
+  await repoRow.getByRole("button", { name: "Yes" }).click();
+
+  await expect(repoRow).toHaveCount(0);
+  await expect(selector).toContainText("All repos");
+  await expect.poll(async () => {
+    const response = await api!.get("/api/v1/repos");
+    const repos = await response.json() as RepoSummary[];
+    return repos
+      .filter((repo) => repo.Owner === "import-lab")
+      .map((repo) => repo.Name)
+      .sort()
+      .join(",");
+  }).toBe("");
 });
 
 test("repository import can hide forks and private repositories before adding", async ({ page }) => {

@@ -15,6 +15,7 @@
   const stores = getStores();
 
   let fetchedRepos = $state<Repo[]>([]);
+  let reposLoading = $state(false);
   let query = $state("");
   let open = $state(false);
   let highlightIndex = $state(0);
@@ -30,10 +31,13 @@
     const fetchKey = `${++repoFetchVersion}:${settingsLoaded}:${configuredRepoKey}`;
 
     latestRepoFetchKey = fetchKey;
+    reposLoading = true;
     fetchedRepos = [];
 
     void client.GET("/repos").then(({ data, error }) => {
-      if (error || fetchKey !== latestRepoFetchKey) return;
+      if (fetchKey !== latestRepoFetchKey) return;
+      reposLoading = false;
+      if (error) return;
       fetchedRepos = data ?? [];
     });
   });
@@ -99,6 +103,12 @@
   const displayValue = $derived(
     selected ?? "All repos",
   );
+
+  $effect(() => {
+    if (!selected || reposLoading) return;
+    if (options.some((option) => option.value === selected)) return;
+    onchange(undefined);
+  });
 
   async function openDropdown() {
     query = "";

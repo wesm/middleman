@@ -2,11 +2,11 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/sv
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
 import type { Repo } from "@middleman/ui/api/types";
-import { createSettingsStore } from "../../../../packages/ui/src/stores/settings.svelte.ts";
+import { createSettingsStore } from "@middleman/ui/stores/settings";
 import { client } from "../api/runtime.js";
 import RepoTypeahead from "./RepoTypeahead.svelte";
 
-const settingsStore = createSettingsStore();
+let settingsStore: ReturnType<typeof createSettingsStore>;
 
 vi.mock("@middleman/ui", () => ({
   getStores: () => ({
@@ -24,13 +24,13 @@ const getRepos = client.GET as unknown as Mock<() => Promise<{ data: Repo[]; err
 
 describe("RepoTypeahead", () => {
   beforeEach(() => {
+    settingsStore = createSettingsStore();
     settingsStore.setConfiguredRepos([]);
     getRepos.mockResolvedValue({ data: [], error: undefined });
   });
 
   afterEach(() => {
     cleanup();
-    settingsStore.setConfiguredRepos([]);
   });
 
   it("updates dropdown options when configured repos change", async () => {
@@ -118,6 +118,7 @@ describe("RepoTypeahead", () => {
         Name: "middleman",
       },
     ] as unknown as Repo[];
+    const onchange = vi.fn();
 
     getRepos
       .mockResolvedValueOnce({
@@ -143,12 +144,12 @@ describe("RepoTypeahead", () => {
 
     render(RepoTypeahead, {
       props: {
-        selected: undefined,
-        onchange: vi.fn(),
+        selected: "github.com/roborev-dev/middleman",
+        onchange,
       },
     });
 
-    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /github.com\/roborev-dev\/middleman/i }));
 
     await waitFor(() => {
       expect(screen.getByRole("option", { name: /roborev-dev\/middleman/i })).toBeTruthy();
@@ -158,6 +159,7 @@ describe("RepoTypeahead", () => {
 
     await waitFor(() => {
       expect(screen.queryByRole("option", { name: /roborev-dev\/middleman/i })).toBeNull();
+      expect(onchange).toHaveBeenCalledWith(undefined);
     });
   });
 });
