@@ -43,14 +43,36 @@ function normalizeTimestamp(value: unknown): string {
   return Number.isNaN(Date.parse(value)) ? EPOCH : value;
 }
 
+function isValidRoutedItemRef(
+  kind: "pr" | "issue",
+  value: unknown,
+): value is RoutedItemRef {
+  if (typeof value !== "object" || value === null) return false;
+  const r = value as Record<string, unknown>;
+  if (r.itemType !== kind) return false;
+  if (typeof r.provider !== "string") return false;
+  if (typeof r.owner !== "string") return false;
+  if (typeof r.name !== "string") return false;
+  if (typeof r.repoPath !== "string") return false;
+  if (typeof r.number !== "number" || !Number.isFinite(r.number)) return false;
+  if (r.platformHost !== undefined && typeof r.platformHost !== "string") {
+    return false;
+  }
+  return true;
+}
+
 function normalizeItems(rawItems: unknown[]): RecentItem[] {
   const normalized: RecentItem[] = [];
   for (const raw of rawItems) {
     if (!isPersistedItem(raw)) continue;
     if (raw.kind !== "pr" && raw.kind !== "issue") continue;
+    // Validate the ref shape before keeping the item — a corrupt or
+    // hand-edited entry like { kind: "pr", ref: null, ... } would
+    // otherwise crash the palette every time it opens.
+    if (!isValidRoutedItemRef(raw.kind, raw.ref)) continue;
     normalized.push({
       kind: raw.kind,
-      ref: raw.ref as RoutedItemRef,
+      ref: raw.ref,
       lastSelectedAt: normalizeTimestamp(raw.lastSelectedAt),
     });
   }

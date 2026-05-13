@@ -194,6 +194,40 @@ describe("recents", () => {
     expect(items[1]!.lastSelectedAt).toBe(epoch);
   });
 
+  it("drops items whose ref is missing required fields", () => {
+    // Corrupt or hand-edited entries — null/empty/non-string ref fields,
+    // mismatched itemType — must be dropped so the palette doesn't crash
+    // when it dereferences recent.ref.repoPath / .number on render.
+    localStorage.setItem(
+      RECENTS_KEY,
+      JSON.stringify({
+        version: 1,
+        items: [
+          { kind: "pr", ref: null, lastSelectedAt: "2026-01-01T00:00:00Z" },
+          { kind: "pr", ref: {}, lastSelectedAt: "2026-01-01T00:00:00Z" },
+          {
+            kind: "pr",
+            ref: { itemType: "issue", provider: "github", owner: "a", name: "b", repoPath: "a/b", number: 1 },
+            lastSelectedAt: "2026-01-01T00:00:00Z",
+          },
+          {
+            kind: "pr",
+            ref: { itemType: "pr", provider: "github", owner: "a", name: "b", repoPath: "a/b", number: "not-a-number" },
+            lastSelectedAt: "2026-01-01T00:00:00Z",
+          },
+          {
+            kind: "pr",
+            ref: ref(7),
+            lastSelectedAt: "2026-01-01T00:00:00Z",
+          },
+        ],
+      }),
+    );
+    const items = readRecents().items;
+    expect(items).toHaveLength(1);
+    expect((items[0]!.ref as { number: number }).number).toBe(7);
+  });
+
   it("drops items missing a kind field entirely", () => {
     localStorage.setItem(
       RECENTS_KEY,
