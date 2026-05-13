@@ -15,6 +15,7 @@ import (
 	"github.com/creack/pty/v2"
 
 	"github.com/wesm/middleman/internal/procutil"
+	"github.com/wesm/middleman/internal/ptyowner"
 	"github.com/wesm/middleman/internal/workspace"
 )
 
@@ -108,6 +109,29 @@ func (h *Handler) ServeHTTP(
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
+
+	if h.Workspaces.UsesPtyOwnerForWorkspace(ws) {
+		if err := h.Workspaces.EnsureTerminal(ctx, ws); err != nil {
+			slog.Error("ensure pty owner", "err", err)
+			conn.Close(websocket.StatusInternalError, "failed to start pty owner")
+			return
+		}
+		attachment, err := h.Workspaces.AttachPtyOwnerTerminal(
+			ctx, ws.TmuxSession, cols, rows,
+		)
+		if err != nil {
+			slog.Error("attach pty owner", "err", err)
+			conn.Close(websocket.StatusInternalError, "failed to attach pty owner")
+			return
+		}
+		exited := bridgePtyOwnerAttachment(ctx, conn, attachment)
+		if exited {
+			conn.Close(websocket.StatusNormalClosure, "session ended")
+		} else {
+			conn.Close(websocket.StatusNormalClosure, "detached")
+		}
+		return
+	}
 
 	if tmuxErr := h.Workspaces.EnsureTmux(
 		ctx, ws.TmuxSession, ws.WorktreePath,
@@ -265,6 +289,102 @@ func (h *Handler) ServeHTTP(
 	)
 }
 
+func bridgePtyOwnerAttachment(
+	ctx context.Context,
+	conn *websocket.Conn,
+	attachment *ptyowner.Attachment,
+) bool {
+	defer attachment.Close()
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	inputDone := make(chan struct{})
+	go func() {
+		defer close(inputDone)
+		for {
+			typ, data, err := conn.Read(ctx)
+			if err != nil {
+				return
+			}
+			switch typ {
+			case websocket.MessageBinary:
+				if err := attachment.Write(data); err != nil {
+					return
+				}
+			case websocket.MessageText:
+				var msg controlMsg
+				if err := json.Unmarshal(data, &msg); err != nil {
+					slog.Warn("bad pty owner terminal control message", "err", err)
+					continue
+				}
+				if msg.Type == "resize" {
+					_ = attachment.Resize(msg.Cols, msg.Rows)
+				}
+			}
+		}
+	}()
+
+	outputDone := make(chan struct{})
+	go func() {
+		defer close(outputDone)
+		for {
+			select {
+			case data, ok := <-attachment.Output:
+				if !ok {
+					return
+				}
+				if err := conn.Write(
+					ctx, websocket.MessageBinary, data,
+				); err != nil {
+					return
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	select {
+	case <-attachment.Done:
+		select {
+		case <-outputDone:
+		case <-time.After(2 * time.Second):
+			cancel()
+			return false
+		}
+		cancel()
+		writeTerminalExit(conn, attachment.ExitCode())
+		return true
+	case <-inputDone:
+		cancel()
+		return false
+	case <-outputDone:
+		select {
+		case <-attachment.Done:
+			cancel()
+			writeTerminalExit(conn, attachment.ExitCode())
+			return true
+		case <-time.After(100 * time.Millisecond):
+			cancel()
+			return false
+		}
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func writeTerminalExit(conn *websocket.Conn, exitCode int) {
+	exitMsg, _ := json.Marshal(map[string]any{
+		"type": "exited",
+		"code": exitCode,
+	})
+	writeCtx, writeCancel := context.WithTimeout(
+		context.Background(), 2*time.Second)
+	_ = conn.Write(writeCtx, websocket.MessageText, exitMsg)
+	writeCancel()
+}
+
 func (h *Handler) claimTerminalSlot(
 	id string,
 ) (func(), error) {
@@ -272,6 +392,9 @@ func (h *Handler) claimTerminalSlot(
 	defer h.mu.Unlock()
 	if h.active == nil {
 		h.active = make(map[string]int)
+	}
+	if h.active[id] > 0 {
+		return nil, fmt.Errorf("workspace terminal already active")
 	}
 	h.active[id]++
 	active := h.active[id]

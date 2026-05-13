@@ -10,6 +10,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +22,7 @@ import (
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
+	"github.com/wesm/middleman/internal/ptyowner"
 	"github.com/wesm/middleman/internal/workspace"
 	"github.com/wesm/middleman/internal/workspace/localruntime"
 )
@@ -57,9 +60,13 @@ type versionOutputBody struct {
 type versionOutput = bodyOutput[versionOutputBody]
 
 type ServerOptions struct {
-	EmbedConfig *EmbedConfig
-	Clones      *gitclone.Manager // optional clone manager for diff view
-	WorktreeDir string            // base dir for workspace worktrees
+	EmbedConfig       *EmbedConfig
+	Clones            *gitclone.Manager // optional clone manager for diff view
+	WorktreeDir       string            // base dir for workspace worktrees
+	PtyOwnerDir       string
+	PtyOwnerExePath   string
+	PtyOwnerExeArgs   []string
+	PtyOwnerInProcess bool
 }
 
 type shutdownDeadline struct {
@@ -412,23 +419,43 @@ func newServer(
 	// terminal handler all share the same value and the nil-safety
 	// of the call is explicit at this level.
 	tmuxCmd := cfg.TmuxCommand()
+	tmuxAvailable := tmuxCommandAvailable(tmuxCmd)
 	if options.WorktreeDir != "" {
 		s.workspaces = workspace.NewManager(database, options.WorktreeDir)
 		s.workspacePRMonitor = workspace.NewPRMonitor(database)
 		s.workspaces.SetTmuxCommand(tmuxCmd)
+		ptyOwnerDir := options.PtyOwnerDir
+		if ptyOwnerDir == "" {
+			ptyOwnerDir = filepath.Join(
+				filepath.Dir(options.WorktreeDir), "pty-owner",
+			)
+		}
+		ptyOwnerClient := &ptyowner.Client{
+			Root:      ptyOwnerDir,
+			ExePath:   options.PtyOwnerExePath,
+			ExeArgs:   append([]string(nil), options.PtyOwnerExeArgs...),
+			InProcess: options.PtyOwnerInProcess,
+		}
+		if !tmuxAvailable {
+			s.workspaces.SetPtyOwnerClient(ptyOwnerClient)
+		} else {
+			s.workspaces.SetPtyOwnerFallbackClient(ptyOwnerClient)
+		}
 		if clones != nil {
 			s.workspaces.SetClones(clones)
 		}
-		cleanupCtx, cleanupCancel := context.WithTimeout(
-			context.Background(), startupTmuxCleanupTimeout,
-		)
-		if err := s.workspaces.ReapOrphanTmuxSessions(cleanupCtx); err != nil {
-			slog.Warn("reap orphan tmux sessions", "err", err)
+		if tmuxAvailable {
+			cleanupCtx, cleanupCancel := context.WithTimeout(
+				context.Background(), startupTmuxCleanupTimeout,
+			)
+			if err := s.workspaces.ReapOrphanTmuxSessions(cleanupCtx); err != nil {
+				slog.Warn("reap orphan tmux sessions", "err", err)
+			}
+			if err := s.workspaces.PruneMissingTmuxSessions(cleanupCtx); err != nil {
+				slog.Warn("prune missing tmux sessions", "err", err)
+			}
+			cleanupCancel()
 		}
-		if err := s.workspaces.PruneMissingTmuxSessions(cleanupCtx); err != nil {
-			slog.Warn("prune missing tmux sessions", "err", err)
-		}
-		cleanupCancel()
 		var agents []config.Agent
 		if cfg != nil {
 			agents = cfg.Agents
@@ -597,6 +624,14 @@ func (s *Server) handleRuntimeSessionExit(info localruntime.SessionInfo) {
 			)
 		}
 	})
+}
+
+func tmuxCommandAvailable(command []string) bool {
+	if len(command) == 0 || command[0] == "" {
+		return false
+	}
+	_, err := exec.LookPath(command[0])
+	return err == nil
 }
 
 func (s *Server) bootstrapScript() string {

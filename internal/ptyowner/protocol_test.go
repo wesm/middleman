@@ -1,0 +1,69 @@
+package ptyowner
+
+import (
+	"bytes"
+	"encoding/json"
+	"testing"
+
+	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestSessionPathsRejectUnsafeNames(t *testing.T) {
+	tests := []string{"", "../ws", "a/b", `a\b`, "a\x00b"}
+	for _, name := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, err := NewSessionPaths(t.TempDir(), name)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestSessionPathsAreStable(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	root := t.TempDir()
+
+	paths, err := NewSessionPaths(root, "middleman-abc123")
+
+	require.NoError(err)
+	assert.Equal(root, paths.Root)
+	assert.Contains(paths.Dir, "middleman-abc123")
+	assert.Contains(paths.StatePath, "owner.json")
+}
+
+func TestProtocolRequestRoundTrip(t *testing.T) {
+	assert := Assert.New(t)
+	want := Request{
+		Type:  RequestAttach,
+		Token: "secret",
+		Cols:  132,
+		Rows:  43,
+		Data:  []byte{0, 1, 2, 'x'},
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, json.NewEncoder(&buf).Encode(want))
+
+	var got Request
+	require.NoError(t, json.NewDecoder(&buf).Decode(&got))
+	assert.Equal(want, got)
+}
+
+func TestProtocolResponseRoundTrip(t *testing.T) {
+	assert := Assert.New(t)
+	code := 7
+	want := Response{
+		Type:     ResponseExit,
+		OK:       true,
+		ExitCode: &code,
+		Output:   []byte("recent output"),
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, json.NewEncoder(&buf).Encode(want))
+
+	var got Response
+	require.NoError(t, json.NewDecoder(&buf).Decode(&got))
+	assert.Equal(want, got)
+}

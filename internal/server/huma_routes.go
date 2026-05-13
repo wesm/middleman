@@ -3644,7 +3644,7 @@ func (s *Server) toWorkspaceResponse(
 
 	applyWorktreeDivergence(ctx, &resp, summary.WorktreePath)
 	if activity, ok := s.probeWorkspaceTmuxActivity(
-		ctx, summary.ID, s.workspaceTmuxActivitySessions(ctx, summary),
+		ctx, summary, s.workspaceTmuxActivitySessions(ctx, summary),
 	); ok {
 		applyTmuxActivity(&resp, activity)
 	}
@@ -3696,7 +3696,7 @@ func (s *Server) workspaceTmuxActivitySessions(
 
 func (s *Server) probeWorkspaceTmuxActivity(
 	ctx context.Context,
-	workspaceID string,
+	summary *db.WorkspaceSummary,
 	sessions []string,
 ) (tmuxActivityResult, bool) {
 	if len(sessions) == 0 {
@@ -3718,7 +3718,7 @@ func (s *Server) probeWorkspaceTmuxActivity(
 			}
 		}
 		result, ok := s.probeOneTmuxSession(
-			probeCtx, tracker, workspaceID, session,
+			probeCtx, tracker, summary, session,
 		)
 		if ok {
 			results = append(results, result)
@@ -3730,7 +3730,7 @@ func (s *Server) probeWorkspaceTmuxActivity(
 func (s *Server) probeOneTmuxSession(
 	ctx context.Context,
 	tracker *tmuxActivityTracker,
-	workspaceID string,
+	summary *db.WorkspaceSummary,
 	session string,
 ) (tmuxActivityResult, bool) {
 	probe := tracker.StartProbe(ctx, session)
@@ -3748,12 +3748,14 @@ func (s *Server) probeOneTmuxSession(
 		return tmuxActivityResult{}, false
 	}
 
-	snapshot, err := s.workspaces.TmuxPaneSnapshot(ctx, session)
+	snapshot, err := s.workspaces.TerminalPaneSnapshot(
+		ctx, &summary.Workspace, session,
+	)
 	if err != nil {
 		probe.Probe.Cancel()
 		slog.Debug(
 			"read tmux pane snapshot",
-			"workspace_id", workspaceID,
+			"workspace_id", summary.ID,
 			"tmux_session", session,
 			"err", err,
 		)
@@ -4050,27 +4052,16 @@ func (s *Server) deleteWorkspace(
 		)
 	}
 
-	// Order of operations:
-	//   1. dirty preflight inside Delete — returns 409 without
-	//      touching anything
-	//   2. (clean) StopWorkspace via the beforeDestructive hook so
-	//      agent/shell processes can't keep writing to the worktree
-	//      between the preflight and the destructive cleanup
-	//   3. destructive cleanup + record removal
-	// Stopping sessions before the preflight would kill processes for
-	// a workspace that survives a 409 dirty rejection; stopping them
-	// only after the destructive cleanup leaves a window where running
-	// processes could write new uncommitted changes that bypass the
-	// dirty check the user requested.
-	//
-	// BeginStopping/EndStopping holds the runtime's stopping marker
-	// across the whole Delete call — including step 3 — so a Launch
-	// arriving between StopWorkspace returning and DB removal cannot
-	// spawn a process in the soon-to-be-deleted worktree.
 	if s.runtime != nil {
+		// Block new launches before the dirty preflight; existing
+		// sessions are stopped only after the preflight passes.
 		s.runtime.BeginStopping(input.ID)
-		defer s.runtime.EndStopping(input.ID)
 	}
+	defer func() {
+		if s.runtime != nil {
+			s.runtime.EndStopping(input.ID)
+		}
+	}()
 	dirty, err := s.workspaces.Delete(
 		ctx, input.ID, input.Force,
 		func(stopCtx context.Context) {

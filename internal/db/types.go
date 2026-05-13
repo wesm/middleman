@@ -382,6 +382,7 @@ type Workspace struct {
 	WorkspaceBranch string
 	WorktreePath    string
 	TmuxSession     string
+	TerminalBackend string
 	Status          string // "creating", "ready", "error"
 	ErrorMessage    *string
 	CreatedAt       time.Time

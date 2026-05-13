@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -21,6 +22,7 @@ import (
 	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/platform"
+	"github.com/wesm/middleman/internal/ptyowner"
 	"github.com/wesm/middleman/internal/server"
 	"github.com/wesm/middleman/internal/stacks"
 	"github.com/wesm/middleman/internal/web"
@@ -182,6 +184,8 @@ func runCLI(args []string, stdout io.Writer) error {
 			return err
 		case "config":
 			return runConfigCLI(args[1:], stdout)
+		case "pty-owner":
+			return runPtyOwnerCLI(args[1:])
 		}
 	}
 
@@ -195,6 +199,39 @@ func runCLI(args []string, stdout io.Writer) error {
 		return err
 	}
 	return run(*configPath)
+}
+
+func runPtyOwnerCLI(args []string) error {
+	fs := flag.NewFlagSet("middleman pty-owner", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	root := fs.String("root", "", "pty owner state root")
+	session := fs.String("session", "", "session name")
+	cwd := fs.String("cwd", "", "working directory")
+	commandJSON := fs.String("command-json", "", "JSON command argv")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *session == "" {
+		return fmt.Errorf("pty-owner session is required")
+	}
+	if *root == "" {
+		return fmt.Errorf("pty-owner root is required")
+	}
+	if *cwd == "" {
+		return fmt.Errorf("pty-owner cwd is required")
+	}
+	var command []string
+	if *commandJSON != "" {
+		if err := json.Unmarshal([]byte(*commandJSON), &command); err != nil {
+			return fmt.Errorf("parse pty-owner command-json: %w", err)
+		}
+	}
+	return ptyowner.RunOwner(context.Background(), ptyowner.Options{
+		Root:    *root,
+		Session: *session,
+		Cwd:     *cwd,
+		Command: command,
+	})
 }
 
 func runConfigCLI(args []string, stdout io.Writer) error {

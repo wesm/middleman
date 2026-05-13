@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -49,7 +50,7 @@ func TestOpenAndSchema(t *testing.T) {
 		require.NoErrorf(t, err, "table %s should exist", tbl)
 	}
 
-	for _, column := range []string{"workspace_branch", "associated_pr_number"} {
+	for _, column := range []string{"workspace_branch", "associated_pr_number", "terminal_backend"} {
 		var found string
 		err := d.ReadDB().QueryRow(
 			`SELECT name
@@ -769,6 +770,52 @@ func TestOpenRepairsBrokenWorkspaceMigrationVersion11(t *testing.T) {
 	)
 }
 
+func TestOpenRepairsCurrentSchemaMissingWorkspaceTerminalBackend(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "broken-terminal-backend.db")
+
+	d, err := Open(path)
+	require.NoError(err)
+	require.NoError(d.Close())
+
+	raw, err := sql.Open("sqlite", path)
+	require.NoError(err)
+	_, err = raw.Exec(`ALTER TABLE middleman_workspaces DROP COLUMN terminal_backend`)
+	require.NoError(err)
+	require.NoError(raw.Close())
+
+	reopened, err := Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(reopened.Close()) })
+
+	var terminalBackendColumn string
+	err = reopened.ReadDB().QueryRow(
+		`SELECT name
+		 FROM pragma_table_info('middleman_workspaces')
+		 WHERE name = ?`,
+		"terminal_backend",
+	).Scan(&terminalBackendColumn)
+	require.NoError(err)
+	require.Equal("terminal_backend", terminalBackendColumn)
+
+	err = reopened.InsertWorkspace(ctx, &Workspace{
+		ID:              "ws-terminal-backend",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        WorkspaceItemTypePullRequest,
+		ItemNumber:      42,
+		GitHeadRef:      "feature/backend",
+		WorktreePath:    "/tmp/ws-terminal-backend",
+		TmuxSession:     "middleman-ws-terminal-backend",
+		Status:          "creating",
+		WorkspaceBranch: "feature/backend",
+	})
+	require.NoError(err)
+}
+
 func TestOpenMigratesWorkspaceUniquenessAndPreservesSetupEvents(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()
@@ -986,7 +1033,7 @@ func legacySchemaSQLForTest(t *testing.T, version int) string {
 	for i := 1; i <= version; i++ {
 		contents, err := fs.ReadFile(
 			migrationFiles,
-			filepath.Join("migrations", legacyMigrationFilenameForTest(i)),
+			path.Join("migrations", legacyMigrationFilenameForTest(i)),
 		)
 		require.NoError(t, err)
 		parts = append(parts, string(contents))
