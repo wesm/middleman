@@ -38,6 +38,11 @@ resolve_bun_bin() {
 
 GO_BIN="$(resolve_go_bin)"
 BUN_BIN="$(resolve_bun_bin)"
+exe_suffix=""
+
+if [ "$("$GO_BIN" env GOOS)" = "windows" ]; then
+  exe_suffix=".exe"
+fi
 
 compute_inputs_hash() {
   {
@@ -123,4 +128,4 @@ if [ "$current_inputs_hash" != "$previous_inputs_hash" ]; then
   printf '%s\n' "$current_inputs_hash" > "$input_hash_file"
 fi
 
-"$GO_BIN" build -o ./tmp/middleman ./cmd/middleman
+"$GO_BIN" build -o "./tmp/middleman$exe_suffix" ./cmd/middleman

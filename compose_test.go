@@ -28,6 +28,39 @@ func TestComposeDevServicesUseEntrypointScripts(t *testing.T) {
 	assert.NotContains(compose, "make frontend-dev BUN_INSTALL_FLAGS=--frozen-lockfile ARGS=\"--host 0.0.0.0 --port 15173\"")
 }
 
+func TestProcessComposeDevStackUsesBackendAndFrontendProcesses(t *testing.T) {
+	req := require.New(t)
+	assert := Assert.New(t)
+
+	content, err := os.ReadFile("process-compose.yml")
+	req.NoError(err)
+
+	config := string(content)
+	assert.Contains(config, "shell_command: \"sh\"")
+	assert.Contains(config, "backend:")
+	assert.Contains(config, "frontend:")
+	assert.Contains(config, "air_bin=\"${AIR_BIN:-}\"")
+	assert.Contains(config, "exec \"$air_bin\" -c \"$air_config\"")
+	assert.Contains(config, "MIDDLEMAN_LOG_LEVEL")
+	assert.Contains(config, "bun install ${BUN_INSTALL_FLAGS:-}")
+	assert.Contains(config, "exec bun run dev -- ${FRONTEND_ARGS:-}")
+	assert.NotContains(config, "make dev")
+	assert.NotContains(config, "make frontend-dev")
+}
+
+func TestWindowsAirConfigUsesExecutableEntrypoint(t *testing.T) {
+	req := require.New(t)
+	assert := Assert.New(t)
+
+	content, err := os.ReadFile(".air.windows.toml")
+	req.NoError(err)
+
+	config := string(content)
+	assert.Contains(config, `cmd = "sh.exe ./scripts/dev-backend-build.sh"`)
+	assert.Contains(config, `entrypoint = "./tmp/middleman.exe"`)
+	assert.Contains(config, `"node_modules"`)
+}
+
 func TestBackendDevEntrypointForwardsToConfiguredPort(t *testing.T) {
 	tests := []struct {
 		name       string
