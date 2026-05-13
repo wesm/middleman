@@ -52,11 +52,28 @@
     };
   }
 
+  function mergeOptions(
+    configured: ConfigRepo[],
+    fetched: Repo[],
+  ): { value: string; owner: string; name: string }[] {
+    const merged = new Map<string, { value: string; owner: string; name: string }>();
+
+    for (const repo of configured.filter((entry) => !entry.is_glob)) {
+      const option = optionFromConfigRepo(repo);
+      merged.set(option.value, option);
+    }
+
+    for (const repo of fetched) {
+      const option = optionFromRepo(repo);
+      merged.set(option.value, option);
+    }
+
+    return Array.from(merged.values());
+  }
+
   const options = $derived.by(() => {
     if (settingsLoaded || configuredRepos.length > 0) {
-      return configuredRepos
-        .filter((repo) => !repo.is_glob)
-        .map(optionFromConfigRepo);
+      return mergeOptions(configuredRepos, fetchedRepos);
     }
     return fetchedRepos.map(optionFromRepo);
   });

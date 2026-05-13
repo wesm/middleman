@@ -46,6 +46,13 @@ test("settings shows glob match counts and refresh updates tracked repos", async
       .join(",");
   }).toBe("middleman,worker");
 
+  const selector = page.getByTitle("Select repository");
+  await expect(selector).toBeVisible();
+  await selector.click();
+  await expect(page.getByRole("option", { name: /roborev-dev\/middleman/ })).toBeVisible();
+  await expect(page.getByRole("option", { name: /roborev-dev\/worker/ })).toBeVisible();
+  await page.keyboard.press("Escape");
+
   await row.getByRole("button", { name: "Refresh" }).click();
 
   await expect(row).toContainText("(3)");
