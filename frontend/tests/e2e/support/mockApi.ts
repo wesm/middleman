@@ -1,5 +1,32 @@
 import type { Page, Route } from "@playwright/test";
 
+const githubCapabilities = {
+  comment_mutation: true,
+  issue_mutation: true,
+  merge_mutation: true,
+  read_ci: true,
+  read_comments: true,
+  read_issues: true,
+  read_merge_requests: true,
+  read_releases: true,
+  read_repositories: true,
+  ready_for_review: true,
+  review_mutation: true,
+  state_mutation: true,
+  workflow_approval: true,
+};
+
+function repoRef(owner: string, name: string, host: string) {
+  return {
+    provider: "github",
+    platform_host: host,
+    owner,
+    name,
+    repo_path: `${owner}/${name}`,
+    capabilities: githubCapabilities,
+  };
+}
+
 const pulls = [
   {
     ID: 1,
@@ -30,14 +57,15 @@ const pulls = [
     repo_owner: "acme",
     repo_name: "widgets",
     platform_host: "github.com",
+    repo: repoRef("acme", "widgets", "github.com"),
     worktree_links: [],
   },
   {
     ID: 2,
     RepoID: 2,
     GitHubID: 201,
-    Number: 42,
-    URL: "https://example.com/acme/widgets/pull/42",
+    Number: 84,
+    URL: "https://example.com/acme/widgets/pull/84",
     Title: "Mirror host stub PR",
     Author: "marius",
     State: "open",
@@ -61,6 +89,7 @@ const pulls = [
     repo_owner: "acme",
     repo_name: "widgets",
     platform_host: "example.com",
+    repo: repoRef("acme", "widgets", "example.com"),
     worktree_links: [],
   },
   {
@@ -92,6 +121,7 @@ const pulls = [
     repo_owner: "acme",
     repo_name: "widgets",
     platform_host: "github.com",
+    repo: repoRef("acme", "widgets", "github.com"),
     worktree_links: [
       {
         worktree_key: "projects/theme-rework",
@@ -122,6 +152,7 @@ const issues = [
     platform_host: "github.com",
     repo_owner: "acme",
     repo_name: "widgets",
+    repo: repoRef("acme", "widgets", "github.com"),
   },
 ];
 
@@ -144,6 +175,28 @@ const syncStatus = {
   running: false,
   last_run_at: "2026-03-30T14:00:30Z",
   last_error: "",
+};
+
+const settings = {
+  repos: [
+    {
+      provider: "github",
+      platform_host: "github.com",
+      owner: "acme",
+      name: "widgets",
+      repo_path: "acme/widgets",
+      is_glob: false,
+      matched_repo_count: 1,
+    },
+  ],
+  activity: {
+    view_mode: "threaded",
+    time_range: "7d",
+    hide_closed: false,
+    hide_bots: false,
+  },
+  terminal: { font_family: "", renderer: "xterm" },
+  agents: [],
 };
 
 function makeRateLimits() {
@@ -313,6 +366,25 @@ export async function mockApi(page: Page): Promise<void> {
 
     if (method === "GET" && pathname === "/api/v1/sync/status") {
       await fulfillJson(route, syncStatus);
+      return;
+    }
+
+    if (method === "GET" && pathname === "/api/v1/settings") {
+      await fulfillJson(route, settings);
+      return;
+    }
+
+    if (method === "GET" && pathname === "/api/v1/events") {
+      // Server-Sent Events endpoint. Tests don't need live data over the
+      // wire, so reply with an empty SSE stream that keeps the connection
+      // open just long enough for the page to settle. EventSource fires an
+      // `error` event when the response closes; the events store treats
+      // that as "disconnected" and the rest of the app keeps working.
+      await route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: ":\n\n",
+      });
       return;
     }
 
