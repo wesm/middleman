@@ -87,6 +87,9 @@
   } from "./lib/stores/keyboard/actions.js";
   import { dispatchKeydown } from "./lib/stores/keyboard/dispatch.svelte.js";
   import { buildContext } from "./lib/stores/keyboard/context.svelte.js";
+  import { registerPRDetailActions } from "./lib/stores/keyboard/pr-detail-actions.js";
+  import type { PRDetailActionInput } from "../../packages/ui/src/components/detail/keyboard-actions.js";
+  import type { Context } from "./lib/stores/keyboard/types.js";
 
   let stores = $state<StoreInstances | undefined>();
   let appReady = $state(false);
@@ -338,6 +341,75 @@
       cleanupActivity();
       cleanupDefaults();
     };
+  });
+
+  // PR-detail palette commands (pr.approve, pr.ready, pr.approveWorkflows).
+  // Lives here in the app shell because the keyboard registry can't be
+  // imported from inside @middleman/ui. The buildPRDetailInput closure
+  // assembles the action input from the active PR detail, the loaded
+  // capabilities, and the app stores; it returns null when nothing is
+  // ready, in which case every action's `when` returns false. pr.merge
+  // is intentionally NOT wired (see pr-detail-actions.ts).
+  function buildPRDetailInput(ctx: Context): PRDetailActionInput | null {
+    if (!stores) return null;
+    if (ctx.selectedPR === null) return null;
+    const detail = stores.detail.getDetail();
+    if (detail === null) return null;
+    const sel = ctx.selectedPR;
+    // Palette actions only apply to the PR that is actually loaded in
+    // the detail pane. If the route-derived selection is for a different
+    // PR (mid-route-change, deep link not yet resolved), we treat the
+    // input as not ready so `when` returns false.
+    const stale =
+      detail.repo_owner !== sel.owner
+      || detail.repo_name !== sel.name
+      || (detail.merge_request?.Number ?? -1) !== sel.number
+      || detail.repo?.provider !== sel.provider
+      || detail.repo?.platform_host !== sel.platformHost
+      || detail.repo?.repo_path !== sel.repoPath;
+    if (stale) return null;
+    const pr = detail.merge_request;
+    const capabilities = detail.repo?.capabilities;
+    if (!pr || !capabilities) return null;
+    const wfa = detail.workflow_approval;
+    const workflowApprovalReady = Boolean(
+      capabilities.workflow_approval && wfa?.checked && wfa.required,
+    );
+    return {
+      pr: {
+        State: pr.State,
+        IsDraft: pr.IsDraft,
+        MergeableState: pr.MergeableState,
+      },
+      ref: {
+        provider: sel.provider,
+        platformHost: sel.platformHost,
+        owner: sel.owner,
+        name: sel.name,
+        repoPath: sel.repoPath,
+      },
+      number: sel.number,
+      viewerCan: {
+        approve: capabilities.review_mutation,
+        merge: capabilities.merge_mutation,
+        markReady: capabilities.ready_for_review,
+        approveWorkflows: workflowApprovalReady,
+      },
+      // pr.merge is not registered, so repoSettings is not consulted.
+      repoSettings: null,
+      // Same identity check feeds `stale`; reaching this return means
+      // selection and detail agree, so the action is fresh.
+      stale: false,
+      stores: { pulls: stores.pulls, detail: stores.detail },
+      client,
+      approveCommentBody: "",
+      onError: (msg: string) => showFlash(msg),
+    };
+  }
+
+  $effect(() => {
+    if (!stores) return;
+    return registerPRDetailActions(buildPRDetailInput);
   });
 </script>
 
