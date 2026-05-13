@@ -4,9 +4,6 @@ bun = "latest"
 "github:F1bonacc1/process-compose" = "latest"
 golangci-lint = "2.11.4"
 
-[settings]
-auto_install_disable_tools = ["cargo:https://github.com/hughdbrown/samesame-rolling"]
-
 [tasks.dev-stack]
 description = "Run backend and frontend dev servers with process-compose"
 run = "process-compose -f process-compose.yml up"
