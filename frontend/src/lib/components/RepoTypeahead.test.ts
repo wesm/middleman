@@ -108,4 +108,56 @@ describe("RepoTypeahead", () => {
       expect(screen.getByRole("option", { name: /roborev-dev\/worker/i })).toBeTruthy();
     });
   });
+
+  it("drops removed repos after settings remove matching entries", async () => {
+    const fetchedRepos = [
+      {
+        Platform: "github",
+        PlatformHost: "github.com",
+        Owner: "roborev-dev",
+        Name: "middleman",
+      },
+    ] as unknown as Repo[];
+
+    getRepos
+      .mockResolvedValueOnce({
+        data: fetchedRepos,
+        error: undefined,
+      })
+      .mockResolvedValueOnce({
+        data: [],
+        error: undefined,
+      });
+
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "roborev-dev",
+        name: "*",
+        repo_path: "roborev-dev/*",
+        is_glob: true,
+        matched_repo_count: 1,
+      },
+    ]);
+
+    render(RepoTypeahead, {
+      props: {
+        selected: undefined,
+        onchange: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: /roborev-dev\/middleman/i })).toBeTruthy();
+    });
+
+    settingsStore.setConfiguredRepos([]);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("option", { name: /roborev-dev\/middleman/i })).toBeNull();
+    });
+  });
 });

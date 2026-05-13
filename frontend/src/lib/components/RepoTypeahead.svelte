@@ -20,10 +20,20 @@
   let highlightIndex = $state(0);
   let inputEl = $state<HTMLInputElement>();
   let containerEl = $state<HTMLDivElement>();
+  let repoFetchVersion = 0;
+  let latestRepoFetchKey = "";
 
   $effect(() => {
+    const configuredRepoKey = configuredRepos
+      .map((repo) => `${repo.provider}/${repo.platform_host}/${repo.repo_path || `${repo.owner}/${repo.name}`}`)
+      .join("\0");
+    const fetchKey = `${++repoFetchVersion}:${settingsLoaded}:${configuredRepoKey}`;
+
+    latestRepoFetchKey = fetchKey;
+    fetchedRepos = [];
+
     void client.GET("/repos").then(({ data, error }) => {
-      if (error) return;
+      if (error || fetchKey !== latestRepoFetchKey) return;
       fetchedRepos = data ?? [];
     });
   });
