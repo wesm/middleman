@@ -509,3 +509,42 @@ func TestInstanceSetWorktreeLinksWithContextNilCtx(t *testing.T) {
 	//nolint:staticcheck // intentional: verifying nil-ctx normalization
 	require.NoError(t, inst.SetWorktreeLinksWithContext(nil, nil))
 }
+
+func TestMakeDevSelectsWindowsAirConfig(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	content, err := os.ReadFile("Makefile")
+	require.NoError(err)
+	makefile := string(content)
+
+	assert.Contains(
+		makefile,
+		"AIR_CONFIG := $(if $(filter windows,$(shell go env GOOS)),.air.windows.toml,.air.toml)",
+	)
+	assert.Contains(makefile, "\"$(AIR_BIN)\" -c $(AIR_CONFIG) --")
+}
+
+func TestMisePinsProcessComposeVersion(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	content, err := os.ReadFile("mise.toml")
+	require.NoError(err)
+	mise := string(content)
+
+	assert.Contains(mise, "\"github:F1bonacc1/process-compose\" = \"v")
+	assert.NotContains(mise, "\"github:F1bonacc1/process-compose\" = \"latest\"")
+}
+
+func TestWindowsRuntimeUsesJobObjectKillOnClose(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	content, err := os.ReadFile("internal/workspace/localruntime/session_process_windows.go")
+	require.NoError(err)
+	windowsImpl := string(content)
+
+	assert.Contains(windowsImpl, "AssignProcessToJobObject")
+	assert.Contains(windowsImpl, "JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE")
+}

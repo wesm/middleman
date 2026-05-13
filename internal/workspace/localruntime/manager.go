@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -146,7 +147,9 @@ type session struct {
 	alternateScreenActive bool
 	alternateScreenTail   []byte
 	stopOnce              sync.Once
+	processHandleOnce     sync.Once
 	stopRequested         bool
+	processHandle         io.Closer
 }
 
 type Attachment struct {
@@ -1497,6 +1500,13 @@ func startSession(
 	if err != nil {
 		return nil, fmt.Errorf("start pty: %w", err)
 	}
+	processHandle, err := attachSessionProcess(cmd.Process)
+	if err != nil {
+		_ = ptmx.Close()
+		_ = killSessionProcess(cmd.Process)
+		_ = cmd.Wait()
+		return nil, fmt.Errorf("attach session process: %w", err)
+	}
 	slog.Debug(
 		"runtime session pty started",
 		"workspace_id", info.WorkspaceID,
@@ -1507,12 +1517,13 @@ func startSession(
 
 	info.Status = SessionStatusRunning
 	s := &session{
-		info:        info,
-		cmd:         cmd,
-		ptmx:        ptmx,
-		done:        make(chan struct{}),
-		outputDone:  make(chan struct{}),
-		subscribers: make(map[chan []byte]struct{}),
+		info:          info,
+		cmd:           cmd,
+		ptmx:          ptmx,
+		done:          make(chan struct{}),
+		outputDone:    make(chan struct{}),
+		subscribers:   make(map[chan []byte]struct{}),
+		processHandle: processHandle,
 	}
 	go s.drainOutput()
 	return s, nil
@@ -1536,6 +1547,8 @@ func (s *session) snapshot() SessionInfo {
 }
 
 func (s *session) watch() SessionInfo {
+	defer s.closeProcessHandle()
+
 	exitCode := waitExitCode(s.cmd.Wait())
 	now := time.Now().UTC()
 
@@ -1764,11 +1777,20 @@ func (s *session) closeSubscribers() {
 
 func (s *session) stop() {
 	s.stopOnce.Do(func() {
+		s.closeProcessHandle()
 		if s.cmd.Process != nil {
 			_ = killSessionProcess(s.cmd.Process)
 		}
 		if s.ptmx != nil {
 			_ = s.ptmx.Close()
+		}
+	})
+}
+
+func (s *session) closeProcessHandle() {
+	s.processHandleOnce.Do(func() {
+		if s.processHandle != nil {
+			_ = s.processHandle.Close()
 		}
 	})
 }
@@ -1787,6 +1809,7 @@ func (s *session) wasStopRequested() bool {
 
 func (s *session) detach() {
 	s.stopOnce.Do(func() {
+		s.closeProcessHandle()
 		if s.ptmx != nil {
 			_ = s.ptmx.Close()
 		}

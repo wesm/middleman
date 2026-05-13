@@ -1,7 +1,7 @@
 [tools]
 bun = "latest"
 "cargo:https://github.com/hughdbrown/samesame-rolling" = "rev:ff1f3b7942bd407ac3e30b21eb3dbe6085091a0f"
-"github:F1bonacc1/process-compose" = "latest"
+"github:F1bonacc1/process-compose" = "v1.110.0"
 golangci-lint = "2.11.4"
 
 [tasks.dev-stack]

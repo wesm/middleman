@@ -3,9 +3,14 @@
 package localruntime
 
 import (
+	"io"
 	"os"
 	"syscall"
 )
+
+func attachSessionProcess(*os.Process) (io.Closer, error) {
+	return nil, nil
+}
 
 func killSessionProcess(process *os.Process) error {
 	// pty.StartWithSize sets Setsid, so the launched process is a

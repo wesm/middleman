@@ -20,6 +20,7 @@ AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
 	elif [ -n "$$(go env GOBIN)" ] && [ -x "$$(go env GOBIN)/air$(EXE_SUFFIX)" ]; then printf "%s" "$$(go env GOBIN)/air$(EXE_SUFFIX)"; \
 	elif [ -x "$(GOPATH_FIRST)/bin/air$(EXE_SUFFIX)" ]; then printf "%s" "$(GOPATH_FIRST)/bin/air$(EXE_SUFFIX)"; \
 	fi)
+AIR_CONFIG := $(if $(filter windows,$(shell go env GOOS)),.air.windows.toml,.air.toml)
 DEV_LOG_DIR ?= tmp/logs
 DEV_BACKEND_LOG ?= $(DEV_LOG_DIR)/backend-dev.log
 
@@ -151,12 +152,12 @@ dev: ensure-embed-dir check-air
 		MIDDLEMAN_LOG_LEVEL="$${MIDDLEMAN_LOG_LEVEL:-debug}" \
 		MIDDLEMAN_LOG_FILE="$${MIDDLEMAN_LOG_FILE:-$(DEV_BACKEND_LOG)}" \
 		MIDDLEMAN_LOG_STDERR_LEVEL="$${MIDDLEMAN_LOG_STDERR_LEVEL:-info}" \
-		"$(AIR_BIN)" -c .air.toml -- -config "$(MIDDLEMAN_CONFIG)" $(ARGS); \
+		"$(AIR_BIN)" -c $(AIR_CONFIG) -- -config "$(MIDDLEMAN_CONFIG)" $(ARGS); \
 	else \
 		MIDDLEMAN_LOG_LEVEL="$${MIDDLEMAN_LOG_LEVEL:-debug}" \
 		MIDDLEMAN_LOG_FILE="$${MIDDLEMAN_LOG_FILE:-$(DEV_BACKEND_LOG)}" \
 		MIDDLEMAN_LOG_STDERR_LEVEL="$${MIDDLEMAN_LOG_STDERR_LEVEL:-info}" \
-		"$(AIR_BIN)" -c .air.toml -- $(ARGS); \
+		"$(AIR_BIN)" -c $(AIR_CONFIG) -- $(ARGS); \
 	fi
 
 # Run tests
