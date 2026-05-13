@@ -1,3 +1,5 @@
+import { untrack } from "svelte";
+
 import type { Action, CheatsheetEntry } from "./types.js";
 
 let actionsByOwner = $state<Map<string, Action[]>>(new Map());
@@ -8,15 +10,24 @@ export function registerScopedActions(
   actions: Action[],
 ): () => void {
   const registered = [...actions];
-  const next = new Map(actionsByOwner).set(ownerId, registered);
+  // Reads of actionsByOwner inside the registration helpers must not be
+  // tracked: callers wire this through $effect (App.svelte registers default
+  // actions and PR-detail actions on mount) and tracking the read would make
+  // the effect re-run on every successful register, looping forever and
+  // tripping Svelte's effect_update_depth_exceeded guard.
+  const next = untrack(() =>
+    new Map(actionsByOwner).set(ownerId, registered),
+  );
   assertNoConflicts(next);
   actionsByOwner = next;
   return () => {
-    if (actionsByOwner.get(ownerId) === registered) {
-      const cleanupNext = new Map(actionsByOwner);
-      cleanupNext.delete(ownerId);
-      actionsByOwner = cleanupNext;
-    }
+    untrack(() => {
+      if (actionsByOwner.get(ownerId) === registered) {
+        const cleanupNext = new Map(actionsByOwner);
+        cleanupNext.delete(ownerId);
+        actionsByOwner = cleanupNext;
+      }
+    });
   };
 }
 
@@ -53,13 +64,19 @@ export function registerCheatsheetEntries(
   entries: CheatsheetEntry[],
 ): () => void {
   const registered = [...entries];
-  cheatsheetByOwner = new Map(cheatsheetByOwner).set(ownerId, registered);
+  // Same effect-tracking concern as registerScopedActions above: callers
+  // register from inside $effect on mount.
+  cheatsheetByOwner = untrack(() =>
+    new Map(cheatsheetByOwner).set(ownerId, registered),
+  );
   return () => {
-    if (cheatsheetByOwner.get(ownerId) === registered) {
-      const next = new Map(cheatsheetByOwner);
-      next.delete(ownerId);
-      cheatsheetByOwner = next;
-    }
+    untrack(() => {
+      if (cheatsheetByOwner.get(ownerId) === registered) {
+        const next = new Map(cheatsheetByOwner);
+        next.delete(ownerId);
+        cheatsheetByOwner = next;
+      }
+    });
   };
 }
 
