@@ -28,37 +28,94 @@ func TestComposeDevServicesUseEntrypointScripts(t *testing.T) {
 	assert.NotContains(compose, "make frontend-dev BUN_INSTALL_FLAGS=--frozen-lockfile ARGS=\"--host 0.0.0.0 --port 15173\"")
 }
 
-func TestProcessComposeDevStackUsesBackendAndFrontendProcesses(t *testing.T) {
+func TestDevStackBackendScriptPreparesEmbedDirAndStartsAir(t *testing.T) {
 	req := require.New(t)
 	assert := Assert.New(t)
 
-	content, err := os.ReadFile("process-compose.yml")
+	repoRoot, err := os.Getwd()
 	req.NoError(err)
 
-	config := string(content)
-	assert.Contains(config, "shell_command: \"sh\"")
-	assert.Contains(config, "backend:")
-	assert.Contains(config, "frontend:")
-	assert.Contains(config, "air_bin=\"${AIR_BIN:-}\"")
-	assert.Contains(config, "exec \"$air_bin\" -c \"$air_config\"")
-	assert.Contains(config, "MIDDLEMAN_LOG_LEVEL")
-	assert.Contains(config, "bun install ${BUN_INSTALL_FLAGS:-}")
-	assert.Contains(config, "exec bun run dev -- ${FRONTEND_ARGS:-}")
-	assert.NotContains(config, "make dev")
-	assert.NotContains(config, "make frontend-dev")
+	dir := t.TempDir()
+	req.NoError(os.MkdirAll(filepath.Join(dir, "internal", "web", "dist"), 0o755))
+
+	binDir := filepath.Join(dir, "bin")
+	req.NoError(os.MkdirAll(binDir, 0o755))
+
+	fakeUname := filepath.Join(binDir, "uname")
+	req.NoError(os.WriteFile(fakeUname, []byte("#!/bin/sh\nprintf '%s\\n' MINGW64_NT-10.0\n"), 0o755))
+
+	airLog := filepath.Join(dir, "air.log")
+	fakeAir := filepath.Join(binDir, "air")
+	req.NoError(os.WriteFile(fakeAir, []byte("#!/bin/sh\nprintf 'args=%s\\n' \"$*\" > \"$AIR_LOG\"\nprintf 'log_level=%s\\nlog_file=%s\\nstderr_level=%s\\n' \"$MIDDLEMAN_LOG_LEVEL\" \"$MIDDLEMAN_LOG_FILE\" \"$MIDDLEMAN_LOG_STDERR_LEVEL\" >> \"$AIR_LOG\"\n"), 0o755))
+
+	configPath := filepath.Join(dir, "config.toml")
+	req.NoError(os.WriteFile(configPath, []byte("port = 9123\n"), 0o644))
+
+	scriptPath := filepath.ToSlash(filepath.Join(repoRoot, "scripts", "dev-stack-backend.sh"))
+	cmd := exec.Command("sh", scriptPath)
+	cmd.Dir = dir
+	cmd.Env = append(
+		os.Environ(),
+		"AIR_BIN="+fakeAir,
+		"AIR_LOG="+airLog,
+		"BACKEND_ARGS=--sync-on-start=false",
+		"MIDDLEMAN_CONFIG="+configPath,
+		"PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+	)
+
+	output, err := cmd.CombinedOutput()
+	req.NoError(err, string(output))
+
+	stub, err := os.ReadFile(filepath.Join(dir, "internal", "web", "dist", "stub.html"))
+	req.NoError(err)
+	assert.Equal("ok\n", string(stub))
+
+	airInvocation, err := os.ReadFile(airLog)
+	req.NoError(err)
+	log := string(airInvocation)
+	assert.Contains(log, "-c .air.windows.toml -- -config "+configPath+" --sync-on-start=false")
+	assert.Contains(log, "log_level=debug")
+	assert.Contains(log, "log_file=tmp/logs/backend-dev.log")
+	assert.Contains(log, "stderr_level=info")
 }
 
-func TestWindowsAirConfigUsesExecutableEntrypoint(t *testing.T) {
+func TestDevStackFrontendScriptInstallsDepsThenStartsVite(t *testing.T) {
 	req := require.New(t)
 	assert := Assert.New(t)
 
-	content, err := os.ReadFile(".air.windows.toml")
+	repoRoot, err := os.Getwd()
 	req.NoError(err)
 
-	config := string(content)
-	assert.Contains(config, `cmd = "sh.exe ./scripts/dev-backend-build.sh"`)
-	assert.Contains(config, `entrypoint = "./tmp/middleman.exe"`)
-	assert.Contains(config, `"node_modules"`)
+	dir := t.TempDir()
+	req.NoError(os.MkdirAll(filepath.Join(dir, "frontend"), 0o755))
+
+	binDir := filepath.Join(dir, "bin")
+	req.NoError(os.MkdirAll(binDir, 0o755))
+
+	bunLog := filepath.Join(dir, "bun.log")
+	fakeBun := filepath.Join(binDir, "bun")
+	req.NoError(os.WriteFile(fakeBun, []byte("#!/bin/sh\nprintf '%s|%s\\n' \"$(pwd)\" \"$*\" >> \"$BUN_LOG\"\n"), 0o755))
+
+	scriptPath := filepath.ToSlash(filepath.Join(repoRoot, "scripts", "dev-stack-frontend.sh"))
+	cmd := exec.Command("sh", scriptPath)
+	cmd.Dir = dir
+	cmd.Env = append(
+		os.Environ(),
+		"BUN_INSTALL_FLAGS=--frozen-lockfile",
+		"BUN_LOG="+bunLog,
+		"FRONTEND_ARGS=--host 0.0.0.0 --port 15173",
+		"PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+	)
+
+	output, err := cmd.CombinedOutput()
+	req.NoError(err, string(output))
+
+	content, err := os.ReadFile(bunLog)
+	req.NoError(err)
+	lines := strings.Split(strings.TrimSpace(filepath.ToSlash(string(content))), "\n")
+	req.Len(lines, 2)
+	assert.True(strings.HasSuffix(lines[0], "/frontend|install --frozen-lockfile"), lines[0])
+	assert.True(strings.HasSuffix(lines[1], "/frontend|run dev -- --host 0.0.0.0 --port 15173"), lines[1])
 }
 
 func TestBackendDevEntrypointForwardsToConfiguredPort(t *testing.T) {
