@@ -201,7 +201,11 @@ export const defaultActions: Action[] = [
     id: "cheatsheet.open",
     label: "Show keyboard shortcuts",
     scope: "global",
-    binding: { key: "?" },
+    // `?` is Shift+/ on a US keyboard; the matcher treats omitted `shift`
+    // as `false`, so the binding must declare it explicitly to fire from a
+    // real keystroke (Playwright's keyboard.press synthesizes the char and
+    // hides this in tests).
+    binding: { key: "?", shift: true },
     priority: 0,
     when: always,
     handler: () => toggleCheatsheet(),
