@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { tick, untrack } from "svelte";
   import type { Settings } from "@middleman/ui/api/types";
+  import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
   import { bulkAddRepos, previewRepos, type RepoPreviewRow } from "../../api/settings.js";
   import RepoPreviewTable from "./RepoPreviewTable.svelte";
   import { defaultRepoImportProvider, repoImportProvider, repoImportProviders } from "./repoImportProviders.js";
@@ -55,6 +56,11 @@
     } else {
       resetAll();
     }
+  });
+
+  $effect(() => {
+    if (!open) return;
+    return untrack(() => pushModalFrame("repo-import-modal", []));
   });
 
   function resetPreviewState(): void {

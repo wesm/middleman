@@ -1,9 +1,14 @@
 <script lang="ts">
+  import { onMount } from "svelte";
+
   import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
   import { getClient } from "../../context.js";
+  import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
   import ActionButton from "../shared/ActionButton.svelte";
 
   const client = getClient();
+
+  onMount(() => pushModalFrame("merge-modal", []));
 
   interface Props {
     owner: string;

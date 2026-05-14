@@ -175,3 +175,6 @@ export {
 export {
   default as DiffView,
 } from "./components/diff/DiffView.svelte";
+export {
+  default as KbdBadge,
+} from "./components/keyboard/KbdBadge.svelte";

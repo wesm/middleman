@@ -11,15 +11,13 @@
   } from "@middleman/ui";
   import type { StoreInstances } from "@middleman/ui";
   import type { ActivityItem } from "@middleman/ui/api/types";
-  import {
-    buildPullRequestFilesRoute,
-    buildPullRequestRoute,
-    type RoutedItemRef,
-  } from "@middleman/ui/routes";
+  import type { RoutedItemRef } from "@middleman/ui/routes";
   import { client } from "./lib/api/runtime.js";
 
   import AppHeader from "./lib/components/layout/AppHeader.svelte";
   import StatusBar from "./lib/components/layout/StatusBar.svelte";
+  import Palette from "./lib/components/keyboard/Palette.svelte";
+  import Cheatsheet from "./lib/components/keyboard/Cheatsheet.svelte";
   import RepoSummaryPage from "./lib/components/repositories/RepoSummaryPage.svelte";
   import SettingsPage from "./lib/components/settings/SettingsPage.svelte";
   import WorkspaceTerminalView from "./lib/components/terminal/WorkspaceTerminalView.svelte";
@@ -29,7 +27,6 @@
   import { SpinnerIcon } from "./lib/icons.ts";
   import { showFlash } from "./lib/stores/flash.svelte.js";
   import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
-  import { shouldIgnoreGlobalShortcutTarget } from "./lib/utils/keyboardShortcuts.js";
   import { runAppStartup } from "./lib/utils/appStartup.js";
   import {
     initTheme,
@@ -56,7 +53,6 @@
     navigate,
     replaceUrl,
     getBasePath,
-    isDiffView,
     getDetailTab,
     getSelectedPRFromRoute,
   } from "./lib/stores/router.svelte.ts";
@@ -84,6 +80,16 @@
   } from "./lib/stores/embed-config.svelte.js";
   import { getSettings } from "./lib/api/settings.js";
   import { shouldUseFullAppShell } from "./lib/utils/appShell.js";
+  import { registerScopedActions } from "./lib/stores/keyboard/registry.svelte.js";
+  import {
+    defaultActions,
+    setStoreInstances,
+  } from "./lib/stores/keyboard/actions.js";
+  import { dispatchKeydown } from "./lib/stores/keyboard/dispatch.svelte.js";
+  import { buildContext } from "./lib/stores/keyboard/context.svelte.js";
+  import { registerPRDetailActions } from "./lib/stores/keyboard/pr-detail-actions.js";
+  import type { PRDetailActionInput } from "../../packages/ui/src/components/detail/keyboard-actions.js";
+  import type { Context } from "./lib/stores/keyboard/types.js";
 
   let stores = $state<StoreInstances | undefined>();
   let appReady = $state(false);
@@ -308,143 +314,102 @@
     });
   }
 
-  function navigateToSelectedPR(): void {
+  $effect(() => {
+    if (!shouldUseFullAppShell(getPage())) return;
     if (!stores) return;
-    const sel = stores.pulls.getSelectedPR();
-    if (!sel) return;
-    const tab = getDetailTab();
-    const path =
-      tab === "files"
-        ? buildPullRequestFilesRoute(sel)
-        : buildPullRequestRoute(sel);
-    if (getSelectedPRFromRoute()) {
-      replaceUrl(path);
-    } else {
-      navigate(path);
-    }
-  }
+    setStoreInstances(() => stores!);
+    const cleanupDefaults = registerScopedActions("app:defaults", defaultActions);
+    // Activity-page drawer close is owned by App.svelte because drawerItem and
+    // closeDrawer are local to this component. Mirrors the pre-migration
+    // behavior where Escape on the activity page closed the open PR drawer.
+    const cleanupActivity = registerScopedActions("app:activity-drawer", [
+      {
+        id: "activity.drawer.close",
+        label: "Close activity drawer",
+        scope: "global",
+        binding: { key: "Escape" },
+        priority: 50,
+        when: (ctx) => ctx.page === "activity" && drawerItem !== null,
+        handler: () => closeDrawer(),
+      },
+    ]);
+    const onKeydown = (e: KeyboardEvent) =>
+      dispatchKeydown(e, () => buildContext(stores!));
+    window.addEventListener("keydown", onKeydown);
+    return () => {
+      window.removeEventListener("keydown", onKeydown);
+      cleanupActivity();
+      cleanupDefaults();
+    };
+  });
 
-  function handleKeydown(e: KeyboardEvent): void {
-    if (!stores) return;
-    const selectionAnchor =
-      typeof window !== "undefined"
-        ? window.getSelection()?.anchorNode ?? null
-        : null;
-    const focusedEditor =
-      typeof document !== "undefined"
-        ? document.querySelector(
-            ".ProseMirror-focused, [contenteditable='true']:focus",
-          )
-        : null;
-    if (focusedEditor) {
-      return;
-    }
-
-    if (
-      shouldIgnoreGlobalShortcutTarget(e.target) ||
-      shouldIgnoreGlobalShortcutTarget(document.activeElement) ||
-      shouldIgnoreGlobalShortcutTarget(selectionAnchor)
-    ) {
-      return;
-    }
-
-    if (
-      e.key === "[" &&
-      (e.metaKey || e.ctrlKey) &&
-      isSidebarToggleEnabled()
-    ) {
-      e.preventDefault();
-      toggleSidebar();
-      return;
-    }
-
-    const page = getPage();
-    if (page === "settings") return;
-    if (page === "design-system") return;
-    if (page === "repos") return;
-    if (page === "reviews") return;
-    if (page === "workspaces") return;
-
-    if (page === "activity") {
-      if (
-        e.key === "Escape" &&
-        drawerItem &&
-        !e.defaultPrevented
-      ) {
-        e.preventDefault();
-        closeDrawer();
-      }
-      return;
-    }
-
-    if (e.key === "f" && page === "pulls") {
-      const sel = getSelectedPRFromRoute();
-      if (sel) {
-        e.preventDefault();
-        const tab = getDetailTab();
-        if (tab === "conversation") {
-          navigate(buildPullRequestFilesRoute(sel));
-        } else {
-          navigate(buildPullRequestRoute(sel));
-        }
-        return;
-      }
-    }
-
-    const inDiffView = isDiffView();
-    const currentRoute = getRoute();
-    const isBoardView =
-      currentRoute.page === "pulls" &&
-      "view" in currentRoute &&
-      currentRoute.view === "board";
-    const isIssues = page === "issues";
-
-    switch (e.key) {
-      case "j":
-        if (inDiffView || isBoardView) break;
-        e.preventDefault();
-        if (isIssues) {
-          stores.issues.selectNextIssue();
-        } else {
-          stores.pulls.selectNextPR();
-          navigateToSelectedPR();
-        }
-        break;
-      case "k":
-        if (inDiffView || isBoardView) break;
-        e.preventDefault();
-        if (isIssues) {
-          stores.issues.selectPrevIssue();
-        } else {
-          stores.pulls.selectPrevPR();
-          navigateToSelectedPR();
-        }
-        break;
-      case "Escape":
-        if (e.defaultPrevented || isBoardView) break;
-        e.preventDefault();
-        if (isIssues) navigate("/issues");
-        else navigate("/pulls");
-        break;
-      case "1":
-        e.preventDefault();
-        navigate("/pulls");
-        break;
-      case "2":
-        e.preventDefault();
-        navigate("/pulls/board");
-        break;
-    }
+  // PR-detail palette commands (pr.approve, pr.ready, pr.approveWorkflows).
+  // Lives here in the app shell because the keyboard registry can't be
+  // imported from inside @middleman/ui. The buildPRDetailInput closure
+  // assembles the action input from the active PR detail, the loaded
+  // capabilities, and the app stores; it returns null when nothing is
+  // ready, in which case every action's `when` returns false. pr.merge
+  // is intentionally NOT wired (see pr-detail-actions.ts).
+  function buildPRDetailInput(ctx: Context): PRDetailActionInput | null {
+    if (!stores) return null;
+    if (ctx.selectedPR === null) return null;
+    const detail = stores.detail.getDetail();
+    if (detail === null) return null;
+    const sel = ctx.selectedPR;
+    // Palette actions only apply to the PR that is actually loaded in
+    // the detail pane. If the route-derived selection is for a different
+    // PR (mid-route-change, deep link not yet resolved), we treat the
+    // input as not ready so `when` returns false.
+    const stale =
+      detail.repo_owner !== sel.owner
+      || detail.repo_name !== sel.name
+      || (detail.merge_request?.Number ?? -1) !== sel.number
+      || detail.repo?.provider !== sel.provider
+      || detail.repo?.platform_host !== sel.platformHost
+      || detail.repo?.repo_path !== sel.repoPath;
+    if (stale) return null;
+    const pr = detail.merge_request;
+    const capabilities = detail.repo?.capabilities;
+    if (!pr || !capabilities) return null;
+    const wfa = detail.workflow_approval;
+    const workflowApprovalReady = Boolean(
+      capabilities.workflow_approval && wfa?.checked && wfa.required,
+    );
+    return {
+      pr: {
+        State: pr.State,
+        IsDraft: pr.IsDraft,
+        MergeableState: pr.MergeableState,
+      },
+      ref: {
+        provider: sel.provider,
+        platformHost: sel.platformHost,
+        owner: sel.owner,
+        name: sel.name,
+        repoPath: sel.repoPath,
+      },
+      number: sel.number,
+      viewerCan: {
+        approve: capabilities.review_mutation,
+        merge: capabilities.merge_mutation,
+        markReady: capabilities.ready_for_review,
+        approveWorkflows: workflowApprovalReady,
+      },
+      // pr.merge is not registered, so repoSettings is not consulted.
+      repoSettings: null,
+      // Same identity check feeds `stale`; reaching this return means
+      // selection and detail agree, so the action is fresh.
+      stale: false,
+      stores: { pulls: stores.pulls, detail: stores.detail },
+      client,
+      approveCommentBody: "",
+      onError: (msg: string) => showFlash(msg),
+    };
   }
 
   $effect(() => {
-    if (!shouldUseFullAppShell(getPage())) return;
-    window.addEventListener("keydown", handleKeydown);
-    return () =>
-      window.removeEventListener(
-        "keydown",
-        handleKeydown,
-      );
+    if (!stores) return;
+    return registerPRDetailActions(buildPRDetailInput);
   });
 </script>
 
@@ -631,6 +596,9 @@
       <StatusBar />
     {/if}
   {/if}
+
+    <Palette />
+    <Cheatsheet />
   </Provider>
 {/if}
 

@@ -1,8 +1,8 @@
 <script lang="ts">
   import SendHorizontalIcon from "@lucide/svelte/icons/send-horizontal";
-  import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
   import { getClient, getStores } from "../../context.js";
   import ActionButton from "../shared/ActionButton.svelte";
+  import { runMarkReady, type PRDetailActionInput } from "./keyboard-actions.js";
 
   const client = getClient();
   const { detail, pulls } = getStores();
@@ -34,8 +34,21 @@
   let submitting = $state(false);
   let error = $state<string | null>(null);
 
-  function shouldRefreshStaleDraftState(message: string): boolean {
-    return message.includes("ready for review") && message.includes("404 Not Found");
+  function buildInput(): PRDetailActionInput {
+    return {
+      pr: { State: "open", IsDraft: true, MergeableState: "" },
+      ref: { provider, platformHost, owner, name, repoPath },
+      number,
+      viewerCan: {
+        approve: false, merge: false, markReady: true,
+        approveWorkflows: false,
+      },
+      repoSettings: null,
+      stale: disabled,
+      stores: { detail, pulls },
+      client,
+      ...(oncompleted !== undefined && { onCompleted: oncompleted }),
+    };
   }
 
   async function handleReadyForReview(): Promise<void> {
@@ -43,27 +56,9 @@
     submitting = true;
     error = null;
     try {
-      const ref = { provider, platformHost, owner, name, repoPath };
-      const { error } = await client.POST(providerItemPath("pulls", ref, "/ready-for-review"), {
-        params: { path: { ...providerRouteParams(ref), number } },
-      });
-      if (error) {
-        throw new Error(error.detail ?? error.title ?? "failed to mark pull request ready for review");
-      }
-      await detail.loadDetail(owner, name, number, { provider, platformHost, repoPath });
-      await pulls.loadPulls();
-      oncompleted?.();
+      await runMarkReady(buildInput());
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (shouldRefreshStaleDraftState(message)) {
-        try {
-          await detail.loadDetail(owner, name, number, { provider, platformHost, repoPath });
-          await pulls.loadPulls();
-        } catch {
-          // Preserve the original mutation error if the stale-state refresh also fails.
-        }
-      }
-      error = message;
+      error = err instanceof Error ? err.message : String(err);
     } finally {
       submitting = false;
     }

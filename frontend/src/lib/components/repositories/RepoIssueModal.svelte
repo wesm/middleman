@@ -5,6 +5,7 @@
     Chip,
     CommentEditor,
   } from "@middleman/ui";
+  import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
   import {
     repoKey,
     repoStateKey,
@@ -48,6 +49,8 @@
   onMount(() => {
     titleInput?.focus();
   });
+
+  onMount(() => pushModalFrame("repo-issue-modal", []));
 
   function handleWindowKeydown(event: KeyboardEvent): void {
     if (event.key !== "Escape") return;

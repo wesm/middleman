@@ -30,6 +30,8 @@
     "./stores/settings": { "svelte": "./src/stores/settings.svelte.ts", "default": "./src/stores/settings.svelte.ts" },
     "./stores/flash": { "svelte": "./src/stores/flash.svelte.ts", "default": "./src/stores/flash.svelte.ts" },
     "./stores/events": { "svelte": "./src/stores/events.svelte.ts", "default": "./src/stores/events.svelte.ts" },
+    "./stores/keyboard/keyspec": { "default": "./src/stores/keyboard/keyspec.ts" },
+    "./stores/keyboard/modal-stack": { "svelte": "./src/stores/keyboard/modal-stack.svelte.ts", "default": "./src/stores/keyboard/modal-stack.svelte.ts" },
     "./api/roborev/client": { "default": "./src/api/roborev/client.ts" },
     "./api/roborev/schema": { "default": "./src/api/roborev/generated/schema.ts" },
     "./api/csrf": { "default": "./src/api/csrf.ts" }

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getStores } from "@middleman/ui";
+  import { getStores, KbdBadge } from "@middleman/ui";
   import {
     getBasePath,
     getPage,
@@ -95,6 +95,7 @@
           strokeWidth="1.5"
           aria-hidden="true"
         />
+        <KbdBadge binding={{ key: "[", ctrlOrMeta: true }} />
       </HeaderIconButton>
     {/if}
     <span class="brand">
