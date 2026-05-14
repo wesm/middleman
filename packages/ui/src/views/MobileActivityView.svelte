@@ -234,7 +234,7 @@
   }
 
   function repoLabel(item: ActivityItem): string {
-    return `${item.repo.owner}/${item.repo.name}`;
+    return `${item.repo.platform_host}/${item.repo.repo_path}`;
   }
 </script>
 

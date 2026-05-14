@@ -130,13 +130,13 @@ test.describe("mobile activity repository selector", () => {
               item_state: "open",
               item_title: "Add browser regression coverage",
               item_type: "pr",
-              item_url: "https://github.com/beta/gadgets/pull/42",
+              item_url: "https://ghe.example.com/acme/widgets/pull/42",
               repo: {
                 provider: "github",
-                platform_host: "github.com",
-                owner: "beta",
-                name: "gadgets",
-                repo_path: "beta/gadgets",
+                platform_host: "ghe.example.com",
+                owner: "acme",
+                name: "widgets",
+                repo_path: "acme/widgets",
                 capabilities: {},
               },
             },
@@ -148,10 +148,12 @@ test.describe("mobile activity repository selector", () => {
     await page.goto("/m?range=30d&view=threaded");
 
     await expect(page.locator(".mobile-activity-card")).toHaveCount(2);
-    await expect(page.locator(".mobile-activity-card__meta", { hasText: "acme/widgets" }))
+    await expect(page.locator(".mobile-activity-card__meta", { hasText: "github.com/acme/widgets" }))
       .toBeVisible();
-    await expect(page.locator(".mobile-activity-card__meta", { hasText: "beta/gadgets" }))
+    await expect(page.locator(".mobile-activity-card__meta", { hasText: "ghe.example.com/acme/widgets" }))
       .toBeVisible();
     await expect(page.getByText("undefined/undefined")).toHaveCount(0);
+    await expect(page.locator(".mobile-activity-card__event-count", { hasText: "2" }))
+      .toHaveCount(0);
   });
 });
