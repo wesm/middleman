@@ -155,4 +155,26 @@
   .main-area--hidden {
     overflow: hidden;
   }
+
+  :global(#app.container-narrow) .list-layout {
+    position: relative;
+  }
+
+  :global(#app.container-narrow) .sidebar:not(.sidebar--collapsed) {
+    position: absolute;
+    inset: 0 auto 0 0;
+    z-index: 20;
+    width: min(100%, 390px) !important;
+    max-width: 100%;
+    box-shadow: var(--shadow-lg);
+  }
+
+  :global(#app.container-narrow) .sidebar--collapsed {
+    width: 36px;
+    padding-top: 8px;
+  }
+
+  :global(#app.container-narrow) .main-area--empty {
+    padding: 16px;
+  }
 </style>
