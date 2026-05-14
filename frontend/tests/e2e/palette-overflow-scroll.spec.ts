@@ -105,7 +105,6 @@ test(
     // pane is short enough that arrow-down past visible rows must scroll.
     await page.locator(".palette-input").fill("pr:");
 
-    const list = page.locator(".palette-list");
     const rows = page.locator(".palette-list .palette-row");
     await expect(rows.first()).toBeVisible();
     const rowCount = await rows.count();
