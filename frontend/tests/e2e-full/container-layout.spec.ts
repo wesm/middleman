@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 test.describe("container-aware layout", () => {
   test("narrow viewport shows dropdown and collapses sidebar", async ({ page }) => {
     await page.setViewportSize({ width: 400, height: 600 });
-    await page.goto("/pulls");
+    await page.goto("/pulls?desktop=1");
     // At narrow width the sidebar is auto-collapsed, so .pull-item
     // won't be visible. Wait for the app header instead.
     await page.locator(".app-header")
@@ -19,7 +19,7 @@ test.describe("container-aware layout", () => {
 
   test("mobile viewport wraps header controls without horizontal overflow", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 700 });
-    await page.goto("/pulls");
+    await page.goto("/pulls?desktop=1");
     const header = page.locator(".app-header");
     await header.waitFor({ state: "visible", timeout: 10_000 });
 
@@ -45,7 +45,7 @@ test.describe("container-aware layout", () => {
 
   test("expanded mobile sidebar fits within the viewport", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 700 });
-    await page.goto("/pulls");
+    await page.goto("/pulls?desktop=1");
     await page.locator(".app-header")
       .waitFor({ state: "visible", timeout: 10_000 });
 
@@ -76,7 +76,7 @@ test.describe("container-aware layout", () => {
   test("wide viewport shows tab group and hides dropdown", async ({ page }) => {
     // Start narrow, then go wide to verify transition.
     await page.setViewportSize({ width: 400, height: 600 });
-    await page.goto("/pulls");
+    await page.goto("/pulls?desktop=1");
     await page.locator(".app-header")
       .waitFor({ state: "visible", timeout: 10_000 });
 

@@ -1,6 +1,11 @@
 import { devices, expect, test, type Page } from "@playwright/test";
 
-test.use({ ...devices["iPhone 13"] });
+const iPhone13 = devices["iPhone 13"];
+test.use({
+  viewport: iPhone13.viewport,
+  deviceScaleFactor: iPhone13.deviceScaleFactor,
+  userAgent: iPhone13.userAgent,
+});
 
 async function expectReadableFocusList(
   page: Page,
@@ -341,8 +346,6 @@ test.describe("high-density phone routes", () => {
   test.use({
     viewport: pixel7.viewport,
     deviceScaleFactor: pixel7.deviceScaleFactor,
-    isMobile: pixel7.isMobile,
-    hasTouch: pixel7.hasTouch,
     userAgent: pixel7.userAgent,
   });
 

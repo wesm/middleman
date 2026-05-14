@@ -111,7 +111,8 @@ async function expectCompactFiltersInNarrowViewport(
   waitForList: (page: Page) => Promise<void>,
 ): Promise<void> {
   await page.setViewportSize({ width: 545, height: 954 });
-  await page.goto(path);
+  const desktopPath = path.includes("?") ? `${path}&desktop=1` : `${path}?desktop=1`;
+  await page.goto(desktopPath);
   await waitForList(page);
 
   const sidebar = page.locator(".sidebar").first();
