@@ -1,17 +1,21 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import {
     Provider,
     PRListView,
     IssueListView,
     ActivityFeedView,
+    MobileActivityView,
     KanbanBoardView,
     ReviewsView,
     FocusListView,
   } from "@middleman/ui";
   import type { StoreInstances } from "@middleman/ui";
   import type { ActivityItem } from "@middleman/ui/api/types";
-  import type { RoutedItemRef } from "@middleman/ui/routes";
+  import {
+    buildRoutedItemRoute,
+    type RoutedItemRef,
+  } from "@middleman/ui/routes";
   import { client } from "./lib/api/runtime.js";
 
   import AppHeader from "./lib/components/layout/AppHeader.svelte";
@@ -53,6 +57,7 @@
     navigate,
     replaceUrl,
     getBasePath,
+    isMobilePage,
     getDetailTab,
     getSelectedPRFromRoute,
   } from "./lib/stores/router.svelte.ts";
@@ -151,6 +156,69 @@
   });
 
   let lastRepo: string | undefined;
+
+  function searchWithDesktopOptOut(): string {
+    const params = new URLSearchParams(window.location.search);
+    params.set("desktop", "1");
+    const text = params.toString();
+    return text ? `?${text}` : "?desktop=1";
+  }
+
+  function shouldUseDesktopOnPhone(): boolean {
+    return new URLSearchParams(window.location.search).get("desktop") === "1";
+  }
+
+  function isPhoneViewport(): boolean {
+    return window.innerWidth <= 640 || isNarrow();
+  }
+
+  function shouldForceMobileRoutes(): boolean {
+    return (
+      window.__MIDDLEMAN_FORCE_MOBILE_ROUTES__ === true ||
+      import.meta.env.VITE_MIDDLEMAN_FORCE_MOBILE_ROUTES === "1" ||
+      import.meta.env.VITE_MIDDLEMAN_FORCE_MOBILE_ROUTES === "true"
+    );
+  }
+
+  function mobilePathForRoute(): string {
+    const route = getRoute();
+    if (route.page === "pulls") return "/m/pulls";
+    if (route.page === "issues") return "/m/issues";
+    return "/m";
+  }
+
+  function desktopPathForMobileRoute(): string {
+    const page = getPage();
+    if (page === "mobile-pulls") return "/pulls";
+    if (page === "mobile-issues") return "/issues";
+    return "/";
+  }
+
+  function navigateMobile(path: string): void {
+    navigate(`${path}${window.location.search}`);
+  }
+
+  function useDesktopView(): void {
+    replaceUrl(`${desktopPathForMobileRoute()}${searchWithDesktopOptOut()}`);
+  }
+
+  function redirectPhoneToMobileRoute(): void {
+    const page = getPage();
+    if (!shouldUseFullAppShell(page)) return;
+    if (isMobilePage(page)) return;
+    if (page !== "activity" && page !== "pulls" && page !== "issues") return;
+    if (!isPhoneViewport() && !shouldForceMobileRoutes()) return;
+    if (shouldUseDesktopOnPhone()) return;
+    replaceUrl(`${mobilePathForRoute()}${window.location.search}`);
+  }
+
+  onMount(() => {
+    redirectPhoneToMobileRoute();
+  });
+
+  $effect(() => {
+    redirectPhoneToMobileRoute();
+  });
 
   onDestroy(() => {
     stopFullAppShell();
@@ -280,7 +348,7 @@
     }
     const itemType =
       item.item_type === "issue" ? "issue" : "pr";
-    drawerItem = {
+    const selectedItem = {
       itemType,
       provider: item.repo.provider,
       platformHost: item.repo.platform_host,
@@ -288,6 +356,15 @@
       owner: item.repo.owner,
       name: item.repo.name,
       number: item.item_number,
+    } satisfies RoutedItemRef;
+
+    if (isMobilePage(getPage())) {
+      navigate(buildRoutedItemRoute(selectedItem, { focus: true }));
+      return;
+    }
+
+    drawerItem = {
+      ...selectedItem,
       detailTab: "conversation",
     };
     updateDrawerURL(drawerItem);
@@ -405,6 +482,7 @@
       approveCommentBody: "",
       onError: (msg: string) => showFlash(msg),
     };
+
   }
 
   $effect(() => {
@@ -468,7 +546,10 @@
   {#if getPage() === "focus"}
     {@const r = getRoute()}
     {#if r.page === "focus"}
-      <main class="focus-layout">
+      <main
+        class="focus-layout"
+        class:focus-layout--phone={isPhoneViewport() || shouldForceMobileRoutes()}
+      >
         {#if r.itemType === "mrs"}
           <FocusListView
             listType="mrs"
@@ -492,6 +573,7 @@
             detailTab="conversation"
             isSidebarCollapsed={true}
             hideSidebar={true}
+            showStackSidebar={false}
           />
         {:else}
           <IssueListView
@@ -509,6 +591,66 @@
         {/if}
       </main>
     {/if}
+  {:else if isMobilePage(getPage())}
+    <section class="mobile-shell" aria-label="Phone view">
+      <header class="mobile-topbar">
+        <span class="mobile-title">middleman</span>
+        <button
+          class="mobile-desktop-link"
+          type="button"
+          onclick={useDesktopView}
+        >Desktop</button>
+      </header>
+
+      <nav class="mobile-tabs" aria-label="Phone navigation">
+        <a
+          class:mobile-tab--active={getPage() === "mobile-activity"}
+          href="/m"
+          onclick={(e) => {
+            e.preventDefault();
+            navigateMobile("/m");
+          }}
+        >Activity</a>
+        <a
+          class:mobile-tab--active={getPage() === "mobile-pulls"}
+          href="/m/pulls"
+          onclick={(e) => {
+            e.preventDefault();
+            navigateMobile("/m/pulls");
+          }}
+        >PRs</a>
+        <a
+          class:mobile-tab--active={getPage() === "mobile-issues"}
+          href="/m/issues"
+          onclick={(e) => {
+            e.preventDefault();
+            navigateMobile("/m/issues");
+          }}
+        >Issues</a>
+      </nav>
+
+      <main class="mobile-main">
+        {#if !appReady}
+          <div class="loading-state">
+            <SpinnerIcon
+              class="loading-spinner"
+              size="18"
+              strokeWidth="2"
+              aria-hidden="true"
+            />
+            Loading
+          </div>
+        {:else if getPage() === "mobile-pulls"}
+          <FocusListView listType="mrs" />
+        {:else if getPage() === "mobile-issues"}
+          <FocusListView listType="issues" />
+        {:else}
+          <MobileActivityView
+            onSelectItem={handleActivitySelect}
+          />
+        {/if}
+      </main>
+    </section>
   {:else}
     {#if !isHeaderHidden()}
       <AppHeader />
@@ -555,6 +697,7 @@
             {detailTab}
             isSidebarCollapsed={isSidebarCollapsed()}
             sidebarWidth={getSidebarWidth()}
+            showStackSidebar={!isPhoneViewport() && !shouldForceMobileRoutes()}
             onSidebarResize={handleSidebarResize}
           />
         {/if}
@@ -603,12 +746,261 @@
 {/if}
 
 <style>
+  .mobile-shell {
+    --mobile-chrome-type-sm: 1.55rem;
+    --mobile-chrome-type-xs: 1.33rem;
+    --mobile-chrome-space-xs: 0.5rem;
+    --mobile-chrome-space-sm: 0.75rem;
+    --mobile-chrome-space-md: 1rem;
+    --mobile-chrome-hit-target: 3.5rem;
+    container-type: inline-size;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg-primary);
+  }
+
+  .mobile-topbar {
+    min-height: calc(var(--mobile-chrome-hit-target) + var(--mobile-chrome-space-xs));
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--mobile-chrome-space-md);
+    padding:
+      max(var(--mobile-chrome-space-sm), env(safe-area-inset-top))
+      var(--mobile-chrome-space-md)
+      var(--mobile-chrome-space-sm);
+    border-bottom: thin solid var(--border-default);
+    background: var(--bg-surface);
+  }
+
+  .mobile-title {
+    color: var(--text-primary);
+    font-size: var(--mobile-chrome-type-sm);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+
+  .mobile-desktop-link {
+    min-height: var(--mobile-chrome-hit-target);
+    padding: var(--mobile-chrome-space-xs) var(--mobile-chrome-space-sm);
+    border: thin solid var(--border-default);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    background: var(--bg-surface);
+    font-size: var(--mobile-chrome-type-xs);
+    font-weight: 600;
+  }
+
+  .mobile-tabs {
+    flex-shrink: 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--mobile-chrome-space-xs);
+    padding: var(--mobile-chrome-space-xs) var(--mobile-chrome-space-sm);
+    border-bottom: thin solid var(--border-default);
+    background: var(--bg-surface);
+  }
+
+  .mobile-tabs a {
+    min-height: var(--mobile-chrome-hit-target);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: var(--mobile-chrome-type-sm);
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .mobile-tabs a.mobile-tab--active {
+    color: var(--text-primary);
+    background: var(--bg-inset);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .mobile-main {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .mobile-main :global(.controls-bar) {
+    align-items: stretch;
+    flex-wrap: wrap;
+    gap: var(--mobile-chrome-space-sm);
+    padding: var(--mobile-chrome-space-sm);
+  }
+
+  .mobile-main :global(.search-input) {
+    min-height: var(--mobile-chrome-hit-target);
+  }
+
   .focus-layout {
     flex: 1;
     overflow-y: auto;
     background: var(--bg-primary);
     display: flex;
     flex-direction: column;
+  }
+
+  .focus-layout--phone {
+    --focus-detail-type-xs: 1.3rem;
+    --focus-detail-type-sm: 1.42rem;
+    --focus-detail-type-body: 1.52rem;
+    --focus-detail-type-title: 2rem;
+    --focus-detail-space-xs: 0.45rem;
+    --focus-detail-space-sm: 0.7rem;
+    --focus-detail-space-md: 0.9rem;
+    --focus-detail-hit-target: 3.75rem;
+    --detail-mobile-type-body: var(--focus-detail-type-body);
+    --detail-mobile-hit-target: var(--focus-detail-hit-target);
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  .focus-layout--phone :global(.list-layout),
+  .focus-layout--phone :global(.main-area) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .focus-layout--phone :global(.main-area) {
+    overflow-y: auto;
+  }
+
+  .focus-layout--phone :global(.stack-sidebar) {
+    display: none;
+  }
+
+  .focus-layout--phone :global(.pull-detail),
+  .focus-layout--phone :global(.issue-detail) {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: none;
+    padding: var(--focus-detail-space-sm);
+    font-size: var(--focus-detail-type-body);
+    line-height: 1.58;
+  }
+
+  .focus-layout--phone :global(.pull-detail-content),
+  .focus-layout--phone :global(.issue-detail-content) {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    gap: var(--focus-detail-space-md);
+  }
+
+  .focus-layout--phone :global(.detail-header),
+  .focus-layout--phone :global(.title-line) {
+    align-items: flex-start;
+    gap: var(--focus-detail-space-sm);
+  }
+
+  .focus-layout--phone :global(.detail-title) {
+    font-size: var(--focus-detail-type-title);
+    line-height: 1.22;
+    letter-spacing: -0.015em;
+  }
+
+  .focus-layout--phone :global(.meta-row),
+  .focus-layout--phone :global(.chips-row),
+  .focus-layout--phone :global(.actions-row) {
+    gap: var(--focus-detail-space-xs);
+  }
+
+  .focus-layout--phone :global(.meta-row) {
+    align-items: flex-start;
+  }
+
+  .focus-layout--phone :global(.meta-branch) {
+    display: inline-flex;
+    flex: 1 1 100%;
+    min-width: 0;
+    max-width: 100%;
+    flex-wrap: wrap;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  .focus-layout--phone :global(.branch-name-btn) {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    text-align: left;
+  }
+
+  .focus-layout--phone :global(.meta-item),
+  .focus-layout--phone :global(.meta-sep),
+  .focus-layout--phone :global(.sync-indicator),
+  .focus-layout--phone :global(.section-title),
+  .focus-layout--phone :global(.section-title-inline),
+  .focus-layout--phone :global(.loading-placeholder),
+  .focus-layout--phone :global(.detail-tab) {
+    font-size: var(--focus-detail-type-sm);
+    line-height: 1.35;
+  }
+
+  .focus-layout--phone :global(.inset-box),
+  .focus-layout--phone :global(.markdown-body),
+  .focus-layout--phone :global(.comment-editor-input),
+  .focus-layout--phone :global(.body-edit-textarea),
+  .focus-layout--phone :global(.title-edit-input),
+  .focus-layout--phone :global(.add-description-btn),
+  .focus-layout--phone :global(.detail-load-error) {
+    font-size: var(--focus-detail-type-body);
+    line-height: 1.58;
+  }
+
+  .focus-layout--phone :global(.inset-box) {
+    box-sizing: border-box;
+    width: 100%;
+    padding: var(--focus-detail-space-sm);
+    border-radius: 0.85rem;
+  }
+
+  .focus-layout--phone :global(.markdown-body pre),
+  .focus-layout--phone :global(.markdown-body code) {
+    max-width: 100%;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .focus-layout--phone :global(.star-btn),
+  .focus-layout--phone :global(.gh-link),
+  .focus-layout--phone :global(.copy-icon-btn),
+  .focus-layout--phone :global(.copy-number-btn),
+  .focus-layout--phone :global(.action-button),
+  .focus-layout--phone :global(.detail-tab),
+  .focus-layout--phone :global(.add-description-btn) {
+    min-width: var(--focus-detail-hit-target);
+    min-height: var(--focus-detail-hit-target);
+    font-size: var(--focus-detail-type-sm);
+  }
+
+  .focus-layout--phone :global(.actions-row) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .focus-layout--phone :global(.actions-row .action-button) {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .focus-layout--phone :global(.comment-editor-input) {
+    min-height: 7.5rem;
+    max-height: 45svh;
+    padding: var(--focus-detail-space-sm);
+    border-radius: 0.85rem;
   }
 
   .app-main {
@@ -623,10 +1015,10 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: var(--mobile-chrome-space-sm, 0.5rem);
     flex: 1;
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: var(--mobile-chrome-type-xs, 0.95rem);
     animation: fade-in 0.3s ease;
   }
 

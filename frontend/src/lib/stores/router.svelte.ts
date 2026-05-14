@@ -18,6 +18,9 @@ export type EmbedDetailTab = "pr" | "issue" | "reviews";
 
 export type Route =
   | { page: "activity" }
+  | { page: "mobile-activity" }
+  | { page: "mobile-pulls" }
+  | { page: "mobile-issues" }
   | { page: "design-system" }
   | { page: "repos" }
   | { page: "workspaces" }
@@ -166,6 +169,15 @@ function parseRoute(fullPath: string): Route {
   const search = qIdx >= 0 ? fullPath.slice(qIdx + 1) : "";
   const path = stripBase(pathname).replace(/\/+$/, "") || "/";
   const parts = path.split("/").filter(Boolean);
+  if (path === "/m" || path === "/m/activity") {
+    return { page: "mobile-activity" };
+  }
+  if (path === "/m/pulls") {
+    return { page: "mobile-pulls" };
+  }
+  if (path === "/m/issues") {
+    return { page: "mobile-issues" };
+  }
   if (path.startsWith("/focus/")) {
     if (path === "/focus/mrs") {
       const sp = new URLSearchParams(search);
@@ -450,6 +462,12 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     } else {
       navType = r.itemType === "pr" ? "pull" : "issue";
     }
+  } else if (r.page === "mobile-pulls") {
+    navType = "pull";
+  } else if (r.page === "mobile-issues") {
+    navType = "issue";
+  } else if (r.page === "mobile-activity") {
+    navType = "activity";
   } else if (r.page === "pulls") {
     navType = r.view === "board" ? "board" : "pull";
   } else if (r.page === "issues") {
@@ -524,6 +542,12 @@ export function isWorkspaceEmbedPage(page: Page): boolean {
   }
 }
 
+export function isMobilePage(page: Page): boolean {
+  return page === "mobile-activity"
+    || page === "mobile-pulls"
+    || page === "mobile-issues";
+}
+
 function fireMiddlemanNavigateEvent(r: Route): void {
   const cb = getOnNavigate();
   if (cb) cb(buildRouteEvent(r));
@@ -592,8 +616,8 @@ export function setView(v: View): void {
 }
 
 export function getTab(): Tab {
-  if (route.page === "pulls") return "pulls";
-  if (route.page === "issues") return "issues";
+  if (route.page === "pulls" || route.page === "mobile-pulls") return "pulls";
+  if (route.page === "issues" || route.page === "mobile-issues") return "issues";
   return "pulls";
 }
 

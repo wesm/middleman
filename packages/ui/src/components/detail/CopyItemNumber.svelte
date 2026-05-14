@@ -84,4 +84,15 @@
     color: var(--text-muted);
     text-decoration: none;
   }
+
+  @media (max-width: 640px) {
+    .copy-number-btn {
+      min-width: 3.4rem;
+      min-height: 3.4rem;
+      padding: 0.5rem;
+      border-radius: 0.65rem;
+      font-size: 1.3rem;
+      line-height: 1.35;
+    }
+  }
 </style>

@@ -374,9 +374,8 @@ export function createActivityStore(
     if (viewMode !== "flat") sp.set("view", viewMode);
     else sp.delete("view");
     const qs = sp.toString();
-    const base =
-      getBasePath().replace(/\/$/, "") || "";
-    const url = (base || "/") + (qs ? `?${qs}` : "");
+    const path = window.location.pathname || getBasePath();
+    const url = path + (qs ? `?${qs}` : "");
     history.replaceState(null, "", url);
   }
 
