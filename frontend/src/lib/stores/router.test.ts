@@ -10,6 +10,8 @@ import {
 
 const prRoute = "/pulls/github/acme/widgets/42";
 const prFilesRoute = "/pulls/github/acme/widgets/42/files";
+const focusPrRoute = "/focus/pulls/github/acme/widgets/42";
+const focusPrFilesRoute = "/focus/pulls/github/acme/widgets/42/files";
 const prRef = {
   provider: "github",
   platformHost: "github.com",
@@ -72,6 +74,43 @@ describe("router /pulls files route", () => {
   it("getSelectedPRFromRoute returns null for pull list without selection", () => {
     navigate("/pulls");
     expect(getSelectedPRFromRoute()).toBeNull();
+  });
+
+  it("parses focus provider pull files route as focused PR with files tab", () => {
+    navigate(focusPrFilesRoute);
+    expect(getRoute()).toEqual({
+      page: "focus",
+      itemType: "pr",
+      ...prRef,
+      tab: "files",
+    });
+  });
+
+  it("parses hosted focus provider pull files route as focused PR with files tab", () => {
+    navigate("/focus/host/ghe.example.com/pulls/github/acme/widgets/42/files");
+    expect(getRoute()).toEqual({
+      page: "focus",
+      itemType: "pr",
+      provider: "github",
+      platformHost: "ghe.example.com",
+      owner: "acme",
+      name: "widgets",
+      repoPath: "acme/widgets",
+      number: 42,
+      tab: "files",
+    });
+  });
+
+  it("focus PR files route participates in detail-tab helpers", () => {
+    navigate(focusPrFilesRoute);
+    expect(getDetailTab()).toBe("files");
+    expect(isDiffView()).toBe(true);
+  });
+
+  it("focus PR conversation route remains the conversation tab", () => {
+    navigate(focusPrRoute);
+    expect(getDetailTab()).toBe("conversation");
+    expect(isDiffView()).toBe(false);
   });
 
   it("getPage returns pulls for files route", () => {

@@ -30,7 +30,7 @@ async function expectReadableFocusList(
     return {
       viewportWidth: window.innerWidth,
       documentWidth: document.documentElement.scrollWidth,
-      focusTypeToken: tokenValue(focusList, "--focus-mobile-type-body"),
+      mobileTypeToken: tokenValue(focusList, "--mobile-type-body"),
       focusHitTarget: tokenValue(focusList, "--focus-mobile-hit-target"),
       searchFontSize: fontSize(search),
       stateButtonFontSize: fontSize(stateButton),
@@ -43,16 +43,16 @@ async function expectReadableFocusList(
     };
   }, itemSelector);
 
-  expect(metrics.focusTypeToken).toMatch(/rem$/);
+  expect(metrics.mobileTypeToken).toBe("1.24rem");
   expect(metrics.focusHitTarget).toMatch(/rem$/);
   expect(metrics.documentWidth).toBeLessThanOrEqual(metrics.viewportWidth);
-  expect(metrics.searchFontSize).toBeGreaterThanOrEqual(17);
-  expect(metrics.stateButtonFontSize).toBeGreaterThanOrEqual(16);
+  expect(metrics.searchFontSize).toBeGreaterThanOrEqual(16);
+  expect(metrics.stateButtonFontSize).toBeGreaterThanOrEqual(15);
   expect(metrics.stateButtonRect?.height ?? 0).toBeGreaterThanOrEqual(44);
-  expect(metrics.itemFontSize).toBeGreaterThanOrEqual(17);
+  expect(metrics.itemFontSize).toBeGreaterThanOrEqual(16);
   expect(metrics.itemRect?.height ?? 0).toBeGreaterThanOrEqual(72);
   expect(metrics.titleFontSize).toBeGreaterThanOrEqual(19);
-  expect(metrics.metaFontSize).toBeGreaterThanOrEqual(16);
+  expect(metrics.metaFontSize).toBeGreaterThanOrEqual(15);
   for (const bounds of metrics.itemBounds) {
     expect(bounds?.left ?? 0).toBeGreaterThanOrEqual(0);
     expect(bounds?.right ?? 0).toBeLessThanOrEqual(metrics.viewportWidth);
@@ -66,6 +66,7 @@ async function expectReadableDetail(page: Page): Promise<void> {
 
   const metrics = await page.evaluate(() => {
     const detail = document.querySelector(".pull-detail, .issue-detail");
+    const layout = document.querySelector(".focus-layout");
     const fontSize = (selector: string): number => {
       const node = document.querySelector(selector);
       return node ? Number.parseFloat(getComputedStyle(node).fontSize) : 0;
@@ -74,8 +75,8 @@ async function expectReadableDetail(page: Page): Promise<void> {
       const r = document.querySelector(selector)?.getBoundingClientRect();
       return r ? { left: r.left, right: r.right, height: r.height } : null;
     };
-    const tokenValue = (name: string): string => detail
-      ? getComputedStyle(detail).getPropertyValue(name).trim()
+    const tokenValue = (node: Element | null, name: string): string => node
+      ? getComputedStyle(node).getPropertyValue(name).trim()
       : "";
     const overflowingVisible = [...document.querySelectorAll(".focus-layout *")]
       .filter((el) => {
@@ -87,11 +88,13 @@ async function expectReadableDetail(page: Page): Promise<void> {
     return {
       viewportWidth: window.innerWidth,
       documentWidth: document.documentElement.scrollWidth,
-      detailTypeToken: tokenValue("--detail-mobile-type-body"),
-      detailHitTarget: tokenValue("--detail-mobile-hit-target"),
+      detailTypeToken: tokenValue(detail, "--detail-mobile-type-body"),
+      detailHitTarget: tokenValue(detail, "--detail-mobile-hit-target"),
+      mobileTypeToken: tokenValue(layout, "--mobile-type-body"),
+      rootFontSize: Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
       titleFontSize: fontSize(".detail-title"),
       metaFontSize: fontSize(".meta-item"),
-      bodyFontSize: fontSize(".inset-box, .markdown-body, .add-description-btn, .loading-placeholder, .comment-editor-input"),
+      bodyFontSize: fontSize(".pull-detail, .issue-detail"),
       chipFontSize: fontSize(".chip, .state-chip, .status-chip"),
       copyNumberFontSize: fontSize(".copy-number-btn"),
       copyNumberRect: rect(".copy-number-btn"),
@@ -99,14 +102,16 @@ async function expectReadableDetail(page: Page): Promise<void> {
     };
   });
 
-  expect(metrics.detailTypeToken).toMatch(/rem$/);
+  expect(metrics.detailTypeToken).not.toBe("");
   expect(metrics.detailHitTarget).toMatch(/rem$/);
+  expect(metrics.mobileTypeToken).toBe("1.24rem");
+  expect(metrics.rootFontSize).toBe(13);
   expect(metrics.documentWidth).toBeLessThanOrEqual(metrics.viewportWidth);
-  expect(metrics.titleFontSize).toBeGreaterThanOrEqual(23);
-  expect(metrics.metaFontSize).toBeGreaterThanOrEqual(16);
-  expect(metrics.bodyFontSize).toBeGreaterThanOrEqual(17);
-  expect(metrics.chipFontSize).toBeGreaterThanOrEqual(16);
-  expect(metrics.copyNumberFontSize).toBeGreaterThanOrEqual(16);
+  expect(metrics.titleFontSize).toBeGreaterThanOrEqual(19);
+  expect(metrics.metaFontSize).toBeGreaterThanOrEqual(15);
+  expect(metrics.bodyFontSize).toBeGreaterThanOrEqual(16);
+  expect(metrics.chipFontSize).toBeGreaterThanOrEqual(14);
+  expect(metrics.copyNumberFontSize).toBeGreaterThanOrEqual(15);
   expect(metrics.copyNumberRect?.height ?? 0).toBeGreaterThanOrEqual(44);
   expect(metrics.overflowingVisible).toEqual([]);
 }
@@ -118,6 +123,8 @@ test.describe("phone routes", () => {
     await expect(page).toHaveURL(/\/m(?:\?|$)/);
     await expect(page.locator(".mobile-shell")).toBeVisible();
     await expect(page.locator(".mobile-tab--active")).toHaveText("Activity");
+    await expect(page.locator(".mobile-topbar .mobile-app-icon")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open desktop view" })).toBeVisible();
     await expect(page.locator(".app-header")).toHaveCount(0);
     await expect(page.locator("footer")).toHaveCount(0);
 
@@ -143,6 +150,10 @@ test.describe("phone routes", () => {
     await expect(page.locator(".mobile-shell")).toBeVisible();
     await expect(page.locator(".mobile-activity-inbox")).toBeVisible();
     await expect(page.getByRole("heading", { name: "What needs attention?" })).toBeVisible();
+    await expect(page.getByText("Readable threads first")).toHaveCount(0);
+    await expect(page.getByLabel("Activity type")).toBeVisible();
+    await expect(page.getByLabel("Time range")).toBeVisible();
+    await expect(page.getByLabel("Repository")).toBeVisible();
     await expect(page.locator(".threaded-view")).toHaveCount(0);
 
     const metrics = await page.evaluate(() => {
@@ -156,16 +167,28 @@ test.describe("phone routes", () => {
       const mobileTitle = document.querySelector(".mobile-title");
       const mobileTab = document.querySelector(".mobile-tabs a");
       const desktopButton = document.querySelector(".mobile-desktop-link");
+      const desktopIcon = document.querySelector(".mobile-desktop-link svg");
+      const appIcon = document.querySelector(".mobile-app-icon");
+      const typeSelect = document.querySelector("select[aria-label='Activity type']");
+      const rangeSelect = document.querySelector("select[aria-label='Time range']");
+      const repoSelect = document.querySelector("select[aria-label='Repository']");
       const search = document.querySelector(".search-input");
       const cardRect = firstCard?.getBoundingClientRect();
       const buttonRect = firstButton?.getBoundingClientRect();
       const searchRect = search?.getBoundingClientRect();
+      const compactRect = (node: Element | null) => {
+        const r = node?.getBoundingClientRect();
+        return r ? { left: r.left, right: r.right, height: r.height } : null;
+      };
       const fontSize = (node: Element | null): number => node
         ? Number.parseFloat(getComputedStyle(node).fontSize)
         : 0;
       return {
         viewportWidth: window.innerWidth,
         documentWidth: document.documentElement.scrollWidth,
+        mobileTypeToken: getComputedStyle(document.querySelector(".mobile-shell") ?? document.documentElement).getPropertyValue("--mobile-type-body").trim(),
+        titleTypeToken: getComputedStyle(document.querySelector(".mobile-shell") ?? document.documentElement).getPropertyValue("--mobile-type-title").trim(),
+        rootFontSize: Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
         cardHeight: cardRect?.height ?? 0,
         touchTargetHeight: buttonRect?.height ?? 0,
         titleFontSize: fontSize(title),
@@ -175,7 +198,16 @@ test.describe("phone routes", () => {
         eventTimeFontSize: fontSize(eventTime),
         mobileTitleFontSize: fontSize(mobileTitle),
         mobileTabFontSize: fontSize(mobileTab),
-        desktopButtonFontSize: fontSize(desktopButton),
+        desktopButtonText: desktopButton?.textContent?.trim() ?? "",
+        desktopButtonRect: compactRect(desktopButton),
+        desktopIconPresent: Boolean(desktopIcon),
+        appIconPresent: Boolean(appIcon),
+        typeSelectFontSize: fontSize(typeSelect),
+        rangeSelectFontSize: fontSize(rangeSelect),
+        repoSelectFontSize: fontSize(repoSelect),
+        typeSelectRect: compactRect(typeSelect),
+        rangeSelectRect: compactRect(rangeSelect),
+        repoSelectRect: compactRect(repoSelect),
         searchLeft: searchRect?.left ?? 0,
         searchRight: searchRect?.right ?? 0,
       };
@@ -184,16 +216,55 @@ test.describe("phone routes", () => {
     expect(metrics.documentWidth).toBeLessThanOrEqual(metrics.viewportWidth);
     expect(metrics.searchLeft).toBeGreaterThanOrEqual(0);
     expect(metrics.searchRight).toBeLessThanOrEqual(metrics.viewportWidth);
-    expect(metrics.cardHeight).toBeGreaterThanOrEqual(120);
-    expect(metrics.touchTargetHeight).toBeGreaterThanOrEqual(52);
-    expect(metrics.titleFontSize).toBeGreaterThanOrEqual(25);
-    expect(metrics.metaFontSize).toBeGreaterThanOrEqual(19);
-    expect(metrics.eventLabelFontSize).toBeGreaterThanOrEqual(19);
-    expect(metrics.eventAuthorFontSize).toBeGreaterThanOrEqual(18);
-    expect(metrics.eventTimeFontSize).toBeGreaterThanOrEqual(18);
-    expect(metrics.mobileTitleFontSize).toBeGreaterThanOrEqual(20);
-    expect(metrics.mobileTabFontSize).toBeGreaterThanOrEqual(20);
-    expect(metrics.desktopButtonFontSize).toBeGreaterThanOrEqual(17);
+    expect(metrics.mobileTypeToken).toBe("1.24rem");
+    expect(metrics.titleTypeToken).toBe("1.54rem");
+    expect(metrics.rootFontSize).toBe(13);
+    expect(metrics.cardHeight).toBeGreaterThanOrEqual(110);
+    expect(metrics.touchTargetHeight).toBeGreaterThanOrEqual(44);
+    expect(metrics.titleFontSize).toBeGreaterThanOrEqual(19);
+    expect(metrics.metaFontSize).toBeGreaterThanOrEqual(15);
+    expect(metrics.eventLabelFontSize).toBeGreaterThanOrEqual(15);
+    expect(metrics.eventAuthorFontSize).toBeGreaterThanOrEqual(14);
+    expect(metrics.eventTimeFontSize).toBeGreaterThanOrEqual(14);
+    expect(metrics.mobileTitleFontSize).toBeGreaterThanOrEqual(16);
+    expect(metrics.mobileTabFontSize).toBeGreaterThanOrEqual(16);
+    expect(metrics.desktopButtonText).toBe("");
+    expect(metrics.desktopButtonRect?.height ?? 0).toBeGreaterThanOrEqual(44);
+    expect(metrics.desktopIconPresent).toBe(true);
+    expect(metrics.appIconPresent).toBe(true);
+    expect(metrics.typeSelectFontSize).toBeGreaterThanOrEqual(15);
+    expect(metrics.rangeSelectFontSize).toBeGreaterThanOrEqual(15);
+    expect(metrics.repoSelectFontSize).toBeGreaterThanOrEqual(15);
+    for (const bounds of [
+      metrics.typeSelectRect,
+      metrics.rangeSelectRect,
+      metrics.repoSelectRect,
+    ]) {
+      expect(bounds?.left ?? 0).toBeGreaterThanOrEqual(0);
+      expect(bounds?.right ?? 0).toBeLessThanOrEqual(metrics.viewportWidth);
+    }
+  });
+
+  test("mobile activity filters can narrow by type, range, and repository", async ({ page }) => {
+    await page.goto("/m?range=30d&view=threaded");
+    await expect(page.locator(".mobile-activity-inbox")).toBeVisible();
+
+    await page.getByLabel("Activity type").selectOption("prs");
+    await expect(page.getByLabel("Activity type")).toHaveValue("prs");
+    await expect(page).toHaveURL(/types=new_pr/);
+
+    await page.getByLabel("Time range").selectOption("24h");
+    await expect(page.getByLabel("Time range")).toHaveValue("24h");
+    await expect(page).toHaveURL(/range=24h/);
+
+    const activityForRepo = page.waitForResponse((response) => {
+      const url = response.url();
+      return url.includes("/api/v1/activity")
+        && url.includes("repo=github.com%2Facme%2Fwidgets");
+    });
+    await page.getByLabel("Repository").selectOption("github.com/acme/widgets");
+    await expect(page.getByLabel("Repository")).toHaveValue("github.com/acme/widgets");
+    await activityForRepo;
   });
 
   test("mobile activity Open thread routes to a focused thread detail", async ({ page }) => {
@@ -210,6 +281,18 @@ test.describe("phone routes", () => {
       ),
     ).toBeVisible();
     await expectReadableDetail(page);
+    await expect(page.locator(".mobile-shell")).toHaveCount(0);
+  });
+
+  test("focused PR files tab stays on the phone detail route", async ({ page }) => {
+    await page.goto("/focus/pulls/github/acme/widgets/1");
+    await expect(page.locator(".focus-layout .pull-detail .detail-title")).toBeVisible();
+
+    await page.locator(".focus-layout .detail-tab", { hasText: "Files changed" }).click();
+
+    await expect(page).toHaveURL(/\/focus\/pulls\/github\/acme\/widgets\/1\/files$/);
+    await expect(page.locator(".focus-layout .files-layout")).toBeVisible();
+    await expect(page.locator(".focus-layout .diff-view")).toBeVisible();
     await expect(page.locator(".mobile-shell")).toHaveCount(0);
   });
 
@@ -262,41 +345,43 @@ test.describe("high-density phone routes", () => {
       const tokenValue = (node: Element | null, name: string): string => node
         ? getComputedStyle(node).getPropertyValue(name).trim()
         : "";
-      const filterButtons = [...document.querySelectorAll(".mobile-activity-filters button")]
-        .map((button) => button.getBoundingClientRect())
+      const filterControls = [
+        ...document.querySelectorAll(".mobile-activity-filter-grid select, .mobile-filter-toggle"),
+      ]
+        .map((control) => control.getBoundingClientRect())
         .map((rect) => ({ left: rect.left, right: rect.right }));
       const search = document.querySelector(".search-input")?.getBoundingClientRect();
       return {
         dpr: window.devicePixelRatio,
         viewportWidth: window.innerWidth,
         documentWidth: document.documentElement.scrollWidth,
-        chromeTypeToken: tokenValue(shell, "--mobile-chrome-type-sm"),
+        mobileTypeToken: tokenValue(shell, "--mobile-type-body"),
         activityTypeToken: tokenValue(inbox, "--mobile-type-body"),
         densityScale: tokenValue(inbox, "--mobile-device-density-scale"),
-        bodyFontSize: fontSize(".mobile-activity-lede"),
-        filterFontSize: fontSize(".mobile-activity-filters button"),
+        bodyFontSize: fontSize(".mobile-activity-inbox"),
+        filterFontSize: fontSize(".mobile-activity-filter-grid select"),
         tabFontSize: fontSize(".mobile-tabs a"),
         searchHeight: search?.height ?? 0,
         searchLeft: search?.left ?? 0,
         searchRight: search?.right ?? 0,
-        filterButtons,
+        filterControls,
       };
     });
 
     expect(metrics.dpr).toBeGreaterThanOrEqual(2.5);
-    expect(metrics.chromeTypeToken).toMatch(/rem$/);
-    expect(metrics.activityTypeToken).toMatch(/rem$/);
+    expect(metrics.mobileTypeToken).toBe("1.24rem");
+    expect(metrics.activityTypeToken).toBe("1.24rem");
     expect(metrics.densityScale).toBe("");
     expect(metrics.documentWidth).toBeLessThanOrEqual(metrics.viewportWidth);
-    expect(metrics.bodyFontSize).toBeGreaterThanOrEqual(20);
-    expect(metrics.filterFontSize).toBeGreaterThanOrEqual(19);
-    expect(metrics.tabFontSize).toBeGreaterThanOrEqual(20);
+    expect(metrics.bodyFontSize).toBeGreaterThanOrEqual(16);
+    expect(metrics.filterFontSize).toBeGreaterThanOrEqual(15);
+    expect(metrics.tabFontSize).toBeGreaterThanOrEqual(16);
     expect(metrics.searchHeight).toBeGreaterThanOrEqual(44);
     expect(metrics.searchLeft).toBeGreaterThanOrEqual(0);
     expect(metrics.searchRight).toBeLessThanOrEqual(metrics.viewportWidth);
-    for (const button of metrics.filterButtons) {
-      expect(button.left).toBeGreaterThanOrEqual(0);
-      expect(button.right).toBeLessThanOrEqual(metrics.viewportWidth);
+    for (const control of metrics.filterControls) {
+      expect(control.left).toBeGreaterThanOrEqual(0);
+      expect(control.right).toBeLessThanOrEqual(metrics.viewportWidth);
     }
   });
 });

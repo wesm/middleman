@@ -6,14 +6,19 @@
   import { parseAPITimestamp } from "../utils/time.js";
   import ItemKindChip from "../components/shared/ItemKindChip.svelte";
   import ItemStateChip from "../components/shared/ItemStateChip.svelte";
+  import {
+    buildMobileActivityRepoOptions,
+  } from "./mobileActivityRepoOptions.js";
 
   const { activity, settings, sync } = getStores();
 
   interface Props {
-    onSelectItem?: (item: ActivityItem) => void;
+    selectedRepo?: string | undefined;
+    onRepoChange?: ((repo: string | undefined) => void) | undefined;
+    onSelectItem?: ((item: ActivityItem) => void) | undefined;
   }
 
-  let { onSelectItem }: Props = $props();
+  let { selectedRepo, onRepoChange, onSelectItem }: Props = $props();
 
   type ActivityGroup = {
     key: string;
@@ -25,9 +30,18 @@
 
   const BOT_SUFFIXES = ["[bot]", "-bot", "bot"];
   const timeRanges: TimeRange[] = ["24h", "7d", "30d", "90d"];
+  const itemFilters: { value: ItemFilter; label: string }[] = [
+    { value: "all", label: "All" },
+    { value: "prs", label: "PRs" },
+    { value: "issues", label: "Issues" },
+  ];
   let searchInput = $state("");
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let unsubSync: (() => void) | undefined;
+
+  const repoOptions = $derived.by(() =>
+    buildMobileActivityRepoOptions(settings.getConfiguredRepos()),
+  );
 
   onMount(() => {
     activity.initializeFromMount();
@@ -134,9 +148,23 @@
     applyFilters();
   }
 
+  function handleItemFilterChange(event: Event): void {
+    setItemFilter((event.target as HTMLSelectElement).value as ItemFilter);
+  }
+
   function setTimeRange(range: TimeRange): void {
     activity.setTimeRange(range);
     activity.syncToURL();
+    void activity.loadActivity();
+  }
+
+  function handleTimeRangeChange(event: Event): void {
+    setTimeRange((event.target as HTMLSelectElement).value as TimeRange);
+  }
+
+  function handleRepoChange(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    onRepoChange?.(value || undefined);
     void activity.loadActivity();
   }
 
@@ -217,9 +245,6 @@
         Activity inbox · {activity.getTimeRange()}
       </p>
       <h1>What needs attention?</h1>
-      <p class="mobile-activity-lede">
-        Readable threads first. Open details only when something looks worth touching.
-      </p>
     </header>
 
     <label class="mobile-activity-search">
@@ -233,37 +258,54 @@
       />
     </label>
 
-    <div class="mobile-activity-filters" aria-label="Activity filters">
+    <div class="mobile-activity-filter-grid" aria-label="Activity filters">
+      <label class="mobile-filter-select">
+        <span>Type</span>
+        <select
+          aria-label="Activity type"
+          value={activity.getItemFilter()}
+          onchange={handleItemFilterChange}
+        >
+          {#each itemFilters as option}
+            <option value={option.value}>{option.label}</option>
+          {/each}
+        </select>
+      </label>
+
+      <label class="mobile-filter-select">
+        <span>Range</span>
+        <select
+          aria-label="Time range"
+          value={activity.getTimeRange()}
+          onchange={handleTimeRangeChange}
+        >
+          {#each timeRanges as range}
+            <option value={range}>{range}</option>
+          {/each}
+        </select>
+      </label>
+
+      <label class="mobile-filter-select mobile-filter-select--repo">
+        <span>Repo</span>
+        <select
+          aria-label="Repository"
+          value={selectedRepo ?? ""}
+          onchange={handleRepoChange}
+        >
+          <option value="">All repos</option>
+          {#each repoOptions as repo (repo.value)}
+            <option value={repo.value}>{repo.label}</option>
+          {/each}
+        </select>
+      </label>
+
       <button
         type="button"
-        class:active={activity.getItemFilter() === "all"}
-        onclick={() => setItemFilter("all")}
-      >All</button>
-      <button
-        type="button"
-        class:active={activity.getItemFilter() === "prs"}
-        onclick={() => setItemFilter("prs")}
-      >PRs</button>
-      <button
-        type="button"
-        class:active={activity.getItemFilter() === "issues"}
-        onclick={() => setItemFilter("issues")}
-      >Issues</button>
-      <button
-        type="button"
+        class="mobile-filter-toggle"
         class:active={activity.getHideBots()}
+        aria-pressed={activity.getHideBots()}
         onclick={toggleHideBots}
       >Hide bots</button>
-    </div>
-
-    <div class="mobile-activity-ranges" aria-label="Time range">
-      {#each timeRanges as range}
-        <button
-          type="button"
-          class:active={activity.getTimeRange() === range}
-          onclick={() => setTimeRange(range)}
-        >{range}</button>
-      {/each}
     </div>
 
     <section class="mobile-activity-summary" aria-label="Activity summary">
@@ -357,13 +399,13 @@
 
 <style>
   .mobile-activity-inbox {
-    --mobile-type-xs: 1.43rem;
-    --mobile-type-sm: 1.52rem;
-    --mobile-type-body: 1.55rem;
-    --mobile-type-title: 2.01rem;
-    --mobile-type-display: 2.82rem;
-    --mobile-type-metric: 2.59rem;
-    --mobile-space-2xs: 0.35rem;
+    --mobile-type-xs: 1.08rem;
+    --mobile-type-sm: 1.17rem;
+    --mobile-type-body: 1.24rem;
+    --mobile-type-title: 1.54rem;
+    --mobile-type-display: 2.15rem;
+    --mobile-type-metric: 1.97rem;
+    --mobile-space-2xs: 0.36rem;
     --mobile-space-xs: 0.55rem;
     --mobile-space-sm: 0.75rem;
     --mobile-space-md: 1rem;
@@ -372,6 +414,7 @@
     --mobile-radius-md: 1.25rem;
     --mobile-hit-target: 3.5rem;
     container-type: inline-size;
+    font-size: var(--mobile-type-body);
     flex: 1;
     min-height: 0;
     overflow: hidden;
@@ -410,13 +453,6 @@
     letter-spacing: -0.045em;
   }
 
-  .mobile-activity-lede {
-    margin: var(--mobile-space-sm) 0 0;
-    color: var(--text-secondary);
-    font-size: var(--mobile-type-body);
-    line-height: 1.4;
-  }
-
   .mobile-activity-search {
     min-height: calc(var(--mobile-hit-target) + var(--mobile-space-xs));
     display: flex;
@@ -445,17 +481,51 @@
     color: var(--text-muted);
   }
 
-  .mobile-activity-filters,
-  .mobile-activity-ranges {
-    display: flex;
-    flex-wrap: wrap;
+  .mobile-activity-filter-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--mobile-space-xs);
-    overflow: visible;
-    padding-bottom: var(--mobile-space-sm);
+    margin-bottom: var(--mobile-space-sm);
   }
 
-  .mobile-activity-filters button,
-  .mobile-activity-ranges button,
+  .mobile-filter-select {
+    min-width: 0;
+    min-height: var(--mobile-hit-target);
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: var(--mobile-space-xs);
+    padding: 0 var(--mobile-space-sm);
+    border: thin solid var(--border-default);
+    border-radius: var(--mobile-radius-sm);
+    color: var(--text-secondary);
+    background: color-mix(in srgb, var(--bg-surface) 86%, transparent);
+  }
+
+  .mobile-filter-select--repo {
+    grid-column: 1 / -1;
+  }
+
+  .mobile-filter-select span {
+    color: var(--text-muted);
+    font-size: var(--mobile-type-xs);
+    font-weight: 750;
+    letter-spacing: 0.01em;
+  }
+
+  .mobile-filter-select select {
+    min-width: 0;
+    width: 100%;
+    border: 0;
+    outline: 0;
+    color: var(--text-primary);
+    background: transparent;
+    font: inherit;
+    font-size: var(--mobile-type-sm);
+    font-weight: 750;
+  }
+
+  .mobile-filter-toggle,
   .mobile-activity-open {
     min-height: var(--mobile-hit-target);
     flex: 0 0 auto;
@@ -468,8 +538,7 @@
     font-weight: 750;
   }
 
-  .mobile-activity-filters button.active,
-  .mobile-activity-ranges button.active {
+  .mobile-filter-toggle.active {
     color: var(--bg-primary);
     background: var(--text-primary);
     border-color: transparent;

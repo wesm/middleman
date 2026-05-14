@@ -13,6 +13,8 @@
   import type { StoreInstances } from "@middleman/ui";
   import type { ActivityItem } from "@middleman/ui/api/types";
   import {
+    buildFocusPullRequestFilesRoute,
+    buildFocusPullRequestRoute,
     buildRoutedItemRoute,
     type RoutedItemRef,
   } from "@middleman/ui/routes";
@@ -28,7 +30,7 @@
   import WorkspaceEmbedShell from "./lib/components/terminal/WorkspaceEmbedShell.svelte";
   import DesignSystemPage from "./lib/components/design-system/DesignSystemPage.svelte";
   import FlashBanner from "./lib/components/FlashBanner.svelte";
-  import { SpinnerIcon } from "./lib/icons.ts";
+  import { MonitorIcon, SpinnerIcon } from "./lib/icons.ts";
   import { showFlash } from "./lib/stores/flash.svelte.js";
   import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
   import { runAppStartup } from "./lib/utils/appStartup.js";
@@ -69,6 +71,7 @@
   import {
     getGlobalRepo,
     applyConfigRepo,
+    setGlobalRepo,
   } from "./lib/stores/filter.svelte.js";
   import {
     getUIConfig,
@@ -100,6 +103,7 @@
   let appReady = $state(false);
   let cleanupFullAppShell: (() => void) | undefined;
   let fullShellStores: StoreInstances | undefined;
+  const appIconSrc = `${getBasePath().replace(/\/$/, "")}/favicon.svg`;
 
   function stopFullAppShell() {
     fullShellStores?.events.disconnect();
@@ -169,7 +173,9 @@
   }
 
   function isPhoneViewport(): boolean {
-    return window.innerWidth <= 640 || isNarrow();
+    const hasPhoneLikeTouchViewport = window.matchMedia("(pointer: coarse)").matches
+      && Math.min(window.screen.width, window.screen.height) <= 640;
+    return window.innerWidth <= 640 || isNarrow() || hasPhoneLikeTouchViewport;
   }
 
   function shouldForceMobileRoutes(): boolean {
@@ -177,6 +183,17 @@
       window.__MIDDLEMAN_FORCE_MOBILE_ROUTES__ === true ||
       import.meta.env.VITE_MIDDLEMAN_FORCE_MOBILE_ROUTES === "1" ||
       import.meta.env.VITE_MIDDLEMAN_FORCE_MOBILE_ROUTES === "true"
+    );
+  }
+
+  function navigateFocusPRDetailTab(
+    ref: Parameters<typeof buildFocusPullRequestRoute>[0],
+    tab: "conversation" | "files",
+  ): void {
+    navigate(
+      tab === "files"
+        ? buildFocusPullRequestFilesRoute(ref)
+        : buildFocusPullRequestRoute(ref),
     );
   }
 
@@ -561,16 +578,18 @@
             {...r.repo ? { repo: r.repo } : {}}
           />
         {:else if r.itemType === "pr"}
+          {@const selectedPR = {
+            owner: r.owner,
+            name: r.name,
+            number: r.number,
+            provider: r.provider,
+            platformHost: r.platformHost,
+            repoPath: r.repoPath,
+          }}
           <PRListView
-            selectedPR={{
-              owner: r.owner,
-              name: r.name,
-              number: r.number,
-              provider: r.provider,
-              platformHost: r.platformHost,
-              repoPath: r.repoPath,
-            }}
-            detailTab="conversation"
+            {selectedPR}
+            detailTab={r.tab === "files" ? "files" : "conversation"}
+            onDetailTabChange={(tab) => navigateFocusPRDetailTab(selectedPR, tab)}
             isSidebarCollapsed={true}
             hideSidebar={true}
             showStackSidebar={false}
@@ -594,40 +613,48 @@
   {:else if isMobilePage(getPage())}
     <section class="mobile-shell" aria-label="Phone view">
       <header class="mobile-topbar">
-        <span class="mobile-title">middleman</span>
+        <span class="mobile-brand">
+          <img class="mobile-app-icon" src={appIconSrc} alt="" aria-hidden="true" />
+          <span class="mobile-title">middleman</span>
+        </span>
+
+        <nav class="mobile-tabs" aria-label="Phone navigation">
+          <a
+            class:mobile-tab--active={getPage() === "mobile-activity"}
+            href="/m"
+            onclick={(e) => {
+              e.preventDefault();
+              navigateMobile("/m");
+            }}
+          >Activity</a>
+          <a
+            class:mobile-tab--active={getPage() === "mobile-pulls"}
+            href="/m/pulls"
+            onclick={(e) => {
+              e.preventDefault();
+              navigateMobile("/m/pulls");
+            }}
+          >PRs</a>
+          <a
+            class:mobile-tab--active={getPage() === "mobile-issues"}
+            href="/m/issues"
+            onclick={(e) => {
+              e.preventDefault();
+              navigateMobile("/m/issues");
+            }}
+          >Issues</a>
+        </nav>
+
         <button
           class="mobile-desktop-link"
           type="button"
+          aria-label="Open desktop view"
+          title="Open desktop view"
           onclick={useDesktopView}
-        >Desktop</button>
+        >
+          <MonitorIcon size="18" strokeWidth="1.75" aria-hidden="true" />
+        </button>
       </header>
-
-      <nav class="mobile-tabs" aria-label="Phone navigation">
-        <a
-          class:mobile-tab--active={getPage() === "mobile-activity"}
-          href="/m"
-          onclick={(e) => {
-            e.preventDefault();
-            navigateMobile("/m");
-          }}
-        >Activity</a>
-        <a
-          class:mobile-tab--active={getPage() === "mobile-pulls"}
-          href="/m/pulls"
-          onclick={(e) => {
-            e.preventDefault();
-            navigateMobile("/m/pulls");
-          }}
-        >PRs</a>
-        <a
-          class:mobile-tab--active={getPage() === "mobile-issues"}
-          href="/m/issues"
-          onclick={(e) => {
-            e.preventDefault();
-            navigateMobile("/m/issues");
-          }}
-        >Issues</a>
-      </nav>
 
       <main class="mobile-main">
         {#if !appReady}
@@ -646,6 +673,8 @@
           <FocusListView listType="issues" />
         {:else}
           <MobileActivityView
+            selectedRepo={getGlobalRepo()}
+            onRepoChange={setGlobalRepo}
             onSelectItem={handleActivitySelect}
           />
         {/if}
@@ -747,8 +776,12 @@
 
 <style>
   .mobile-shell {
-    --mobile-chrome-type-sm: 1.55rem;
-    --mobile-chrome-type-xs: 1.33rem;
+    --mobile-type-xs: 1.08rem;
+    --mobile-type-sm: 1.17rem;
+    --mobile-type-body: 1.24rem;
+    --mobile-type-title: 1.54rem;
+    --mobile-type-display: 2.15rem;
+    --mobile-type-metric: 1.97rem;
     --mobile-chrome-space-xs: 0.5rem;
     --mobile-chrome-space-sm: 0.75rem;
     --mobile-chrome-space-md: 1rem;
@@ -765,61 +798,79 @@
   .mobile-topbar {
     min-height: calc(var(--mobile-chrome-hit-target) + var(--mobile-chrome-space-xs));
     flex-shrink: 0;
-    display: flex;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--mobile-chrome-space-md);
+    gap: var(--mobile-chrome-space-sm);
     padding:
       max(var(--mobile-chrome-space-sm), env(safe-area-inset-top))
-      var(--mobile-chrome-space-md)
+      var(--mobile-chrome-space-sm)
       var(--mobile-chrome-space-sm);
     border-bottom: thin solid var(--border-default);
     background: var(--bg-surface);
   }
 
+  .mobile-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--mobile-chrome-space-xs);
+    min-width: 0;
+  }
+
+  .mobile-app-icon {
+    display: block;
+    width: 1.45rem;
+    height: 1.45rem;
+    flex: 0 0 auto;
+  }
+
   .mobile-title {
     color: var(--text-primary);
-    font-size: var(--mobile-chrome-type-sm);
+    font-size: var(--mobile-type-body);
     font-weight: 700;
     letter-spacing: -0.01em;
   }
 
   .mobile-desktop-link {
-    min-height: var(--mobile-chrome-hit-target);
-    padding: var(--mobile-chrome-space-xs) var(--mobile-chrome-space-sm);
-    border: thin solid var(--border-default);
-    border-radius: var(--radius-sm);
-    color: var(--text-secondary);
-    background: var(--bg-surface);
-    font-size: var(--mobile-chrome-type-xs);
-    font-weight: 600;
-  }
-
-  .mobile-tabs {
-    flex-shrink: 0;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: var(--mobile-chrome-space-xs);
-    padding: var(--mobile-chrome-space-xs) var(--mobile-chrome-space-sm);
-    border-bottom: thin solid var(--border-default);
-    background: var(--bg-surface);
-  }
-
-  .mobile-tabs a {
+    width: var(--mobile-chrome-hit-target);
+    min-width: var(--mobile-chrome-hit-target);
     min-height: var(--mobile-chrome-hit-target);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: var(--radius-md);
+    padding: 0;
+    border: thin solid var(--border-default);
+    border-radius: var(--radius-sm);
     color: var(--text-secondary);
-    font-size: var(--mobile-chrome-type-sm);
-    font-weight: 600;
+    background: var(--bg-surface);
+  }
+
+  .mobile-tabs {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--mobile-chrome-space-xs);
+    padding: 0.16rem;
+    border: thin solid var(--border-default);
+    border-radius: var(--radius-md);
+    background: var(--bg-inset);
+  }
+
+  .mobile-tabs a {
+    min-height: calc(var(--mobile-chrome-hit-target) - 0.45rem);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: calc(var(--radius-md) - 0.16rem);
+    color: var(--text-secondary);
+    font-size: var(--mobile-type-body);
+    font-weight: 650;
     text-decoration: none;
   }
 
   .mobile-tabs a.mobile-tab--active {
     color: var(--text-primary);
-    background: var(--bg-inset);
+    background: var(--bg-surface);
     box-shadow: var(--shadow-sm);
   }
 
@@ -851,15 +902,24 @@
   }
 
   .focus-layout--phone {
-    --focus-detail-type-xs: 1.3rem;
-    --focus-detail-type-sm: 1.42rem;
-    --focus-detail-type-body: 1.52rem;
-    --focus-detail-type-title: 2rem;
-    --focus-detail-space-xs: 0.45rem;
+    --mobile-type-xs: 1.08rem;
+    --mobile-type-sm: 1.17rem;
+    --mobile-type-body: 1.24rem;
+    --mobile-type-title: 1.54rem;
+    --mobile-type-display: 2.15rem;
+    --mobile-type-metric: 1.97rem;
+    --focus-detail-type-xs: var(--mobile-type-xs);
+    --focus-detail-type-sm: var(--mobile-type-sm);
+    --focus-detail-type-body: var(--mobile-type-body);
+    --focus-detail-type-title: var(--mobile-type-title);
+    --focus-detail-space-xs: 0.46rem;
     --focus-detail-space-sm: 0.7rem;
     --focus-detail-space-md: 0.9rem;
     --focus-detail-hit-target: 3.75rem;
+    --detail-mobile-type-xs: var(--focus-detail-type-xs);
+    --detail-mobile-type-sm: var(--focus-detail-type-sm);
     --detail-mobile-type-body: var(--focus-detail-type-body);
+    --detail-mobile-type-title: var(--focus-detail-type-title);
     --detail-mobile-hit-target: var(--focus-detail-hit-target);
     overflow: hidden;
     min-width: 0;
@@ -1018,7 +1078,7 @@
     gap: var(--mobile-chrome-space-sm, 0.5rem);
     flex: 1;
     color: var(--text-muted);
-    font-size: var(--mobile-chrome-type-xs, 0.95rem);
+    font-size: var(--mobile-type-sm, 0.95rem);
     animation: fade-in 0.3s ease;
   }
 

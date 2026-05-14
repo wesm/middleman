@@ -433,8 +433,8 @@
   }
 
   :global(.mobile-main) .pull-item {
-    min-height: calc(var(--focus-mobile-hit-target, 3.4rem) * 1.65);
-    font-size: var(--focus-mobile-type-body, 1.38rem);
+    min-height: calc(var(--focus-mobile-hit-target, 2.85rem) * 1.65);
+    font-size: var(--mobile-type-body, 1rem);
     padding: var(--focus-mobile-space-sm, 0.75rem) var(--focus-mobile-space-md, 1rem);
     border-bottom: thin solid var(--border-muted);
     border-left-width: 0.25rem;
@@ -443,7 +443,7 @@
   :global(.mobile-main) .title {
     gap: var(--focus-mobile-space-xs, 0.5rem);
     margin-bottom: var(--focus-mobile-space-xs, 0.5rem);
-    font-size: var(--focus-mobile-type-title, 1.48rem);
+    font-size: var(--mobile-type-title, 1.25rem);
     line-height: 1.3;
     white-space: normal;
     display: -webkit-box;
@@ -468,7 +468,7 @@
   :global(.mobile-main) .meta-left,
   :global(.mobile-main) .time,
   :global(.mobile-main) .worktree-name {
-    font-size: var(--focus-mobile-type-sm, 1.3rem);
+    font-size: var(--mobile-type-sm, 0.95rem);
     line-height: 1.35;
   }
 
@@ -479,10 +479,10 @@
   :global(.mobile-main) :global(.chip),
   :global(.mobile-main) :global(.state-chip),
   :global(.mobile-main) :global(.status-chip) {
-    min-height: calc(var(--focus-mobile-hit-target, 3.4rem) * 0.65);
+    min-height: calc(var(--focus-mobile-hit-target, 2.85rem) * 0.65);
     padding: 0.2rem var(--focus-mobile-space-xs, 0.5rem);
     border-radius: 999rem;
-    font-size: var(--focus-mobile-type-xs, 1.22rem);
+    font-size: var(--mobile-type-xs, 0.875rem);
     line-height: 1.25;
   }
 </style>

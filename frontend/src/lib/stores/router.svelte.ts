@@ -32,7 +32,12 @@ export type Route =
     }
   | { page: "issues"; selected?: HostedItemRef }
   | { page: "settings" }
-  | ({ page: "focus" } & RoutableItemRef)
+  | {
+      page: "focus";
+      itemType: "pr";
+      tab?: "files";
+    } & NumberedItemRef
+  | ({ page: "focus" } & IssueRouteRef & { itemType: "issue" })
   | { page: "focus"; itemType: "mrs"; repo?: string }
   | { page: "focus"; itemType: "issues"; repo?: string }
   | { page: "reviews"; jobId?: number }
@@ -194,11 +199,14 @@ function parseRoute(fullPath: string): Route {
       return r;
     }
     const pull = parseHostProviderNumberedPath(parts, "pulls", 1);
-    if (pull && parts.length === (parts[1] === "host" ? 8 : 6)) {
+    const isPullFiles = parts[parts.length - 1] === "files";
+    const focusPullLength = parts[1] === "host" ? 8 : 6;
+    if (pull && (parts.length === focusPullLength || (isPullFiles && parts.length === focusPullLength + 1))) {
       return {
         page: "focus",
         itemType: "pr",
         ...pull,
+        ...(isPullFiles && { tab: "files" as const }),
       };
     }
     const issue = parseHostProviderNumberedPath(parts, "issues", 1);
@@ -585,8 +593,17 @@ if (typeof window !== "undefined") {
 export type DetailTab = "conversation" | "files";
 
 export function getDetailTab(): DetailTab {
-  if (route.page === "pulls" && "tab" in route && route.tab === "files")
+  if (route.page === "pulls" && "tab" in route && route.tab === "files") {
     return "files";
+  }
+  if (
+    route.page === "focus" &&
+    route.itemType === "pr" &&
+    "tab" in route &&
+    route.tab === "files"
+  ) {
+    return "files";
+  }
   return "conversation";
 }
 
@@ -626,5 +643,5 @@ export function setTab(t: Tab): void {
 }
 
 export function isDiffView(): boolean {
-  return route.page === "pulls" && "tab" in route && route.tab === "files";
+  return getDetailTab() === "files";
 }

@@ -172,7 +172,7 @@
     background: var(--bg-inset);
     color: var(--text-muted);
     font-family: inherit;
-    font-size: 11px;
+    font-size: 0.85rem;
     font-weight: 600;
     line-height: 1;
     letter-spacing: 0.03em;
@@ -220,7 +220,7 @@
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 16px;
     align-items: center;
-    font-size: 12px;
+    font-size: 0.92rem;
   }
 
   .diff-summary-rows {
@@ -241,7 +241,7 @@
 
   .diff-summary-state {
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: 0.92rem;
   }
 
   .diff-summary-state--error {

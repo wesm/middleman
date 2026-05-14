@@ -1259,7 +1259,7 @@
   }
 
   .state-msg {
-    font-size: 13px;
+    font-size: 1rem;
     color: var(--text-muted);
   }
 
@@ -1280,7 +1280,7 @@
     background: var(--accent-red-soft, color-mix(in srgb, var(--accent-red) 12%, transparent));
     color: var(--accent-red);
     border-bottom: 1px solid var(--border-subtle);
-    font-size: 12px;
+    font-size: 0.92rem;
     flex-shrink: 0;
   }
 
@@ -1322,7 +1322,7 @@
   }
 
   .detail-title {
-    font-size: 18px;
+    font-size: 1.38rem;
     font-weight: 600;
     color: var(--text-primary);
     line-height: 1.35;
@@ -1441,12 +1441,12 @@
   }
 
   .meta-item {
-    font-size: 12px;
+    font-size: 0.92rem;
     color: var(--text-secondary);
   }
 
   .meta-sep {
-    font-size: 12px;
+    font-size: 0.92rem;
     color: var(--text-muted);
   }
 
@@ -1454,7 +1454,7 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    font-size: 11px;
+    font-size: 0.85rem;
     color: var(--accent-blue);
   }
 
@@ -1470,7 +1470,7 @@
     display: inline-flex;
     align-items: center;
     gap: 3px;
-    font-size: 12px;
+    font-size: 0.92rem;
   }
 
   .branch-icon {
@@ -1482,7 +1482,7 @@
     position: relative;
     color: var(--text-secondary);
     font-family: "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
-    font-size: 11.5px;
+    font-size: 0.88rem;
     background: none;
     border: none;
     padding: 1px 4px;
@@ -1510,7 +1510,7 @@
     left: 50%;
     transform: translateX(-50%);
     font-family: inherit;
-    font-size: 10px;
+    font-size: 0.77rem;
     font-weight: 600;
     letter-spacing: 0.02em;
     color: #fff;
@@ -1641,7 +1641,7 @@
     border-radius: var(--radius-sm);
     background: var(--bg-surface);
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: 0.92rem;
     font-weight: 600;
     cursor: pointer;
   }
@@ -1710,7 +1710,7 @@
   }
 
   .action-error {
-    font-size: 11px;
+    font-size: 0.85rem;
     color: var(--accent-red, #d73a49);
   }
 
@@ -1739,7 +1739,7 @@
   }
 
   .section-title {
-    font-size: 12px;
+    font-size: 0.92rem;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -1747,7 +1747,7 @@
   }
 
   .section-title-inline {
-    font-size: 12px;
+    font-size: 0.92rem;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -1801,7 +1801,7 @@
   }
 
   .inset-box {
-    font-size: 13px;
+    font-size: 1rem;
     color: var(--text-primary);
     background: var(--bg-inset);
     border: 1px solid var(--border-muted);
@@ -1812,7 +1812,7 @@
   }
 
   .merge-warning {
-    font-size: 12px;
+    font-size: 0.92rem;
     padding: 8px 12px;
     border-radius: var(--radius-sm);
     display: flex;
@@ -1840,7 +1840,7 @@
 
   .files-stat {
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: 0.92rem;
     font-weight: 600;
   }
 
@@ -1859,7 +1859,7 @@
     padding: 4px 12px;
     background: var(--bg-inset);
     border-radius: var(--radius-sm);
-    font-size: 11px;
+    font-size: 0.85rem;
     color: var(--text-secondary);
     margin-bottom: 8px;
   }
@@ -1883,7 +1883,7 @@
     justify-content: center;
     gap: 8px;
     padding: 24px 0;
-    font-size: 12px;
+    font-size: 0.92rem;
     color: var(--text-muted);
   }
 
@@ -1896,7 +1896,7 @@
   }
 
   .detail-tab {
-    font-size: 12px;
+    font-size: 0.92rem;
     font-weight: 500;
     padding: 8px 16px;
     color: var(--text-secondary);
@@ -1981,14 +1981,14 @@
 
   @media (max-width: 640px) {
     .pull-detail {
-      --detail-mobile-type-xs: 1.25rem;
-      --detail-mobile-type-sm: 1.3rem;
-      --detail-mobile-type-body: 1.38rem;
-      --detail-mobile-type-title: 1.8rem;
+      --detail-mobile-type-xs: var(--mobile-type-xs, 0.875rem);
+      --detail-mobile-type-sm: var(--mobile-type-sm, 0.95rem);
+      --detail-mobile-type-body: var(--mobile-type-body, 1rem);
+      --detail-mobile-type-title: var(--mobile-type-title, 1.25rem);
       --detail-mobile-space-xs: 0.5rem;
       --detail-mobile-space-sm: 0.75rem;
       --detail-mobile-space-md: 1rem;
-      --detail-mobile-hit-target: 3.4rem;
+      --detail-mobile-hit-target: 2.85rem;
       padding: var(--detail-mobile-space-md);
       font-size: var(--detail-mobile-type-body);
       line-height: 1.5;

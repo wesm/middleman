@@ -152,6 +152,8 @@ html, body {
   overflow: hidden;
   font-family: var(--font-sans);
   font-size: 13px;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   line-height: 1.5;
   color: var(--text-primary);
   background: var(--bg-primary);

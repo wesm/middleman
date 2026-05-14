@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildFocusIssueRoute,
   buildFocusListRoute,
+  buildFocusPullRequestFilesRoute,
   buildFocusPullRequestRoute,
   buildIssueRoute,
   buildProviderIssueRoute,
@@ -85,6 +86,12 @@ describe("route item builders", () => {
       }),
     ).toBe(
       "/focus/pulls/github/acme/widgets/42",
+    );
+    expect(buildFocusPullRequestFilesRoute({
+      ...githubWidgets,
+      number: 42,
+    })).toBe(
+      "/focus/pulls/github/acme/widgets/42/files",
     );
     expect(
       buildFocusIssueRoute({

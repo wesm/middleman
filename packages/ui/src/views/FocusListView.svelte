@@ -538,11 +538,7 @@
   }
 
   :global(.mobile-main) .focus-list {
-    --focus-mobile-type-xs: 1.25rem;
-    --focus-mobile-type-sm: 1.3rem;
-    --focus-mobile-type-body: 1.38rem;
-    --focus-mobile-type-title: 1.48rem;
-    --focus-mobile-space-2xs: 0.35rem;
+    --focus-mobile-space-2xs: 0.36rem;
     --focus-mobile-space-xs: 0.5rem;
     --focus-mobile-space-sm: 0.75rem;
     --focus-mobile-space-md: 1rem;
@@ -559,7 +555,7 @@
   }
 
   :global(.mobile-main) .header-label {
-    font-size: var(--focus-mobile-type-body);
+    font-size: var(--mobile-type-body);
     line-height: 1.35;
   }
 
@@ -570,7 +566,7 @@
     border: thin solid var(--border-muted);
     border-radius: 999rem;
     padding: var(--focus-mobile-space-2xs) var(--focus-mobile-space-sm);
-    font-size: var(--focus-mobile-type-xs);
+    font-size: var(--mobile-type-xs);
     line-height: 1.25;
   }
 
@@ -598,7 +594,7 @@
     min-height: var(--focus-mobile-hit-target);
     border-radius: var(--focus-mobile-radius-sm);
     padding: var(--focus-mobile-space-xs) var(--focus-mobile-space-sm);
-    font-size: var(--focus-mobile-type-sm);
+    font-size: var(--mobile-type-sm);
     line-height: 1.3;
     font-weight: 600;
   }
@@ -624,20 +620,20 @@
       var(--focus-mobile-space-sm)
       var(--focus-mobile-space-xs)
       calc(var(--focus-mobile-space-md) + 1.5rem);
-    font-size: var(--focus-mobile-type-body);
+    font-size: var(--mobile-type-body);
     line-height: 1.35;
   }
 
   :global(.mobile-main) .group-header {
     padding: var(--focus-mobile-space-sm) var(--focus-mobile-space-md);
-    font-size: var(--focus-mobile-type-xs);
+    font-size: var(--mobile-type-xs);
     line-height: 1.25;
   }
 
   :global(.mobile-main) .state-note,
   :global(.mobile-main) .state-message {
     padding: var(--focus-mobile-space-sm) var(--focus-mobile-space-md);
-    font-size: var(--focus-mobile-type-sm);
+    font-size: var(--mobile-type-sm);
     line-height: 1.35;
   }
 </style>
