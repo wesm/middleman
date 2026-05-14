@@ -242,6 +242,20 @@ type editPRContentInput struct {
 
 type editPRContentOutput = bodyOutput[mergeRequestDetailResponse]
 
+type editIssueContentInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Body         struct {
+		Title *string `json:"title,omitempty"`
+		Body  *string `json:"body,omitempty"`
+	}
+}
+
+type editIssueContentOutput = bodyOutput[issueDetailResponse]
+
 type githubStateInput struct {
 	Provider     string `path:"provider"`
 	PlatformHost string
@@ -575,6 +589,8 @@ func (s *Server) registerProviderRepoAPI(api huma.API) {
 	huma.Get(api, hostIssuePath, s.getIssueOnHost)
 	huma.Register(api, huma.Operation{OperationID: "post-issue-comment", Method: http.MethodPost, Path: issuePath + "/comments", DefaultStatus: http.StatusCreated}, s.postIssueComment)
 	huma.Register(api, huma.Operation{OperationID: "post-issue-comment-on-host", Method: http.MethodPost, Path: hostIssuePath + "/comments", DefaultStatus: http.StatusCreated}, s.postIssueCommentOnHost)
+	huma.Register(api, huma.Operation{OperationID: "edit-issue-content", Method: http.MethodPatch, Path: issuePath, DefaultStatus: http.StatusOK}, s.editIssueContent)
+	huma.Register(api, huma.Operation{OperationID: "edit-issue-content-on-host", Method: http.MethodPatch, Path: hostIssuePath, DefaultStatus: http.StatusOK}, s.editIssueContentOnHost)
 	huma.Register(api, huma.Operation{OperationID: "edit-issue-comment", Method: http.MethodPatch, Path: issuePath + "/comments/{comment_id}", DefaultStatus: http.StatusOK}, s.editIssueComment)
 	huma.Register(api, huma.Operation{OperationID: "edit-issue-comment-on-host", Method: http.MethodPatch, Path: hostIssuePath + "/comments/{comment_id}", DefaultStatus: http.StatusOK}, s.editIssueCommentOnHost)
 
@@ -1036,6 +1052,90 @@ func (s *Server) editPRContent(
 	}
 
 	return &editPRContentOutput{Body: body}, nil
+}
+
+func (s *Server) editIssueContent(
+	ctx context.Context, input *editIssueContentInput,
+) (*editIssueContentOutput, error) {
+	if input.Body.Title == nil && input.Body.Body == nil {
+		return nil, huma.Error400BadRequest(
+			"at least one of title or body must be provided",
+		)
+	}
+	if input.Body.Title != nil && strings.TrimSpace(*input.Body.Title) == "" {
+		return nil, huma.Error400BadRequest("title must not be blank")
+	}
+
+	repo, err := s.requireRepoRouteCapability(
+		ctx,
+		input.Provider, input.PlatformHost, input.Owner, input.Name,
+		capabilityStateMutation,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	mutator, err := s.syncer.IssueContentMutator(
+		repoProviderKind(*repo), repoProviderHost(*repo),
+	)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+
+	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("get issue failed")
+	}
+	if issue == nil {
+		return nil, huma.Error404NotFound("issue not found")
+	}
+
+	updatedIssue, err := mutator.EditIssueContent(
+		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Title, input.Body.Body,
+	)
+	if err != nil {
+		return nil, huma.Error502BadGateway(
+			"provider API error: " + err.Error(),
+		)
+	}
+
+	newTitle := issue.Title
+	if updatedIssue.Title != "" {
+		newTitle = updatedIssue.Title
+	} else if input.Body.Title != nil {
+		newTitle = *input.Body.Title
+	}
+	newBody := issue.Body
+	if updatedIssue.Body != "" {
+		newBody = updatedIssue.Body
+	} else if input.Body.Body != nil {
+		newBody = *input.Body.Body
+	}
+	updatedAt := s.now().UTC()
+	if !updatedIssue.UpdatedAt.IsZero() {
+		updatedAt = updatedIssue.UpdatedAt.UTC()
+	}
+	if err := s.db.UpdateIssueTitleBody(
+		ctx, issue.ID, newTitle, newBody, updatedAt,
+	); err != nil {
+		return nil, huma.Error500InternalServerError(
+			"update title/body failed",
+		)
+	}
+
+	issue, err = s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	if err != nil || issue == nil {
+		return nil, huma.Error500InternalServerError(
+			"re-read issue failed",
+		)
+	}
+
+	body, err := s.buildIssueDetailResponse(ctx, repo, issue)
+	if err != nil {
+		return nil, err
+	}
+
+	return &editIssueContentOutput{Body: body}, nil
 }
 
 func (s *Server) postComment(ctx context.Context, input *postCommentInput) (*postCommentOutput, error) {

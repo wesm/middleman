@@ -545,6 +545,36 @@ components:
       required:
         - body
       type: object
+    EditIssueContentHostInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/EditIssueContentHostInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        body:
+          type: string
+        title:
+          type: string
+      type: object
+    EditIssueContentInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/EditIssueContentInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        body:
+          type: string
+        title:
+          type: string
+      type: object
     EditPRContentHostInputBody:
       additionalProperties: false
       properties:
@@ -2987,6 +3017,54 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Get host by platform host issues by provider by owner by name by number
+    patch:
+      operationId: edit-issue-content-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EditIssueContentHostInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueDetailResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
   /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/comments:
     post:
       operationId: post-issue-comment-on-host
@@ -4487,6 +4565,49 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Get issues by provider by owner by name by number
+    patch:
+      operationId: edit-issue-content
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EditIssueContentInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueDetailResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
   /issues/{provider}/{owner}/{name}/{number}/comments:
     post:
       operationId: post-issue-comment

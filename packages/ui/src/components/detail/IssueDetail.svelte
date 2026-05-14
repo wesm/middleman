@@ -9,6 +9,7 @@
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
   import type { IssueDetailSyncMode } from "../../stores/issues.svelte.js";
   import { renderMarkdown } from "../../utils/markdown.js";
+  import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
   import { timeAgo } from "../../utils/time.js";
   import { copyToClipboard } from "../../utils/clipboard.js";
   import EventTimeline from "./EventTimeline.svelte";
@@ -399,6 +400,190 @@
     if (workspaceCreating) return;
     branchConflict = null;
   }
+
+  // Task-list checkbox clicks update the body locally for instant
+  // feedback, then debounce a PATCH so a flurry of clicks collapses
+  // into a single save.
+  let bodySaveTimeout: ReturnType<typeof setTimeout> | null = null;
+  const BODY_SAVE_DEBOUNCE_MS = 400;
+
+  function scheduleBodySave(): void {
+    if (bodySaveTimeout !== null) clearTimeout(bodySaveTimeout);
+    bodySaveTimeout = setTimeout(() => {
+      bodySaveTimeout = null;
+      const latest = issues.getIssueDetail()?.issue?.Body;
+      if (latest === undefined) return;
+      void issues.saveIssueBodyInBackground(
+        owner, name, number, latest,
+      );
+    }, BODY_SAVE_DEBOUNCE_MS);
+  }
+
+  function onBodyClick(event: MouseEvent): void {
+    const target = event.target as HTMLElement | null;
+    if (!target) return;
+    if (target.tagName !== "INPUT") return;
+    if ((target as HTMLInputElement).type !== "checkbox") return;
+    const raw = target.getAttribute("data-task-index");
+    if (raw === null) return;
+    if (staleIssue || !currentCapabilities().state_mutation) {
+      event.preventDefault();
+      return;
+    }
+    const index = parseInt(raw, 10);
+    if (Number.isNaN(index)) return;
+    const detail = issues.getIssueDetail();
+    if (!detail) return;
+    const newBody = toggleTaskListItem(detail.issue.Body, index);
+    if (newBody === detail.issue.Body) return;
+    event.preventDefault();
+    issues.setLocalIssueBody(owner, name, number, newBody);
+    scheduleBodySave();
+  }
+
+  // Drag-to-reorder for task-list items. See PullDetail.svelte for the
+  // mirror implementation — the only difference is the store getter.
+  let dragSourceIndex = $state<number | null>(null);
+  let dropTargetIndex = $state<number | null>(null);
+  let dropTargetSide = $state<"before" | "after">("before");
+
+  function findTaskItemIndex(el: HTMLElement | null): number | null {
+    let cur: HTMLElement | null = el;
+    while (cur) {
+      if (cur.classList && cur.classList.contains("task-list-item")) {
+        const raw = cur.getAttribute("data-task-index");
+        if (raw === null) return null;
+        const idx = parseInt(raw, 10);
+        return Number.isNaN(idx) ? null : idx;
+      }
+      cur = cur.parentElement;
+    }
+    return null;
+  }
+
+  function onBodyDragStart(event: DragEvent): void {
+    if (staleIssue || !currentCapabilities().state_mutation) return;
+    const target = event.target as HTMLElement | null;
+    if (!target?.classList?.contains("task-drag-handle")) return;
+    const raw = target.getAttribute("data-task-index");
+    if (raw === null) return;
+    const idx = parseInt(raw, 10);
+    if (Number.isNaN(idx)) return;
+    dragSourceIndex = idx;
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", String(idx));
+    }
+  }
+
+  function onBodyDragOver(event: DragEvent): void {
+    if (dragSourceIndex === null) return;
+    const target = event.target as HTMLElement | null;
+    const idx = findTaskItemIndex(target);
+    if (idx === null) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    let li: HTMLElement | null = target;
+    while (li && !(li.classList && li.classList.contains("task-list-item"))) {
+      li = li.parentElement;
+    }
+    let side: "before" | "after" = "before";
+    if (li) {
+      const rect = li.getBoundingClientRect();
+      side = event.clientY < rect.top + rect.height / 2
+        ? "before"
+        : "after";
+    }
+    dropTargetSide = side;
+    dropTargetIndex = idx;
+    updateDropIndicatorClasses(
+      event.currentTarget as HTMLElement,
+      idx,
+      side,
+    );
+  }
+
+  function onBodyDragLeave(event: DragEvent): void {
+    const related = event.relatedTarget as HTMLElement | null;
+    const body = event.currentTarget as HTMLElement;
+    if (!related || !body.contains(related)) {
+      dropTargetIndex = null;
+      clearDropIndicatorClasses(body);
+    }
+  }
+
+  function onBodyDrop(event: DragEvent): void {
+    const body = event.currentTarget as HTMLElement;
+    if (dragSourceIndex === null) {
+      clearDragState(body);
+      return;
+    }
+    event.preventDefault();
+    const from = dragSourceIndex;
+    const to = dropTargetIndex;
+    const side = dropTargetSide;
+    clearDragState(body);
+    if (to === null || to === from) return;
+    if (staleIssue || !currentCapabilities().state_mutation) return;
+    const detail = issues.getIssueDetail();
+    if (!detail) return;
+    let target = to;
+    if (from < to && side === "before") target = to - 1;
+    else if (from > to && side === "after") target = to + 1;
+    if (target === from) return;
+    const newBody = moveTaskListItem(detail.issue.Body, from, target);
+    if (newBody === detail.issue.Body) return;
+    issues.setLocalIssueBody(owner, name, number, newBody);
+    scheduleBodySave();
+  }
+
+  function onBodyDragEnd(event: DragEvent): void {
+    clearDragState(event.currentTarget as HTMLElement);
+  }
+
+  function updateDropIndicatorClasses(
+    root: HTMLElement,
+    idx: number,
+    side: "before" | "after",
+  ): void {
+    clearDropIndicatorClasses(root);
+    const li = root.querySelector(
+      `.task-list-item--interactive[data-task-index="${idx}"]`,
+    );
+    if (!li) return;
+    li.classList.add(
+      side === "before" ? "task-drop-before" : "task-drop-after",
+    );
+  }
+
+  function clearDropIndicatorClasses(root: HTMLElement): void {
+    root.querySelectorAll(".task-drop-before").forEach((el) =>
+      el.classList.remove("task-drop-before"),
+    );
+    root.querySelectorAll(".task-drop-after").forEach((el) =>
+      el.classList.remove("task-drop-after"),
+    );
+  }
+
+  function clearDragState(root?: HTMLElement | null): void {
+    dragSourceIndex = null;
+    dropTargetIndex = null;
+    dropTargetSide = "before";
+    if (root) clearDropIndicatorClasses(root);
+  }
+
+  // Drop any pending checkbox save when navigating to a different
+  // issue so a stale toggle doesn't land on the new target.
+  $effect(() => {
+    void owner;
+    void name;
+    void number;
+    if (bodySaveTimeout !== null) {
+      clearTimeout(bodySaveTimeout);
+      bodySaveTimeout = null;
+    }
+    clearDragState();
+  });
 </script>
 
 {#if issues.isIssueDetailLoading() && (issues.getIssueDetail() === null || staleIssue)}
@@ -507,7 +692,18 @@
                 </svg>
               {/if}
             </button>
-            <div class="inset-box markdown-body">{@html renderMarkdown(issue.Body, { provider, platformHost, owner, name, repoPath })}</div>
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class="inset-box markdown-body"
+              class:dragging={dragSourceIndex !== null}
+              onclick={onBodyClick}
+              ondragstart={onBodyDragStart}
+              ondragover={onBodyDragOver}
+              ondragleave={onBodyDragLeave}
+              ondrop={onBodyDrop}
+              ondragend={onBodyDragEnd}
+            >{@html renderMarkdown(issue.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation })}</div>
           </div>
         </div>
       {/if}

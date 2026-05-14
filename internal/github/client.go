@@ -82,6 +82,7 @@ type Client interface {
 	MergePullRequest(ctx context.Context, owner, repo string, number int, commitTitle, commitMessage, method string) (*gh.PullRequestMergeResult, error)
 	EditPullRequest(ctx context.Context, owner, repo string, number int, opts EditPullRequestOpts) (*gh.PullRequest, error)
 	EditIssue(ctx context.Context, owner, repo string, number int, state string) (*gh.Issue, error)
+	EditIssueContent(ctx context.Context, owner, repo string, number int, title *string, body *string) (*gh.Issue, error)
 	ListPullRequestsPage(ctx context.Context, owner, repo, state string, page int) ([]*gh.PullRequest, bool, error)
 	ListIssuesPage(ctx context.Context, owner, repo, state string, page int) ([]*gh.Issue, bool, error)
 	// InvalidateListETagsForRepo drops cached conditional-GET
@@ -1198,6 +1199,27 @@ func (c *liveClient) EditIssue(
 	issue, resp, err := c.gh.Issues.Edit(
 		ctx, owner, repo, number, &gh.IssueRequest{State: &state},
 	)
+	c.trackRate(resp)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"editing issue %s/%s#%d: %w",
+			owner, repo, number, err,
+		)
+	}
+	return issue, nil
+}
+
+func (c *liveClient) EditIssueContent(
+	ctx context.Context, owner, repo string, number int, title *string, body *string,
+) (*gh.Issue, error) {
+	req := &gh.IssueRequest{}
+	if title != nil {
+		req.Title = title
+	}
+	if body != nil {
+		req.Body = body
+	}
+	issue, resp, err := c.gh.Issues.Edit(ctx, owner, repo, number, req)
 	c.trackRate(resp)
 	if err != nil {
 		return nil, fmt.Errorf(

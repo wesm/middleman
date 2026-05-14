@@ -329,6 +329,79 @@ a:hover {
   background: color-mix(in srgb, var(--bg-surface-hover) 42%, transparent);
 }
 
+/* GFM task lists. Non-interactive items keep the default flow; the
+   interactive variant gets a hover-revealed drag handle, an enabled
+   checkbox, and a drop indicator when another item is being dragged
+   over it. */
+.markdown-body ul:has(> .task-list-item),
+.markdown-body ol:has(> .task-list-item) {
+  list-style: none;
+  padding-left: 0;
+}
+.markdown-body .task-list-item {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 1px 4px 1px 22px;
+  margin: 0;
+  border-radius: var(--radius-sm);
+}
+.markdown-body .task-list-item input[type="checkbox"] {
+  margin: 0 4px 0 0;
+  flex-shrink: 0;
+  cursor: default;
+}
+.markdown-body .task-list-item--interactive input[type="checkbox"] {
+  cursor: pointer;
+}
+.markdown-body .task-drag-handle {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  color: var(--text-muted);
+  opacity: 0;
+  cursor: grab;
+  transition: opacity 0.12s, background 0.12s;
+  user-select: none;
+}
+.markdown-body .task-list-item--interactive:hover .task-drag-handle,
+.markdown-body .task-drag-handle:focus-visible {
+  opacity: 0.7;
+}
+.markdown-body .task-drag-handle:hover {
+  opacity: 1 !important;
+  background: var(--bg-surface-hover);
+  color: var(--text-secondary);
+}
+.markdown-body .task-drag-handle:active {
+  cursor: grabbing;
+}
+.markdown-body.dragging .task-list-item--interactive {
+  transition: padding-top 0.08s, padding-bottom 0.08s;
+}
+.markdown-body.dragging
+  .task-list-item--interactive.task-drop-before {
+  box-shadow: inset 0 2px 0 0 var(--accent-blue);
+}
+.markdown-body.dragging
+  .task-list-item--interactive.task-drop-after {
+  box-shadow: inset 0 -2px 0 0 var(--accent-blue);
+}
+@media (hover: none) {
+  /* Touch devices: always show the handle since there's no hover. */
+  .markdown-body .task-drag-handle {
+    opacity: 0.7;
+  }
+}
+
 /* Item reference links (#123, owner/repo#456) */
 a.item-ref {
   color: var(--text-link, var(--accent-blue));

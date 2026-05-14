@@ -104,3 +104,13 @@ type MergeRequestContentMutator interface {
 		body *string,
 	) (MergeRequest, error)
 }
+
+type IssueContentMutator interface {
+	EditIssueContent(
+		ctx context.Context,
+		ref RepoRef,
+		number int,
+		title *string,
+		body *string,
+	) (Issue, error)
+}

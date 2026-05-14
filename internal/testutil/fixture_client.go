@@ -258,15 +258,6 @@ func (c *FixtureClient) CreateIssue(
 	return issue, nil
 }
 
-func (c *FixtureClient) findIssue(owner, repo string, number int) *gh.Issue {
-	for _, issue := range c.OpenIssues[repoKey(owner, repo)] {
-		if issue.GetNumber() == number {
-			return issue
-		}
-	}
-	return nil
-}
-
 // ListIssueComments returns nil (read-only stub).
 func (c *FixtureClient) ListIssueComments(
 	_ context.Context, owner, repo string, number int,
@@ -450,51 +441,100 @@ func (c *FixtureClient) MergePullRequest(
 }
 
 // EditPullRequest updates seeded PR fields for E2E mutations.
+// Mutates the PR in BOTH the OpenPRs and PRs maps so a follow-up
+// GetPullRequest (used by sync) returns the new state instead of the
+// pristine seed.
 func (c *FixtureClient) EditPullRequest(
 	_ context.Context, owner, repo string, number int, opts ghclient.EditPullRequestOpts,
 ) (*gh.PullRequest, error) {
-	pr := c.findPullRequest(owner, repo, number)
-	if pr == nil {
-		return nil, nil
-	}
 	now := gh.Timestamp{Time: time.Now().UTC()}
-	if opts.State != nil {
-		pr.State = opts.State
-		if *opts.State == "closed" {
-			pr.ClosedAt = &now
-		} else {
-			pr.ClosedAt = nil
-			pr.MergedAt = nil
-			merged := false
-			pr.Merged = &merged
+	var updated *gh.PullRequest
+	for _, prs := range []map[string][]*gh.PullRequest{c.OpenPRs, c.PRs} {
+		for _, pr := range prs[repoKey(owner, repo)] {
+			if pr.GetNumber() != number {
+				continue
+			}
+			if opts.State != nil {
+				pr.State = opts.State
+				if *opts.State == "closed" {
+					pr.ClosedAt = &now
+				} else {
+					pr.ClosedAt = nil
+					pr.MergedAt = nil
+					merged := false
+					pr.Merged = &merged
+				}
+			}
+			if opts.Title != nil {
+				pr.Title = opts.Title
+			}
+			if opts.Body != nil {
+				pr.Body = opts.Body
+			}
+			pr.UpdatedAt = &now
+			if updated == nil {
+				updated = pr
+			}
 		}
 	}
-	if opts.Title != nil {
-		pr.Title = opts.Title
-	}
-	if opts.Body != nil {
-		pr.Body = opts.Body
-	}
-	pr.UpdatedAt = &now
-	return pr, nil
+	return updated, nil
 }
 
 // EditIssue updates the seeded issue state for E2E mutations.
+// Mutates the issue in BOTH the OpenIssues and Issues maps so a
+// follow-up GetIssue (used by sync) sees the new state instead of
+// the pristine seed.
 func (c *FixtureClient) EditIssue(
 	_ context.Context, owner, repo string, number int, state string,
 ) (*gh.Issue, error) {
-	issue := c.findIssue(owner, repo, number)
-	if issue == nil {
-		return nil, nil
-	}
 	now := gh.Timestamp{Time: time.Now().UTC()}
-	issue.State = &state
-	if state == "closed" {
-		issue.ClosedAt = &now
-	} else {
-		issue.ClosedAt = nil
+	var updated *gh.Issue
+	for _, issues := range []map[string][]*gh.Issue{c.OpenIssues, c.Issues} {
+		for _, issue := range issues[repoKey(owner, repo)] {
+			if issue.GetNumber() != number {
+				continue
+			}
+			issue.State = &state
+			if state == "closed" {
+				issue.ClosedAt = &now
+			} else {
+				issue.ClosedAt = nil
+			}
+			if updated == nil {
+				updated = issue
+			}
+		}
 	}
-	return issue, nil
+	return updated, nil
+}
+
+// EditIssueContent updates the seeded issue's title and/or body so e2e
+// tests exercising body edits (checkbox toggling, etc.) see persisted
+// state on the next read. Mutates BOTH OpenIssues and Issues so the
+// sync path observes the edit.
+func (c *FixtureClient) EditIssueContent(
+	_ context.Context, owner, repo string, number int, title *string, body *string,
+) (*gh.Issue, error) {
+	now := gh.Timestamp{Time: time.Now().UTC()}
+	var updated *gh.Issue
+	for _, issues := range []map[string][]*gh.Issue{c.OpenIssues, c.Issues} {
+		for _, issue := range issues[repoKey(owner, repo)] {
+			if issue.GetNumber() != number {
+				continue
+			}
+			if title != nil {
+				issue.Title = title
+			}
+			if body != nil {
+				issue.Body = body
+			}
+			issue.UpdatedAt = &now
+			if updated == nil {
+				updated = issue
+			}
+		}
+	}
+	return updated, nil
 }
 
 // ListPullRequestsPage returns nil (read-only stub).

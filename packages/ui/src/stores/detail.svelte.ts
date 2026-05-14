@@ -642,6 +642,71 @@ export function createDetailStore(
     refreshPullsIfActive().catch(() => {});
   }
 
+  // Replaces the in-memory PR body without touching the server. Pair
+  // with savePRBodyInBackground for instant-feedback edits (e.g. task-
+  // list checkbox clicks): apply the change locally first, then push
+  // it asynchronously so the click never blocks on the network.
+  function setLocalPRBody(
+    owner: string,
+    name: string,
+    number: number,
+    body: string,
+  ): void {
+    if (!detail || !isDetailShowing(owner, name, number)) return;
+    detail = {
+      ...detail,
+      merge_request: { ...detail.merge_request, Body: body },
+    };
+  }
+
+  // Fire-and-forget PATCH for the PR body. Does NOT apply an optimistic
+  // update or revert on failure — the caller already owns local state.
+  // On error, storeError is set so the surface can surface a banner.
+  async function savePRBodyInBackground(
+    owner: string,
+    name: string,
+    number: number,
+    body: string,
+  ): Promise<void> {
+    if (!isDetailShowing(owner, name, number)) return;
+    const ref = currentDetailRef(owner, name, number);
+    try {
+      const { data, error: requestError } =
+        await apiClient.PATCH(
+          providerItemPath("pulls", ref, ""),
+          {
+            params: {
+              path: { ...providerRouteParams(ref), number },
+            },
+            body: { body },
+          },
+        );
+      if (requestError) {
+        throw new Error(
+          apiErrorMessage(
+            requestError,
+            "failed to update PR",
+          ),
+        );
+      }
+      // Apply server-canonical response only when the user is still
+      // looking at the same PR AND hasn't toggled again since this
+      // request was sent (server body matches what we sent).
+      if (
+        data &&
+        isDetailShowing(owner, name, number) &&
+        detail &&
+        detail.merge_request.Body === body
+      ) {
+        detail = data as PullDetail;
+      }
+    } catch (err) {
+      storeError =
+        err instanceof Error ? err.message : String(err);
+    }
+    refreshPullsIfActive().catch(() => {});
+  }
+
   function startDetailPolling(
     owner: string,
     name: string,
@@ -836,6 +901,8 @@ export function createDetailStore(
     refreshDetailOnly,
     updateKanbanState,
     updatePRContent,
+    setLocalPRBody,
+    savePRBodyInBackground,
     startDetailPolling,
     stopDetailPolling,
     toggleDetailPRStar,

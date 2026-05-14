@@ -873,6 +873,25 @@ func (p gitHubClientProvider) EditMergeRequestContent(
 	return platformgithub.NormalizePullRequest(ref, pr)
 }
 
+func (p gitHubClientProvider) EditIssueContent(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	title *string,
+	body *string,
+) (platform.Issue, error) {
+	ghIssue, err := p.client.EditIssueContent(
+		ctx, ref.Owner, ref.Name, number, title, body,
+	)
+	if err != nil {
+		return platform.Issue{}, err
+	}
+	if ghIssue == nil {
+		return platform.Issue{}, fmt.Errorf("provider returned no issue")
+	}
+	return platformgithub.NormalizeIssue(ref, ghIssue)
+}
+
 // SetWatchInterval sets the fast-sync interval for watched MRs.
 // Must be called before Start.
 func (s *Syncer) SetWatchInterval(d time.Duration) {
@@ -1195,6 +1214,13 @@ func (s *Syncer) MergeRequestContentMutator(
 	host string,
 ) (platform.MergeRequestContentMutator, error) {
 	return s.clients.MergeRequestContentMutator(kind, canonicalRepoHost(host))
+}
+
+func (s *Syncer) IssueContentMutator(
+	kind platform.Kind,
+	host string,
+) (platform.IssueContentMutator, error) {
+	return s.clients.IssueContentMutator(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) ResolveConfiguredRepo(

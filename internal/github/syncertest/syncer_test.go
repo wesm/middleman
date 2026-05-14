@@ -132,6 +132,9 @@ func (m *mockClient) EditPullRequest(context.Context, string, string, int, ghcli
 func (m *mockClient) EditIssue(context.Context, string, string, int, string) (*gh.Issue, error) {
 	return nil, nil
 }
+func (m *mockClient) EditIssueContent(context.Context, string, string, int, *string, *string) (*gh.Issue, error) {
+	return nil, nil
+}
 func (m *mockClient) ListPullRequestsPage(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error) {
 	return nil, false, nil
 }

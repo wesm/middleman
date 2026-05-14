@@ -85,6 +85,13 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	// widgets#1: open, alice, has reviews+comments+4 commits
 	w1Created := now.Add(-10 * 24 * time.Hour)
+	w1Body := "## Summary\n\n" +
+		"Introduce an LRU cache in front of the widget store.\n\n" +
+		"## Test plan\n\n" +
+		"- [ ] Cmd+K opens palette, focus lands in the search input\n" +
+		"- [ ] Tab/Shift+Tab cycles within the palette dialog only\n" +
+		"- [ ] `>settings` + Enter navigates to /settings\n" +
+		"- [x] Cache invalidates on widget update\n"
 	w1ID, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:            widgetsID,
 		PlatformID:        1001,
@@ -94,6 +101,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		Author:            "alice",
 		AuthorDisplayName: "Alice",
 		State:             "open",
+		Body:              w1Body,
 		HeadBranch:        "feature/caching",
 		BaseBranch:        "main",
 		Additions:         240,
@@ -717,7 +725,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	openPRs := map[string][]*gh.PullRequest{
 		"acme/widgets": {
-			setPRHeadSHA(setPRStats(buildGHPR("acme", "widgets", 1001, 1, "Add widget caching layer", "alice", "open", false, "", w1Created, now.Add(-2*time.Hour)), 240, 30), widgetsPR1HeadSHA),
+			setPRBody(setPRHeadSHA(setPRStats(buildGHPR("acme", "widgets", 1001, 1, "Add widget caching layer", "alice", "open", false, "", w1Created, now.Add(-2*time.Hour)), 240, 30), widgetsPR1HeadSHA), w1Body),
 			setPRStats(buildGHPR("acme", "widgets", 1002, 2, "Fix race condition in event loop", "bob", "open", false, "dirty", w2Created, now.Add(-20*time.Hour)), 55, 12),
 			setPRStats(buildGHPR("acme", "widgets", 1006, 6, "WIP: new dashboard layout", "carol", "open", true, "", w6Created, now.Add(-12*time.Hour)), 150, 40),
 			setPRStats(buildGHPR("acme", "widgets", 1007, 7, "Bump lodash from 4.17.20 to 4.17.21", "dependabot[bot]", "open", false, "", w7Created, now.Add(-6*time.Hour)), 1, 1),
@@ -732,7 +740,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	allPRs := map[string][]*gh.PullRequest{
 		"acme/widgets": {
-			setPRHeadSHA(setPRStats(buildGHPR("acme", "widgets", 1001, 1, "Add widget caching layer", "alice", "open", false, "", w1Created, now.Add(-2*time.Hour)), 240, 30), widgetsPR1HeadSHA),
+			setPRBody(setPRHeadSHA(setPRStats(buildGHPR("acme", "widgets", 1001, 1, "Add widget caching layer", "alice", "open", false, "", w1Created, now.Add(-2*time.Hour)), 240, 30), widgetsPR1HeadSHA), w1Body),
 			setPRStats(buildGHPR("acme", "widgets", 1002, 2, "Fix race condition in event loop", "bob", "open", false, "dirty", w2Created, now.Add(-20*time.Hour)), 55, 12),
 			setPRStats(buildGHPR("acme", "widgets", 1003, 3, "Upgrade dependency versions", "carol", "merged", false, "", now.Add(-10*24*time.Hour), w3Merged), 80, 80),
 			setPRStats(buildGHPR("acme", "widgets", 1004, 4, "Refactor storage backend", "alice", "merged", false, "", now.Add(-30*24*time.Hour), w4Merged), 420, 310),
@@ -879,6 +887,14 @@ func buildGHPR(
 	if mergeableState != "" {
 		pr.MergeableState = new(mergeableState)
 	}
+	return pr
+}
+
+// setPRBody sets a Body on a *gh.PullRequest so the fixture client
+// returns prose for sync paths exercising body persistence (e.g.
+// task-list checkboxes).
+func setPRBody(pr *gh.PullRequest, body string) *gh.PullRequest {
+	pr.Body = &body
 	return pr
 }
 

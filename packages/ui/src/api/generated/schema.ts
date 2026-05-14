@@ -67,7 +67,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        patch: operations["edit-issue-content-on-host"];
         trace?: never;
     };
     "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/comments": {
@@ -565,7 +565,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        patch: operations["edit-issue-content"];
         trace?: never;
     };
     "/issues/{provider}/{owner}/{name}/{number}/comments": {
@@ -1707,6 +1707,26 @@ export interface components {
              */
             readonly $schema?: string;
             body: string;
+        };
+        EditIssueContentHostInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/EditIssueContentHostInputBody.json
+             */
+            readonly $schema?: string;
+            body?: string;
+            title?: string;
+        };
+        EditIssueContentInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/EditIssueContentInputBody.json
+             */
+            readonly $schema?: string;
+            body?: string;
+            title?: string;
         };
         EditPRContentHostInputBody: {
             /**
@@ -2885,6 +2905,45 @@ export interface operations {
             };
         };
     };
+    "edit-issue-content-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditIssueContentHostInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueDetailResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "post-issue-comment-on-host": {
         parameters: {
             query?: never;
@@ -4041,6 +4100,44 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueDetailResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "edit-issue-content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditIssueContentInputBody"];
+            };
+        };
         responses: {
             /** @description OK */
             200: {

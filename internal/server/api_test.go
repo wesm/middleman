@@ -83,6 +83,7 @@ type mockGH struct {
 	markReadyForReviewFn      func(context.Context, string, string, int) (*gh.PullRequest, error)
 	editPullRequestFn         func(context.Context, string, string, int, ghclient.EditPullRequestOpts) (*gh.PullRequest, error)
 	editIssueFn               func(context.Context, string, string, int, string) (*gh.Issue, error)
+	editIssueContentFn        func(context.Context, string, string, int, *string, *string) (*gh.Issue, error)
 	createIssueCommentFn      func(context.Context, string, string, int, string) (*gh.IssueComment, error)
 	editIssueCommentFn        func(context.Context, string, string, int64, string) (*gh.IssueComment, error)
 	createReviewFn            func(context.Context, string, string, int, string, string) (*gh.PullRequestReview, error)
@@ -384,6 +385,22 @@ func (m *mockGH) EditIssue(
 		return m.editIssueFn(ctx, owner, repo, number, state)
 	}
 	return &gh.Issue{State: &state}, nil
+}
+
+func (m *mockGH) EditIssueContent(
+	ctx context.Context, owner, repo string, number int, title *string, body *string,
+) (*gh.Issue, error) {
+	if m.editIssueContentFn != nil {
+		return m.editIssueContentFn(ctx, owner, repo, number, title, body)
+	}
+	out := &gh.Issue{}
+	if title != nil {
+		out.Title = title
+	}
+	if body != nil {
+		out.Body = body
+	}
+	return out, nil
 }
 
 func (m *mockGH) ListPullRequestsPage(
@@ -15879,4 +15896,78 @@ func TestAPIEditPRPreservesDerivedFields(t *testing.T) {
 	require.Equal("success", after.CIStatus)
 	require.Equal("APPROVED", after.ReviewDecision)
 	require.Equal("open", after.State)
+}
+
+// --- edit-issue-content (PATCH) tests ---
+
+func TestAPIEditIssueBodyOnly(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	seedIssue(t, database, "acme", "widget", 5, "open")
+
+	rr := doJSON(t, srv, http.MethodPatch,
+		"/api/v1/issues/gh/acme/widget/5",
+		map[string]string{"body": "- [x] task done"})
+	require.Equal(http.StatusOK, rr.Code)
+
+	issue, err := database.GetIssue(t.Context(), "acme", "widget", 5)
+	require.NoError(err)
+	require.NotNil(issue)
+	require.Equal("Test Issue", issue.Title)
+	require.Equal("- [x] task done", issue.Body)
+}
+
+func TestAPIEditIssueTitleAndBody(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	seedIssue(t, database, "acme", "widget", 5, "open")
+
+	rr := doJSON(t, srv, http.MethodPatch,
+		"/api/v1/issues/gh/acme/widget/5",
+		map[string]string{"title": "new title", "body": "new body"})
+	require.Equal(http.StatusOK, rr.Code)
+
+	issue, err := database.GetIssue(t.Context(), "acme", "widget", 5)
+	require.NoError(err)
+	require.NotNil(issue)
+	require.Equal("new title", issue.Title)
+	require.Equal("new body", issue.Body)
+}
+
+func TestAPIEditIssueNoFields400(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	seedIssue(t, database, "acme", "widget", 5, "open")
+
+	rr := doJSON(t, srv, http.MethodPatch,
+		"/api/v1/issues/gh/acme/widget/5",
+		map[string]any{})
+	require.Equal(http.StatusBadRequest, rr.Code)
+}
+
+func TestAPIEditIssueBlankTitle400(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	seedIssue(t, database, "acme", "widget", 5, "open")
+
+	rr := doJSON(t, srv, http.MethodPatch,
+		"/api/v1/issues/gh/acme/widget/5",
+		map[string]string{"title": "   "})
+	require.Equal(http.StatusBadRequest, rr.Code)
+}
+
+func TestAPIEditIssueMissing404(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	// Register the repo without the issue.
+	_, err := database.UpsertRepo(
+		t.Context(),
+		db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+
+	rr := doJSON(t, srv, http.MethodPatch,
+		"/api/v1/issues/gh/acme/widget/999",
+		map[string]string{"body": "anything"})
+	require.Equal(http.StatusNotFound, rr.Code)
 }

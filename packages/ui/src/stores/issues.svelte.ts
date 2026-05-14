@@ -618,6 +618,86 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     return true;
   }
 
+  // Replaces the in-memory issue body without touching the server. Pair
+  // with saveIssueBodyInBackground for instant-feedback edits like
+  // task-list checkbox clicks.
+  function setLocalIssueBody(
+    owner: string,
+    name: string,
+    number: number,
+    body: string,
+  ): void {
+    if (!issueDetail) return;
+    if (
+      issueDetail.repo_owner !== owner ||
+      issueDetail.repo_name !== name ||
+      issueDetail.issue.Number !== number
+    ) {
+      return;
+    }
+    issueDetail = {
+      ...issueDetail,
+      issue: { ...issueDetail.issue, Body: body },
+    };
+  }
+
+  // Fire-and-forget PATCH for the issue body. Does NOT apply an
+  // optimistic update or revert on failure — the caller already owns
+  // local state. On error, detailError surfaces a banner.
+  async function saveIssueBodyInBackground(
+    owner: string,
+    name: string,
+    number: number,
+    body: string,
+  ): Promise<void> {
+    if (!issueDetail) return;
+    if (
+      issueDetail.repo_owner !== owner ||
+      issueDetail.repo_name !== name ||
+      issueDetail.issue.Number !== number
+    ) {
+      return;
+    }
+    const ref = currentIssueDetailRef(owner, name, number);
+    try {
+      const { data, error: requestError } =
+        await apiClient.PATCH(
+          providerItemPath("issues", ref, ""),
+          {
+            params: {
+              path: {
+                ...providerRouteParams(ref),
+                number,
+              },
+            },
+            body: { body },
+          },
+        );
+      if (requestError) {
+        throw new Error(
+          apiErrorMessage(requestError, "failed to update issue"),
+        );
+      }
+      // Only adopt the server-canonical issue when the user is still
+      // viewing the same issue AND no newer toggle has shifted the
+      // local body away from what we just persisted.
+      if (
+        data &&
+        issueDetail &&
+        issueDetail.repo_owner === owner &&
+        issueDetail.repo_name === name &&
+        issueDetail.issue.Number === number &&
+        issueDetail.issue.Body === body
+      ) {
+        issueDetail = data as IssueDetail;
+      }
+    } catch (err) {
+      detailError =
+        err instanceof Error ? err.message : String(err);
+    }
+    refreshIssuesIfActive().catch(() => {});
+  }
+
   async function toggleIssueStar(
     owner: string,
     name: string,
@@ -798,6 +878,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     clearIssueDetail,
     submitIssueComment,
     editIssueComment,
+    setLocalIssueBody,
+    saveIssueBodyInBackground,
     toggleIssueStar,
     selectNextIssue,
     selectPrevIssue,

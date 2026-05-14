@@ -1989,6 +1989,28 @@ func (d *DB) UpdateMRTitleBody(
 	return nil
 }
 
+// UpdateIssueTitleBody updates only the title, body, updated_at, and
+// last_activity_at fields on an issue. last_activity_at advances to
+// MAX(existing, updatedAt) so list ordering reflects the edit.
+func (d *DB) UpdateIssueTitleBody(
+	ctx context.Context,
+	id int64,
+	title, body string,
+	updatedAt time.Time,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_issues
+		SET title = ?, body = ?, updated_at = ?,
+		    last_activity_at = MAX(last_activity_at, ?)
+		WHERE id = ? AND updated_at <= ?`,
+		title, body, updatedAt, updatedAt, id, updatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("update issue title/body: %w", err)
+	}
+	return nil
+}
+
 // UpdateMRDerivedFields writes computed fields back to the merge_requests row.
 func (d *DB) UpdateMRDerivedFields(
 	ctx context.Context,

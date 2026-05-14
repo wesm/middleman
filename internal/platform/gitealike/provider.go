@@ -448,6 +448,24 @@ func (p *Provider) EditMergeRequestContent(
 	return NormalizePullRequest(ref, pr), nil
 }
 
+func (p *Provider) EditIssueContent(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	title *string,
+	body *string,
+) (platform.Issue, error) {
+	transport, err := p.mutationTransport("state_mutation")
+	if err != nil {
+		return platform.Issue{}, err
+	}
+	issue, err := transport.EditIssue(ctx, ref, number, IssueMutationOptions{Title: title, Body: body})
+	if err != nil {
+		return platform.Issue{}, p.mapError(err)
+	}
+	return NormalizeIssue(ref, issue), nil
+}
+
 func (p *Provider) listRepositories(
 	ctx context.Context,
 	owner string,
