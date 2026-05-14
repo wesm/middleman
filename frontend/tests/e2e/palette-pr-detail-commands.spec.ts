@@ -47,8 +47,12 @@ test.describe("PR-detail palette commands", () => {
     await page.keyboard.press("Meta+K");
     await page.locator(".palette-input").fill("approve pr");
 
+    // Palette rows render as <button class="palette-row">; query by name
+    // against the actual role so a regression that surfaces the command
+    // anyway would fail this assertion (the previous role="option" query
+    // matched nothing regardless of palette state).
     await expect(
-      page.getByRole("option", { name: /Approve PR/i }),
+      page.getByRole("button", { name: /Approve PR/i }),
     ).toHaveCount(0);
   });
 
@@ -58,9 +62,10 @@ test.describe("PR-detail palette commands", () => {
     await page.goto("/pulls/acme/widgets/42");
     await page.keyboard.press("Meta+K");
     await page.locator(".palette-input").fill("ready for review");
-    // Non-draft PR; the action should be filtered out by `when`.
+    // Non-draft PR; the action should be filtered out by `when`. Same
+    // role-correctness note as the closed-PR test above.
     await expect(
-      page.getByRole("option", { name: /Mark ready for review/i }),
+      page.getByRole("button", { name: /Mark ready for review/i }),
     ).toHaveCount(0);
   });
 });
