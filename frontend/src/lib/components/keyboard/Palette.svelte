@@ -156,6 +156,20 @@
     flatResults[highlightIndex] ?? null,
   );
 
+  // Scroll the highlighted row into view when arrow keys move past the
+  // visible window. Without this, the highlight class moves but the
+  // .palette-list scroll position doesn't follow, leaving the user staring
+  // at a list where the "selected" row is offscreen. jsdom (used by the
+  // unit tests) doesn't implement scrollIntoView, so guard the call.
+  $effect(() => {
+    void highlightIndex;
+    if (!dialogEl) return;
+    const row = dialogEl.querySelector<HTMLElement>(".palette-row-highlight");
+    if (row && typeof row.scrollIntoView === "function") {
+      row.scrollIntoView({ block: "nearest" });
+    }
+  });
+
   function pullKey(repoOwner: string, repoName: string, num: number): string {
     return `${repoOwner}/${repoName}#${num}`;
   }
@@ -569,12 +583,13 @@
 
   .palette {
     position: fixed;
-    top: 80px;
+    top: 50%;
     left: 50%;
-    transform: translateX(-50%);
+    transform: translate(-50%, -50%);
     width: 920px;
     max-width: calc(100vw - 32px);
     height: 480px;
+    max-height: calc(100vh - 32px);
     display: grid;
     grid-template-rows: auto 1fr auto;
     background: var(--bg-surface);
