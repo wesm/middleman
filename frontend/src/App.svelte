@@ -199,8 +199,23 @@
 
   function mobilePathForRoute(): string {
     const route = getRoute();
-    if (route.page === "pulls") return "/m/pulls";
-    if (route.page === "issues") return "/m/issues";
+    if (route.page === "pulls") {
+      if (route.selected) {
+        return route.tab === "files"
+          ? buildFocusPullRequestFilesRoute(route.selected)
+          : buildFocusPullRequestRoute(route.selected);
+      }
+      return "/m/pulls";
+    }
+    if (route.page === "issues") {
+      if (route.selected) {
+        return buildRoutedItemRoute(
+          { ...route.selected, itemType: "issue" },
+          { focus: true },
+        );
+      }
+      return "/m/issues";
+    }
     return "/m";
   }
 

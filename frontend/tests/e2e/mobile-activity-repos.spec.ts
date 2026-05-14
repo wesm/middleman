@@ -88,4 +88,70 @@ test.describe("mobile activity repository selector", () => {
     await expect.poll(() => activityRepos)
       .toContain("ghe.example.com/acme/widgets");
   });
+
+  test("groups and labels activity from nested repo identity", async ({ page }) => {
+    await mockMobileRepoSettings(page);
+    await page.route("**/api/v1/activity**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          capped: false,
+          items: [
+            {
+              id: "a1",
+              cursor: "a1",
+              activity_type: "comment",
+              author: "marius",
+              body_preview: "Looks good",
+              created_at: "2026-03-30T14:00:00Z",
+              item_number: 42,
+              item_state: "open",
+              item_title: "Add browser regression coverage",
+              item_type: "pr",
+              item_url: "https://github.com/acme/widgets/pull/42",
+              repo: {
+                provider: "github",
+                platform_host: "github.com",
+                owner: "acme",
+                name: "widgets",
+                repo_path: "acme/widgets",
+                capabilities: {},
+              },
+            },
+            {
+              id: "b1",
+              cursor: "b1",
+              activity_type: "review",
+              author: "luisa",
+              body_preview: "Requested tweaks",
+              created_at: "2026-03-30T13:00:00Z",
+              item_number: 42,
+              item_state: "open",
+              item_title: "Add browser regression coverage",
+              item_type: "pr",
+              item_url: "https://github.com/beta/gadgets/pull/42",
+              repo: {
+                provider: "github",
+                platform_host: "github.com",
+                owner: "beta",
+                name: "gadgets",
+                repo_path: "beta/gadgets",
+                capabilities: {},
+              },
+            },
+          ],
+        }),
+      });
+    });
+
+    await page.goto("/m?range=30d&view=threaded");
+
+    await expect(page.locator(".mobile-activity-card")).toHaveCount(2);
+    await expect(page.locator(".mobile-activity-card__meta", { hasText: "acme/widgets" }))
+      .toBeVisible();
+    await expect(page.locator(".mobile-activity-card__meta", { hasText: "beta/gadgets" }))
+      .toBeVisible();
+    await expect(page.getByText("undefined/undefined")).toHaveCount(0);
+  });
 });

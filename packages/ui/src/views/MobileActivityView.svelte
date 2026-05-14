@@ -89,7 +89,7 @@
     const map = new Map<string, ActivityItem[]>();
 
     for (const item of displayItems) {
-      const key = `${item.platform_host}|${item.repo_owner}/${item.repo_name}:${item.item_type}:${item.item_number}`;
+      const key = `${item.repo.platform_host}|${item.repo.repo_path}:${item.item_type}:${item.item_number}`;
       const bucket = map.get(key);
       if (bucket) bucket.push(item);
       else map.set(key, [item]);
@@ -234,7 +234,7 @@
   }
 
   function repoLabel(item: ActivityItem): string {
-    return `${item.repo_owner}/${item.repo_name}`;
+    return `${item.repo.owner}/${item.repo.name}`;
   }
 </script>
 

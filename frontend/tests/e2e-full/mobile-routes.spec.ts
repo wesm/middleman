@@ -296,6 +296,23 @@ test.describe("phone routes", () => {
     await expect(page.locator(".mobile-shell")).toHaveCount(0);
   });
 
+  test("phone desktop PR files deep link redirects to the focused files route", async ({ page }) => {
+    await page.goto("/pulls/github/acme/widgets/1/files");
+
+    await expect(page).toHaveURL(/\/focus\/pulls\/github\/acme\/widgets\/1\/files$/);
+    await expect(page.locator(".focus-layout .files-layout")).toBeVisible();
+    await expect(page.locator(".focus-layout .diff-view")).toBeVisible();
+    await expect(page.locator(".mobile-shell")).toHaveCount(0);
+  });
+
+  test("phone desktop issue deep link redirects to the focused issue route", async ({ page }) => {
+    await page.goto("/issues/github/acme/widgets/10");
+
+    await expect(page).toHaveURL(/\/focus\/issues\/github\/acme\/widgets\/10$/);
+    await expect(page.locator(".focus-layout .issue-detail .detail-title")).toBeVisible();
+    await expect(page.locator(".mobile-shell")).toHaveCount(0);
+  });
+
   test("phone users can opt out of automatic mobile redirect", async ({ page }) => {
     await page.goto("/?desktop=1");
 
