@@ -49,7 +49,6 @@ function assertNoConflicts(map: Map<string, Action[]>): void {
           if (import.meta.env?.DEV || import.meta.env?.MODE === "test") {
             throw new Error(msg);
           }
-          // eslint-disable-next-line no-console
           console.warn(msg);
         } else {
           seen.set(key, { id: action.id, owner });

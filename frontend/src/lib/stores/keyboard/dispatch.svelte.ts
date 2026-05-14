@@ -86,7 +86,6 @@ function runHandler(action: RunnableAction, ctx: Context): void {
 function surfaceError(actionId: string, err: unknown): void {
   const msg = err instanceof Error && err.message ? err.message : "Command failed";
   if (!(err instanceof Error) || !err.message) {
-    // eslint-disable-next-line no-console
     console.error(`keyboard action ${actionId} failed`, err);
   }
   showFlash(msg);

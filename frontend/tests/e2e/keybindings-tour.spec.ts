@@ -204,7 +204,7 @@ test.afterAll(async () => {
   );
   function walk(dir: string): string[] {
     const out: string[] = [];
-    let entries: import("node:fs").Dirent[] = [];
+    let entries: import("node:fs").Dirent[];
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
     } catch {
@@ -224,7 +224,6 @@ test.afterAll(async () => {
     );
   }
   const sizes = webms.map((p) => ({ p, size: fs.statSync(p).size }));
-  // eslint-disable-next-line no-console
   console.log(
     `keybindings-tour video files:\n${sizes
       .map((s) => `  ${s.p} (${s.size} bytes)`)
