@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
 
 import { defaultActions } from "./actions.js";
+import type { Context } from "./types.js";
+
+function ctx(page: Context["page"]): Context {
+  return {
+    page,
+    route: { page } as never,
+    selectedPR: null,
+    selectedIssue: null,
+    isDiffView: false,
+    detailTab: "conversation",
+  };
+}
 
 describe("defaultActions", () => {
   it("includes the migrated globals", () => {
@@ -45,5 +57,18 @@ describe("defaultActions", () => {
     const cheatsheet = defaultActions.find((a) => a.id === "cheatsheet.open");
     expect(cheatsheet).toBeDefined();
     expect(cheatsheet!.binding).toEqual({ key: "?", shift: true });
+  });
+
+  it("cheatsheet.open does not fire on the reviews page (roborev owns ?)", () => {
+    // Roborev's ReviewsView has its own window-level `?` handler that
+    // opens a help modal. If middleman's cheatsheet also fires on `?`,
+    // both modals open and the cheatsheet's filter input steals focus,
+    // causing roborev's Escape handler to short-circuit on its
+    // tag === "INPUT" guard. Gate the action by page to avoid that.
+    const cheatsheet = defaultActions.find((a) => a.id === "cheatsheet.open");
+    expect(cheatsheet).toBeDefined();
+    expect(cheatsheet!.when(ctx("reviews"))).toBe(false);
+    expect(cheatsheet!.when(ctx("pulls"))).toBe(true);
+    expect(cheatsheet!.when(ctx("issues"))).toBe(true);
   });
 });

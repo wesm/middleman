@@ -207,7 +207,12 @@ export const defaultActions: Action[] = [
     // hides this in tests).
     binding: { key: "?", shift: true },
     priority: 0,
-    when: always,
+    // The reviews page renders roborev's UI, which owns its own `?`-bound
+    // help modal. Letting the middleman cheatsheet also fire on `?` opens
+    // both modals at once and the cheatsheet's filter input then steals
+    // focus, causing roborev's window-level handler to ignore the
+    // subsequent Escape (its tag === "INPUT" guard returns early).
+    when: (ctx) => ctx.page !== "reviews",
     handler: () => toggleCheatsheet(),
   },
   {
