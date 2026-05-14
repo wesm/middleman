@@ -105,6 +105,25 @@ describe("dispatchKeydown — modal stack", () => {
     dispatchKeydown(e, () => ctx);
     expect(e.preventDefault).not.toHaveBeenCalled();
   });
+
+  it("skips a modal frame action whose binding matches but when() returns false", () => {
+    // Regression coverage: previously a modal action with a matching key
+    // would fire its handler regardless of when(), so a disabled action
+    // (e.g. confirm-on-conflict gated by branchConflict) could still run.
+    const handler = vi.fn();
+    pushModalFrame("modal", [
+      {
+        id: "modal.disabled",
+        label: "Disabled",
+        binding: { key: "j" },
+        priority: 100,
+        when: () => false,
+        handler,
+      },
+    ]);
+    dispatchKeydown(event({ key: "j" }), () => ctx);
+    expect(handler).not.toHaveBeenCalled();
+  });
 });
 
 describe("dispatchKeydown — error handling", () => {
