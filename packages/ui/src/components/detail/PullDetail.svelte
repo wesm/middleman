@@ -107,6 +107,7 @@
     hideWorkspaceAction?: boolean;
     hideStaleWhileLoading?: boolean;
     autoSync?: DetailSyncMode;
+    workflowApprovalSync?: boolean;
   }
 
   const {
@@ -121,6 +122,7 @@
     hideWorkspaceAction = false,
     hideStaleWhileLoading = false,
     autoSync = "background",
+    workflowApprovalSync = true,
   }: Props = $props();
 
   const routeRef = $derived({
@@ -226,6 +228,7 @@
     const requestPlatformHost = platformHost;
     const requestRepoPath = repoPath;
     const requestAutoSync = autoSync;
+    const requestWorkflowApprovalSync = workflowApprovalSync;
     untrack(() => {
       void detailStore.loadDetail(
         requestOwner,
@@ -233,6 +236,7 @@
         requestNumber,
         {
           sync: requestAutoSync,
+          workflowApprovalSync: requestWorkflowApprovalSync,
           provider: requestProvider,
           platformHost: requestPlatformHost,
           repoPath: requestRepoPath,

@@ -226,6 +226,7 @@
           showStackSidebar={false}
           autoSyncDetail="background"
           hideStaleDetailWhileLoading={true}
+          workflowApprovalSync={false}
           onDetailTabChange={handleDetailTabChange}
         />
       {:else}

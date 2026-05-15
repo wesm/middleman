@@ -13,6 +13,7 @@ export type DetailSyncMode = boolean | "background";
 
 export interface DetailRequestOptions {
   sync?: DetailSyncMode;
+  workflowApprovalSync?: boolean;
   provider: string;
   platformHost?: string | undefined;
   repoPath: string;
@@ -76,8 +77,11 @@ function strongerSyncMode(
   return syncIntentRank(b) > syncIntentRank(a) ? b : a;
 }
 
-function needsWorkflowApprovalSync(detail: PullDetail | null): boolean {
-  if (!detail) return false;
+function needsWorkflowApprovalSync(
+  detail: PullDetail | null,
+  enabled: boolean,
+): boolean {
+  if (!enabled || !detail) return false;
   const pr = detail.merge_request;
   return Boolean(
     detail.repo?.capabilities?.workflow_approval &&
@@ -120,6 +124,7 @@ export function createDetailStore(
     key: string;
     promise: Promise<void> | null;
     syncMode: DetailSyncMode;
+    workflowApprovalSync: boolean;
   } | null = null;
 
   // Per-PR monotonic counters for kanban updates.
@@ -387,6 +392,7 @@ export function createDetailStore(
         activeLoad.syncMode,
         syncMode,
       );
+      activeLoad.workflowApprovalSync ||= options.workflowApprovalSync ?? true;
       return activeLoad.promise;
     }
 
@@ -395,7 +401,13 @@ export function createDetailStore(
       key: string;
       promise: Promise<void> | null;
       syncMode: DetailSyncMode;
-    } = { key, promise: null, syncMode };
+      workflowApprovalSync: boolean;
+    } = {
+      key,
+      promise: null,
+      syncMode,
+      workflowApprovalSync: options.workflowApprovalSync ?? true,
+    };
     activeLoad = currentLoad;
 
     // Keep the previously loaded detail visible while the new one
@@ -453,7 +465,7 @@ export function createDetailStore(
       if (gen === syncGeneration && finalSyncMode === true) {
         void syncDetail(owner, name, number, gen, requestRef);
       } else if (gen === syncGeneration && finalSyncMode === "background") {
-        if (needsWorkflowApprovalSync(detail)) {
+        if (needsWorkflowApprovalSync(detail, currentLoad.workflowApprovalSync)) {
           void syncDetail(owner, name, number, gen, requestRef);
           return;
         }
