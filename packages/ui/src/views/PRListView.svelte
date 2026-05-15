@@ -27,6 +27,7 @@
     sidebarWidth?: number;
     showStackSidebar?: boolean;
     autoSyncDetail?: DetailSyncMode;
+    hideStaleDetailWhileLoading?: boolean;
     onSidebarResize?: (width: number) => void;
     onDetailTabChange?: (tab: "conversation" | "files") => void;
   }
@@ -39,6 +40,7 @@
     sidebarWidth = 340,
     showStackSidebar = true,
     autoSyncDetail = "background",
+    hideStaleDetailWhileLoading = false,
     onSidebarResize,
     onDetailTabChange,
   }: Props = $props();
@@ -112,6 +114,7 @@
         repoPath={selectedPR.repoPath}
         autoSync={autoSyncDetail}
         hideTabs={true}
+        hideStaleWhileLoading={hideStaleDetailWhileLoading}
       />
     {/if}
   {:else}

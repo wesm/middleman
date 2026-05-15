@@ -16,6 +16,7 @@
     hideSidebar?: boolean;
     sidebarWidth?: number;
     autoSyncDetail?: IssueDetailSyncMode;
+    hideStaleDetailWhileLoading?: boolean;
     onSidebarResize?: (width: number) => void;
   }
 
@@ -25,6 +26,7 @@
     hideSidebar = false,
     sidebarWidth = 340,
     autoSyncDetail = "background",
+    hideStaleDetailWhileLoading = false,
     onSidebarResize,
   }: Props = $props();
 </script>
@@ -51,6 +53,7 @@
       platformHost={selectedIssue.platformHost}
       repoPath={selectedIssue.repoPath}
       autoSync={autoSyncDetail}
+      hideStaleWhileLoading={hideStaleDetailWhileLoading}
     />
   {:else}
     <div class="placeholder-content">

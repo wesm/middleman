@@ -91,6 +91,7 @@
     onPullsRefresh?: () => Promise<void>;
     hideTabs?: boolean;
     hideWorkspaceAction?: boolean;
+    hideStaleWhileLoading?: boolean;
     autoSync?: DetailSyncMode;
   }
 
@@ -104,6 +105,7 @@
     onPullsRefresh,
     hideTabs = false,
     hideWorkspaceAction = false,
+    hideStaleWhileLoading = false,
     autoSync = "background",
   }: Props = $props();
 
@@ -131,6 +133,7 @@
     event: { PlatformID: number | null },
     body: string,
   ): Promise<boolean> {
+    if (stalePR) return false;
     if (event.PlatformID === null) return false;
     return detailStore.editComment(owner, name, number, event.PlatformID, body);
   }
@@ -261,6 +264,7 @@
   }
 
   function startEditTitle(): void {
+    if (stalePR) return;
     if (!currentCapabilities().state_mutation) return;
     const mr = currentPR();
     if (!mr) return;
@@ -311,6 +315,7 @@
   let savingBody = $state(false);
 
   function startEditBody(): void {
+    if (stalePR) return;
     if (!currentCapabilities().state_mutation) return;
     const mr = currentPR();
     if (!mr) return;
@@ -605,9 +610,9 @@
 <svelte:window onkeydown={onActionMenuKeydown} />
 <svelte:document onmousedown={onActionMenuDocumentMousedown} />
 
-{#if detailStore.isDetailLoading() && detailStore.getDetail() === null}
+{#if detailStore.isDetailLoading() && (detailStore.getDetail() === null || (stalePR && hideStaleWhileLoading))}
   <div class="state-center"><p class="state-msg">Loading…</p></div>
-{:else if detailStore.getDetailError() !== null && detailStore.getDetail() === null}
+{:else if detailStore.getDetailError() !== null && (detailStore.getDetail() === null || (stalePR && hideStaleWhileLoading))}
   <div class="state-center"><p class="state-msg state-msg--error">Error: {detailStore.getDetailError()}</p></div>
 {:else}
   {@const detail = detailStore.getDetail()}
@@ -695,7 +700,11 @@
         {:else if capabilities.state_mutation}
           <div class="title-line">
             <h2 class="detail-title">{pr.Title}</h2>
-            <button class="edit-title-btn" onclick={startEditTitle}>Edit</button>
+            <button
+              class="edit-title-btn"
+              onclick={startEditTitle}
+              disabled={stalePR}
+            >Edit</button>
             {#if !uiConfig.hideStar}
               <button
                 class="star-btn"
@@ -731,6 +740,7 @@
             options={kanbanOptions}
             onchange={onKanbanChange}
             title="Change workflow status"
+            disabled={stalePR}
           />
         {/if}
       </div>
@@ -829,6 +839,7 @@
         options={kanbanOptions}
         onchange={onKanbanChange}
         title="Change workflow status"
+        disabled={stalePR}
       />
 
       {#if labels.length > 0}
@@ -914,9 +925,10 @@
               title={mergeDisabledByConflicts
                 ? "Resolve merge conflicts before merging"
                 : ""}
-              onclick={() =>
-                runOpenMerge(buildOpenMergeInput(pr, capabilities))
-              }
+              onclick={() => {
+                if (stalePR) return;
+                runOpenMerge(buildOpenMergeInput(pr, capabilities));
+              }}
               tone="success"
               surface="solid"
               size="sm"
@@ -1006,7 +1018,11 @@
           {#if workspace}
             <ActionButton
               class="btn--workspace"
-              onclick={() => navigate(`/terminal/${workspace.id}`)}
+              disabled={stalePR}
+              onclick={() => {
+                if (stalePR) return;
+                navigate(`/terminal/${workspace.id}`);
+              }}
               tone="info"
               surface="soft"
               size="sm"
@@ -1137,6 +1153,7 @@
             <button
               class="edit-body-btn"
               onclick={startEditBody}
+              disabled={stalePR}
             >
               Edit
             </button>
@@ -1191,7 +1208,11 @@
             <div class="inset-box markdown-body">{@html renderMarkdown(pr.Body, { provider, platformHost, owner, name, repoPath })}</div>
           </div>
         {:else if capabilities.state_mutation}
-          <button class="add-description-btn" onclick={startEditBody}>
+          <button
+            class="add-description-btn"
+            onclick={startEditBody}
+            disabled={stalePR}
+          >
             Add a description
           </button>
         {/if}
@@ -1229,7 +1250,7 @@
             {repoPath}
             filtered={hasActiveTimelineFilters}
             showCommitDetails={timelineFilter.showCommitDetails}
-            onEditComment={capabilities.comment_mutation
+            onEditComment={capabilities.comment_mutation && !stalePR
               ? editTimelineComment
               : undefined}
           />

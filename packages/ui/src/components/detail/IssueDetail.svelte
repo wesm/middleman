@@ -56,6 +56,7 @@
     provider: string;
     platformHost?: string | undefined;
     repoPath: string;
+    hideStaleWhileLoading?: boolean;
     autoSync?: IssueDetailSyncMode;
   }
 
@@ -66,6 +67,7 @@
     provider,
     platformHost,
     repoPath,
+    hideStaleWhileLoading = false,
     autoSync = "background",
   }: Props = $props();
 
@@ -101,6 +103,7 @@
     event: { PlatformID: number | null },
     body: string,
   ): Promise<boolean> {
+    if (staleIssue) return false;
     if (event.PlatformID === null) return false;
     return issues.editIssueComment(owner, name, number, event.PlatformID, body);
   }
@@ -401,9 +404,9 @@
   }
 </script>
 
-{#if issues.isIssueDetailLoading() && issues.getIssueDetail() === null}
+{#if issues.isIssueDetailLoading() && (issues.getIssueDetail() === null || (staleIssue && hideStaleWhileLoading))}
   <div class="state-center"><p class="state-msg">Loading...</p></div>
-{:else if issues.getIssueDetailError() !== null && issues.getIssueDetail() === null}
+{:else if issues.getIssueDetailError() !== null && (issues.getIssueDetail() === null || (staleIssue && hideStaleWhileLoading))}
   <div class="state-center"><p class="state-msg state-msg--error">Error: {issues.getIssueDetailError()}</p></div>
 {:else}
   {@const detail = issues.getIssueDetail()}
@@ -518,7 +521,11 @@
         {#if workspace}
           <ActionButton
             class="btn--workspace"
-            onclick={() => navigate(`/terminal/${workspace.id}`)}
+            disabled={staleIssue}
+            onclick={() => {
+              if (staleIssue) return;
+              navigate(`/terminal/${workspace.id}`);
+            }}
             tone="info"
             surface="soft"
             size="sm"
@@ -545,7 +552,10 @@
           <ActionButton
             class="btn--close"
             disabled={stateSubmitting || staleIssue}
-            onclick={() => handleStateChange("closed")}
+            onclick={() => {
+              if (staleIssue) return;
+              handleStateChange("closed");
+            }}
             tone="danger"
             surface="outline"
             size="sm"
@@ -558,7 +568,10 @@
           <ActionButton
             class="btn--reopen"
             disabled={stateSubmitting || staleIssue}
-            onclick={() => handleStateChange("open")}
+            onclick={() => {
+              if (staleIssue) return;
+              handleStateChange("open");
+            }}
             tone="success"
             surface="solid"
             size="sm"
@@ -617,7 +630,7 @@
             repoOwner={owner}
             repoName={name}
             {repoPath}
-            onEditComment={capabilities.comment_mutation
+            onEditComment={capabilities.comment_mutation && !staleIssue
               ? editTimelineComment
               : undefined}
           />

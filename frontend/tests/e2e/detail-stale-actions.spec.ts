@@ -137,7 +137,9 @@ const issueY = {
   Body: "Body Y",
 };
 
-function detailEnvelopePR(pr: typeof prA): unknown {
+function detailEnvelopePR(
+  pr: typeof prA & { workspace?: { id: string } },
+): unknown {
   return {
     merge_request: pr,
     repo: repoEnvelope(pr),
@@ -146,10 +148,13 @@ function detailEnvelopePR(pr: typeof prA): unknown {
     detail_loaded: true,
     detail_fetched_at: "2026-04-01T12:00:00Z",
     worktree_links: pr.worktree_links,
+    workspace: pr.workspace,
   };
 }
 
-function detailEnvelopeIssue(issue: typeof issueX): unknown {
+function detailEnvelopeIssue(
+  issue: typeof issueX & { workspace?: { id: string } },
+): unknown {
   return {
     issue,
     events: [],
@@ -159,6 +164,7 @@ function detailEnvelopeIssue(issue: typeof issueX): unknown {
     repo_name: issue.repo_name,
     detail_loaded: true,
     detail_fetched_at: "2026-04-01T12:00:00Z",
+    workspace: issue.workspace,
   };
 }
 
@@ -716,6 +722,42 @@ test.describe("PR detail stale-action gating", () => {
     // No user-mutation request was sent during the stale window.
     expect(userMutations).toEqual([]);
   });
+
+  test("existing workspace navigation is inert while the new PR is loading", async ({ page }) => {
+    const prWithWorkspace = {
+      ...prA,
+      workspace: { id: "ws-pr-a" },
+    };
+    const { release } = await setupHeldPR(page, prWithWorkspace, prB);
+
+    await page.goto(
+      `/pulls/github/${prWithWorkspace.repo_owner}/${prWithWorkspace.repo_name}/${prWithWorkspace.Number}`,
+    );
+    await expect(page.locator(".detail-title")).toContainText(
+      prWithWorkspace.Title,
+    );
+
+    await page.evaluate(([owner, name, number]) => {
+      window.history.pushState(
+        null,
+        "",
+        `/pulls/github/${owner}/${name}/${number}`,
+      );
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    }, [prB.repo_owner, prB.repo_name, prB.Number] as const);
+
+    await expect(page.locator(".detail-title")).toContainText(
+      prWithWorkspace.Title,
+    );
+
+    const openWs = page.locator("button.btn--workspace");
+    await expect(openWs).toBeDisabled();
+    await openWs.click({ force: true }).catch(() => {});
+    await expect(page).not.toHaveURL(/\/terminal\/ws-pr-a/);
+
+    release();
+    await expect(page.locator(".detail-title")).toContainText(prB.Title);
+  });
 });
 
 test.describe("issue detail stale-action gating", () => {
@@ -769,5 +811,43 @@ test.describe("issue detail stale-action gating", () => {
     await expect(closeBtn).toBeEnabled();
 
     expect(userMutations).toEqual([]);
+  });
+
+  test("existing workspace navigation is inert while the new issue is loading", async ({ page }) => {
+    const issueWithWorkspace = {
+      ...issueX,
+      workspace: { id: "ws-issue-x" },
+    };
+    const { release } = await setupHeldIssue(page, issueWithWorkspace, issueY);
+
+    await page.goto(
+      `/issues/github/${issueWithWorkspace.repo_owner}/${issueWithWorkspace.repo_name}/${issueWithWorkspace.Number}`,
+    );
+    await expect(page.locator(".issue-detail .detail-title")).toContainText(
+      issueWithWorkspace.Title,
+    );
+
+    await page.evaluate(([owner, name, number]) => {
+      window.history.pushState(
+        null,
+        "",
+        `/issues/github/${owner}/${name}/${number}`,
+      );
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    }, [issueY.repo_owner, issueY.repo_name, issueY.Number] as const);
+
+    await expect(page.locator(".issue-detail .detail-title")).toContainText(
+      issueWithWorkspace.Title,
+    );
+
+    const openWs = page.locator(".issue-detail button.btn--workspace");
+    await expect(openWs).toBeDisabled();
+    await openWs.click({ force: true }).catch(() => {});
+    await expect(page).not.toHaveURL(/\/terminal\/ws-issue-x/);
+
+    release();
+    await expect(page.locator(".issue-detail .detail-title")).toContainText(
+      issueY.Title,
+    );
   });
 });
