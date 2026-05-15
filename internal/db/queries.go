@@ -151,7 +151,30 @@ func labelPlatformIDTx(ctx context.Context, tx *sql.Tx, labelID int64) (sql.Null
 func mergeLabelRowAssociationsTx(ctx context.Context, tx *sql.Tx, fromLabelID, toLabelID int64) error {
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE middleman_labels
-		SET catalog_present = CASE
+		SET description = CASE
+		        WHEN (SELECT catalog_seen_at FROM middleman_labels WHERE id = ?) > COALESCE(catalog_seen_at, '')
+		          OR (SELECT updated_at FROM middleman_labels WHERE id = ?) > updated_at
+		        THEN (SELECT description FROM middleman_labels WHERE id = ?)
+		        ELSE description
+		    END,
+		    color = CASE
+		        WHEN (SELECT catalog_seen_at FROM middleman_labels WHERE id = ?) > COALESCE(catalog_seen_at, '')
+		          OR (SELECT updated_at FROM middleman_labels WHERE id = ?) > updated_at
+		        THEN (SELECT color FROM middleman_labels WHERE id = ?)
+		        ELSE color
+		    END,
+		    is_default = CASE
+		        WHEN (SELECT catalog_seen_at FROM middleman_labels WHERE id = ?) > COALESCE(catalog_seen_at, '')
+		          OR (SELECT updated_at FROM middleman_labels WHERE id = ?) > updated_at
+		        THEN (SELECT is_default FROM middleman_labels WHERE id = ?)
+		        ELSE is_default
+		    END,
+		    updated_at = CASE
+		        WHEN (SELECT updated_at FROM middleman_labels WHERE id = ?) > updated_at
+		        THEN (SELECT updated_at FROM middleman_labels WHERE id = ?)
+		        ELSE updated_at
+		    END,
+		    catalog_present = CASE
 		        WHEN catalog_present = 1 OR (SELECT catalog_present FROM middleman_labels WHERE id = ?) = 1
 		        THEN 1
 		        ELSE catalog_present
@@ -166,6 +189,10 @@ func mergeLabelRowAssociationsTx(ctx context.Context, tx *sql.Tx, fromLabelID, t
 		        ELSE catalog_seen_at
 		    END
 		WHERE id = ?`,
+		fromLabelID, fromLabelID, fromLabelID,
+		fromLabelID, fromLabelID, fromLabelID,
+		fromLabelID, fromLabelID, fromLabelID,
+		fromLabelID, fromLabelID,
 		fromLabelID, fromLabelID, fromLabelID, fromLabelID, fromLabelID, toLabelID,
 	); err != nil {
 		return fmt.Errorf("merge label catalog metadata: %w", err)
@@ -369,16 +396,22 @@ func upsertLabelsTx(ctx context.Context, tx *sql.Tx, repoID int64, labels []Labe
 				SET platform_id = COALESCE(NULLIF(?, 0), platform_id),
 				    platform_external_id = COALESCE(NULLIF(?, ''), platform_external_id),
 				    name = ?,
-				    description = ?,
-				    color = ?,
-				    is_default = ?,
-				    updated_at = ?,
+				    description = CASE WHEN ? >= updated_at THEN ? ELSE description END,
+				    color = CASE WHEN ? >= updated_at THEN ? ELSE color END,
+				    is_default = CASE WHEN ? >= updated_at THEN ? ELSE is_default END,
+				    updated_at = CASE WHEN ? >= updated_at THEN ? ELSE updated_at END,
 				    catalog_present = CASE WHEN ? THEN 1 ELSE catalog_present END,
-				    catalog_seen_at = COALESCE(?, catalog_seen_at)
+				    catalog_seen_at = CASE
+				        WHEN ? IS NULL THEN catalog_seen_at
+				        WHEN catalog_seen_at IS NULL OR ? > catalog_seen_at THEN ?
+				        ELSE catalog_seen_at
+				    END
 				WHERE id = ?`,
 				label.PlatformID, label.PlatformExternalID,
-				label.Name, label.Description, label.Color, label.IsDefault, label.UpdatedAt,
-				label.CatalogPresent, catalogSeenAt, id,
+				label.Name, label.UpdatedAt, label.Description,
+				label.UpdatedAt, label.Color, label.UpdatedAt, label.IsDefault,
+				label.UpdatedAt, label.UpdatedAt, label.CatalogPresent,
+				catalogSeenAt, catalogSeenAt, catalogSeenAt, id,
 			)
 			if err != nil {
 				return nil, fmt.Errorf("update label %s: %w", label.Name, err)
@@ -459,14 +492,32 @@ func (d *DB) UpsertLabels(ctx context.Context, repoID int64, labels []Label) err
 // by the provider stop appearing in catalog results.
 func (d *DB) ReplaceRepoLabelCatalog(ctx context.Context, repoID int64, labels []Label, syncedAt time.Time) error {
 	syncedAt = canonicalUTCTime(syncedAt)
-	freshness, err := d.GetRepoLabelCatalogFreshness(ctx, repoID)
-	if err != nil {
-		return err
-	}
-	if freshness.SyncedAt != nil && syncedAt.Before(*freshness.SyncedAt) {
-		return nil
-	}
 	return d.Tx(ctx, func(tx *sql.Tx) error {
+		result, err := tx.ExecContext(ctx, `
+			UPDATE middleman_repos
+			SET label_catalog_synced_at = ?,
+			    label_catalog_checked_at = CASE
+			        WHEN ? >= COALESCE(label_catalog_checked_at, '') THEN ?
+			        ELSE label_catalog_checked_at
+			    END,
+			    label_catalog_sync_error = CASE
+			        WHEN ? >= COALESCE(label_catalog_checked_at, '') THEN ''
+			        ELSE label_catalog_sync_error
+			    END
+			WHERE id = ?
+			  AND (? >= COALESCE(label_catalog_synced_at, ''))`,
+			syncedAt, syncedAt, syncedAt, syncedAt, repoID, syncedAt,
+		)
+		if err != nil {
+			return fmt.Errorf("mark label catalog synced: %w", err)
+		}
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("check label catalog sync claim: %w", err)
+		}
+		if rowsAffected == 0 {
+			return nil
+		}
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE middleman_labels SET catalog_present = 0 WHERE repo_id = ?`,
 			repoID,
@@ -482,22 +533,6 @@ func (d *DB) ReplaceRepoLabelCatalog(ctx context.Context, repoID int64, labels [
 		}
 		if _, err := upsertLabelsTx(ctx, tx, repoID, labels); err != nil {
 			return err
-		}
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE middleman_repos
-			SET label_catalog_synced_at = ?,
-			    label_catalog_checked_at = CASE
-			        WHEN ? >= COALESCE(label_catalog_checked_at, '') THEN ?
-			        ELSE label_catalog_checked_at
-			    END,
-			    label_catalog_sync_error = CASE
-			        WHEN ? >= COALESCE(label_catalog_checked_at, '') THEN ''
-			        ELSE label_catalog_sync_error
-			    END
-			WHERE id = ?`,
-			syncedAt, syncedAt, syncedAt, syncedAt, repoID,
-		); err != nil {
-			return fmt.Errorf("mark label catalog synced: %w", err)
 		}
 		return nil
 	})

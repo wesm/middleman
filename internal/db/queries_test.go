@@ -1369,7 +1369,7 @@ func TestRepoMergePreservesLabelCatalogFreshnessAndMembership(t *testing.T) {
 	assert.Equal(syncedAt, *freshness.SyncedAt)
 }
 
-func TestLabelMergeKeepsNewestCatalogSeenAt(t *testing.T) {
+func TestLabelMergeKeepsFresherCatalogMetadata(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1385,16 +1385,18 @@ func TestLabelMergeKeepsNewestCatalogSeenAt(t *testing.T) {
 		UpdatedAt:  oldSeenAt,
 	}}, oldSeenAt))
 	require.NoError(d.ReplaceRepoLabelCatalog(ctx, repoID, []Label{{
-		Name:      "bug",
-		Color:     "d73a4a",
-		UpdatedAt: newSeenAt,
+		Name:        "bug",
+		Description: "fresh catalog",
+		Color:       "0e8a16",
+		UpdatedAt:   newSeenAt,
 	}}, newSeenAt))
 
 	require.NoError(d.UpsertLabels(ctx, repoID, []Label{{
-		PlatformID: 7,
-		Name:       "bug",
-		Color:      "d73a4a",
-		UpdatedAt:  newSeenAt,
+		PlatformID:  7,
+		Name:        "bug",
+		Description: "stale item",
+		Color:       "d73a4a",
+		UpdatedAt:   oldSeenAt,
 	}}))
 
 	catalog, _, err := d.ListRepoLabelCatalog(ctx, repoID)
@@ -1402,6 +1404,9 @@ func TestLabelMergeKeepsNewestCatalogSeenAt(t *testing.T) {
 	require.Len(catalog, 1)
 	require.NotNil(catalog[0].CatalogSeenAt)
 	assert.Equal(newSeenAt, *catalog[0].CatalogSeenAt)
+	assert.Equal("bug", catalog[0].Name)
+	assert.Equal("fresh catalog", catalog[0].Description)
+	assert.Equal("0e8a16", catalog[0].Color)
 }
 
 func TestRepoMergeUsesNewerSourceLabelCatalogFreshness(t *testing.T) {
