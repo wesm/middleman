@@ -605,7 +605,7 @@
     border-bottom: 1px solid var(--border-muted);
     background: transparent;
     color: var(--text-primary);
-    font-size: 14px;
+    font-size: var(--font-size-lg);
     outline: none;
   }
 
@@ -626,7 +626,7 @@
 
   .palette-group-header {
     padding: 6px 16px 4px;
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -642,7 +642,7 @@
     background: transparent;
     border: none;
     color: var(--text-primary);
-    font-size: 13px;
+    font-size: var(--font-size-md);
     text-align: left;
     cursor: pointer;
   }
@@ -667,7 +667,7 @@
 
   .palette-row-tag {
     color: var(--text-secondary);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     flex: 0 0 auto;
   }
 
@@ -683,7 +683,7 @@
 
   .palette-row-disabled code {
     font-family: var(--font-mono, monospace);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     padding: 1px 4px;
     border-radius: 3px;
     background: var(--bg-surface-hover);
@@ -700,7 +700,7 @@
 
   .preview-empty {
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-style: italic;
   }
 
@@ -712,24 +712,24 @@
 
   .preview-title {
     color: var(--text-primary);
-    font-size: 14px;
+    font-size: var(--font-size-lg);
     font-weight: 600;
     flex: 1 1 auto;
   }
 
   .preview-subtitle {
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 
   .preview-meta {
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
   }
 
   .preview-body {
     color: var(--text-primary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
     white-space: pre-wrap;
     margin-top: 4px;
@@ -738,7 +738,7 @@
   .palette-footer {
     padding: 6px 12px;
     border-top: 1px solid var(--border-muted);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     display: flex;
     gap: 16px;

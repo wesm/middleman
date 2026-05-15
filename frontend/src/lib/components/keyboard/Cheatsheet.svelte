@@ -280,7 +280,7 @@
     border-bottom: 1px solid var(--border-muted);
     background: transparent;
     color: var(--text-primary);
-    font-size: 14px;
+    font-size: var(--font-size-lg);
     outline: none;
   }
 
@@ -298,7 +298,7 @@
 
   .cheatsheet-section-header {
     padding: 6px 16px 4px;
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -311,7 +311,7 @@
     gap: 12px;
     padding: 6px 16px;
     color: var(--text-primary);
-    font-size: 13px;
+    font-size: var(--font-size-md);
   }
 
   .cheatsheet-row-label {
@@ -329,7 +329,7 @@
   }
 
   .cheatsheet-row-sep {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 </style>
