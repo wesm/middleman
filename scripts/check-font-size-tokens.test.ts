@@ -46,6 +46,20 @@ test("flags non-token font-size variables", async () => {
   assert.match(findings[0].message, /--font-size-\*/);
 });
 
+test("flags calc font-size values", async () => {
+  const root = await makeRoot();
+  await write(
+    root,
+    "frontend/src/lib/components/Example.svelte",
+    ["<style>", ".title { font-size: calc(var(--font-size-lg) * 1.3); }", "</style>", ""].join("\n"),
+  );
+
+  const findings = await checkFontSizeTokens({ root });
+
+  assert.equal(findings.length, 1);
+  assert.match(findings[0].message, /calc/);
+});
+
 test("allows font-size design tokens and approved relative sizing", async () => {
   const root = await makeRoot();
   await write(

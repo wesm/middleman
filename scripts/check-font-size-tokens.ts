@@ -60,6 +60,7 @@ function isFontSizeTokenDefinition(line: string): boolean {
 
 function isAllowedFontValue(value: string): boolean {
   const trimmed = value.trim().toLowerCase();
+  if (trimmed.includes("calc(")) return false;
   if (["inherit", "initial", "unset", "revert"].includes(trimmed)) return true;
   if (ALLOWED_RELATIVE_FONT_SIZES.has(trimmed)) return true;
   if (trimmed.includes("var(--font-size-")) return true;
@@ -98,7 +99,7 @@ function collectFindingsInLine(line: string, index: number, relPath: string): Fi
       line: index + 1,
       column: (match.index ?? 0) + 1,
       message:
-        "Disallowed font-size value found. Use a --font-size-* token or approved relative font-size instead.",
+        "Disallowed font-size value found. Use a --font-size-* token or approved relative font-size instead; calc() is not allowed.",
     });
   }
 
@@ -110,7 +111,7 @@ function collectFindingsInLine(line: string, index: number, relPath: string): Fi
       line: index + 1,
       column: (match.index ?? 0) + (match[1]?.length ?? 0) + 1,
       message:
-        "Disallowed font shorthand value found. Use a --font-size-* token or approved relative font-size instead.",
+        "Disallowed font shorthand value found. Use a --font-size-* token or approved relative font-size instead; calc() is not allowed.",
     });
   }
 
