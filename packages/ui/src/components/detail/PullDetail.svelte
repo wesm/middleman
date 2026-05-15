@@ -126,6 +126,43 @@
   const hasActiveTimelineFilters = $derived(
     activePRTimelineFilterCount(timelineFilter) > 0,
   );
+  const currentApprovers = $derived.by(() =>
+    approversFromReviewEvents(detailStore.getDetail()?.events ?? []),
+  );
+
+  type ReviewEventLike = {
+    EventType: string;
+    Author: string;
+    Summary: string;
+    CreatedAt: string;
+  };
+
+  function approversFromReviewEvents(events: ReviewEventLike[]): string[] {
+    const latestByAuthor = new Map<
+      string,
+      { state: string; createdMs: number }
+    >();
+    for (const event of events) {
+      if (event.EventType !== "review" || !event.Author) continue;
+      const state = event.Summary.toUpperCase();
+      if (
+        state !== "APPROVED" &&
+        state !== "CHANGES_REQUESTED" &&
+        state !== "DISMISSED"
+      ) {
+        continue;
+      }
+      const createdMs = Date.parse(event.CreatedAt);
+      const previous = latestByAuthor.get(event.Author);
+      if (!previous || createdMs >= previous.createdMs) {
+        latestByAuthor.set(event.Author, { state, createdMs });
+      }
+    }
+    return Array.from(latestByAuthor.entries())
+      .filter(([, review]) => review.state === "APPROVED")
+      .map(([author]) => author)
+      .sort((left, right) => left.localeCompare(right));
+  }
 
   async function editTimelineComment(
     event: { PlatformID: number | null },
@@ -435,6 +472,14 @@
     return "chip--muted";
   }
 
+  function reviewLabel(decision: string, approverCount: number): string {
+    const label = decision.replace(/_/g, " ");
+    if (decision === "APPROVED" && approverCount > 1) {
+      return `${label} (${approverCount})`;
+    }
+    return label;
+  }
+
   function onKanbanChange(value: string): void {
     if (stalePR) return;
     void detailStore.updateKanbanState(owner, name, number, value as KanbanStatus);
@@ -531,22 +576,48 @@
   let wsError = $state<string | null>(null);
   let actionMenuOpen = $state(false);
   let actionMenuWrapEl = $state<HTMLDivElement>();
+  let approvalPopupOpen = $state(false);
+  let approvalPopupWrapEl = $state<HTMLDivElement>();
 
   function closeActionMenu(): void {
     actionMenuOpen = false;
+  }
+
+  function closeApprovalPopup(): void {
+    approvalPopupOpen = false;
+  }
+
+  function toggleApprovalPopup(): void {
+    if (currentApprovers.length === 0) return;
+    approvalPopupOpen = !approvalPopupOpen;
   }
 
   function onActionMenuKeydown(e: KeyboardEvent): void {
     if (actionMenuOpen && e.key === "Escape") {
       actionMenuOpen = false;
     }
+    if (approvalPopupOpen && e.key === "Escape") {
+      approvalPopupOpen = false;
+    }
   }
 
-  function onActionMenuDocumentMousedown(e: MouseEvent): void {
-    if (!actionMenuOpen) return;
+  function onDocumentMousedown(e: MouseEvent): void {
     const target = e.target as Node;
-    if (actionMenuWrapEl?.contains(target)) return;
-    closeActionMenu();
+    if (actionMenuOpen && !actionMenuWrapEl?.contains(target)) {
+      closeActionMenu();
+    }
+    if (approvalPopupOpen && !approvalPopupWrapEl?.contains(target)) {
+      closeApprovalPopup();
+    }
+  }
+
+  function onApprovalPopupFocusout(): void {
+    queueMicrotask(() => {
+      if (!approvalPopupOpen) return;
+      const active = document.activeElement;
+      if (active && approvalPopupWrapEl?.contains(active)) return;
+      closeApprovalPopup();
+    });
   }
 
   async function createWorkspace(): Promise<void> {
@@ -603,7 +674,7 @@
 </script>
 
 <svelte:window onkeydown={onActionMenuKeydown} />
-<svelte:document onmousedown={onActionMenuDocumentMousedown} />
+<svelte:document onmousedown={onDocumentMousedown} />
 
 {#if detailStore.isDetailLoading() && (detailStore.getDetail() === null || stalePR)}
   <div class="state-center"><p class="state-msg">Loading…</p></div>
@@ -797,9 +868,38 @@
           showPanel={false}
         />
         {#if pr.ReviewDecision}
-          <Chip class={reviewColor(pr.ReviewDecision)}>
-            {pr.ReviewDecision.replace(/_/g, " ")}
-          </Chip>
+          {@const approverCount = currentApprovers.length}
+          {@const reviewText = reviewLabel(pr.ReviewDecision, approverCount)}
+          {#if pr.ReviewDecision === "APPROVED" && approverCount > 0}
+            <div
+              class="approval-chip-wrap"
+              bind:this={approvalPopupWrapEl}
+              onfocusout={onApprovalPopupFocusout}
+            >
+              <Chip
+                class={reviewColor(pr.ReviewDecision)}
+                interactive
+                expanded={approvalPopupOpen}
+                title="Show approving reviewers"
+                onclick={toggleApprovalPopup}
+              >
+                {reviewText}
+              </Chip>
+              {#if approvalPopupOpen}
+                <div class="approval-popup" role="list">
+                  {#each currentApprovers as approver (approver)}
+                    <div class="approval-popup-item" role="listitem">
+                      {approver}
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {:else}
+            <Chip class={reviewColor(pr.ReviewDecision)}>
+              {reviewText}
+            </Chip>
+          {/if}
         {/if}
         {#if pr.Additions > 0 || pr.Deletions > 0}
           <DiffSummaryChip
@@ -1542,6 +1642,40 @@
     flex-wrap: wrap;
     gap: 6px;
     min-width: 0;
+  }
+
+  .approval-chip-wrap {
+    position: relative;
+    display: inline-flex;
+  }
+
+  .approval-popup {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + 6px);
+    left: 0;
+    min-width: 120px;
+    max-width: min(220px, 70vw);
+    padding: 6px;
+    border: 1px solid var(--border-default);
+    border-radius: 6px;
+    background: var(--bg-surface);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .approval-popup-item {
+    overflow: hidden;
+    padding: 4px 6px;
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 12px;
+    line-height: 1.3;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .approval-popup-item + .approval-popup-item {
+    margin-top: 2px;
   }
 
   :global(.kanban-select) {
