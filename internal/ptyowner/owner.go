@@ -81,10 +81,24 @@ func RunOwner(ctx context.Context, opts Options) error {
 		return fmt.Errorf("start pty command: %w", err)
 	}
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err := createPrivateDir(paths.Dir); err != nil {
+		killOwnerProcess(cmd.Process)
+		_ = p.Close()
+		return err
+	}
+	if paths.SocketDir != "" {
+		if err := createPrivateDir(paths.SocketDir); err != nil {
+			killOwnerProcess(cmd.Process)
+			_ = p.Close()
+			return err
+		}
+	}
+	_ = os.Remove(paths.Socket)
+	listener, err := net.Listen("unix", paths.Socket)
 	if err != nil {
 		killOwnerProcess(cmd.Process)
 		_ = p.Close()
+		removeSocketDir(paths)
 		return err
 	}
 	defer listener.Close()
@@ -106,7 +120,7 @@ func RunOwner(ctx context.Context, opts Options) error {
 		connSem:     make(chan struct{}, maxOwnerConnections),
 		state: ownerState{
 			Session:   opts.Session,
-			Addr:      listener.Addr().String(),
+			Addr:      "unix://" + paths.Socket,
 			Token:     token,
 			Cwd:       opts.Cwd,
 			PID:       os.Getpid(),
@@ -116,8 +130,12 @@ func RunOwner(ctx context.Context, opts Options) error {
 	defer o.closePty()
 	if err := writeState(paths, o.state); err != nil {
 		killOwnerProcess(cmd.Process)
+		_ = os.Remove(paths.Socket)
+		removeSocketDir(paths)
 		return err
 	}
+	defer os.Remove(paths.Socket)
+	defer removeSocketDir(paths)
 	defer os.RemoveAll(paths.Dir)
 
 	go func() {
@@ -191,6 +209,20 @@ func (o *owner) handleConn(conn net.Conn) {
 	case RequestStop:
 		_ = enc.Encode(Response{Type: ResponseOK, OK: true})
 		go o.stop()
+	case RequestInput:
+		if len(first.Data) > maxOwnerInputSize {
+			_ = enc.Encode(Response{
+				Type: ResponseError, Error: "pty owner input frame too large",
+			})
+			return
+		}
+		_, _ = o.pty.Write(first.Data)
+		_ = enc.Encode(Response{Type: ResponseOK, OK: true})
+	case RequestResize:
+		if first.Cols > 0 && first.Rows > 0 {
+			_ = o.pty.Resize(first.Cols, first.Rows)
+		}
+		_ = enc.Encode(Response{Type: ResponseOK, OK: true})
 	case RequestAttach:
 		o.handleAttach(reader, enc, first.Request())
 	default:
@@ -273,15 +305,11 @@ type initialRequest struct {
 	Token string `json:"token,omitempty"`
 	Cols  int    `json:"cols,omitempty"`
 	Rows  int    `json:"rows,omitempty"`
+	Data  []byte `json:"data,omitempty"`
 }
 
 func (r initialRequest) Request() Request {
-	return Request{
-		Type:  r.Type,
-		Token: r.Token,
-		Cols:  r.Cols,
-		Rows:  r.Rows,
-	}
+	return Request(r)
 }
 
 func decodeOwnerRequest(

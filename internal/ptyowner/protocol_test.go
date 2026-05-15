@@ -3,6 +3,9 @@ package ptyowner
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	Assert "github.com/stretchr/testify/assert"
@@ -29,7 +32,22 @@ func TestSessionPathsAreStable(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(root, paths.Root)
 	assert.Contains(paths.Dir, "middleman-abc123")
+	assert.NotEmpty(paths.Socket)
 	assert.Contains(paths.StatePath, "owner.json")
+}
+
+func TestSessionPathsUsePrivateSocketDirForLongRoots(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	root := filepath.Join(t.TempDir(), strings.Repeat("x", maxUnixSocketPathLen))
+
+	paths, err := NewSessionPaths(root, "middleman-abc123")
+
+	require.NoError(err)
+	require.NotEmpty(paths.SocketDir)
+	assert.Equal(filepath.Join(paths.SocketDir, "sock"), paths.Socket)
+	assert.Contains(paths.SocketDir, filepath.Join(os.TempDir(), "middleman-pty-"))
+	assert.LessOrEqual(len(paths.Socket), maxUnixSocketPathLen)
 }
 
 func TestProtocolRequestRoundTrip(t *testing.T) {

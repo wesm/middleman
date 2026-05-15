@@ -1,7 +1,9 @@
 package ptyowner
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"net"
 	"os"
 	"path/filepath"
@@ -36,9 +38,7 @@ func TestOwnerAttachInputAndReplay(t *testing.T) {
 	}()
 
 	client := Client{Root: root}
-	require.Eventually(func() bool {
-		return client.Ping(context.Background(), "middleman-test") == nil
-	}, 2*time.Second, 20*time.Millisecond)
+	waitOwnerReady(t, done, client, "middleman-test")
 
 	first, err := client.Attach(context.Background(), "middleman-test", 120, 30)
 	require.NoError(err)
@@ -85,9 +85,7 @@ func TestOwnerStopWhileRunOwnerReturns(t *testing.T) {
 	}()
 
 	client := Client{Root: root}
-	require.Eventually(func() bool {
-		return client.Ping(context.Background(), "middleman-stop-race") == nil
-	}, 2*time.Second, 20*time.Millisecond)
+	waitOwnerReady(t, done, client, "middleman-stop-race")
 
 	require.NoError(client.Stop(context.Background(), "middleman-stop-race"))
 	_, err = os.Stat(paths.Dir)
@@ -127,7 +125,9 @@ func TestOwnerRejectsOversizedUnauthenticatedRequest(t *testing.T) {
 	require.NoError(err)
 	state, err := readState(paths)
 	require.NoError(err)
-	conn, err := net.Dial("tcp", state.Addr)
+	network, addr, err := ownerDialTarget(state.Addr)
+	require.NoError(err)
+	conn, err := net.Dial(network, addr)
 	require.NoError(err)
 	_, err = conn.Write([]byte(
 		`{"type":"status","token":"wrong","data":"` +
@@ -324,6 +324,193 @@ func TestClientPingHonorsContextAfterConnect(t *testing.T) {
 	}
 }
 
+func TestClientOwnerCommandUsesExternalManagerDirectly(t *testing.T) {
+	assert := Assert.New(t)
+
+	client := Client{
+		Root:        "/tmp/owner-root",
+		ExeArgs:     []string{"kept"},
+		ManagerPath: "/tmp/middleman-pty-manager",
+	}
+
+	exe, args := client.ownerCommand(
+		"/tmp/middleman",
+		"middleman-test",
+		"/tmp/worktree",
+		`["sh"]`,
+	)
+
+	assert.Equal("/tmp/middleman-pty-manager", exe)
+	assert.Equal([]string{
+		"kept",
+		"-root", "/tmp/owner-root",
+		"-session", "middleman-test",
+		"-cwd", "/tmp/worktree",
+		"-command-json", `["sh"]`,
+	}, args)
+}
+
+func TestOwnerDialTargetParsesTransportAddresses(t *testing.T) {
+	tests := []struct {
+		name        string
+		raw         string
+		wantNetwork string
+		wantAddr    string
+		wantErr     string
+	}{
+		{
+			name:        "legacy tcp",
+			raw:         "127.0.0.1:1234",
+			wantNetwork: "tcp",
+			wantAddr:    "127.0.0.1:1234",
+		},
+		{
+			name:        "explicit tcp",
+			raw:         "tcp://127.0.0.1:1234",
+			wantNetwork: "tcp",
+			wantAddr:    "127.0.0.1:1234",
+		},
+		{
+			name:        "unix",
+			raw:         "unix:///tmp/middleman.sock",
+			wantNetwork: "unix",
+			wantAddr:    "/tmp/middleman.sock",
+		},
+		{
+			name:    "unsupported scheme",
+			raw:     "npipe://middleman/test",
+			wantErr: "unsupported pty owner address scheme",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			network, addr, err := ownerDialTarget(tt.raw)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert := Assert.New(t)
+			assert.Equal(tt.wantNetwork, network)
+			assert.Equal(tt.wantAddr, addr)
+		})
+	}
+}
+
+func TestClientEnsuresExternalManager(t *testing.T) {
+	require := require.New(t)
+	managerPath := os.Getenv("MIDDLEMAN_PTY_MANAGER_TEST")
+	if managerPath == "" {
+		t.Skip("set MIDDLEMAN_PTY_MANAGER_TEST to an external pty manager binary")
+	}
+
+	root := t.TempDir()
+	client := Client{
+		Root:        root,
+		ManagerPath: managerPath,
+		Command: []string{
+			"sh", "-c",
+			"printf ready; while IFS= read -r line; do echo got:$line; done",
+		},
+	}
+
+	require.NoError(client.Ensure(t.Context(), "middleman-rust-test", t.TempDir()))
+	t.Cleanup(func() {
+		_ = client.Stop(context.Background(), "middleman-rust-test")
+	})
+
+	attachment, err := client.Attach(
+		context.Background(), "middleman-rust-test", 120, 30,
+	)
+	require.NoError(err)
+	defer attachment.Close()
+
+	require.Contains(readUntil(t, attachment.Output, "ready"), "ready")
+	require.NoError(attachment.Write([]byte("hello\r")))
+	require.Contains(readUntil(t, attachment.Output, "got:hello"), "got:hello")
+}
+
+func TestExternalManagerAttachmentWritesUseAttachConnection(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	if runtime.GOOS == "windows" {
+		t.Skip("external pty manager uses Unix sockets")
+	}
+
+	root := t.TempDir()
+	session := "middleman-rust-attach"
+	paths, err := NewSessionPaths(root, session)
+	require.NoError(err)
+	require.NoError(createPrivateDir(paths.Dir))
+	if paths.SocketDir != "" {
+		require.NoError(createPrivateDir(paths.SocketDir))
+	}
+
+	listener, err := net.Listen("unix", paths.Socket)
+	require.NoError(err)
+	defer listener.Close()
+
+	token := "attach-token"
+	require.NoError(writeState(paths, ownerState{
+		Session: session,
+		Addr:    "unix://" + paths.Socket,
+		Token:   token,
+		Cwd:     t.TempDir(),
+		PID:     os.Getpid(),
+	}))
+
+	requests := make(chan Request, 2)
+	connections := make(chan struct{}, 2)
+	go func() {
+		for {
+			conn, acceptErr := listener.Accept()
+			if acceptErr != nil {
+				return
+			}
+			connections <- struct{}{}
+			go func(conn net.Conn) {
+				defer conn.Close()
+				reader := bufio.NewReader(conn)
+				var req Request
+				if decodeErr := json.NewDecoder(reader).Decode(&req); decodeErr != nil {
+					return
+				}
+				requests <- req
+				_, _ = conn.Write([]byte(`{"type":"ok","ok":true}` + "\n"))
+				if req.Type != RequestAttach {
+					return
+				}
+				_ = conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+				var next Request
+				if decodeErr := json.NewDecoder(reader).Decode(&next); decodeErr == nil {
+					requests <- next
+				}
+			}(conn)
+		}
+	}()
+
+	client := Client{
+		Root:        root,
+		ManagerPath: "/tmp/middleman-pty-manager",
+	}
+	attachment, err := client.Attach(context.Background(), session, 120, 30)
+	require.NoError(err)
+	defer attachment.Close()
+	require.NoError(attachment.Write([]byte("hello")))
+
+	require.Eventually(func() bool { return len(requests) == 2 }, time.Second, 10*time.Millisecond)
+	first := <-requests
+	second := <-requests
+	assert.Equal(RequestAttach, first.Type)
+	assert.Equal(token, first.Token)
+	assert.Equal(RequestInput, second.Type)
+	assert.Equal(token, second.Token)
+	assert.Equal([]byte("hello"), second.Data)
+	assert.Len(connections, 1)
+}
+
 func readUntil(t *testing.T, output <-chan []byte, needle string) string {
 	t.Helper()
 
@@ -344,6 +531,36 @@ func readUntil(t *testing.T, output <-chan []byte, needle string) string {
 				"timed out waiting for output",
 				"wanted %q in %q", needle, builder.String(),
 			)
+		}
+	}
+}
+
+func waitOwnerReady(
+	t *testing.T,
+	done <-chan error,
+	client Client,
+	session string,
+) {
+	t.Helper()
+
+	deadline := time.After(2 * time.Second)
+	tick := time.NewTicker(20 * time.Millisecond)
+	defer tick.Stop()
+	var lastErr error
+	for {
+		if err := client.Ping(context.Background(), session); err == nil {
+			return
+		} else {
+			lastErr = err
+		}
+		select {
+		case err := <-done:
+			require.New(t).NoError(err)
+			require.New(t).Fail("owner exited before it became ready")
+		case <-tick.C:
+		case <-deadline:
+			require.New(t).NoError(lastErr)
+			require.New(t).Fail("owner did not become ready")
 		}
 	}
 }

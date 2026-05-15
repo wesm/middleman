@@ -343,7 +343,8 @@ func run(configPath string) error {
 	srv := server.NewWithConfig(
 		database, syncer, cloneMgr, assets,
 		cfg, configPath, server.ServerOptions{
-			WorktreeDir: filepath.Join(cfg.DataDir, "worktrees"),
+			WorktreeDir:         filepath.Join(cfg.DataDir, "worktrees"),
+			PtyOwnerManagerPath: os.Getenv("MIDDLEMAN_PTY_MANAGER"),
 		},
 	)
 	slog.Debug(

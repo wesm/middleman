@@ -60,13 +60,14 @@ type versionOutputBody struct {
 type versionOutput = bodyOutput[versionOutputBody]
 
 type ServerOptions struct {
-	EmbedConfig       *EmbedConfig
-	Clones            *gitclone.Manager // optional clone manager for diff view
-	WorktreeDir       string            // base dir for workspace worktrees
-	PtyOwnerDir       string
-	PtyOwnerExePath   string
-	PtyOwnerExeArgs   []string
-	PtyOwnerInProcess bool
+	EmbedConfig         *EmbedConfig
+	Clones              *gitclone.Manager // optional clone manager for diff view
+	WorktreeDir         string            // base dir for workspace worktrees
+	PtyOwnerDir         string
+	PtyOwnerExePath     string
+	PtyOwnerExeArgs     []string
+	PtyOwnerManagerPath string
+	PtyOwnerInProcess   bool
 }
 
 type shutdownDeadline struct {
@@ -431,10 +432,11 @@ func newServer(
 			)
 		}
 		ptyOwnerClient := &ptyowner.Client{
-			Root:      ptyOwnerDir,
-			ExePath:   options.PtyOwnerExePath,
-			ExeArgs:   append([]string(nil), options.PtyOwnerExeArgs...),
-			InProcess: options.PtyOwnerInProcess,
+			Root:        ptyOwnerDir,
+			ExePath:     options.PtyOwnerExePath,
+			ExeArgs:     append([]string(nil), options.PtyOwnerExeArgs...),
+			ManagerPath: options.PtyOwnerManagerPath,
+			InProcess:   options.PtyOwnerInProcess,
 		}
 		if !tmuxAvailable {
 			s.workspaces.SetPtyOwnerClient(ptyOwnerClient)

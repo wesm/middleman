@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -12075,6 +12076,144 @@ func TestWorkspaceCreatesPtyOwnerSessionWhenTmuxUnavailableE2E(t *testing.T) {
 	assert.True(os.IsNotExist(err))
 }
 
+func TestWorkspaceCreatesRustPtyManagerSessionE2E(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("rust pty manager currently advertises Unix socket transport")
+	}
+	requirePTYAvailable(t)
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	managerPath := buildRustPtyManagerForTest(t)
+	ptyOwnerDir := longRustPtyOwnerDirForTest(t)
+	cfg := &config.Config{Tmux: config.Tmux{
+		Command: []string{filepath.Join(t.TempDir(), "missing-tmux")},
+	}}
+	fixture := setupWorkspaceServerFixtureWithOptions(t, cfg, ServerOptions{
+		PtyOwnerDir:         ptyOwnerDir,
+		PtyOwnerManagerPath: managerPath,
+	})
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, fixture.client)
+	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, ws.TmuxSession)
+
+	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal(workspace.TerminalBackendPtyOwner, stored.TerminalBackend)
+
+	ts := httptest.NewServer(fixture.server)
+	t.Cleanup(ts.Close)
+	conn, _, err := workspaceTerminalDialWithQuery(
+		ctx, ts.URL, ws.Id, "cols=120&rows=30",
+	)
+	require.NoError(err)
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+
+	workspaceTerminalConnWriteRead(
+		t, ctx, conn, "printf 'rust-owner-one\n'\n", "rust-owner-one",
+	)
+	require.NoError(conn.Write(
+		ctx,
+		websocket.MessageText,
+		[]byte(`{"type":"resize","cols":133,"rows":37}`),
+	))
+	workspaceTerminalConnWriteRead(
+		t, ctx, conn, "printf 'size:'; stty size\n", "size:37 133",
+	)
+
+	require.NoError(conn.Close(websocket.StatusNormalClosure, "done"))
+	force := true
+	delResp, err := fixture.client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNoContent, delResp.StatusCode())
+
+	_, err = os.Stat(filepath.Join(ptyOwnerDir, ws.TmuxSession))
+	assert.True(os.IsNotExist(err))
+}
+
+func TestRustPtyManagerRejectsConcurrentAttachmentsE2E(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("rust pty manager currently advertises Unix socket transport")
+	}
+	requirePTYAvailable(t)
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	managerPath := buildRustPtyManagerForTest(t)
+	ptyOwnerDir := longRustPtyOwnerDirForTest(t)
+	session := "middleman-rust-concurrent"
+	client := ptyowner.Client{
+		Root:        ptyOwnerDir,
+		ManagerPath: managerPath,
+		Command: []string{
+			"sh", "-c",
+			"printf ready; while IFS= read -r line; do echo got:$line; done",
+		},
+	}
+	require.NoError(client.Ensure(t.Context(), session, t.TempDir()))
+	t.Cleanup(func() {
+		_ = client.Stop(context.Background(), session)
+	})
+
+	first, err := client.Attach(context.Background(), session, 120, 30)
+	require.NoError(err)
+	defer first.Close()
+	require.Contains(readPtyOwnerOutputUntil(t, first.Output, "ready"), "ready")
+	require.NoError(first.Write([]byte("before-second\r")))
+	require.Contains(
+		readPtyOwnerOutputUntil(t, first.Output, "got:before-second"),
+		"got:before-second",
+	)
+
+	second, err := client.Attach(context.Background(), session, 100, 20)
+	if second != nil {
+		second.Close()
+	}
+	require.Error(err)
+	assert.Contains(err.Error(), "already has an active attachment")
+
+	first.Close()
+	var third *ptyowner.Attachment
+	require.Eventually(func() bool {
+		var attachErr error
+		third, attachErr = client.Attach(context.Background(), session, 80, 24)
+		return attachErr == nil
+	}, 2*time.Second, 20*time.Millisecond)
+	defer third.Close()
+	require.NoError(third.Write([]byte("after-close\n")))
+}
+
+func readPtyOwnerOutputUntil(
+	t *testing.T,
+	output <-chan []byte,
+	needle string,
+) string {
+	t.Helper()
+
+	deadline := time.After(2 * time.Second)
+	var builder strings.Builder
+	for {
+		select {
+		case chunk, ok := <-output:
+			if !ok {
+				return builder.String()
+			}
+			builder.Write(chunk)
+			if strings.Contains(builder.String(), needle) {
+				return builder.String()
+			}
+		case <-deadline:
+			require.New(t).Failf(
+				"timed out waiting for output",
+				"wanted %q in %q", needle, builder.String(),
+			)
+		}
+	}
+}
+
 func TestWorkspacePtyOwnerTerminalRejectsConcurrentAttachmentsE2E(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -12172,6 +12311,43 @@ func ptyOwnerServerOptions(ptyOwnerDir string) ServerOptions {
 			"--",
 		},
 	}
+}
+
+func buildRustPtyManagerForTest(t *testing.T) string {
+	t.Helper()
+
+	cargo, err := exec.LookPath("cargo")
+	if err != nil {
+		t.Skip("cargo not available")
+	}
+	root := repoRootForTest(t)
+	cmd := exec.Command(cargo, "build", "-p", "middleman-pty-manager")
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+	exe := filepath.Join(root, "target", "debug", "middleman-pty-manager")
+	if runtime.GOOS == "windows" {
+		exe += ".exe"
+	}
+	return exe
+}
+
+func repoRootForTest(t *testing.T) string {
+	t.Helper()
+
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	require.NoError(t, err)
+	_, err = os.Stat(filepath.Join(root, "Cargo.toml"))
+	require.NoError(t, err)
+	return root
+}
+
+func longRustPtyOwnerDirForTest(t *testing.T) string {
+	t.Helper()
+
+	dir := filepath.Join(t.TempDir(), strings.Repeat("long-owner-root-", 8))
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	return dir
 }
 
 func cleanupPtyOwnerWorkspace(
@@ -14383,8 +14559,20 @@ func workspaceTerminalDial(
 	serverURL string,
 	workspaceID string,
 ) (*websocket.Conn, *http.Response, error) {
+	return workspaceTerminalDialWithQuery(ctx, serverURL, workspaceID, "")
+}
+
+func workspaceTerminalDialWithQuery(
+	ctx context.Context,
+	serverURL string,
+	workspaceID string,
+	query string,
+) (*websocket.Conn, *http.Response, error) {
 	wsURL := "ws" + strings.TrimPrefix(serverURL, "http") +
 		"/api/v1/workspaces/" + workspaceID + "/terminal"
+	if query != "" {
+		wsURL += "?" + query
+	}
 	return websocket.Dial(ctx, wsURL, nil)
 }
 
@@ -15200,6 +15388,7 @@ func TestWorkspaceCreateIssueIsIdempotent(t *testing.T) {
 	require := require.New(t)
 
 	fixture := setupWorkspaceServerFixture(t, nil)
+	ctx := context.Background()
 	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
 
 	path := "/api/v1/issues/gh/acme/widget/7/workspace"
@@ -15223,6 +15412,8 @@ func TestWorkspaceCreateIssueIsIdempotent(t *testing.T) {
 	assert.Equal(first.ID, second.ID)
 	assert.Equal("issue", second.ItemType)
 	assert.Equal(7, second.ItemNumber)
+
+	waitForWorkspaceReady(t, ctx, fixture.client, second.ID)
 }
 
 func TestWorkspaceCreateIssueAfterDeleteRecreatesBranch(t *testing.T) {
