@@ -1688,21 +1688,21 @@
 
   .force-delete-header h2 {
     margin: 0;
-    font-size: 15px;
+    font-size: var(--font-size-lg);
     font-weight: 600;
     color: var(--text-primary);
   }
 
   .force-delete-message {
     margin: 0;
-    font-size: 13px;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     line-height: 1.5;
   }
 
   .force-delete-hint {
     margin: 0;
-    font-size: 12.5px;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     line-height: 1.5;
   }
@@ -1718,7 +1718,7 @@
   .force-delete-confirm {
     height: 30px;
     padding: 0 14px;
-    font-size: 12.5px;
+    font-size: var(--font-size-sm);
     font-weight: 500;
     border-radius: var(--radius-sm);
     cursor: pointer;
