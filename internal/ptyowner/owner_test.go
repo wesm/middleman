@@ -546,6 +546,20 @@ func TestClientEnsuresExternalManagerWithGoTestHelper(t *testing.T) {
 	require.Contains(readUntil(t, attachment.Output, "echo:ping"), "echo:ping")
 }
 
+func TestBoundedOutputBufferRetainsTail(t *testing.T) {
+	assert := Assert.New(t)
+	buf := newBoundedOutputBuffer(8)
+
+	n, err := buf.Write([]byte("hello "))
+	require.NoError(t, err)
+	assert.Equal(6, n)
+	n, err = buf.Write([]byte("world"))
+	require.NoError(t, err)
+	assert.Equal(5, n)
+
+	assert.Equal("lo world", buf.String())
+}
+
 func TestPtyOwnerEchoHelperProcess(t *testing.T) {
 	if os.Getenv("MIDDLEMAN_PTYOWNER_TEST_HELPER") != "1" {
 		return

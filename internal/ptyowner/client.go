@@ -1,7 +1,6 @@
 package ptyowner
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -31,6 +30,7 @@ const (
 	clientRPCTimeout       = 5 * time.Second
 	startLockStaleAfter    = 30 * time.Second
 	startLockRetryInterval = 25 * time.Millisecond
+	ownerOutputLimit       = 64 * 1024
 )
 
 type Attachment struct {
@@ -106,7 +106,8 @@ func (c *Client) Ensure(ctx context.Context, session, cwd string) error {
 	cmd := exec.Command(exe, args...)
 	cmd.Env = c.ownerHelperEnvironment(os.Environ())
 	detachCommand(cmd)
-	var stdout, stderr bytes.Buffer
+	stdout := newBoundedOutputBuffer(ownerOutputLimit)
+	stderr := newBoundedOutputBuffer(ownerOutputLimit)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
@@ -192,7 +193,7 @@ func (c *Client) waitReady(
 	ctx context.Context,
 	session string,
 	exited <-chan error,
-	stdout, stderr *bytes.Buffer,
+	stdout, stderr *boundedOutputBuffer,
 ) error {
 	deadline := time.Now().Add(5 * time.Second)
 	var lastErr error
@@ -213,9 +214,12 @@ func (c *Client) waitReady(
 	return fmt.Errorf("pty owner did not become ready: %w", lastErr)
 }
 
-func exitedOwnerError(err error, stdout, stderr *bytes.Buffer) error {
-	msg := strings.TrimSpace(stderr.String())
-	if msg == "" {
+func exitedOwnerError(err error, stdout, stderr *boundedOutputBuffer) error {
+	msg := ""
+	if stderr != nil {
+		msg = strings.TrimSpace(stderr.String())
+	}
+	if msg == "" && stdout != nil {
 		msg = strings.TrimSpace(stdout.String())
 	}
 	if msg == "" {
@@ -225,6 +229,38 @@ func exitedOwnerError(err error, stdout, stderr *bytes.Buffer) error {
 		return fmt.Errorf("pty owner exited before ready: %w: %s", err, msg)
 	}
 	return fmt.Errorf("pty owner exited before ready: %s", msg)
+}
+
+type boundedOutputBuffer struct {
+	mu    sync.Mutex
+	limit int
+	data  []byte
+}
+
+func newBoundedOutputBuffer(limit int) boundedOutputBuffer {
+	return boundedOutputBuffer{limit: limit}
+}
+
+func (b *boundedOutputBuffer) Write(p []byte) (int, error) {
+	if b == nil || b.limit <= 0 {
+		return len(p), nil
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.data = append(b.data, p...)
+	if len(b.data) > b.limit {
+		b.data = append([]byte(nil), b.data[len(b.data)-b.limit:]...)
+	}
+	return len(p), nil
+}
+
+func (b *boundedOutputBuffer) String() string {
+	if b == nil {
+		return ""
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return string(b.data)
 }
 
 func (c *Client) HasState(session string) bool {

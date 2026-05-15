@@ -22,6 +22,37 @@ func TestValidateRemoteURLHostAcceptsMatchingHTTPSHost(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestValidateRemoteURLIdentityAcceptsSCPStyleRemoteWithoutUser(t *testing.T) {
+	err := validateRemoteURLIdentity(
+		"github.com", "acme", "widget",
+		"github.com:acme/widget.git",
+	)
+
+	require.NoError(t, err)
+}
+
+func TestValidateRemoteURLIdentityRejectsSCPStyleRemoteHostMismatch(t *testing.T) {
+	err := validateRemoteURLIdentity(
+		"github.com", "acme", "widget",
+		"evil.example.com:acme/widget.git",
+	)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "evil.example.com")
+	assert.Contains(t, err.Error(), "github.com")
+}
+
+func TestValidateRemoteURLIdentityRejectsSchemeOnlyRemoteHostMismatch(t *testing.T) {
+	err := validateRemoteURLIdentity(
+		"github.com", "acme", "widget",
+		"ssh:evil.example.com/acme/widget.git",
+	)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ssh")
+	assert.Contains(t, err.Error(), "github.com")
+}
+
 func TestValidateRemoteURLHostAcceptsLocalPath(t *testing.T) {
 	err := validateRemoteURLHost("github.com", "/tmp/acme/widget.git")
 
