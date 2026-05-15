@@ -866,7 +866,7 @@ func run(
 				return
 			}
 			if err := database.UpdateMRDetailFetchedByRepoID(
-				r.Context(), repo.ID, 1, true,
+				r.Context(), repo.ID, 1, false,
 			); err != nil {
 				http.Error(w, "mark pending CI fetched", http.StatusInternalServerError)
 				return

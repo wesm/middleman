@@ -112,6 +112,7 @@ describe("provider-aware detail API routes", () => {
         CIChecksJSON: JSON.stringify([
           { name: "build", status: "in_progress", conclusion: "" },
         ]),
+        CIHadPending: true,
       },
       workflow_approval: { checked: false, required: false, count: 0 },
       events: [],
@@ -149,6 +150,56 @@ describe("provider-aware detail API routes", () => {
       required: true,
       count: 1,
     });
+  });
+
+  it("keeps ordinary pending CI refreshes on the async PR sync endpoint", async () => {
+    const detail = {
+      repo_owner: "acme",
+      repo_name: "widgets",
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "widgets",
+        repo_path: "acme/widgets",
+        capabilities: { workflow_approval: true },
+      },
+      merge_request: {
+        Number: 1,
+        State: "open",
+        CIStatus: "pending",
+        CIChecksJSON: JSON.stringify([
+          { name: "build", status: "in_progress", conclusion: "" },
+        ]),
+        CIHadPending: false,
+      },
+      workflow_approval: { checked: false, required: false, count: 0 },
+      events: [],
+    };
+    const postPaths: string[] = [];
+    const client = {
+      GET: vi.fn(async () => ({ data: detail })),
+      POST: vi.fn(async (path: string) => {
+        postPaths.push(path);
+        return { data: undefined };
+      }),
+      PUT: vi.fn(),
+      DELETE: vi.fn(),
+    } as unknown as MiddlemanClient;
+    const store = createDetailStore({ client });
+
+    await store.loadDetail("acme", "widgets", 1, {
+      sync: "background",
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widgets",
+    } as never);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(postPaths).toEqual([
+      "/pulls/{provider}/{owner}/{name}/{number}/sync/async",
+    ]);
   });
 
   it("loads issue detail through the provider item endpoint", async () => {
