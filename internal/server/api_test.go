@@ -2361,6 +2361,7 @@ func TestAPIGitLabConfiguredRepoSyncThroughProviderRegistry(t *testing.T) {
 			BaseBranch:         "main",
 			HeadSHA:            "abc123",
 			BaseSHA:            "def456",
+			MergeableState:     "dirty",
 			CreatedAt:          now,
 			UpdatedAt:          now,
 			LastActivityAt:     now,
@@ -2436,6 +2437,7 @@ func TestAPIGitLabConfiguredRepoSyncThroughProviderRegistry(t *testing.T) {
 	assert.Equal("group/subgroup", (*pullsResp.JSON200)[0].RepoOwner)
 	assert.Equal("project", (*pullsResp.JSON200)[0].RepoName)
 	assert.Equal("GitLab provider MR", (*pullsResp.JSON200)[0].Title)
+	assert.Equal("dirty", (*pullsResp.JSON200)[0].MergeableState)
 }
 
 func TestGitLabSyncCoversRepositoryItemsEventsOverviewAndCI(t *testing.T) {
@@ -8938,16 +8940,17 @@ func TestAPIGitealikeMergeConflictReturnsConflict(t *testing.T) {
 			Updated:       base,
 		},
 		pulls: []gitealike.PullRequestDTO{{
-			ID:      201,
-			Index:   7,
-			HTMLURL: "https://gitea.test/tea/kettle/pulls/7",
-			Title:   "Add kettle",
-			User:    gitealike.UserDTO{UserName: "alice"},
-			State:   "open",
-			Head:    gitealike.BranchDTO{Ref: "feature", SHA: "abc123"},
-			Base:    gitealike.BranchDTO{Ref: "main", SHA: "def456"},
-			Created: base,
-			Updated: base,
+			ID:        201,
+			Index:     7,
+			HTMLURL:   "https://gitea.test/tea/kettle/pulls/7",
+			Title:     "Add kettle",
+			User:      gitealike.UserDTO{UserName: "alice"},
+			State:     "open",
+			Head:      gitealike.BranchDTO{Ref: "feature", SHA: "abc123"},
+			Base:      gitealike.BranchDTO{Ref: "main", SHA: "def456"},
+			Mergeable: false,
+			Created:   base,
+			Updated:   base,
 		}},
 	}
 	provider := gitealike.NewProvider(
@@ -8989,6 +8992,7 @@ func TestAPIGitealikeMergeConflictReturnsConflict(t *testing.T) {
 	})
 	require.NoError(err)
 	require.NotNil(repo)
+	assert.Equal("dirty", requireMR(t, database, repo.ID, 7).MergeableState)
 	transport.pulls[0].Title = "Refreshed kettle after conflict"
 
 	resp, err := client.HTTP.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithResponse(
