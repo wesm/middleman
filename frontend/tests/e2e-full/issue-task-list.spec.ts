@@ -104,4 +104,60 @@ test.describe.serial("issue description task list", () => {
     expect(slot0 ?? "").toMatch(/Manual toggle/);
     expect(slot2 ?? "").toMatch(/System preference/);
   });
+
+  test("queued body save wins when an older PATCH finishes after a newer click", async ({
+    page,
+  }) => {
+    // Hold the first PATCH response so we can queue a newer body
+    // while it's in flight. Mirrors the PR test — verifies the
+    // single-flight body-save queue for the issue path.
+    const body = page.locator(".body-section .markdown-body");
+    const cb0 = body.locator('input[type="checkbox"][data-task-index="0"]');
+    const cb1 = body.locator('input[type="checkbox"][data-task-index="1"]');
+    const cb0Initial = await cb0.isChecked();
+    const cb1Initial = await cb1.isChecked();
+
+    let patchCount = 0;
+    let releaseFirstPatch: () => void = () => undefined;
+    const firstPatchHeld = new Promise<void>((resolve) => {
+      releaseFirstPatch = resolve;
+    });
+    const patchRoute = /\/api\/v1\/issues\/[^/]+\/[^/]+\/[^/]+\/11$/;
+    await page.route(patchRoute, async (route) => {
+      if (route.request().method() !== "PATCH") {
+        await route.fallback();
+        return;
+      }
+      patchCount++;
+      if (patchCount === 1) {
+        await firstPatchHeld;
+      }
+      await route.continue();
+    });
+
+    await cb0.click();
+    await expect(cb0).toBeChecked({ checked: !cb0Initial });
+    await expect
+      .poll(() => patchCount, { timeout: 3_000 })
+      .toBe(1);
+
+    await cb1.click();
+    await expect(cb1).toBeChecked({ checked: !cb1Initial });
+    await page.waitForTimeout(800);
+    expect(patchCount).toBe(1);
+
+    releaseFirstPatch();
+    await expect.poll(() => patchCount, { timeout: 5_000 }).toBe(2);
+
+    await page.unroute(patchRoute);
+    await page.reload();
+    const reloadedBody = page.locator(".body-section .markdown-body");
+    await reloadedBody.waitFor({ state: "visible" });
+    await expect(
+      reloadedBody.locator('input[type="checkbox"][data-task-index="0"]'),
+    ).toBeChecked({ checked: !cb0Initial });
+    await expect(
+      reloadedBody.locator('input[type="checkbox"][data-task-index="1"]'),
+    ).toBeChecked({ checked: !cb1Initial });
+  });
 });

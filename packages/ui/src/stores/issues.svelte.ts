@@ -704,7 +704,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   function issueSaveQueueKey(
     owner: string, name: string, number: number,
   ): string {
-    return `${owner} ${name} ${number}`;
+    // JSON encoding stores each field as its own array element, so
+    // an owner or name that contains a delimiter character can't
+    // forge a collision with a different (owner, name, number).
+    return JSON.stringify([owner, name, number]);
   }
 
   async function runIssueBodyPatch(
