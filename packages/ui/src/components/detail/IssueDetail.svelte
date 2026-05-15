@@ -431,11 +431,10 @@
       <!-- Header -->
       <div class="detail-header">
         <h2 class="detail-title">{issue.Title}</h2>
-        {#if !uiConfig.hideStar}
+        {#if !uiConfig.hideStar && !staleIssue}
           <button
             class="star-btn"
             onclick={handleStarClick}
-            disabled={staleIssue}
             title={issue.Starred ? "Unstar" : "Star"}
           >
             {#if issue.Starred}

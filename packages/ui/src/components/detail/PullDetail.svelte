@@ -707,15 +707,15 @@
         {:else if capabilities.state_mutation}
           <div class="title-line">
             <h2 class="detail-title">{pr.Title}</h2>
-            <button
-              class="edit-title-btn"
-              onclick={startEditTitle}
-              disabled={stalePR}
-            >Edit</button>
-            {#if !uiConfig.hideStar}
+            {#if !stalePR}
+              <button
+                class="edit-title-btn"
+                onclick={startEditTitle}
+              >Edit</button>
+            {/if}
+            {#if !uiConfig.hideStar && !stalePR}
               <button
                 class="star-btn"
-                disabled={stalePR}
                 onclick={handleStarClick}
                 title={pr.Starred ? "Unstar" : "Star"}
               >
@@ -738,14 +738,15 @@
               </svg>
             </a>
           </div>
-          <SelectDropdown
-            class="kanban-select kanban-select--header kanban-select--{pr.KanbanStatus.replace('_', '-')}"
-            value={pr.KanbanStatus}
-            options={kanbanOptions}
-            onchange={onKanbanChange}
-            title="Change workflow status"
-            disabled={stalePR}
-          />
+          {#if !stalePR}
+            <SelectDropdown
+              class="kanban-select kanban-select--header kanban-select--{pr.KanbanStatus.replace('_', '-')}"
+              value={pr.KanbanStatus}
+              options={kanbanOptions}
+              onchange={onKanbanChange}
+              title="Change workflow status"
+            />
+          {/if}
         {/if}
       </div>
 
@@ -837,14 +838,15 @@
         />
       </div>
 
-      <SelectDropdown
-        class="kanban-select kanban-select--below-chips kanban-select--{pr.KanbanStatus.replace('_', '-')}"
-        value={pr.KanbanStatus}
-        options={kanbanOptions}
-        onchange={onKanbanChange}
-        title="Change workflow status"
-        disabled={stalePR}
-      />
+      {#if !stalePR}
+        <SelectDropdown
+          class="kanban-select kanban-select--below-chips kanban-select--{pr.KanbanStatus.replace('_', '-')}"
+          value={pr.KanbanStatus}
+          options={kanbanOptions}
+          onchange={onKanbanChange}
+          title="Change workflow status"
+        />
+      {/if}
 
       {#if labels.length > 0}
         <GitHubLabels {labels} mode="full" />
@@ -988,7 +990,7 @@
       {/snippet}
 
       <!-- Approve / Merge / Close / Reopen actions -->
-      {#if pr.State !== "merged"}
+      {#if pr.State !== "merged" && !stalePR}
         <div class="primary-actions-wrap">
           <div class="actions-row actions-row--primary">
             {@render primaryActionButtons()}
@@ -1153,11 +1155,10 @@
       <div class="section body-section">
         <div class="section-header">
           <span class="section-title-inline">Description</span>
-          {#if !editingBody && capabilities.state_mutation}
+          {#if !editingBody && capabilities.state_mutation && !stalePR}
             <button
               class="edit-body-btn"
               onclick={startEditBody}
-              disabled={stalePR}
             >
               Edit
             </button>
@@ -1211,11 +1212,10 @@
             </button>
             <div class="inset-box markdown-body">{@html renderMarkdown(pr.Body, { provider, platformHost, owner, name, repoPath })}</div>
           </div>
-        {:else if capabilities.state_mutation}
+        {:else if capabilities.state_mutation && !stalePR}
           <button
             class="add-description-btn"
             onclick={startEditBody}
-            disabled={stalePR}
           >
             Add a description
           </button>

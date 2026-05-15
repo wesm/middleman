@@ -696,14 +696,12 @@ test.describe("PR detail stale-action gating", () => {
     await expect(page.locator(".detail-title")).toContainText(prA.Title);
 
     const starBtn = page.locator(".pull-detail button.star-btn");
-    await expect(starBtn).toBeDisabled();
-    await starBtn.click({ force: true }).catch(() => {});
+    await expect(starBtn).toHaveCount(0);
 
-    // Close button must be disabled — clicking it must not fire
+    // Close button must be hidden — clicking stale controls must not fire
     // POST /github-state for PR B.
     const closeBtn = page.locator(".btn--close").first();
-    await expect(closeBtn).toBeDisabled();
-    await closeBtn.click({ force: true }).catch(() => {});
+    await expect(closeBtn).toHaveCount(0);
 
     // Create Workspace button must be disabled. A force-click must
     // not fire POST /workspaces.
@@ -721,7 +719,7 @@ test.describe("PR detail stale-action gating", () => {
     // re-enable.
     release();
     await expect(page.locator(".detail-title")).toContainText(prB.Title);
-    await expect(closeBtn).toBeEnabled();
+    await expect(page.locator(".btn--close").first()).toBeEnabled();
 
     // No user-mutation request was sent during the stale window.
     expect(userMutations).toEqual([]);
@@ -791,8 +789,7 @@ test.describe("issue detail stale-action gating", () => {
     );
 
     const starBtn = page.locator(".issue-detail .star-btn");
-    await expect(starBtn).toBeDisabled();
-    await starBtn.click({ force: true }).catch(() => {});
+    await expect(starBtn).toHaveCount(0);
 
     const closeBtn = page.locator(".issue-detail .btn--close");
     await expect(closeBtn).toBeDisabled();
