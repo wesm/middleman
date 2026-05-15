@@ -38,6 +38,7 @@ func TestConvertGiteaSDKRecords(t *testing.T) {
 	assert.True(repo.Private)
 	assert.True(repo.Archived)
 
+	mergeable := true
 	pr := convertPullRequest(&giteasdk.PullRequest{
 		ID:        3,
 		Index:     4,
@@ -61,7 +62,7 @@ func TestConvertGiteaSDKRecords(t *testing.T) {
 		Updated: &updated,
 		Closed:  &closed,
 		Merged:  &closed,
-	})
+	}, &mergeable)
 	assert.Equal(4, pr.Index)
 	assert.Equal("alice", pr.User.UserName)
 	assert.Equal("open", pr.State)

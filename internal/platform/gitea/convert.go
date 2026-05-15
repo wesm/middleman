@@ -29,7 +29,7 @@ func convertRepository(repo *giteasdk.Repository) (gitealike.RepositoryDTO, erro
 	}, nil
 }
 
-func convertPullRequest(pr *giteasdk.PullRequest) gitealike.PullRequestDTO {
+func convertPullRequest(pr *giteasdk.PullRequest, mergeable *bool) gitealike.PullRequestDTO {
 	if pr == nil {
 		return gitealike.PullRequestDTO{}
 	}
@@ -47,7 +47,7 @@ func convertPullRequest(pr *giteasdk.PullRequest) gitealike.PullRequestDTO {
 		Base:      convertBranch(pr.Base),
 		Labels:    convertLabels(pr.Labels),
 		Comments:  pr.Comments,
-		Mergeable: new(pr.Mergeable),
+		Mergeable: mergeable,
 		Created:   timeValue(pr.Created),
 		Updated:   timeValue(pr.Updated),
 		Merged:    pr.HasMerged,
@@ -207,10 +207,17 @@ func convertRepositories(
 	return out, page, nil
 }
 
-func convertPullRequests(prs []*giteasdk.PullRequest) []gitealike.PullRequestDTO {
+func convertPullRequests(
+	prs []*giteasdk.PullRequest,
+	mergeableFor func(*giteasdk.PullRequest) *bool,
+) []gitealike.PullRequestDTO {
 	out := make([]gitealike.PullRequestDTO, 0, len(prs))
 	for _, pr := range prs {
-		out = append(out, convertPullRequest(pr))
+		var mergeable *bool
+		if mergeableFor != nil {
+			mergeable = mergeableFor(pr)
+		}
+		out = append(out, convertPullRequest(pr, mergeable))
 	}
 	return out
 }

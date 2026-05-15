@@ -80,6 +80,11 @@ func NewClient(host, token string, options ...ClientOption) (*Client, error) {
 			rateTracker: opts.rateTracker,
 		}
 	}
+	mergeability := gitealike.NewMergeableCache()
+	httpTransport = &gitealike.MergeableCaptureTransport{
+		Base:  httpTransport,
+		Cache: mergeability,
+	}
 	clientOptions = append(clientOptions, giteasdk.SetHTTPClient(&http.Client{
 		Timeout:   opts.foregroundTimeout,
 		Transport: httpTransport,
@@ -92,6 +97,7 @@ func NewClient(host, token string, options ...ClientOption) (*Client, error) {
 	transport := &transport{
 		api:                api,
 		budget:             opts.budget,
+		mergeability:       mergeability,
 		requestContextLock: make(chan struct{}, 1),
 	}
 	return &Client{
@@ -119,6 +125,7 @@ func (c *Client) Capabilities() platform.Capabilities {
 type transport struct {
 	api                *giteasdk.Client
 	budget             *ghsync.SyncBudget
+	mergeability       *gitealike.MergeableCache
 	requestContextLock chan struct{}
 }
 

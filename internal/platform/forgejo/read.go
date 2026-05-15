@@ -160,7 +160,7 @@ func (t *transport) ListOpenPullRequests(
 	if err != nil {
 		return nil, gitealike.Page{}, forgejoHTTPError(resp, err)
 	}
-	return convertPullRequests(prs), forgejoPage(resp), nil
+	return convertPullRequests(prs, t.mergeableForPullRequest), forgejoPage(resp), nil
 }
 
 func (t *transport) GetPullRequest(
@@ -179,7 +179,15 @@ func (t *transport) GetPullRequest(
 	if err != nil {
 		return gitealike.PullRequestDTO{}, forgejoHTTPError(resp, err)
 	}
-	return convertPullRequest(pr), nil
+	return convertPullRequest(pr, t.mergeableForPullRequest(pr)), nil
+}
+
+func (t *transport) mergeableForPullRequest(pr *forgejosdk.PullRequest) *bool {
+	if pr == nil {
+		return nil
+	}
+	mergeable, _ := t.mergeability.MergeableForHTMLURL(pr.HTMLURL)
+	return mergeable
 }
 
 func (t *transport) ListPullRequestComments(

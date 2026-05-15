@@ -243,6 +243,34 @@ func TestNormalizeStatusesMapsCommitStatusesAndActionRuns(t *testing.T) {
 	assert.Equal(&laterStopped, checks[4].CompletedAt)
 }
 
+func TestMergeableCacheCapturesKnownAndOmittedValues(t *testing.T) {
+	assert := Assert.New(t)
+	cache := NewMergeableCache()
+
+	cache.CapturePullRequestJSON([]byte(`[
+		{"html_url":"https://gitea.test/owner/repo/pulls/1","mergeable":false},
+		{"html_url":"https://gitea.test/owner/repo/pulls/2","mergeable":true},
+		{"html_url":"https://gitea.test/owner/repo/pulls/3"}
+	]`))
+
+	unmergeable, ok := cache.MergeableForHTMLURL("https://gitea.test/owner/repo/pulls/1")
+	assert.True(ok)
+	assert.NotNil(unmergeable)
+	assert.False(*unmergeable)
+
+	mergeable, ok := cache.MergeableForHTMLURL("https://gitea.test/owner/repo/pulls/2")
+	assert.True(ok)
+	assert.NotNil(mergeable)
+	assert.True(*mergeable)
+
+	unknown, ok := cache.MergeableForHTMLURL("https://gitea.test/owner/repo/pulls/3")
+	assert.True(ok)
+	assert.Nil(unknown)
+
+	_, ok = cache.MergeableForHTMLURL("https://gitea.test/owner/repo/pulls/4")
+	assert.False(ok)
+}
+
 func TestNormalizeStatusesKeepsQueuedActionRerunAsLatest(t *testing.T) {
 	assert := Assert.New(t)
 	require := Require.New(t)

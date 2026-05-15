@@ -38,6 +38,7 @@ func TestConvertForgejoSDKRecords(t *testing.T) {
 	assert.True(repo.Private)
 	assert.True(repo.Archived)
 
+	mergeable := true
 	pr := convertPullRequest(&forgejosdk.PullRequest{
 		ID:        3,
 		Index:     4,
@@ -60,7 +61,7 @@ func TestConvertForgejoSDKRecords(t *testing.T) {
 		Updated: &updated,
 		Closed:  &closed,
 		Merged:  &closed,
-	})
+	}, &mergeable)
 	assert.Equal(4, pr.Index)
 	assert.Equal("alice", pr.User.UserName)
 	assert.Equal("open", pr.State)
@@ -80,7 +81,7 @@ func TestConvertForgejoSDKRecords(t *testing.T) {
 		State:   forgejosdk.StateType("open"),
 		Created: &created,
 		Updated: &updated,
-	})
+	}, nil)
 	assert.True(draftPR.Draft)
 	assert.Equal("main", pr.Base.Ref)
 	assert.Equal("feature", pr.Labels[0].Name)

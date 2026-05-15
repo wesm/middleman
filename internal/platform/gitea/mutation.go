@@ -220,7 +220,7 @@ func (t *transport) EditPullRequest(
 	if err != nil {
 		return gitealike.PullRequestDTO{}, giteaHTTPError(resp, err)
 	}
-	return convertPullRequest(pr), nil
+	return convertPullRequest(pr, t.mergeableForPullRequest(pr)), nil
 }
 
 func (t *transport) MergePullRequest(

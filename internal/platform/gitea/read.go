@@ -159,7 +159,7 @@ func (t *transport) ListOpenPullRequests(
 	if err != nil {
 		return nil, gitealike.Page{}, giteaHTTPError(resp, err)
 	}
-	return convertPullRequests(prs), giteaPage(resp), nil
+	return convertPullRequests(prs, t.mergeableForPullRequest), giteaPage(resp), nil
 }
 
 func (t *transport) GetPullRequest(
@@ -178,7 +178,15 @@ func (t *transport) GetPullRequest(
 	if err != nil {
 		return gitealike.PullRequestDTO{}, giteaHTTPError(resp, err)
 	}
-	return convertPullRequest(pr), nil
+	return convertPullRequest(pr, t.mergeableForPullRequest(pr)), nil
+}
+
+func (t *transport) mergeableForPullRequest(pr *giteasdk.PullRequest) *bool {
+	if pr == nil {
+		return nil
+	}
+	mergeable, _ := t.mergeability.MergeableForHTMLURL(pr.HTMLURL)
+	return mergeable
 }
 
 func (t *transport) ListPullRequestComments(

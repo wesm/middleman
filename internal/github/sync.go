@@ -5437,6 +5437,16 @@ func preserveMergeableStateIfOmitted(
 	if normalized == nil || existing == nil {
 		return
 	}
+	if normalized.PlatformHeadSHA != "" &&
+		existing.PlatformHeadSHA != "" &&
+		normalized.PlatformHeadSHA != existing.PlatformHeadSHA {
+		return
+	}
+	if normalized.PlatformBaseSHA != "" &&
+		existing.PlatformBaseSHA != "" &&
+		normalized.PlatformBaseSHA != existing.PlatformBaseSHA {
+		return
+	}
 	if normalized.MergeableState == "" ||
 		(normalized.MergeableState == "unknown" && existing.MergeableState != "") {
 		normalized.MergeableState = existing.MergeableState

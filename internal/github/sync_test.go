@@ -1557,6 +1557,33 @@ func TestIndexUpsertMergeRequestUpdatesKnownMergeableState(t *testing.T) {
 	assert.Equal("dirty", stored.MergeableState)
 }
 
+func TestPreserveMergeableStateSkipsChangedHeadOrBase(t *testing.T) {
+	assert := Assert.New(t)
+	tests := []struct {
+		name       string
+		normalized db.MergeRequest
+		existing   db.MergeRequest
+	}{
+		{
+			name:       "head changed",
+			normalized: db.MergeRequest{PlatformHeadSHA: "new-head"},
+			existing:   db.MergeRequest{PlatformHeadSHA: "old-head", MergeableState: "dirty"},
+		},
+		{
+			name:       "base changed",
+			normalized: db.MergeRequest{PlatformHeadSHA: "same-head", PlatformBaseSHA: "new-base"},
+			existing:   db.MergeRequest{PlatformHeadSHA: "same-head", PlatformBaseSHA: "old-base", MergeableState: "dirty"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			preserveMergeableStateIfOmitted(&tt.normalized, &tt.existing)
+			assert.Empty(tt.normalized.MergeableState)
+		})
+	}
+}
+
 func TestSyncTriggersFullFetchForUnknownMergeableState(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
