@@ -314,6 +314,11 @@ func repoIDForMergeRequestTx(ctx context.Context, tx *sql.Tx, mrID int64) (int64
 func upsertLabelsTx(ctx context.Context, tx *sql.Tx, repoID int64, labels []Label) (map[string]int64, error) {
 	ids := make(map[string]int64, len(labels))
 	for _, label := range labels {
+		catalogSeenAt := label.CatalogSeenAt
+		if label.CatalogPresent && catalogSeenAt == nil {
+			seenAt := label.UpdatedAt.UTC()
+			catalogSeenAt = &seenAt
+		}
 		id, found, err := labelIDForUpsertTx(ctx, tx, repoID, label)
 		if err != nil {
 			return nil, err
@@ -322,11 +327,13 @@ func upsertLabelsTx(ctx context.Context, tx *sql.Tx, repoID int64, labels []Labe
 			result, err := tx.ExecContext(ctx, `
 				INSERT INTO middleman_labels (
 					repo_id, platform_id, platform_external_id,
-					name, description, color, is_default, updated_at
+					name, description, color, is_default, updated_at,
+					catalog_present, catalog_seen_at
 				)
-				VALUES (?, NULLIF(?, 0), ?, ?, ?, ?, ?, ?)`,
+				VALUES (?, NULLIF(?, 0), ?, ?, ?, ?, ?, ?, ?, ?)`,
 				repoID, label.PlatformID, label.PlatformExternalID,
 				label.Name, label.Description, label.Color, label.IsDefault, label.UpdatedAt,
+				label.CatalogPresent, catalogSeenAt,
 			)
 			if err != nil {
 				return nil, fmt.Errorf("insert label %s: %w", label.Name, err)
@@ -344,10 +351,13 @@ func upsertLabelsTx(ctx context.Context, tx *sql.Tx, repoID int64, labels []Labe
 				    description = ?,
 				    color = ?,
 				    is_default = ?,
-				    updated_at = ?
+				    updated_at = ?,
+				    catalog_present = CASE WHEN ? THEN 1 ELSE catalog_present END,
+				    catalog_seen_at = COALESCE(?, catalog_seen_at)
 				WHERE id = ?`,
 				label.PlatformID, label.PlatformExternalID,
-				label.Name, label.Description, label.Color, label.IsDefault, label.UpdatedAt, id,
+				label.Name, label.Description, label.Color, label.IsDefault, label.UpdatedAt,
+				label.CatalogPresent, catalogSeenAt, id,
 			)
 			if err != nil {
 				return nil, fmt.Errorf("update label %s: %w", label.Name, err)
@@ -421,6 +431,136 @@ func (d *DB) UpsertLabels(ctx context.Context, repoID int64, labels []Label) err
 		_, err := upsertLabelsTx(ctx, tx, repoID, labels)
 		return err
 	})
+}
+
+// ReplaceRepoLabelCatalog replaces the selectable provider label catalog for a repo.
+// Historical label rows and item-label joins are preserved, but labels not returned
+// by the provider stop appearing in catalog results.
+func (d *DB) ReplaceRepoLabelCatalog(ctx context.Context, repoID int64, labels []Label, syncedAt time.Time) error {
+	syncedAt = canonicalUTCTime(syncedAt)
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE middleman_labels SET catalog_present = 0 WHERE repo_id = ?`,
+			repoID,
+		); err != nil {
+			return fmt.Errorf("clear label catalog: %w", err)
+		}
+		for i := range labels {
+			labels[i].CatalogPresent = true
+			labels[i].CatalogSeenAt = &syncedAt
+			if labels[i].UpdatedAt.IsZero() {
+				labels[i].UpdatedAt = syncedAt
+			}
+		}
+		if _, err := upsertLabelsTx(ctx, tx, repoID, labels); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE middleman_repos
+			SET label_catalog_synced_at = ?,
+			    label_catalog_checked_at = ?,
+			    label_catalog_sync_error = ''
+			WHERE id = ?`,
+			syncedAt, syncedAt, repoID,
+		); err != nil {
+			return fmt.Errorf("mark label catalog synced: %w", err)
+		}
+		return nil
+	})
+}
+
+func (d *DB) ListRepoLabelCatalog(ctx context.Context, repoID int64) ([]Label, LabelCatalogFreshness, error) {
+	rows, err := d.ro.QueryContext(ctx, `
+		SELECT id, repo_id, COALESCE(platform_id, 0), platform_external_id,
+		       name, description, color, is_default, updated_at,
+		       catalog_present, catalog_seen_at
+		FROM middleman_labels
+		WHERE repo_id = ? AND catalog_present = 1
+		ORDER BY lower(name), name`,
+		repoID,
+	)
+	if err != nil {
+		return nil, LabelCatalogFreshness{}, fmt.Errorf("list repo label catalog: %w", err)
+	}
+	defer rows.Close()
+
+	labels := []Label{}
+	for rows.Next() {
+		var label Label
+		var seenAt sql.NullTime
+		if err := rows.Scan(
+			&label.ID, &label.RepoID, &label.PlatformID, &label.PlatformExternalID,
+			&label.Name, &label.Description, &label.Color, &label.IsDefault,
+			&label.UpdatedAt, &label.CatalogPresent, &seenAt,
+		); err != nil {
+			return nil, LabelCatalogFreshness{}, fmt.Errorf("scan repo label catalog: %w", err)
+		}
+		label.UpdatedAt = label.UpdatedAt.UTC()
+		if seenAt.Valid {
+			seen := seenAt.Time.UTC()
+			label.CatalogSeenAt = &seen
+		}
+		labels = append(labels, label)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, LabelCatalogFreshness{}, fmt.Errorf("iterate repo label catalog: %w", err)
+	}
+	freshness, err := d.GetRepoLabelCatalogFreshness(ctx, repoID)
+	if err != nil {
+		return nil, LabelCatalogFreshness{}, err
+	}
+	return labels, freshness, nil
+}
+
+func (d *DB) GetRepoLabelCatalogFreshness(ctx context.Context, repoID int64) (LabelCatalogFreshness, error) {
+	var freshness LabelCatalogFreshness
+	err := d.ro.QueryRowContext(ctx, `
+		SELECT label_catalog_synced_at, label_catalog_checked_at, label_catalog_sync_error
+		FROM middleman_repos
+		WHERE id = ?`, repoID,
+	).Scan(&freshness.SyncedAt, &freshness.CheckedAt, &freshness.SyncError)
+	if err != nil {
+		return LabelCatalogFreshness{}, fmt.Errorf("get label catalog freshness: %w", err)
+	}
+	if freshness.SyncedAt != nil {
+		t := freshness.SyncedAt.UTC()
+		freshness.SyncedAt = &t
+	}
+	if freshness.CheckedAt != nil {
+		t := freshness.CheckedAt.UTC()
+		freshness.CheckedAt = &t
+	}
+	return freshness, nil
+}
+
+func (d *DB) UpdateRepoLabelCatalogCheck(ctx context.Context, repoID int64, checkedAt time.Time, syncErr string) error {
+	checkedAt = canonicalUTCTime(checkedAt)
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_repos
+		SET label_catalog_checked_at = ?, label_catalog_sync_error = ?
+		WHERE id = ?`,
+		checkedAt, syncErr, repoID,
+	)
+	if err != nil {
+		return fmt.Errorf("update label catalog check: %w", err)
+	}
+	return nil
+}
+
+func (d *DB) MarkRepoLabelCatalogSynced(ctx context.Context, repoID int64, syncedAt time.Time) error {
+	syncedAt = canonicalUTCTime(syncedAt)
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_repos
+		SET label_catalog_synced_at = ?,
+		    label_catalog_checked_at = ?,
+		    label_catalog_sync_error = ''
+		WHERE id = ?`,
+		syncedAt, syncedAt, repoID,
+	)
+	if err != nil {
+		return fmt.Errorf("mark label catalog synced: %w", err)
+	}
+	return nil
 }
 
 func (d *DB) ReplaceIssueLabels(ctx context.Context, repoID, issueID int64, labels []Label) error {
@@ -1162,6 +1302,8 @@ func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
 		        backfill_pr_completed_at,
 		        backfill_issue_page, backfill_issue_complete,
 		        backfill_issue_completed_at,
+		        label_catalog_synced_at, label_catalog_checked_at,
+		        label_catalog_sync_error,
 		        created_at
 		 FROM middleman_repos ORDER BY owner, name, platform, platform_host`,
 	)
@@ -1185,6 +1327,8 @@ func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
 			&r.BackfillPRCompletedAt,
 			&r.BackfillIssuePage, &r.BackfillIssueComplete,
 			&r.BackfillIssueCompletedAt,
+			&r.LabelCatalogSyncedAt, &r.LabelCatalogCheckedAt,
+			&r.LabelCatalogSyncError,
 			&r.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan repo: %w", err)
@@ -1263,6 +1407,8 @@ func (d *DB) GetRepoByOwnerName(ctx context.Context, owner, name string) (*Repo,
 		        backfill_pr_completed_at,
 		        backfill_issue_page, backfill_issue_complete,
 		        backfill_issue_completed_at,
+		        label_catalog_synced_at, label_catalog_checked_at,
+		        label_catalog_sync_error,
 		        created_at
 		 FROM middleman_repos WHERE owner_key = ? AND name_key = ?
 		 ORDER BY platform_host ASC LIMIT 1`, owner, name,
@@ -1278,6 +1424,8 @@ func (d *DB) GetRepoByOwnerName(ctx context.Context, owner, name string) (*Repo,
 		&r.BackfillPRCompletedAt,
 		&r.BackfillIssuePage, &r.BackfillIssueComplete,
 		&r.BackfillIssueCompletedAt,
+		&r.LabelCatalogSyncedAt, &r.LabelCatalogCheckedAt,
+		&r.LabelCatalogSyncError,
 		&r.CreatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -1307,6 +1455,8 @@ func (d *DB) GetRepoByIdentity(ctx context.Context, identity RepoIdentity) (*Rep
 		        backfill_pr_completed_at,
 		        backfill_issue_page, backfill_issue_complete,
 		        backfill_issue_completed_at,
+		        label_catalog_synced_at, label_catalog_checked_at,
+		        label_catalog_sync_error,
 		        created_at
 		 FROM middleman_repos
 		 WHERE platform = ?
@@ -1325,6 +1475,8 @@ func (d *DB) GetRepoByIdentity(ctx context.Context, identity RepoIdentity) (*Rep
 		&r.BackfillPRCompletedAt,
 		&r.BackfillIssuePage, &r.BackfillIssueComplete,
 		&r.BackfillIssueCompletedAt,
+		&r.LabelCatalogSyncedAt, &r.LabelCatalogCheckedAt,
+		&r.LabelCatalogSyncError,
 		&r.CreatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -1352,6 +1504,8 @@ func (d *DB) GetRepoByID(ctx context.Context, id int64) (*Repo, error) {
 		        backfill_pr_completed_at,
 		        backfill_issue_page, backfill_issue_complete,
 		        backfill_issue_completed_at,
+		        label_catalog_synced_at, label_catalog_checked_at,
+		        label_catalog_sync_error,
 		        created_at
 		 FROM middleman_repos WHERE id = ?`, id,
 	).Scan(
@@ -1366,6 +1520,8 @@ func (d *DB) GetRepoByID(ctx context.Context, id int64) (*Repo, error) {
 		&r.BackfillPRCompletedAt,
 		&r.BackfillIssuePage, &r.BackfillIssueComplete,
 		&r.BackfillIssueCompletedAt,
+		&r.LabelCatalogSyncedAt, &r.LabelCatalogCheckedAt,
+		&r.LabelCatalogSyncError,
 		&r.CreatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -1398,6 +1554,14 @@ func normalizeRepoTimestamps(r *Repo) {
 	if r.BackfillIssueCompletedAt != nil {
 		t := r.BackfillIssueCompletedAt.UTC()
 		r.BackfillIssueCompletedAt = &t
+	}
+	if r.LabelCatalogSyncedAt != nil {
+		t := r.LabelCatalogSyncedAt.UTC()
+		r.LabelCatalogSyncedAt = &t
+	}
+	if r.LabelCatalogCheckedAt != nil {
+		t := r.LabelCatalogCheckedAt.UTC()
+		r.LabelCatalogCheckedAt = &t
 	}
 }
 
@@ -3231,6 +3395,8 @@ func (d *DB) GetRepoByHostOwnerName(
 		        backfill_pr_completed_at,
 		        backfill_issue_page, backfill_issue_complete,
 		        backfill_issue_completed_at,
+		        label_catalog_synced_at, label_catalog_checked_at,
+		        label_catalog_sync_error,
 		        created_at
 		 FROM middleman_repos
 		 WHERE platform_host = ? AND owner_key = ? AND name_key = ?
@@ -3248,6 +3414,8 @@ func (d *DB) GetRepoByHostOwnerName(
 		&r.BackfillPRCompletedAt,
 		&r.BackfillIssuePage, &r.BackfillIssueComplete,
 		&r.BackfillIssueCompletedAt,
+		&r.LabelCatalogSyncedAt, &r.LabelCatalogCheckedAt,
+		&r.LabelCatalogSyncError,
 		&r.CreatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {

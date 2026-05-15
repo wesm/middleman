@@ -1234,6 +1234,74 @@ func TestUpsertRepoByProviderIDMergesMovedItemLabelLinksIntoDestinationLabels(t 
 	assert.Equal("bug", issue.Labels[0].Name)
 }
 
+func TestReplaceRepoLabelCatalogKeepsAssignedHistoricalLabels(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	now := baseTime()
+
+	require.NoError(d.ReplaceRepoLabelCatalog(ctx, repoID, []Label{
+		{PlatformID: 1, Name: "bug", Description: "Broken", Color: "d73a4a", IsDefault: true, UpdatedAt: now},
+		{PlatformID: 2, Name: "triage", Description: "Needs triage", Color: "fbca04", UpdatedAt: now},
+	}, now))
+
+	catalog, freshness, err := d.ListRepoLabelCatalog(ctx, repoID)
+	require.NoError(err)
+	require.Len(catalog, 2)
+	assert.Equal("bug", catalog[0].Name)
+	assert.Equal("triage", catalog[1].Name)
+	require.NotNil(freshness.SyncedAt)
+	assert.Equal(now, *freshness.SyncedAt)
+
+	issueID := insertTestIssueWithOptions(t, d, testIssue(repoID, 7, withIssueTitle("issue")))
+	require.NoError(d.ReplaceIssueLabels(ctx, repoID, issueID, []Label{
+		{PlatformID: 3, Name: "old", Description: "Removed upstream", Color: "cccccc", UpdatedAt: now},
+	}))
+
+	next := now.Add(time.Minute)
+	require.NoError(d.ReplaceRepoLabelCatalog(ctx, repoID, []Label{
+		{PlatformID: 1, Name: "bug", Description: "Broken", Color: "d73a4a", IsDefault: true, UpdatedAt: next},
+	}, next))
+
+	catalog, _, err = d.ListRepoLabelCatalog(ctx, repoID)
+	require.NoError(err)
+	require.Len(catalog, 1)
+	assert.Equal("bug", catalog[0].Name)
+
+	issue, err := d.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(issue)
+	require.Len(issue.Labels, 1)
+	assert.Equal("old", issue.Labels[0].Name)
+}
+
+func TestRepoLabelCatalogFreshnessTracksCheckedSyncedAndErrors(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	checked := baseTime()
+	synced := checked.Add(time.Second)
+
+	require.NoError(d.UpdateRepoLabelCatalogCheck(ctx, repoID, checked, "provider down"))
+	_, freshness, err := d.ListRepoLabelCatalog(ctx, repoID)
+	require.NoError(err)
+	require.NotNil(freshness.CheckedAt)
+	assert.Equal(checked, *freshness.CheckedAt)
+	assert.Nil(freshness.SyncedAt)
+	assert.Equal("provider down", freshness.SyncError)
+
+	require.NoError(d.MarkRepoLabelCatalogSynced(ctx, repoID, synced))
+	_, freshness, err = d.ListRepoLabelCatalog(ctx, repoID)
+	require.NoError(err)
+	require.NotNil(freshness.SyncedAt)
+	assert.Equal(synced, *freshness.SyncedAt)
+	assert.Empty(freshness.SyncError)
+}
+
 func TestUpsertRepoCasefoldsOwnerAndName(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

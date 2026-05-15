@@ -10897,6 +10897,12 @@ func TestAPIActivityStartupRepairsLegacyTimestampStorage(t *testing.T) {
 			DROP INDEX IF EXISTS idx_merge_requests_repo_platform_external_id;
 			DROP INDEX IF EXISTS idx_repos_provider_path_key;
 			DROP INDEX IF EXISTS idx_repos_platform_repo_id;
+			DROP INDEX IF EXISTS idx_labels_repo_catalog_name;
+			ALTER TABLE middleman_repos DROP COLUMN label_catalog_sync_error;
+			ALTER TABLE middleman_repos DROP COLUMN label_catalog_checked_at;
+			ALTER TABLE middleman_repos DROP COLUMN label_catalog_synced_at;
+			ALTER TABLE middleman_labels DROP COLUMN catalog_seen_at;
+			ALTER TABLE middleman_labels DROP COLUMN catalog_present;
 			ALTER TABLE middleman_merge_requests DROP COLUMN is_locked;
 			ALTER TABLE middleman_mr_events DROP COLUMN platform_external_id;
 			ALTER TABLE middleman_labels DROP COLUMN platform_external_id;

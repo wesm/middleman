@@ -7,15 +7,24 @@ import (
 )
 
 type Label struct {
-	ID                 int64     `json:"-"`
-	RepoID             int64     `json:"-"`
-	PlatformID         int64     `json:"-"`
-	PlatformExternalID string    `json:"-"`
-	Name               string    `json:"name"`
-	Description        string    `json:"description,omitempty"`
-	Color              string    `json:"color"`
-	IsDefault          bool      `json:"is_default"`
-	UpdatedAt          time.Time `json:"-"`
+	ID                 int64      `json:"-"`
+	RepoID             int64      `json:"-"`
+	PlatformID         int64      `json:"-"`
+	PlatformExternalID string     `json:"-"`
+	Name               string     `json:"name"`
+	Description        string     `json:"description,omitempty"`
+	Color              string     `json:"color"`
+	IsDefault          bool       `json:"is_default"`
+	UpdatedAt          time.Time  `json:"-"`
+	CatalogPresent     bool       `json:"-"`
+	CatalogSeenAt      *time.Time `json:"-"`
+}
+
+// LabelCatalogFreshness records provider catalog sync state for a repository.
+type LabelCatalogFreshness struct {
+	SyncedAt  *time.Time
+	CheckedAt *time.Time
+	SyncError string
 }
 
 type Repo struct {
@@ -44,6 +53,9 @@ type Repo struct {
 	BackfillIssuePage        int
 	BackfillIssueComplete    bool
 	BackfillIssueCompletedAt *time.Time
+	LabelCatalogSyncedAt     *time.Time
+	LabelCatalogCheckedAt    *time.Time
+	LabelCatalogSyncError    string
 	CreatedAt                time.Time
 }
 
