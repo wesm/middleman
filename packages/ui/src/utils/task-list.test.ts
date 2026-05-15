@@ -302,6 +302,40 @@ describe("moveTaskListItem", () => {
     expect(moveTaskListItem(src, 0, 1)).toBe(src);
   });
 
+  it("rejects cross-hierarchy moves between different indent levels", () => {
+    const src = [
+      "- [ ] outer",
+      "  - [ ] inner",
+      "- [ ] another outer",
+    ].join("\n");
+    // inner (index 1, indent 2) onto outer (index 0, indent 0) —
+    // different indents, refuse the move so we don't reparent it.
+    expect(moveTaskListItem(src, 1, 0)).toBe(src);
+    // Same direction: outer onto inner — also rejected.
+    expect(moveTaskListItem(src, 2, 1)).toBe(src);
+  });
+
+  it("allows moves between same-level siblings under different parents", () => {
+    // Both nested tasks live at indent 2 — even though they sit
+    // under different parents, the moved indentation matches so
+    // the markdown structure stays well-formed.
+    const src = [
+      "- [ ] outer A",
+      "  - [ ] child A1",
+      "- [ ] outer B",
+      "  - [ ] child B1",
+    ].join("\n");
+    // child A1 (index 1) to child B1 (index 3) — same indent.
+    expect(moveTaskListItem(src, 1, 3)).toBe(
+      [
+        "- [ ] outer A",
+        "- [ ] outer B",
+        "  - [ ] child B1",
+        "  - [ ] child A1",
+      ].join("\n"),
+    );
+  });
+
   it("preserves blank lines and prose outside the moved block", () => {
     const src = [
       "Intro line",

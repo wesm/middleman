@@ -161,6 +161,17 @@ export function moveTaskListItem(
   const fromEnd = findTaskBlockEnd(lines, fromStart);
   const toStart = taskLines[toIndex]!;
   const toEnd = findTaskBlockEnd(lines, toStart);
+  // Refuse cross-hierarchy moves: dropping a nested item onto a
+  // top-level sibling (or vice versa) would silently change the
+  // markdown structure — the moved block keeps its original indent
+  // and would reparent or orphan itself. Only same-indent moves
+  // (true siblings under the same parent list) are allowed.
+  if (
+    leadingWhitespaceCount(lines[fromStart]!) !==
+    leadingWhitespaceCount(lines[toStart]!)
+  ) {
+    return source;
+  }
   // Refuse no-ops: dragging a task onto something inside its own
   // block would either be a no-op or self-overlap, both of which we
   // pass through unchanged.

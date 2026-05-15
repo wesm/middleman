@@ -75,6 +75,26 @@ describe("renderMarkdown task lists", () => {
     expect(matches.length).toBe(1);
   });
 
+  it("renders blockquoted task items as non-interactive even when interactiveTasks is set", () => {
+    // Source-side TASK_LINE doesn't match `> - [ ]` so the renderer
+    // must NOT emit interactive checkboxes for them — otherwise
+    // data-task-index would drift from the source helpers and
+    // clicking would mutate the wrong line.
+    const html = renderMarkdown(
+      "> - [ ] inside blockquote\n\n- [ ] outside",
+      undefined,
+      { interactiveTasks: true },
+    );
+    // The blockquoted checkbox stays disabled with no data-task-index.
+    expect(html).toMatch(
+      /<blockquote>[\s\S]*<input disabled="" type="checkbox">[\s\S]*<\/blockquote>/,
+    );
+    // The plain task outside the blockquote keeps interactivity at
+    // index 0 (the blockquoted one didn't consume an index).
+    expect(html).toContain('data-task-index="0"');
+    expect(html).not.toContain('data-task-index="1"');
+  });
+
   it("preserves per-listitem indices when task items are nested", () => {
     // Each <li> and its drag handle MUST carry the same index as the
     // checkbox that lives directly inside that <li>. A nested child
