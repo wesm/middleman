@@ -117,7 +117,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			Author:         "alice",
 			Summary:        "APPROVED",
 			CreatedAt:      w1Created.Add(2 * time.Hour),
-			DedupeKey:      "widgets-1-review-alice-approved",
+			DedupeKey:      "review-5011",
 		},
 		{
 			MergeRequestID: w1ID,
@@ -126,7 +126,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			Author:         "bob",
 			Summary:        "CHANGES_REQUESTED",
 			CreatedAt:      w1Created.Add(3 * time.Hour),
-			DedupeKey:      "widgets-1-review-bob-changes-requested",
+			DedupeKey:      "review-5012",
 		},
 		{
 			MergeRequestID: w1ID,
@@ -135,7 +135,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			Author:         "bob",
 			Summary:        "APPROVED",
 			CreatedAt:      w1Created.Add(4 * time.Hour),
-			DedupeKey:      "widgets-1-review-bob-approved",
+			DedupeKey:      "review-5013",
 		},
 		{
 			MergeRequestID: w1ID,
@@ -144,19 +144,21 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			Author:         "carol",
 			Summary:        "APPROVED",
 			CreatedAt:      w1Created.Add(5 * time.Hour),
-			DedupeKey:      "widgets-1-review-carol-approved",
-		},
-		{
-			MergeRequestID: w1ID,
-			PlatformID:     int64Ptr(5015),
-			EventType:      "review",
-			Author:         "carol",
-			Summary:        "DISMISSED",
-			CreatedAt:      w1Created.Add(6 * time.Hour),
-			DedupeKey:      "widgets-1-review-carol-dismissed",
+			DedupeKey:      "review-5014",
 		},
 	}); err != nil {
 		return nil, fmt.Errorf("upsert widgets#1 review events: %w", err)
+	}
+	if err := d.UpsertMREvents(ctx, []db.MREvent{{
+		MergeRequestID: w1ID,
+		PlatformID:     int64Ptr(5014),
+		EventType:      "review",
+		Author:         "carol",
+		Summary:        "DISMISSED",
+		CreatedAt:      w1Created.Add(6 * time.Hour),
+		DedupeKey:      "review-5014",
+	}}); err != nil {
+		return nil, fmt.Errorf("dismiss widgets#1 carol review event: %w", err)
 	}
 
 	// widgets#2: open, bob, dirty merge state
@@ -763,8 +765,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			buildGHReview(5011, "alice", "APPROVED", w1Created.Add(2*time.Hour)),
 			buildGHReview(5012, "bob", "CHANGES_REQUESTED", w1Created.Add(3*time.Hour)),
 			buildGHReview(5013, "bob", "APPROVED", w1Created.Add(4*time.Hour)),
-			buildGHReview(5014, "carol", "APPROVED", w1Created.Add(5*time.Hour)),
-			buildGHReview(5015, "carol", "DISMISSED", w1Created.Add(6*time.Hour)),
+			buildGHReview(5014, "carol", "DISMISSED", w1Created.Add(6*time.Hour)),
 		},
 	}
 
