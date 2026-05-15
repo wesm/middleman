@@ -1454,6 +1454,120 @@ func TestRepoMergeUsesNewerSourceLabelCatalogFreshness(t *testing.T) {
 	assert.Empty(freshness.SyncError)
 }
 
+func TestRepoMergeUsesFresherSourceCatalogMembership(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	oldSync := baseTime()
+	newSync := oldSync.Add(time.Hour)
+
+	sourceID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.com",
+		PlatformRepoID: "gid://gitlab/Project/42",
+		Owner:          "old-group",
+		Name:           "old-name",
+	})
+	require.NoError(err)
+	require.NoError(d.ReplaceRepoLabelCatalog(ctx, sourceID, []Label{{Name: "bug", Color: "d73a4a", UpdatedAt: newSync}}, newSync))
+
+	destinationID, err := d.UpsertRepo(ctx, RepoIdentity{Platform: "gitlab", PlatformHost: "gitlab.com", Owner: "new-group", Name: "new-name"})
+	require.NoError(err)
+	require.NoError(d.ReplaceRepoLabelCatalog(ctx, destinationID, []Label{{Name: "old-destination", Color: "cccccc", UpdatedAt: oldSync}}, oldSync))
+
+	_, err = d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.com",
+		PlatformRepoID: "gid://gitlab/Project/42",
+		Owner:          "new-group",
+		Name:           "new-name",
+	})
+	require.NoError(err)
+
+	catalog, _, err := d.ListRepoLabelCatalog(ctx, destinationID)
+	require.NoError(err)
+	require.Len(catalog, 1)
+	assert.Equal("bug", catalog[0].Name)
+}
+
+func TestRepoMergeUsesFresherDestinationCatalogMembership(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	oldSync := baseTime()
+	newSync := oldSync.Add(time.Hour)
+
+	sourceID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.com",
+		PlatformRepoID: "gid://gitlab/Project/42",
+		Owner:          "old-group",
+		Name:           "old-name",
+	})
+	require.NoError(err)
+	require.NoError(d.ReplaceRepoLabelCatalog(ctx, sourceID, []Label{{Name: "old-source", Color: "cccccc", UpdatedAt: oldSync}}, oldSync))
+
+	destinationID, err := d.UpsertRepo(ctx, RepoIdentity{Platform: "gitlab", PlatformHost: "gitlab.com", Owner: "new-group", Name: "new-name"})
+	require.NoError(err)
+	require.NoError(d.ReplaceRepoLabelCatalog(ctx, destinationID, []Label{{Name: "triage", Color: "fbca04", UpdatedAt: newSync}}, newSync))
+
+	_, err = d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.com",
+		PlatformRepoID: "gid://gitlab/Project/42",
+		Owner:          "new-group",
+		Name:           "new-name",
+	})
+	require.NoError(err)
+
+	catalog, _, err := d.ListRepoLabelCatalog(ctx, destinationID)
+	require.NoError(err)
+	require.Len(catalog, 1)
+	assert.Equal("triage", catalog[0].Name)
+}
+
+func TestRepoMergeKeepsSuccessfulSyncWhenNewerCheckFailed(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	oldSync := baseTime()
+	newCheck := oldSync.Add(time.Hour)
+
+	sourceID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.com",
+		PlatformRepoID: "gid://gitlab/Project/42",
+		Owner:          "old-group",
+		Name:           "old-name",
+	})
+	require.NoError(err)
+	require.NoError(d.UpdateRepoLabelCatalogCheck(ctx, sourceID, newCheck, "provider down"))
+
+	destinationID, err := d.UpsertRepo(ctx, RepoIdentity{Platform: "gitlab", PlatformHost: "gitlab.com", Owner: "new-group", Name: "new-name"})
+	require.NoError(err)
+	require.NoError(d.ReplaceRepoLabelCatalog(ctx, destinationID, []Label{{Name: "bug", Color: "d73a4a", UpdatedAt: oldSync}}, oldSync))
+
+	_, err = d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.com",
+		PlatformRepoID: "gid://gitlab/Project/42",
+		Owner:          "new-group",
+		Name:           "new-name",
+	})
+	require.NoError(err)
+
+	_, freshness, err := d.ListRepoLabelCatalog(ctx, destinationID)
+	require.NoError(err)
+	require.NotNil(freshness.SyncedAt)
+	assert.Equal(oldSync, *freshness.SyncedAt)
+	require.NotNil(freshness.CheckedAt)
+	assert.Equal(newCheck, *freshness.CheckedAt)
+	assert.Equal("provider down", freshness.SyncError)
+}
+
 func TestRepoLabelCatalogFreshnessTracksCheckedSyncedAndErrors(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

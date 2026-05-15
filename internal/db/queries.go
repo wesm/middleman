@@ -1079,6 +1079,24 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 		args []any
 	}{
 		{
+			name: "clear stale source label catalog membership",
+			sql: `UPDATE middleman_labels
+			      SET catalog_present = 0
+			      WHERE repo_id = ?
+			        AND COALESCE((SELECT label_catalog_synced_at FROM middleman_repos WHERE id = ?), '') <=
+			            COALESCE((SELECT label_catalog_synced_at FROM middleman_repos WHERE id = ?), '')`,
+			args: []any{fromRepoID, fromRepoID, toRepoID},
+		},
+		{
+			name: "clear stale destination label catalog membership",
+			sql: `UPDATE middleman_labels
+			      SET catalog_present = 0
+			      WHERE repo_id = ?
+			        AND COALESCE((SELECT label_catalog_synced_at FROM middleman_repos WHERE id = ?), '') >
+			            COALESCE((SELECT label_catalog_synced_at FROM middleman_repos WHERE id = ?), '')`,
+			args: []any{toRepoID, fromRepoID, toRepoID},
+		},
+		{
 			name: "copy source repo metadata",
 			sql: `UPDATE middleman_repos
 			      SET web_url = CASE
@@ -1097,7 +1115,7 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			              ELSE default_branch
 			          END,
 			          label_catalog_synced_at = CASE
-			              WHEN (SELECT label_catalog_checked_at FROM middleman_repos WHERE id = ?) > COALESCE(label_catalog_checked_at, '')
+			              WHEN (SELECT label_catalog_synced_at FROM middleman_repos WHERE id = ?) > COALESCE(label_catalog_synced_at, '')
 			              THEN (SELECT label_catalog_synced_at FROM middleman_repos WHERE id = ?)
 			              ELSE label_catalog_synced_at
 			          END,
