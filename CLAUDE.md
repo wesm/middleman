@@ -24,7 +24,7 @@ CLI (middleman) → Config (TOML) → DB (SQLite)
 
 middleman supports GitHub, GitLab, Forgejo, and Gitea. The `gitealike` package is the shared Forgejo/Gitea adapter.
 
-New features must work across all four providers to the extent each provider's API allows. Concrete rules:
+New features must work across every supported provider to the extent each provider's API allows. Concrete rules:
 
 - Provider-specific capability differences go behind the capability model in `internal/platform`. Declare capabilities in `Capabilities()`, check them before mutations, and return typed `unsupported_capability` errors when a provider can't satisfy an operation. Do not silently fall back to GitHub-only behavior for other providers.
 - Identity is `(platform, platform_host, owner, name)` everywhere; never owner/name/number alone. Repo-scoped routes use provider-aware paths like `/pulls/{provider}/{owner}/{name}/{number}`, with `/host/{platform_host}/...` for non-default or self-hosted instances.
