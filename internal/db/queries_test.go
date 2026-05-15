@@ -1601,6 +1601,34 @@ func TestRepoMergeCopiesFresherDuplicateLabelMetadata(t *testing.T) {
 	assert.True(catalog[0].IsDefault)
 }
 
+func TestRepoMergeCopiesFresherNameOnlyDuplicateLabelMetadata(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	oldSync := baseTime()
+	newSync := oldSync.Add(time.Hour)
+
+	sourceID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{Platform: "gitlab", PlatformHost: "gitlab.com", PlatformRepoID: "gid://gitlab/Project/42", Owner: "old-group", Name: "old-name"})
+	require.NoError(err)
+	require.NoError(d.ReplaceRepoLabelCatalog(ctx, sourceID, []Label{{Name: "triage", Description: "fresh", Color: "0e8a16", IsDefault: true, UpdatedAt: newSync}}, newSync))
+
+	destinationID, err := d.UpsertRepo(ctx, RepoIdentity{Platform: "gitlab", PlatformHost: "gitlab.com", Owner: "new-group", Name: "new-name"})
+	require.NoError(err)
+	require.NoError(d.ReplaceRepoLabelCatalog(ctx, destinationID, []Label{{Name: "triage", Description: "stale", Color: "cccccc", UpdatedAt: oldSync}}, oldSync))
+
+	_, err = d.UpsertRepoByProviderID(ctx, RepoIdentity{Platform: "gitlab", PlatformHost: "gitlab.com", PlatformRepoID: "gid://gitlab/Project/42", Owner: "new-group", Name: "new-name"})
+	require.NoError(err)
+
+	catalog, _, err := d.ListRepoLabelCatalog(ctx, destinationID)
+	require.NoError(err)
+	require.Len(catalog, 1)
+	assert.Equal("triage", catalog[0].Name)
+	assert.Equal("fresh", catalog[0].Description)
+	assert.Equal("0e8a16", catalog[0].Color)
+	assert.True(catalog[0].IsDefault)
+}
+
 func TestRepoLabelCatalogWritesIgnoreStaleResults(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

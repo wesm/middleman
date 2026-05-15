@@ -149,6 +149,21 @@ func labelPlatformIDTx(ctx context.Context, tx *sql.Tx, labelID int64) (sql.Null
 }
 
 func mergeLabelRowAssociationsTx(ctx context.Context, tx *sql.Tx, fromLabelID, toLabelID int64) error {
+	var sourceName string
+	var shouldCopySourceName bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT source.name,
+		       source.catalog_seen_at IS NOT NULL
+		           AND (target.catalog_seen_at IS NULL OR source.catalog_seen_at > target.catalog_seen_at)
+		       OR source.updated_at > target.updated_at
+		FROM middleman_labels AS source
+		JOIN middleman_labels AS target ON target.id = ?
+		WHERE source.id = ?`,
+		toLabelID, fromLabelID,
+	).Scan(&sourceName, &shouldCopySourceName); err != nil {
+		return fmt.Errorf("load source label metadata: %w", err)
+	}
+
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE middleman_labels
 		SET description = CASE
@@ -230,6 +245,11 @@ func mergeLabelRowAssociationsTx(ctx context.Context, tx *sql.Tx, fromLabelID, t
 		fromLabelID,
 	); err != nil {
 		return fmt.Errorf("delete old label row: %w", err)
+	}
+	if shouldCopySourceName {
+		if _, err := tx.ExecContext(ctx, `UPDATE middleman_labels SET name = ? WHERE id = ?`, sourceName, toLabelID); err != nil {
+			return fmt.Errorf("copy source label name: %w", err)
+		}
 	}
 	return nil
 }
@@ -395,7 +415,7 @@ func upsertLabelsTx(ctx context.Context, tx *sql.Tx, repoID int64, labels []Labe
 				UPDATE middleman_labels
 				SET platform_id = COALESCE(NULLIF(?, 0), platform_id),
 				    platform_external_id = COALESCE(NULLIF(?, ''), platform_external_id),
-				    name = ?,
+				    name = CASE WHEN ? >= updated_at THEN ? ELSE name END,
 				    description = CASE WHEN ? >= updated_at THEN ? ELSE description END,
 				    color = CASE WHEN ? >= updated_at THEN ? ELSE color END,
 				    is_default = CASE WHEN ? >= updated_at THEN ? ELSE is_default END,
@@ -408,7 +428,7 @@ func upsertLabelsTx(ctx context.Context, tx *sql.Tx, repoID int64, labels []Labe
 				    END
 				WHERE id = ?`,
 				label.PlatformID, label.PlatformExternalID,
-				label.Name, label.UpdatedAt, label.Description,
+				label.UpdatedAt, label.Name, label.UpdatedAt, label.Description,
 				label.UpdatedAt, label.Color, label.UpdatedAt, label.IsDefault,
 				label.UpdatedAt, label.UpdatedAt, label.CatalogPresent,
 				catalogSeenAt, catalogSeenAt, catalogSeenAt, id,
@@ -1260,9 +1280,14 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			              FROM middleman_labels AS source
 			              WHERE source.repo_id = ?
 			                AND source.catalog_present = 1
-			                AND source.platform_id IS NOT NULL
-			                AND target.platform_id IS NOT NULL
-			                AND source.platform_id = target.platform_id
+			                AND (
+			                    source.name = target.name
+			                    OR (
+			                        source.platform_id IS NOT NULL
+			                        AND target.platform_id IS NOT NULL
+			                        AND source.platform_id = target.platform_id
+			                    )
+			                )
 			              ORDER BY source.catalog_seen_at DESC
 			              LIMIT 1
 			          ), name),
@@ -1271,9 +1296,14 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			              FROM middleman_labels AS source
 			              WHERE source.repo_id = ?
 			                AND source.catalog_present = 1
-			                AND source.platform_id IS NOT NULL
-			                AND target.platform_id IS NOT NULL
-			                AND source.platform_id = target.platform_id
+			                AND (
+			                    source.name = target.name
+			                    OR (
+			                        source.platform_id IS NOT NULL
+			                        AND target.platform_id IS NOT NULL
+			                        AND source.platform_id = target.platform_id
+			                    )
+			                )
 			              ORDER BY source.catalog_seen_at DESC
 			              LIMIT 1
 			          ), description),
@@ -1282,9 +1312,14 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			              FROM middleman_labels AS source
 			              WHERE source.repo_id = ?
 			                AND source.catalog_present = 1
-			                AND source.platform_id IS NOT NULL
-			                AND target.platform_id IS NOT NULL
-			                AND source.platform_id = target.platform_id
+			                AND (
+			                    source.name = target.name
+			                    OR (
+			                        source.platform_id IS NOT NULL
+			                        AND target.platform_id IS NOT NULL
+			                        AND source.platform_id = target.platform_id
+			                    )
+			                )
 			              ORDER BY source.catalog_seen_at DESC
 			              LIMIT 1
 			          ), color),
@@ -1293,9 +1328,14 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			              FROM middleman_labels AS source
 			              WHERE source.repo_id = ?
 			                AND source.catalog_present = 1
-			                AND source.platform_id IS NOT NULL
-			                AND target.platform_id IS NOT NULL
-			                AND source.platform_id = target.platform_id
+			                AND (
+			                    source.name = target.name
+			                    OR (
+			                        source.platform_id IS NOT NULL
+			                        AND target.platform_id IS NOT NULL
+			                        AND source.platform_id = target.platform_id
+			                    )
+			                )
 			              ORDER BY source.catalog_seen_at DESC
 			              LIMIT 1
 			          ), is_default),
@@ -1304,9 +1344,14 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			              FROM middleman_labels AS source
 			              WHERE source.repo_id = ?
 			                AND source.catalog_present = 1
-			                AND source.platform_id IS NOT NULL
-			                AND target.platform_id IS NOT NULL
-			                AND source.platform_id = target.platform_id
+			                AND (
+			                    source.name = target.name
+			                    OR (
+			                        source.platform_id IS NOT NULL
+			                        AND target.platform_id IS NOT NULL
+			                        AND source.platform_id = target.platform_id
+			                    )
+			                )
 			              ORDER BY source.catalog_seen_at DESC
 			              LIMIT 1
 			          ), updated_at),
