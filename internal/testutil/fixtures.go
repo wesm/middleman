@@ -437,6 +437,11 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	// widgets#11: open, alice, older (20d ago)
 	wi11Created := now.Add(-20 * 24 * time.Hour)
+	wi11Body := "## Acceptance criteria\n\n" +
+		"- [ ] System preference detected on first launch\n" +
+		"- [ ] Manual toggle in settings overrides system\n" +
+		"- [ ] Choice persists across reloads\n" +
+		"- [x] Theme tokens defined in design system\n"
 	wi11ID, err := d.UpsertIssue(ctx, &db.Issue{
 		RepoID:         widgetsID,
 		PlatformID:     3011,
@@ -445,6 +450,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		Title:          "Add dark mode support",
 		Author:         "alice",
 		State:          "open",
+		Body:           wi11Body,
 		CommentCount:   0,
 		CreatedAt:      wi11Created,
 		UpdatedAt:      wi11Created,
@@ -760,7 +766,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	openIssues := map[string][]*gh.Issue{
 		"acme/widgets": {
 			buildGHIssue("acme", "widgets", 3010, 10, "Widget rendering broken on Safari", "eve", "open", wi10Created, now.Add(-4*time.Hour)),
-			buildGHIssue("acme", "widgets", 3011, 11, "Add dark mode support", "alice", "open", wi11Created, wi11Created),
+			setIssueBody(buildGHIssue("acme", "widgets", 3011, 11, "Add dark mode support", "alice", "open", wi11Created, wi11Created), wi11Body),
 			buildGHIssue("acme", "widgets", 3013, 13, "Security advisory: prototype pollution", "dependabot[bot]", "open", wi13Created, wi13Created),
 		},
 		"acme/tools": {
@@ -780,7 +786,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	allIssues := map[string][]*gh.Issue{
 		"acme/widgets": {
 			buildGHIssue("acme", "widgets", 3010, 10, "Widget rendering broken on Safari", "eve", "open", wi10Created, now.Add(-4*time.Hour)),
-			buildGHIssue("acme", "widgets", 3011, 11, "Add dark mode support", "alice", "open", wi11Created, wi11Created),
+			setIssueBody(buildGHIssue("acme", "widgets", 3011, 11, "Add dark mode support", "alice", "open", wi11Created, wi11Created), wi11Body),
 			buildGHIssue("acme", "widgets", 3012, 12, "Crash on empty input", "carol", "closed", now.Add(-7*24*time.Hour), wi12Closed),
 			buildGHIssue("acme", "widgets", 3013, 13, "Security advisory: prototype pollution", "dependabot[bot]", "open", wi13Created, wi13Created),
 		},
@@ -896,6 +902,13 @@ func buildGHPR(
 func setPRBody(pr *gh.PullRequest, body string) *gh.PullRequest {
 	pr.Body = &body
 	return pr
+}
+
+// setIssueBody sets a Body on a *gh.Issue. Mirrors setPRBody for
+// issue-side body edits (task-list checkboxes on issue descriptions).
+func setIssueBody(issue *gh.Issue, body string) *gh.Issue {
+	issue.Body = &body
+	return issue
 }
 
 // setPRStats sets Additions and Deletions on a *gh.PullRequest so the

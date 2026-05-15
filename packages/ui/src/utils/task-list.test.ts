@@ -196,4 +196,73 @@ describe("moveTaskListItem", () => {
       ].join("\n"),
     );
   });
+
+  it("carries continuation lines along with the moved task", () => {
+    const src = [
+      "- [ ] first",
+      "- [ ] second",
+      "  continued text",
+      "  more continuation",
+      "- [ ] third",
+    ].join("\n");
+    expect(moveTaskListItem(src, 1, 2)).toBe(
+      [
+        "- [ ] first",
+        "- [ ] third",
+        "- [ ] second",
+        "  continued text",
+        "  more continuation",
+      ].join("\n"),
+    );
+  });
+
+  it("carries nested sub-task children along with the moved task", () => {
+    const src = [
+      "- [ ] outer first",
+      "  - [ ] inner a",
+      "  - [ ] inner b",
+      "- [ ] outer second",
+    ].join("\n");
+    // Move outer-first (index 0) to outer-second's slot (index 3).
+    expect(moveTaskListItem(src, 0, 3)).toBe(
+      [
+        "- [ ] outer second",
+        "- [ ] outer first",
+        "  - [ ] inner a",
+        "  - [ ] inner b",
+      ].join("\n"),
+    );
+  });
+
+  it("returns source unchanged when dragging a task onto its own nested child", () => {
+    const src = "- [ ] outer\n  - [ ] inner\n- [ ] sibling";
+    // index 0 is outer, index 1 is inner. inner sits inside outer's
+    // block, so moving outer to land on inner is a no-op.
+    expect(moveTaskListItem(src, 0, 1)).toBe(src);
+  });
+
+  it("preserves blank lines and prose outside the moved block", () => {
+    const src = [
+      "Intro line",
+      "",
+      "- [ ] A",
+      "- [ ] B",
+      "  with continuation",
+      "",
+      "Trailing prose",
+    ].join("\n");
+    // Move A (index 0) to B's slot (index 1). B carries its
+    // continuation; A becomes a single-line block.
+    expect(moveTaskListItem(src, 0, 1)).toBe(
+      [
+        "Intro line",
+        "",
+        "- [ ] B",
+        "  with continuation",
+        "- [ ] A",
+        "",
+        "Trailing prose",
+      ].join("\n"),
+    );
+  });
 });

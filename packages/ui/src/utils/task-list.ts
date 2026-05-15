@@ -44,12 +44,37 @@ export function listTaskItems(source: string): TaskItem[] {
   return out;
 }
 
-// Returns a new source string with the Nth task-list line moved to
-// the position currently occupied by the Mth task-list line. Other
-// lines shift accordingly, like Array.prototype.splice. Only the task
-// line itself moves — continuation lines under a multi-line task item
-// are NOT carried along (a known limitation). If either index is out
-// of range, or they're equal, the source is returned unchanged.
+function leadingWhitespaceCount(line: string): number {
+  let i = 0;
+  while (i < line.length && (line[i] === " " || line[i] === "\t")) i++;
+  return i;
+}
+
+// A task block spans the task line plus any immediately-following
+// continuation lines that belong to the same item — more-indented
+// content (multi-line description, nested sub-tasks) is carried along
+// with the task when it moves. The block ends at the first line that
+// is blank or at the same/lower indent than the bullet.
+function findTaskBlockEnd(
+  lines: string[],
+  start: number,
+): number {
+  const bulletIndent = leadingWhitespaceCount(lines[start]!);
+  let end = start + 1;
+  while (end < lines.length) {
+    const line = lines[end]!;
+    if (line.trim() === "") break;
+    if (leadingWhitespaceCount(line) <= bulletIndent) break;
+    end++;
+  }
+  return end;
+}
+
+// Returns a new source string with the Nth task-list item moved to
+// the position currently occupied by the Mth task-list item. The
+// moved item carries its continuation lines and nested sub-tasks
+// with it. If either index is out of range, or they're equal, the
+// source is returned unchanged.
 export function moveTaskListItem(
   source: string,
   fromIndex: number,
@@ -59,7 +84,7 @@ export function moveTaskListItem(
   if (fromIndex === toIndex) return source;
   if (fromIndex < 0 || toIndex < 0) return source;
   const lines = source.split("\n");
-  const positions: number[] = [];
+  const taskLines: number[] = [];
   let inFence = false;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
@@ -68,25 +93,37 @@ export function moveTaskListItem(
       continue;
     }
     if (inFence) continue;
-    if (TASK_LINE.test(line)) positions.push(i);
+    if (TASK_LINE.test(line)) taskLines.push(i);
   }
-  if (fromIndex >= positions.length) return source;
-  if (toIndex >= positions.length) return source;
-  const fromLine = positions[fromIndex]!;
-  const toLine = positions[toIndex]!;
-  const moved = lines[fromLine]!;
-  const out: string[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    if (i === fromLine) continue;
-    if (fromIndex < toIndex) {
-      out.push(lines[i]!);
-      if (i === toLine) out.push(moved);
-    } else {
-      if (i === toLine) out.push(moved);
-      out.push(lines[i]!);
-    }
+  if (fromIndex >= taskLines.length) return source;
+  if (toIndex >= taskLines.length) return source;
+  const fromStart = taskLines[fromIndex]!;
+  const fromEnd = findTaskBlockEnd(lines, fromStart);
+  const toStart = taskLines[toIndex]!;
+  const toEnd = findTaskBlockEnd(lines, toStart);
+  // Refuse no-ops: dragging a task onto something inside its own
+  // block would either be a no-op or self-overlap, both of which we
+  // pass through unchanged.
+  if (toStart >= fromStart && toStart < fromEnd) return source;
+  const moved = lines.slice(fromStart, fromEnd);
+  const without = [
+    ...lines.slice(0, fromStart),
+    ...lines.slice(fromEnd),
+  ];
+  // Where to insert depends on direction: moving down lands the block
+  // where the target block ended (minus the removed block's length);
+  // moving up lands it where the target block started.
+  let insertAt: number;
+  if (fromIndex < toIndex) {
+    insertAt = toEnd - (fromEnd - fromStart);
+  } else {
+    insertAt = toStart;
   }
-  return out.join("\n");
+  return [
+    ...without.slice(0, insertAt),
+    ...moved,
+    ...without.slice(insertAt),
+  ].join("\n");
 }
 
 // Returns a new source string with the Nth task-list checkbox toggled.

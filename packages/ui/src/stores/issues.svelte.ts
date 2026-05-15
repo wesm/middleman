@@ -96,6 +96,11 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   let detailSyncing = $state(false);
   let detailError = $state<string | null>(null);
   let issueDetailLoaded = $state(false);
+  // Tracks whether the local issue body has been edited since the
+  // last server confirmation. While set, background sync paths
+  // preserve the local body so a poll can't revert a pending
+  // optimistic checkbox/reorder edit.
+  let unsavedLocalBody = false;
   let detailPollHandle: ReturnType<typeof setInterval> | null = null;
   let issueSyncGeneration = 0;
   let activeDetailLoad: {
@@ -234,6 +239,29 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   // --- detail writes ---
 
+  // Apply a fresh IssueDetail from the server. When the user has an
+  // unsynced local body edit on the same issue, keep that body so a
+  // polling refresh can't revert a pending optimistic toggle.
+  function withPreservedLocalBody(next: IssueDetail): IssueDetail {
+    if (!unsavedLocalBody) return next;
+    if (!issueDetail) return next;
+    if (
+      issueDetail.repo_owner !== next.repo_owner ||
+      issueDetail.repo_name !== next.repo_name ||
+      issueDetail.issue?.Number !== next.issue?.Number
+    ) {
+      return next;
+    }
+    return {
+      ...next,
+      issue: { ...next.issue, Body: issueDetail.issue.Body },
+    };
+  }
+
+  function hasUnsavedLocalBody(): boolean {
+    return unsavedLocalBody;
+  }
+
   function currentIssuePlatformHost(
     owner: string,
     name: string,
@@ -345,7 +373,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           throw new Error(apiErrorMessage(requestError, "failed to load issue"));
         }
         issueDetail = data
-          ? ({
+          ? withPreservedLocalBody({
               ...data,
               events: data.events ?? [],
             } as IssueDetail)
@@ -458,10 +486,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       }
       if (data) {
         detailError = null;
-        issueDetail = {
+        issueDetail = withPreservedLocalBody({
           ...data,
           events: data.events ?? [],
-        } as IssueDetail;
+        } as IssueDetail);
         issueDetailLoaded = data.detail_loaded ?? issueDetailLoaded;
       }
     } catch {
@@ -498,10 +526,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       // keeps the new selection's data from being clobbered.
       if (expectedGen !== issueSyncGeneration) return;
       if (data !== undefined) {
-        issueDetail = {
+        issueDetail = withPreservedLocalBody({
           ...data,
           events: data.events ?? [],
-        } as IssueDetail;
+        } as IssueDetail);
         issueDetailLoaded = data.detail_loaded ?? issueDetailLoaded;
       }
     } catch {
@@ -537,6 +565,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     detailSyncing = false;
     detailError = null;
     issueDetailLoaded = false;
+    unsavedLocalBody = false;
   }
 
   async function submitIssueComment(
@@ -620,7 +649,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   // Replaces the in-memory issue body without touching the server. Pair
   // with saveIssueBodyInBackground for instant-feedback edits like
-  // task-list checkbox clicks.
+  // task-list checkbox clicks. Marks the body as unsaved so a
+  // background refresh can't revert it before the debounced PATCH
+  // lands.
   function setLocalIssueBody(
     owner: string,
     name: string,
@@ -635,6 +666,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     ) {
       return;
     }
+    unsavedLocalBody = true;
     issueDetail = {
       ...issueDetail,
       issue: { ...issueDetail.issue, Body: body },
@@ -680,7 +712,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       }
       // Only adopt the server-canonical issue when the user is still
       // viewing the same issue AND no newer toggle has shifted the
-      // local body away from what we just persisted.
+      // local body away from what we just persisted. When it does
+      // match, the local edit has been confirmed so the flag clears.
       if (
         data &&
         issueDetail &&
@@ -690,6 +723,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         issueDetail.issue.Body === body
       ) {
         issueDetail = data as IssueDetail;
+        unsavedLocalBody = false;
       }
     } catch (err) {
       detailError =
@@ -880,6 +914,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     editIssueComment,
     setLocalIssueBody,
     saveIssueBodyInBackground,
+    hasUnsavedLocalBody,
     toggleIssueStar,
     selectNextIssue,
     selectPrevIssue,

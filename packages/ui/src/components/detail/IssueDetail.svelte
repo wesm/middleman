@@ -403,20 +403,38 @@
 
   // Task-list checkbox clicks update the body locally for instant
   // feedback, then debounce a PATCH so a flurry of clicks collapses
-  // into a single save.
+  // into a single save. Target and body are captured at schedule
+  // time so a route change before the timer fires can't redirect
+  // the save to a different issue or lose the edit.
+  type PendingBodySave = {
+    owner: string;
+    name: string;
+    number: number;
+    body: string;
+  };
   let bodySaveTimeout: ReturnType<typeof setTimeout> | null = null;
+  let pendingBodySave: PendingBodySave | null = null;
   const BODY_SAVE_DEBOUNCE_MS = 400;
 
-  function scheduleBodySave(): void {
+  function scheduleBodySave(body: string): void {
+    pendingBodySave = { owner, name, number, body };
     if (bodySaveTimeout !== null) clearTimeout(bodySaveTimeout);
     bodySaveTimeout = setTimeout(() => {
-      bodySaveTimeout = null;
-      const latest = issues.getIssueDetail()?.issue?.Body;
-      if (latest === undefined) return;
-      void issues.saveIssueBodyInBackground(
-        owner, name, number, latest,
-      );
+      flushBodySave();
     }, BODY_SAVE_DEBOUNCE_MS);
+  }
+
+  function flushBodySave(): void {
+    if (bodySaveTimeout !== null) {
+      clearTimeout(bodySaveTimeout);
+      bodySaveTimeout = null;
+    }
+    const target = pendingBodySave;
+    pendingBodySave = null;
+    if (target === null) return;
+    void issues.saveIssueBodyInBackground(
+      target.owner, target.name, target.number, target.body,
+    );
   }
 
   function onBodyClick(event: MouseEvent): void {
@@ -438,7 +456,7 @@
     if (newBody === detail.issue.Body) return;
     event.preventDefault();
     issues.setLocalIssueBody(owner, name, number, newBody);
-    scheduleBodySave();
+    scheduleBodySave(newBody);
   }
 
   // Drag-to-reorder for task-list items. See PullDetail.svelte for the
@@ -534,7 +552,7 @@
     const newBody = moveTaskListItem(detail.issue.Body, from, target);
     if (newBody === detail.issue.Body) return;
     issues.setLocalIssueBody(owner, name, number, newBody);
-    scheduleBodySave();
+    scheduleBodySave(newBody);
   }
 
   function onBodyDragEnd(event: DragEvent): void {
@@ -573,15 +591,14 @@
   }
 
   // Drop any pending checkbox save when navigating to a different
-  // issue so a stale toggle doesn't land on the new target.
+  // issue so a stale toggle doesn't land on the new target. The
+  // pending save still fires against the originally-captured target
+  // so a fast click + navigate sequence persists.
   $effect(() => {
     void owner;
     void name;
     void number;
-    if (bodySaveTimeout !== null) {
-      clearTimeout(bodySaveTimeout);
-      bodySaveTimeout = null;
-    }
+    flushBodySave();
     clearDragState();
   });
 </script>

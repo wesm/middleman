@@ -206,12 +206,11 @@
     editingBody = false;
     titleDraft = "";
     bodyDraft = "";
-    // A pending checkbox save from the previous PR must not fire
-    // against the new one; drop it.
-    if (bodySaveTimeout !== null) {
-      clearTimeout(bodySaveTimeout);
-      bodySaveTimeout = null;
-    }
+    // Flush any pending checkbox/reorder save before clearing state.
+    // pendingBodySave captures the previous PR's identity at schedule
+    // time, so this fires against the correct target even though
+    // owner/name/number have already changed.
+    flushBodySave();
     clearDragState();
   });
 
@@ -588,19 +587,38 @@
   // Task-list checkbox clicks update the body locally for instant
   // feedback, then debounce a PATCH so a flurry of clicks collapses
   // into a single save. Avoids GitHub-style per-click blocking saves.
+  // The target (owner/name/number) AND the body to save are captured
+  // when scheduling so a route change before the timer fires can't
+  // redirect the save or lose the edit.
+  type PendingBodySave = {
+    owner: string;
+    name: string;
+    number: number;
+    body: string;
+  };
   let bodySaveTimeout: ReturnType<typeof setTimeout> | null = null;
+  let pendingBodySave: PendingBodySave | null = null;
   const BODY_SAVE_DEBOUNCE_MS = 400;
 
-  function scheduleBodySave(): void {
+  function scheduleBodySave(body: string): void {
+    pendingBodySave = { owner, name, number, body };
     if (bodySaveTimeout !== null) clearTimeout(bodySaveTimeout);
     bodySaveTimeout = setTimeout(() => {
-      bodySaveTimeout = null;
-      const latest = detailStore.getDetail()?.merge_request?.Body;
-      if (latest === undefined) return;
-      void detailStore.savePRBodyInBackground(
-        owner, name, number, latest,
-      );
+      flushBodySave();
     }, BODY_SAVE_DEBOUNCE_MS);
+  }
+
+  function flushBodySave(): void {
+    if (bodySaveTimeout !== null) {
+      clearTimeout(bodySaveTimeout);
+      bodySaveTimeout = null;
+    }
+    const target = pendingBodySave;
+    pendingBodySave = null;
+    if (target === null) return;
+    void detailStore.savePRBodyInBackground(
+      target.owner, target.name, target.number, target.body,
+    );
   }
 
   function onBodyClick(event: MouseEvent): void {
@@ -625,7 +643,7 @@
     // (which would race with our re-render).
     event.preventDefault();
     detailStore.setLocalPRBody(owner, name, number, newBody);
-    scheduleBodySave();
+    scheduleBodySave(newBody);
   }
 
   // Drag-to-reorder for task-list items. The handle (rendered by the
@@ -751,7 +769,7 @@
     const newBody = moveTaskListItem(mr.Body, from, target);
     if (newBody === mr.Body) return;
     detailStore.setLocalPRBody(owner, name, number, newBody);
-    scheduleBodySave();
+    scheduleBodySave(newBody);
   }
 
   function onBodyDragEnd(event: DragEvent): void {
