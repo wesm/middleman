@@ -169,7 +169,7 @@
 
   .home-title {
     margin: 0;
-    font-size: calc(var(--font-size-lg) * 1.071429);
+    font-size: var(--font-size-lg);
     line-height: 1.3;
     font-weight: 600;
     color: var(--text-primary);

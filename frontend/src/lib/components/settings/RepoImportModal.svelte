@@ -297,9 +297,9 @@
   .modal-backdrop { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; padding: 24px; background: color-mix(in srgb, black 38%, transparent); }
   .modal { width: min(1040px, 100%); max-height: min(760px, 92vh); display: flex; flex-direction: column; gap: 14px; background: var(--bg-surface); color: var(--text-primary); border: 1px solid var(--border-default); border-radius: var(--radius-lg); box-shadow: 0 24px 80px rgb(0 0 0 / 35%); padding: 18px; }
   .modal-header, .modal-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-  h2 { margin: 0; font-size: calc(var(--font-size-lg) * 1.142857); }
+  h2 { margin: 0; font-size: var(--font-size-lg); }
   p { margin: 4px 0 0; color: var(--text-muted); font-size: var(--font-size-sm); }
-  .close-btn { color: var(--text-muted); font-size: calc(var(--font-size-lg) * 1.428571); }
+  .close-btn { color: var(--text-muted); font-size: var(--font-size-xl); }
   .preview-form { display: flex; gap: 10px; align-items: end; }
   label { flex: 1; display: flex; flex-direction: column; gap: 6px; font-size: var(--font-size-sm); color: var(--text-secondary); }
   .provider-field { flex: 0 0 120px; }

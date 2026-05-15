@@ -55,7 +55,7 @@ test("allows font-size design tokens and approved relative sizing", async () => 
       "<style>",
       ".body { font-size: var(--font-size-md); }",
       ".small { font-size: 0.9em; }",
-      ".large { font-size: calc(var(--font-size-lg) * 1.3); }",
+      ".large { font-size: var(--font-size-xl); }",
       ".reset { font-size: inherit; }",
       "</style>",
       "",

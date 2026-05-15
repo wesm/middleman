@@ -241,7 +241,7 @@
 
   .project-card__title {
     margin: 0;
-    font-size: calc(var(--font-size-lg) * 1.285714);
+    font-size: var(--font-size-xl);
     font-weight: 600;
   }
 

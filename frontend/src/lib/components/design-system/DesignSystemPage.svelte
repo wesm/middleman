@@ -157,7 +157,7 @@
 
   h1 {
     color: var(--text-primary);
-    font-size: calc(var(--font-size-lg) * 2);
+    font-size: var(--font-size-xl);
     line-height: 1.1;
   }
 
@@ -198,7 +198,7 @@
 
   h2 {
     color: var(--text-primary);
-    font-size: calc(var(--font-size-lg) * 1.285714);
+    font-size: var(--font-size-xl);
     line-height: 1.2;
     margin-top: 4px;
   }
@@ -253,7 +253,7 @@
 
   h3 {
     color: var(--text-primary);
-    font-size: calc(var(--font-size-lg) * 1.071429);
+    font-size: var(--font-size-lg);
     line-height: 1.3;
   }
 

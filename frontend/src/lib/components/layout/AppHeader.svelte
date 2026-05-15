@@ -244,7 +244,7 @@
 
   .logo {
     font-weight: 600;
-    font-size: calc(var(--font-size-lg) * 1.071429);
+    font-size: var(--font-size-lg);
     color: var(--text-primary);
     letter-spacing: -0.01em;
   }

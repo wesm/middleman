@@ -519,7 +519,7 @@
   .repo-page__title {
     margin-bottom: 6px;
     color: var(--text-primary);
-    font-size: calc(var(--font-size-lg) * 1.571429);
+    font-size: var(--font-size-xl);
     font-weight: 700;
     line-height: 1.2;
   }

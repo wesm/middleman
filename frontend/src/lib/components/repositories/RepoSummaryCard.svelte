@@ -412,7 +412,7 @@
   .repo-card__name {
     min-width: 0;
     color: var(--text-primary);
-    font-size: calc(var(--font-size-lg) * 1.071429);
+    font-size: var(--font-size-lg);
     font-weight: 700;
     line-height: 1.25;
     overflow-wrap: anywhere;

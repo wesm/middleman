@@ -37,6 +37,7 @@
   --font-size-sm: 12px;
   --font-size-md: 13px;
   --font-size-lg: 14px;
+  --font-size-xl: 18px;
   --font-size-root: var(--font-size-md);
   --font-size-mobile-xs: 1.08rem;
   --font-size-mobile-sm: 1.17rem;

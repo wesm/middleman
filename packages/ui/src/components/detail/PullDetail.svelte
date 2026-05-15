@@ -1322,7 +1322,7 @@
   }
 
   .detail-title {
-    font-size: calc(var(--font-size-lg) * 1.285714);
+    font-size: var(--font-size-xl);
     font-weight: 600;
     color: var(--text-primary);
     line-height: 1.35;

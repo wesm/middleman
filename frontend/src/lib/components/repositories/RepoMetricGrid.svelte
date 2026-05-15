@@ -114,7 +114,7 @@
     display: block;
     margin-bottom: 2px;
     color: var(--text-primary);
-    font-size: calc(var(--font-size-lg) * 1.285714);
+    font-size: var(--font-size-xl);
     font-weight: 700;
     line-height: 1;
   }

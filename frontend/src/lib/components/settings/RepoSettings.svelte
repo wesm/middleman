@@ -242,7 +242,7 @@
   }
   .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .remove-btn {
-    font-size: calc(var(--font-size-lg) * 1.142857); color: var(--text-muted); padding: 2px 6px;
+    font-size: var(--font-size-lg); color: var(--text-muted); padding: 2px 6px;
     border-radius: var(--radius-sm); line-height: 1; transition: color 0.1s, background 0.1s;
   }
   .remove-btn:hover:not(:disabled) {

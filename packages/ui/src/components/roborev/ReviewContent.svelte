@@ -44,7 +44,7 @@
   }
 
   .markdown-body :global(h1) {
-    font-size: calc(var(--font-size-lg) * 1.428571);
+    font-size: var(--font-size-xl);
     font-weight: 600;
     margin: 20px 0 10px;
     padding-bottom: 6px;
@@ -52,7 +52,7 @@
   }
 
   .markdown-body :global(h2) {
-    font-size: calc(var(--font-size-lg) * 1.214286);
+    font-size: var(--font-size-lg);
     font-weight: 600;
     margin: 18px 0 8px;
     padding-bottom: 4px;
@@ -60,7 +60,7 @@
   }
 
   .markdown-body :global(h3) {
-    font-size: calc(var(--font-size-lg) * 1.071429);
+    font-size: var(--font-size-lg);
     font-weight: 600;
     margin: 16px 0 6px;
   }
