@@ -1419,7 +1419,7 @@ name = "widget-*"
 	assert.NotContains(rr.Body.String(), "other")
 }
 
-func TestHandlePreviewReposFallsBackToExactLookupWhenListOmitsRepo(t *testing.T) {
+func TestHandlePreviewReposFallsBackToListWhenExactLookupFails(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	privateRepo := true
@@ -1434,12 +1434,76 @@ func TestHandlePreviewReposFallsBackToExactLookupWhenListOmitsRepo(t *testing.T)
 		listReposByOwnerFn: func(_ context.Context, owner string) ([]*gh.Repository, error) {
 			listCalls.Add(1)
 			assert.Equal("mariusvniekerk", owner)
-			return []*gh.Repository{}, nil
+			return []*gh.Repository{
+				{
+					Name:        &name,
+					Owner:       &gh.User{Login: &ownerLogin},
+					Description: &description,
+					Private:     &privateRepo,
+					Fork:        &forkRepo,
+					Archived:    new(false),
+					PushedAt:    &pushedAt,
+				},
+			}, nil
 		},
 		getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
 			getCalls.Add(1)
 			assert.Equal("mariusvniekerk", owner)
 			assert.Equal("dotfiles2026", repo)
+			return nil, errors.New("not found")
+		},
+	}
+	srv, _, _ := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+`, mock)
+
+	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
+		"provider": "github",
+		"host":     "github.com",
+		"owner":    "mariusvniekerk",
+		"pattern":  "dotfiles2026",
+	})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var resp repoPreviewResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(resp.Repos, 1)
+	assert.Equal(int32(1), getCalls.Load())
+	assert.Equal(int32(1), listCalls.Load())
+	assert.Equal("mariusvniekerk", resp.Repos[0].Owner)
+	assert.Equal("dotfiles2026", resp.Repos[0].Name)
+	assert.Equal("personal dotfiles", *resp.Repos[0].Description)
+	assert.True(resp.Repos[0].Private)
+	assert.False(resp.Repos[0].Fork)
+	assert.False(resp.Repos[0].AlreadyConfigured)
+	require.NotNil(resp.Repos[0].PushedAt)
+	assert.Equal(pushedAt.Time.UTC().Format(time.RFC3339), *resp.Repos[0].PushedAt)
+}
+
+func TestHandlePreviewReposUsesExactLookupForConcreteRepo(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	privateRepo := true
+	forkRepo := false
+	pushedAt := gh.Timestamp{Time: time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC)}
+	name := "tesseract-feedstock"
+	ownerLogin := "anacondarecipes"
+	description := "A conda-smithy repository for tesseract"
+	var listCalls atomic.Int32
+	var getCalls atomic.Int32
+	mock := &mockGH{
+		listReposByOwnerFn: func(_ context.Context, owner string) ([]*gh.Repository, error) {
+			listCalls.Add(1)
+			assert.Fail("concrete repo preview should not list repositories", "owner: %s", owner)
+			return []*gh.Repository{}, nil
+		},
+		getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+			getCalls.Add(1)
+			assert.Equal("anacondarecipes", owner)
+			assert.Equal("tesseract-feedstock", repo)
 			return &gh.Repository{
 				Name:        &name,
 				Owner:       &gh.User{Login: &ownerLogin},
@@ -1461,19 +1525,19 @@ port = 8091
 	rr := doJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
 		"provider": "github",
 		"host":     "github.com",
-		"owner":    "mariusvniekerk",
-		"pattern":  "dotfiles2026",
+		"owner":    "anacondarecipes",
+		"pattern":  "tesseract-feedstock",
 	})
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	var resp repoPreviewResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(resp.Repos, 1)
-	assert.Equal(int32(1), listCalls.Load())
 	assert.Equal(int32(1), getCalls.Load())
-	assert.Equal("mariusvniekerk", resp.Repos[0].Owner)
-	assert.Equal("dotfiles2026", resp.Repos[0].Name)
-	assert.Equal("personal dotfiles", *resp.Repos[0].Description)
+	assert.Equal(int32(0), listCalls.Load())
+	assert.Equal("anacondarecipes", resp.Repos[0].Owner)
+	assert.Equal("tesseract-feedstock", resp.Repos[0].Name)
+	assert.Equal("A conda-smithy repository for tesseract", *resp.Repos[0].Description)
 	assert.True(resp.Repos[0].Private)
 	assert.False(resp.Repos[0].Fork)
 	assert.False(resp.Repos[0].AlreadyConfigured)
