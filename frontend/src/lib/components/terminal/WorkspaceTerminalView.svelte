@@ -779,17 +779,32 @@
     if (actionsBlocked) return;
     actionError = null;
     const targetId = workspaceId;
+    // Capture the trigger synchronously: the click handler runs
+    // before `inert` is applied to .terminal-view, so this is the
+    // last point we can read the originating focused element. By
+    // the time the post-await effect runs, the browser has cleared
+    // focus to document.body.
+    const triggerEl =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     const { error, response } = await client.DELETE(
       "/workspaces/{id}",
       {
         params: { path: { id: targetId } },
       },
     );
+    // The user can navigate away while the request is in flight;
+    // settling state for a workspace they're no longer viewing
+    // would open a stale prompt or yank them out of their new
+    // context.
+    if (targetId !== workspaceId) return;
     if (response.status === 409) {
+      previouslyFocusedEl = triggerEl;
+      forcePromptForId = targetId;
       forcePromptMessage =
         error?.detail ??
         "Workspace has uncommitted changes.";
-      forcePromptForId = targetId;
       return;
     }
     if (!response.ok && response.status !== 204) {
@@ -818,6 +833,11 @@
           },
         },
       );
+      // The force-delete on the server is destructive and runs to
+      // completion either way; once the user has moved on we just
+      // drop the response on the floor so navigate() doesn't pull
+      // them away from their new workspace.
+      if (targetId !== workspaceId) return;
       if (!response.ok && response.status !== 204) {
         actionError = apiErrorMessage(
           error,
@@ -874,12 +894,6 @@
 
   $effect(() => {
     if (forcePromptMessage !== null) {
-      if (
-        previouslyFocusedEl === null &&
-        document.activeElement instanceof HTMLElement
-      ) {
-        previouslyFocusedEl = document.activeElement;
-      }
       void tick().then(() => cancelForceBtnEl?.focus());
     } else if (previouslyFocusedEl !== null) {
       previouslyFocusedEl.focus();

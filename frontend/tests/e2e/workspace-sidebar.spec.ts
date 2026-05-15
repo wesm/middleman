@@ -847,6 +847,58 @@ test.describe("terminal state icons", () => {
       expect(deleteRequests[0]).not.toContain("force=true");
     },
   );
+
+  test(
+    "in-flight 409 response does not surface a prompt after the user has navigated away",
+    async ({ page }) => {
+      await setupTerminalMocks(page);
+
+      // Replace the default DELETE handler with one that holds the
+      // 409 response long enough for the test to navigate before
+      // it lands.
+      await page.route(
+        (url) =>
+          url.pathname === "/api/v1/workspaces/ws-123",
+        async (route) => {
+          if (route.request().method() !== "DELETE") {
+            await route.fallback();
+            return;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 400));
+          await route.fulfill({
+            status: 409,
+            contentType: "application/json",
+            body: JSON.stringify({
+              detail: "Worktree has uncommitted changes.",
+            }),
+          });
+        },
+      );
+
+      await page.goto("/terminal/ws-123");
+
+      // Kick off the DELETE, then immediately leave the workspace.
+      // The DELETE handler in handleDelete is async, so this is the
+      // exact race condition the post-await guard exists to handle.
+      await page
+        .locator(".header-bar")
+        .getByRole("button", { name: "Delete" })
+        .click();
+      await page.evaluate(() => {
+        history.pushState(null, "", "/workspaces");
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      });
+
+      // Wait past the route delay so the response settles either way.
+      await page.waitForTimeout(700);
+
+      await expect(
+        page.getByRole("dialog", {
+          name: "Force delete workspace?",
+        }),
+      ).toBeHidden();
+    },
+  );
 });
 
 test.describe("workspace launch home", () => {
