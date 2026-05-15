@@ -151,6 +151,16 @@
   const hasActiveTimelineFilters = $derived(
     activePRTimelineFilterCount(timelineFilter) > 0,
   );
+
+  function ciChecksHavePending(checksJSON: string): boolean {
+    if (!checksJSON) return false;
+    try {
+      const checks = JSON.parse(checksJSON) as Array<{ status?: string }>;
+      return checks.some((check) => check.status !== "completed");
+    } catch {
+      return false;
+    }
+  }
   async function editTimelineComment(
     event: { PlatformID: number | null },
     body: string,
@@ -183,6 +193,29 @@
       d.repo?.platform_host !== platformHost ||
       d.repo?.repo_path !== repoPath
     );
+  });
+
+  const shouldAutoRefreshCI = $derived.by(() => {
+    const pr = currentPR();
+    return Boolean(
+      ciExpanded &&
+      !stalePR &&
+      pr?.State === "open" &&
+      ciChecksHavePending(pr.CIChecksJSON),
+    );
+  });
+
+  $effect(() => {
+    if (!shouldAutoRefreshCI) return;
+    const refresh = () => {
+      void detailStore.refreshPendingCI(owner, name, number, {
+        provider,
+        platformHost,
+        repoPath,
+      });
+    };
+    const interval = setInterval(refresh, 15_000);
+    return () => clearInterval(interval);
   });
 
   $effect(() => {

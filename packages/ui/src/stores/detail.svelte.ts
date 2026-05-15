@@ -520,6 +520,18 @@ export function createDetailStore(
     await refreshDetail(owner, name, number, syncGeneration, ref);
   }
 
+  async function refreshPendingCI(
+    owner: string,
+    name: string,
+    number: number,
+    identity: DetailRequestOptions,
+  ): Promise<void> {
+    if (!isDetailShowing(owner, name, number)) return;
+    if (syncing) return;
+    const ref = detailRequestRef(owner, name, number, identity);
+    await syncDetail(owner, name, number, syncGeneration, ref);
+  }
+
   async function updateKanbanState(
     owner: string,
     name: string,
@@ -1118,6 +1130,7 @@ export function createDetailStore(
     clearDetail,
     loadDetail,
     refreshDetailOnly,
+    refreshPendingCI,
     updateKanbanState,
     setPullLabels,
     updatePRContent,

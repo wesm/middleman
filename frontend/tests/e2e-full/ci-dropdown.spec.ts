@@ -1,6 +1,66 @@
 import { expect, test } from "@playwright/test";
 
+type PRDetailResponseForTest = {
+  merge_request: {
+    CIStatus: string;
+    CIChecksJSON: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+};
+
 test.describe("CI dropdown", () => {
+  test("expanded pending CI checks trigger a detail sync refresh", async ({ page }) => {
+    let pendingDetail: PRDetailResponseForTest | null = null;
+    const pendingChecks = [
+      {
+        name: "build",
+        status: "in_progress",
+        conclusion: "",
+        url: "https://ci.example.com/build",
+        app: "GitHub Actions",
+      },
+    ];
+    await page.route("**/api/v1/pulls/github/acme/widgets/1", async (route) => {
+      const response = await route.fetch();
+      pendingDetail = await response.json() as PRDetailResponseForTest;
+      pendingDetail!.merge_request.CIStatus = "pending";
+      pendingDetail!.merge_request.CIChecksJSON = JSON.stringify(pendingChecks);
+      await route.fulfill({ response, json: pendingDetail });
+    });
+
+    const syncRequests: string[] = [];
+    await page.route("**/api/v1/pulls/github/acme/widgets/1/sync", async (route) => {
+      syncRequests.push(route.request().method());
+      const syncedDetail = {
+        ...pendingDetail,
+        merge_request: {
+          ...pendingDetail!.merge_request,
+          CIStatus: "success",
+          CIChecksJSON: JSON.stringify([
+            {
+              ...pendingChecks[0],
+              status: "completed",
+              conclusion: "success",
+            },
+          ]),
+        },
+      };
+      await route.fulfill({ status: 200, json: syncedDetail });
+    });
+
+    await page.goto("/pulls/github/acme/widgets/1");
+
+    await page
+      .locator(".pull-detail")
+      .getByRole("button", { name: /CI:\s*pending \(1\)/i })
+      .click();
+
+    await expect.poll(() => syncRequests.length, {
+      timeout: 17_000,
+    }).toBeGreaterThan(0);
+  });
+
   test("detail chips use the shared centered chip layout", async ({ page }) => {
     await page.goto("/pulls/github/acme/widgets/1");
 
