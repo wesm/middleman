@@ -12,8 +12,12 @@
 // agree or data-task-index would drift. Anything inside a fenced
 // code block is ignored so `[ ]` shown in code samples doesn't
 // shift indices.
-const TASK_LINE = /^([\t ]*(?:[-*+]|\d+\.)[\t ]+\[)([ xX])(\])(?:[\t ]|$)/;
-const BULLET_LINE = /^[\t ]*(?:[-*+]|\d+\.)[\t ]+/;
+// CommonMark accepts both `1.` and `1)` as ordered-list markers, and
+// marked renders either shape as a task-list item — accept both here
+// or `1) [ ]` lexes as a task on render but plain prose in source,
+// drifting data-task-index out of sync.
+const TASK_LINE = /^([\t ]*(?:[-*+]|\d+[.)])[\t ]+\[)([ xX])(\])(?:[\t ]|$)/;
+const BULLET_LINE = /^[\t ]*(?:[-*+]|\d+[.)])[\t ]+/;
 // Fenced code block opener: 3+ matching characters (` or ~) with
 // optional leading whitespace. Captures the character and run so the
 // close fence can be validated against the same marker and length per

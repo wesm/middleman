@@ -22,12 +22,14 @@ describe("listTaskItems", () => {
       "- [x] second",
       "* [X] third (uppercase)",
       "1. [ ] fourth (ordered)",
+      "2) [x] fifth (ordered with paren)",
     ].join("\n");
     expect(listTaskItems(src)).toEqual([
       { index: 0, checked: false, line: 1 },
       { index: 1, checked: true, line: 3 },
       { index: 2, checked: true, line: 4 },
       { index: 3, checked: false, line: 5 },
+      { index: 4, checked: true, line: 6 },
     ]);
   });
 
@@ -188,6 +190,14 @@ describe("toggleTaskListItem", () => {
   it("supports ordered-list task markers", () => {
     expect(toggleTaskListItem("1. [ ] step one", 0)).toBe(
       "1. [x] step one",
+    );
+  });
+
+  it("supports ordered-list task markers using ')' (CommonMark)", () => {
+    // marked accepts `1)` as an ordered-list marker, so the source
+    // helpers must too — otherwise data-task-index would drift.
+    expect(toggleTaskListItem("1) [ ] step one", 0)).toBe(
+      "1) [x] step one",
     );
   });
 
