@@ -85,6 +85,13 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	// widgets#1: open, alice, has reviews+comments+4 commits
 	w1Created := now.Add(-10 * 24 * time.Hour)
+	w1Body := "## Summary\n\n" +
+		"Introduce an LRU cache in front of the widget store.\n\n" +
+		"## Test plan\n\n" +
+		"- [ ] Cmd+K opens palette, focus lands in the search input\n" +
+		"- [ ] Tab/Shift+Tab cycles within the palette dialog only\n" +
+		"- [ ] `>settings` + Enter navigates to /settings\n" +
+		"- [x] Cache invalidates on widget update\n"
 	w1ID, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:            widgetsID,
 		PlatformID:        1001,
@@ -94,6 +101,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		Author:            "alice",
 		AuthorDisplayName: "Alice",
 		State:             "open",
+		Body:              w1Body,
 		HeadBranch:        "feature/caching",
 		BaseBranch:        "main",
 		Additions:         240,
@@ -429,6 +437,11 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	// widgets#11: open, alice, older (20d ago)
 	wi11Created := now.Add(-20 * 24 * time.Hour)
+	wi11Body := "## Acceptance criteria\n\n" +
+		"- [ ] System preference detected on first launch\n" +
+		"- [ ] Manual toggle in settings overrides system\n" +
+		"- [ ] Choice persists across reloads\n" +
+		"- [x] Theme tokens defined in design system\n"
 	wi11ID, err := d.UpsertIssue(ctx, &db.Issue{
 		RepoID:         widgetsID,
 		PlatformID:     3011,
@@ -437,6 +450,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		Title:          "Add dark mode support",
 		Author:         "alice",
 		State:          "open",
+		Body:           wi11Body,
 		CommentCount:   0,
 		CreatedAt:      wi11Created,
 		UpdatedAt:      wi11Created,
@@ -717,7 +731,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	openPRs := map[string][]*gh.PullRequest{
 		"acme/widgets": {
-			setPRHeadSHA(setPRStats(buildGHPR("acme", "widgets", 1001, 1, "Add widget caching layer", "alice", "open", false, "", w1Created, now.Add(-2*time.Hour)), 240, 30), widgetsPR1HeadSHA),
+			setPRBody(setPRHeadSHA(setPRStats(buildGHPR("acme", "widgets", 1001, 1, "Add widget caching layer", "alice", "open", false, "", w1Created, now.Add(-2*time.Hour)), 240, 30), widgetsPR1HeadSHA), w1Body),
 			setPRStats(buildGHPR("acme", "widgets", 1002, 2, "Fix race condition in event loop", "bob", "open", false, "dirty", w2Created, now.Add(-20*time.Hour)), 55, 12),
 			setPRStats(buildGHPR("acme", "widgets", 1006, 6, "WIP: new dashboard layout", "carol", "open", true, "", w6Created, now.Add(-12*time.Hour)), 150, 40),
 			setPRStats(buildGHPR("acme", "widgets", 1007, 7, "Bump lodash from 4.17.20 to 4.17.21", "dependabot[bot]", "open", false, "", w7Created, now.Add(-6*time.Hour)), 1, 1),
@@ -732,7 +746,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	allPRs := map[string][]*gh.PullRequest{
 		"acme/widgets": {
-			setPRHeadSHA(setPRStats(buildGHPR("acme", "widgets", 1001, 1, "Add widget caching layer", "alice", "open", false, "", w1Created, now.Add(-2*time.Hour)), 240, 30), widgetsPR1HeadSHA),
+			setPRBody(setPRHeadSHA(setPRStats(buildGHPR("acme", "widgets", 1001, 1, "Add widget caching layer", "alice", "open", false, "", w1Created, now.Add(-2*time.Hour)), 240, 30), widgetsPR1HeadSHA), w1Body),
 			setPRStats(buildGHPR("acme", "widgets", 1002, 2, "Fix race condition in event loop", "bob", "open", false, "dirty", w2Created, now.Add(-20*time.Hour)), 55, 12),
 			setPRStats(buildGHPR("acme", "widgets", 1003, 3, "Upgrade dependency versions", "carol", "merged", false, "", now.Add(-10*24*time.Hour), w3Merged), 80, 80),
 			setPRStats(buildGHPR("acme", "widgets", 1004, 4, "Refactor storage backend", "alice", "merged", false, "", now.Add(-30*24*time.Hour), w4Merged), 420, 310),
@@ -752,7 +766,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	openIssues := map[string][]*gh.Issue{
 		"acme/widgets": {
 			buildGHIssue("acme", "widgets", 3010, 10, "Widget rendering broken on Safari", "eve", "open", wi10Created, now.Add(-4*time.Hour)),
-			buildGHIssue("acme", "widgets", 3011, 11, "Add dark mode support", "alice", "open", wi11Created, wi11Created),
+			setIssueBody(buildGHIssue("acme", "widgets", 3011, 11, "Add dark mode support", "alice", "open", wi11Created, wi11Created), wi11Body),
 			buildGHIssue("acme", "widgets", 3013, 13, "Security advisory: prototype pollution", "dependabot[bot]", "open", wi13Created, wi13Created),
 		},
 		"acme/tools": {
@@ -772,7 +786,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	allIssues := map[string][]*gh.Issue{
 		"acme/widgets": {
 			buildGHIssue("acme", "widgets", 3010, 10, "Widget rendering broken on Safari", "eve", "open", wi10Created, now.Add(-4*time.Hour)),
-			buildGHIssue("acme", "widgets", 3011, 11, "Add dark mode support", "alice", "open", wi11Created, wi11Created),
+			setIssueBody(buildGHIssue("acme", "widgets", 3011, 11, "Add dark mode support", "alice", "open", wi11Created, wi11Created), wi11Body),
 			buildGHIssue("acme", "widgets", 3012, 12, "Crash on empty input", "carol", "closed", now.Add(-7*24*time.Hour), wi12Closed),
 			buildGHIssue("acme", "widgets", 3013, 13, "Security advisory: prototype pollution", "dependabot[bot]", "open", wi13Created, wi13Created),
 		},
@@ -880,6 +894,21 @@ func buildGHPR(
 		pr.MergeableState = new(mergeableState)
 	}
 	return pr
+}
+
+// setPRBody sets a Body on a *gh.PullRequest so the fixture client
+// returns prose for sync paths exercising body persistence (e.g.
+// task-list checkboxes).
+func setPRBody(pr *gh.PullRequest, body string) *gh.PullRequest {
+	pr.Body = &body
+	return pr
+}
+
+// setIssueBody sets a Body on a *gh.Issue. Mirrors setPRBody for
+// issue-side body edits (task-list checkboxes on issue descriptions).
+func setIssueBody(issue *gh.Issue, body string) *gh.Issue {
+	issue.Body = &body
+	return issue
 }
 
 // setPRStats sets Additions and Deletions on a *gh.PullRequest so the

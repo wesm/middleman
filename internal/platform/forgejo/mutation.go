@@ -103,6 +103,16 @@ func (c *Client) EditMergeRequestContent(
 	return c.provider.EditMergeRequestContent(ctx, ref, number, title, body)
 }
 
+func (c *Client) EditIssueContent(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	title *string,
+	body *string,
+) (platform.Issue, error) {
+	return c.provider.EditIssueContent(ctx, ref, number, title, body)
+}
+
 func (t *transport) CreateIssueComment(
 	ctx context.Context,
 	ref platform.RepoRef,

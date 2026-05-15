@@ -253,6 +253,22 @@ type EditIssueCommentInputBody struct {
 	Body   string  `json:"body"`
 }
 
+// EditIssueContentHostInputBody defines model for EditIssueContentHostInputBody.
+type EditIssueContentHostInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Body   *string `json:"body,omitempty"`
+	Title  *string `json:"title,omitempty"`
+}
+
+// EditIssueContentInputBody defines model for EditIssueContentInputBody.
+type EditIssueContentInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Body   *string `json:"body,omitempty"`
+	Title  *string `json:"title,omitempty"`
+}
+
 // EditPRContentHostInputBody defines model for EditPRContentHostInputBody.
 type EditPRContentHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -1251,6 +1267,9 @@ type GetWorkspacesByIdFilesParams struct {
 // CreateIssueOnHostJSONRequestBody defines body for CreateIssueOnHost for application/json ContentType.
 type CreateIssueOnHostJSONRequestBody = CreateIssueHostInputBody
 
+// EditIssueContentOnHostJSONRequestBody defines body for EditIssueContentOnHost for application/json ContentType.
+type EditIssueContentOnHostJSONRequestBody = EditIssueContentHostInputBody
+
 // PostIssueCommentOnHostJSONRequestBody defines body for PostIssueCommentOnHost for application/json ContentType.
 type PostIssueCommentOnHostJSONRequestBody = PostIssueCommentHostInputBody
 
@@ -1286,6 +1305,9 @@ type SetKanbanStateOnHostJSONRequestBody = SetKanbanStateHostInputBody
 
 // CreateIssueJSONRequestBody defines body for CreateIssue for application/json ContentType.
 type CreateIssueJSONRequestBody = CreateIssueInputBody
+
+// EditIssueContentJSONRequestBody defines body for EditIssueContent for application/json ContentType.
+type EditIssueContentJSONRequestBody = EditIssueContentInputBody
 
 // PostIssueCommentJSONRequestBody defines body for PostIssueComment for application/json ContentType.
 type PostIssueCommentJSONRequestBody = PostIssueCommentInputBody
@@ -1437,6 +1459,11 @@ type ClientInterface interface {
 	// GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumber request
 	GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumber(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// EditIssueContentOnHostWithBody request with any body
+	EditIssueContentOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	EditIssueContentOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body EditIssueContentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// PostIssueCommentOnHostWithBody request with any body
 	PostIssueCommentOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1556,6 +1583,11 @@ type ClientInterface interface {
 
 	// GetIssuesByProviderByOwnerByNameByNumber request
 	GetIssuesByProviderByOwnerByNameByNumber(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// EditIssueContentWithBody request with any body
+	EditIssueContentWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	EditIssueContent(ctx context.Context, provider string, owner string, name string, number int64, body EditIssueContentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostIssueCommentWithBody request with any body
 	PostIssueCommentWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1836,6 +1868,30 @@ func (c *Client) CreateIssueOnHost(ctx context.Context, platformHost string, pro
 
 func (c *Client) GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumber(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberRequest(c.Server, platformHost, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EditIssueContentOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditIssueContentOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EditIssueContentOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body EditIssueContentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditIssueContentOnHostRequest(c.Server, platformHost, provider, owner, name, number, body)
 	if err != nil {
 		return nil, err
 	}
@@ -2364,6 +2420,30 @@ func (c *Client) CreateIssue(ctx context.Context, provider string, owner string,
 
 func (c *Client) GetIssuesByProviderByOwnerByNameByNumber(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetIssuesByProviderByOwnerByNameByNumberRequest(c.Server, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EditIssueContentWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditIssueContentRequestWithBody(c.Server, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EditIssueContent(ctx context.Context, provider string, owner string, name string, number int64, body EditIssueContentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditIssueContentRequest(c.Server, provider, owner, name, number, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3636,6 +3716,81 @@ func NewGetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberRequest(server
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewEditIssueContentOnHostRequest calls the generic EditIssueContentOnHost builder with application/json body
+func NewEditIssueContentOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, body EditIssueContentOnHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewEditIssueContentOnHostRequestWithBody(server, platformHost, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewEditIssueContentOnHostRequestWithBody generates requests for EditIssueContentOnHost with any type of body
+func NewEditIssueContentOnHostRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/issues/%s/%s/%s/%s", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -6002,6 +6157,74 @@ func NewGetIssuesByProviderByOwnerByNameByNumberRequest(server string, provider 
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewEditIssueContentRequest calls the generic EditIssueContent builder with application/json body
+func NewEditIssueContentRequest(server string, provider string, owner string, name string, number int64, body EditIssueContentJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewEditIssueContentRequestWithBody(server, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewEditIssueContentRequestWithBody generates requests for EditIssueContent with any type of body
+func NewEditIssueContentRequestWithBody(server string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/issues/%s/%s/%s/%s", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -9351,6 +9574,11 @@ type ClientWithResponsesInterface interface {
 	// GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberWithResponse request
 	GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse, error)
 
+	// EditIssueContentOnHostWithBodyWithResponse request with any body
+	EditIssueContentOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditIssueContentOnHostResponse, error)
+
+	EditIssueContentOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body EditIssueContentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*EditIssueContentOnHostResponse, error)
+
 	// PostIssueCommentOnHostWithBodyWithResponse request with any body
 	PostIssueCommentOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostIssueCommentOnHostResponse, error)
 
@@ -9470,6 +9698,11 @@ type ClientWithResponsesInterface interface {
 
 	// GetIssuesByProviderByOwnerByNameByNumberWithResponse request
 	GetIssuesByProviderByOwnerByNameByNumberWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetIssuesByProviderByOwnerByNameByNumberResponse, error)
+
+	// EditIssueContentWithBodyWithResponse request with any body
+	EditIssueContentWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditIssueContentResponse, error)
+
+	EditIssueContentWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body EditIssueContentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditIssueContentResponse, error)
 
 	// PostIssueCommentWithBodyWithResponse request with any body
 	PostIssueCommentWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostIssueCommentResponse, error)
@@ -9763,6 +9996,29 @@ func (r GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse) Stat
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type EditIssueContentOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *IssueDetailResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r EditIssueContentOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r EditIssueContentOnHostResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -10495,6 +10751,29 @@ func (r GetIssuesByProviderByOwnerByNameByNumberResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetIssuesByProviderByOwnerByNameByNumberResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type EditIssueContentResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *IssueDetailResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r EditIssueContentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r EditIssueContentResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -11953,6 +12232,23 @@ func (c *ClientWithResponses) GetHostByPlatformHostIssuesByProviderByOwnerByName
 	return ParseGetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse(rsp)
 }
 
+// EditIssueContentOnHostWithBodyWithResponse request with arbitrary body returning *EditIssueContentOnHostResponse
+func (c *ClientWithResponses) EditIssueContentOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditIssueContentOnHostResponse, error) {
+	rsp, err := c.EditIssueContentOnHostWithBody(ctx, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEditIssueContentOnHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) EditIssueContentOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body EditIssueContentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*EditIssueContentOnHostResponse, error) {
+	rsp, err := c.EditIssueContentOnHost(ctx, platformHost, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEditIssueContentOnHostResponse(rsp)
+}
+
 // PostIssueCommentOnHostWithBodyWithResponse request with arbitrary body returning *PostIssueCommentOnHostResponse
 func (c *ClientWithResponses) PostIssueCommentOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostIssueCommentOnHostResponse, error) {
 	rsp, err := c.PostIssueCommentOnHostWithBody(ctx, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
@@ -12335,6 +12631,23 @@ func (c *ClientWithResponses) GetIssuesByProviderByOwnerByNameByNumberWithRespon
 		return nil, err
 	}
 	return ParseGetIssuesByProviderByOwnerByNameByNumberResponse(rsp)
+}
+
+// EditIssueContentWithBodyWithResponse request with arbitrary body returning *EditIssueContentResponse
+func (c *ClientWithResponses) EditIssueContentWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditIssueContentResponse, error) {
+	rsp, err := c.EditIssueContentWithBody(ctx, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEditIssueContentResponse(rsp)
+}
+
+func (c *ClientWithResponses) EditIssueContentWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body EditIssueContentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditIssueContentResponse, error) {
+	rsp, err := c.EditIssueContent(ctx, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEditIssueContentResponse(rsp)
 }
 
 // PostIssueCommentWithBodyWithResponse request with arbitrary body returning *PostIssueCommentResponse
@@ -13138,6 +13451,39 @@ func ParseGetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse(rsp
 	}
 
 	response := &GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IssueDetailResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseEditIssueContentOnHostResponse parses an HTTP response from a EditIssueContentOnHostWithResponse call
+func ParseEditIssueContentOnHostResponse(rsp *http.Response) (*EditIssueContentOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &EditIssueContentOnHostResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -14166,6 +14512,39 @@ func ParseGetIssuesByProviderByOwnerByNameByNumberResponse(rsp *http.Response) (
 	}
 
 	response := &GetIssuesByProviderByOwnerByNameByNumberResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IssueDetailResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseEditIssueContentResponse parses an HTTP response from a EditIssueContentWithResponse call
+func ParseEditIssueContentResponse(rsp *http.Response) (*EditIssueContentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &EditIssueContentResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}

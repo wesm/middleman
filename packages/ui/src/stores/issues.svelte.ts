@@ -96,6 +96,19 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   let detailSyncing = $state(false);
   let detailError = $state<string | null>(null);
   let issueDetailLoaded = $state(false);
+  // Tracks the issue (if any) whose local body has been edited since
+  // the last server confirmation. While set, background sync paths
+  // preserve the local body for THIS specific issue — a poll on a
+  // different issue is unaffected, and navigating away doesn't
+  // strand the flag on the wrong target.
+  type UnsavedIssueTarget = {
+    provider: string;
+    platformHost: string | undefined;
+    owner: string;
+    name: string;
+    number: number;
+  };
+  let unsavedLocalBody = $state<UnsavedIssueTarget | null>(null);
   let detailPollHandle: ReturnType<typeof setInterval> | null = null;
   let issueSyncGeneration = 0;
   let activeDetailLoad: {
@@ -234,6 +247,41 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   // --- detail writes ---
 
+  // Apply a fresh IssueDetail from the server. When the user has an
+  // unsynced local body edit on the same issue, keep that body so a
+  // polling refresh can't revert a pending optimistic toggle. Match on
+  // provider + platformHost too so an unrelated repo with the same
+  // owner/name/number (different host or provider) doesn't inherit
+  // another repo's pending body.
+  function withPreservedLocalBody(next: IssueDetail): IssueDetail {
+    if (!unsavedLocalBody) return next;
+    if (!issueDetail) return next;
+    if (
+      unsavedLocalBody.provider !== next.repo?.provider ||
+      unsavedLocalBody.platformHost !== next.repo?.platform_host ||
+      unsavedLocalBody.owner !== next.repo_owner ||
+      unsavedLocalBody.name !== next.repo_name ||
+      unsavedLocalBody.number !== next.issue?.Number
+    ) {
+      return next;
+    }
+    if (
+      issueDetail.repo_owner !== next.repo_owner ||
+      issueDetail.repo_name !== next.repo_name ||
+      issueDetail.issue?.Number !== next.issue?.Number
+    ) {
+      return next;
+    }
+    return {
+      ...next,
+      issue: { ...next.issue, Body: issueDetail.issue.Body },
+    };
+  }
+
+  function hasUnsavedLocalBody(): boolean {
+    return unsavedLocalBody !== null;
+  }
+
   function currentIssuePlatformHost(
     owner: string,
     name: string,
@@ -345,7 +393,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           throw new Error(apiErrorMessage(requestError, "failed to load issue"));
         }
         issueDetail = data
-          ? ({
+          ? withPreservedLocalBody({
               ...data,
               events: data.events ?? [],
             } as IssueDetail)
@@ -458,10 +506,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       }
       if (data) {
         detailError = null;
-        issueDetail = {
+        issueDetail = withPreservedLocalBody({
           ...data,
           events: data.events ?? [],
-        } as IssueDetail;
+        } as IssueDetail);
         issueDetailLoaded = data.detail_loaded ?? issueDetailLoaded;
       }
     } catch {
@@ -498,10 +546,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       // keeps the new selection's data from being clobbered.
       if (expectedGen !== issueSyncGeneration) return;
       if (data !== undefined) {
-        issueDetail = {
+        issueDetail = withPreservedLocalBody({
           ...data,
           events: data.events ?? [],
-        } as IssueDetail;
+        } as IssueDetail);
         issueDetailLoaded = data.detail_loaded ?? issueDetailLoaded;
       }
     } catch {
@@ -537,6 +585,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     detailSyncing = false;
     detailError = null;
     issueDetailLoaded = false;
+    unsavedLocalBody = null;
   }
 
   async function submitIssueComment(
@@ -616,6 +665,177 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     }
     await refreshIssueDetail(owner, name, number, ref);
     return true;
+  }
+
+  // Replaces the in-memory issue body without touching the server. Pair
+  // with saveIssueBodyInBackground for instant-feedback edits like
+  // task-list checkbox clicks. Marks the body as unsaved so a
+  // background refresh can't revert it before the debounced PATCH
+  // lands.
+  function setLocalIssueBody(
+    provider: string,
+    platformHost: string | undefined,
+    owner: string,
+    name: string,
+    number: number,
+    body: string,
+  ): void {
+    if (!issueDetail) return;
+    if (
+      issueDetail.repo_owner !== owner ||
+      issueDetail.repo_name !== name ||
+      issueDetail.issue.Number !== number
+    ) {
+      return;
+    }
+    unsavedLocalBody = { provider, platformHost, owner, name, number };
+    issueDetail = {
+      ...issueDetail,
+      issue: { ...issueDetail.issue, Body: body },
+    };
+  }
+
+  // Single-flight body-save state, keyed per issue. Each entry
+  // tracks the in-flight PATCH and the latest queued body waiting
+  // to send once the in-flight save completes. The queue collapses
+  // to a single pending body so out-of-order PATCH responses can't
+  // overwrite a newer body with an older one.
+  type QueuedIssueSave = {
+    body: string;
+    routeRef: {
+      provider: string;
+      platformHost?: string | undefined;
+      repoPath: string;
+    };
+  };
+  const inflightIssueSaves = new Map<string, Promise<void>>();
+  const queuedIssueSaves = new Map<string, QueuedIssueSave>();
+  function issueSaveQueueKey(
+    provider: string,
+    platformHost: string | undefined,
+    owner: string,
+    name: string,
+    number: number,
+  ): string {
+    // JSON encoding stores each field as its own array element, so
+    // an owner or name that contains a delimiter character can't
+    // forge a collision with a different target. provider and
+    // platformHost are part of the key so the same owner/name/number
+    // on different hosts or providers can't share a queue slot.
+    return JSON.stringify([
+      provider, platformHost ?? "", owner, name, number,
+    ]);
+  }
+
+  async function runIssueBodyPatch(
+    owner: string,
+    name: string,
+    number: number,
+    body: string,
+    routeRef: QueuedIssueSave["routeRef"],
+  ): Promise<void> {
+    const ref = issueDetailRequestRef(owner, name, number, routeRef);
+    let succeeded = false;
+    // Capture whether the locally-displayed body still equals what we
+    // sent BEFORE we overwrite `issueDetail` with the server response.
+    // A server-side body normalization (e.g. line endings) would
+    // otherwise masquerade as a newer user edit on a post-overwrite
+    // check and strand `unsavedLocalBody`. Also include provider +
+    // platform host so a stale response from a since-navigated-away
+    // host can't replace the now-displayed issue from another host
+    // that happens to share owner/name/number.
+    let localBodyMatchesSent = false;
+    try {
+      const { data, error: requestError } =
+        await apiClient.PATCH(
+          providerItemPath("issues", ref, ""),
+          {
+            params: {
+              path: {
+                ...providerRouteParams(ref),
+                number,
+              },
+            },
+            body: { body },
+          },
+        );
+      if (requestError) {
+        throw new Error(
+          apiErrorMessage(requestError, "failed to update issue"),
+        );
+      }
+      succeeded = true;
+      localBodyMatchesSent =
+        issueDetail !== null &&
+        issueDetail.repo?.provider === routeRef.provider &&
+        issueDetail.repo?.platform_host === routeRef.platformHost &&
+        issueDetail.repo_owner === owner &&
+        issueDetail.repo_name === name &&
+        issueDetail.issue.Number === number &&
+        issueDetail.issue.Body === body;
+      if (data && localBodyMatchesSent) {
+        issueDetail = data as IssueDetail;
+      }
+    } catch (err) {
+      detailError =
+        err instanceof Error ? err.message : String(err);
+    }
+    if (
+      succeeded &&
+      localBodyMatchesSent &&
+      unsavedLocalBody &&
+      unsavedLocalBody.provider === routeRef.provider &&
+      unsavedLocalBody.platformHost === routeRef.platformHost &&
+      unsavedLocalBody.owner === owner &&
+      unsavedLocalBody.name === name &&
+      unsavedLocalBody.number === number
+    ) {
+      unsavedLocalBody = null;
+    }
+    refreshIssuesIfActive().catch(() => {});
+  }
+
+  // Fire-and-forget PATCH for the issue body. Does NOT apply an
+  // optimistic update or revert on failure — the caller already owns
+  // local state. On error, detailError surfaces a banner.
+  //
+  // The caller passes the full route ref so the PATCH always targets
+  // the captured issue even if the user has since navigated away.
+  // Only the response is gated on the currently displayed detail.
+  // Saves for the same issue are serialized so older requests can't
+  // overwrite newer bodies via out-of-order responses.
+  function saveIssueBodyInBackground(
+    owner: string,
+    name: string,
+    number: number,
+    body: string,
+    routeRef: {
+      provider: string;
+      platformHost?: string | undefined;
+      repoPath: string;
+    },
+  ): Promise<void> {
+    const key = issueSaveQueueKey(
+      routeRef.provider, routeRef.platformHost, owner, name, number,
+    );
+    queuedIssueSaves.set(key, { body, routeRef });
+    const existing = inflightIssueSaves.get(key);
+    if (existing) return existing;
+    const flight = (async () => {
+      try {
+        while (queuedIssueSaves.has(key)) {
+          const next = queuedIssueSaves.get(key)!;
+          queuedIssueSaves.delete(key);
+          await runIssueBodyPatch(
+            owner, name, number, next.body, next.routeRef,
+          );
+        }
+      } finally {
+        inflightIssueSaves.delete(key);
+      }
+    })();
+    inflightIssueSaves.set(key, flight);
+    return flight;
   }
 
   async function toggleIssueStar(
@@ -798,6 +1018,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     clearIssueDetail,
     submitIssueComment,
     editIssueComment,
+    setLocalIssueBody,
+    saveIssueBodyInBackground,
+    hasUnsavedLocalBody,
     toggleIssueStar,
     selectNextIssue,
     selectPrevIssue,

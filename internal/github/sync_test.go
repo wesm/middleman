@@ -535,6 +535,20 @@ func (m *mockClient) EditIssue(
 	return &gh.Issue{State: &state}, nil
 }
 
+func (m *mockClient) EditIssueContent(
+	_ context.Context, _, _ string, _ int, title *string, body *string,
+) (*gh.Issue, error) {
+	m.trackCall()
+	out := &gh.Issue{}
+	if title != nil {
+		out.Title = title
+	}
+	if body != nil {
+		out.Body = body
+	}
+	return out, nil
+}
+
 func (m *mockClient) ListPullRequestsPage(
 	ctx context.Context, owner, repo, state string, page int,
 ) ([]*gh.PullRequest, bool, error) {

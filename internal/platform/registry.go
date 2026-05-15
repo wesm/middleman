@@ -231,3 +231,18 @@ func (r *Registry) MergeRequestContentMutator(
 	}
 	return mutator, nil
 }
+
+func (r *Registry) IssueContentMutator(
+	kind Kind,
+	host string,
+) (IssueContentMutator, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+	mutator, ok := provider.(IssueContentMutator)
+	if !ok {
+		return nil, UnsupportedCapability(kind, host, "state_mutation")
+	}
+	return mutator, nil
+}

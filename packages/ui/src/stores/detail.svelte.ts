@@ -91,6 +91,19 @@ export function createDetailStore(
   let storeError = $state<string | null>(null);
   let detailLoaded = $state(false);
   let syncGeneration = 0;
+  // Tracks the PR (if any) whose local body has been edited since
+  // the last server confirmation. While set, background sync paths
+  // preserve the local body when applying refreshed server data for
+  // THIS specific PR — a poll on a different PR is unaffected, and
+  // navigating away doesn't strand the flag on the wrong target.
+  type UnsavedTarget = {
+    provider: string;
+    platformHost: string | undefined;
+    owner: string;
+    name: string;
+    number: number;
+  };
+  let unsavedLocalBody = $state<UnsavedTarget | null>(null);
   let activeLoad: {
     key: string;
     promise: Promise<void> | null;
@@ -176,6 +189,45 @@ export function createDetailStore(
     );
   }
 
+  // Apply a fresh PullDetail from the server. When the user has an
+  // unsynced local body edit on the same PR, keep that body so a
+  // polling refresh can't revert a pending optimistic toggle. Match on
+  // provider + platformHost too so an unrelated repo with the same
+  // owner/name/number (different host or provider) doesn't inherit
+  // another repo's pending body.
+  function withPreservedLocalBody(next: PullDetail): PullDetail {
+    if (!unsavedLocalBody) return next;
+    if (!detail) return next;
+    if (
+      unsavedLocalBody.provider !== next.repo?.provider ||
+      unsavedLocalBody.platformHost !== next.repo?.platform_host ||
+      unsavedLocalBody.owner !== next.repo_owner ||
+      unsavedLocalBody.name !== next.repo_name ||
+      unsavedLocalBody.number !== next.merge_request?.Number
+    ) {
+      return next;
+    }
+    if (
+      detail.repo_owner !== next.repo_owner ||
+      detail.repo_name !== next.repo_name ||
+      detail.merge_request?.Number !==
+        next.merge_request?.Number
+    ) {
+      return next;
+    }
+    return {
+      ...next,
+      merge_request: {
+        ...next.merge_request,
+        Body: detail.merge_request.Body,
+      },
+    };
+  }
+
+  function hasUnsavedLocalBody(): boolean {
+    return unsavedLocalBody !== null;
+  }
+
   function currentDetailRef(
     owner: string,
     name: string,
@@ -219,10 +271,10 @@ export function createDetailStore(
       // the new selection's data from being clobbered.
       if (expectedGen !== syncGeneration) return;
       if (data !== undefined) {
-        detail = {
+        detail = withPreservedLocalBody({
           ...data,
           events: data.events ?? [],
-        } as PullDetail;
+        } as PullDetail);
         detailLoaded = data.detail_loaded ?? detailLoaded;
       }
     } catch {
@@ -257,10 +309,10 @@ export function createDetailStore(
       }
       if (data) {
         storeError = null;
-        detail = {
+        detail = withPreservedLocalBody({
           ...data,
           events: data.events ?? [],
-        } as PullDetail;
+        } as PullDetail);
         detailLoaded =
           data.detail_loaded ?? detailLoaded;
       }
@@ -287,6 +339,7 @@ export function createDetailStore(
     syncing = false;
     storeError = null;
     detailLoaded = false;
+    unsavedLocalBody = null;
   }
 
   async function loadDetail(
@@ -355,7 +408,7 @@ export function createDetailStore(
           );
         }
         detail = data
-          ? ({
+          ? withPreservedLocalBody({
               ...data,
               events: data.events ?? [],
             } as PullDetail)
@@ -617,6 +670,16 @@ export function createDetailStore(
       // Apply server-canonical response.
       if (data && isDetailShowing(owner, name, number)) {
         detail = data as PullDetail;
+        if (
+          unsavedLocalBody &&
+          unsavedLocalBody.provider === ref.provider &&
+          unsavedLocalBody.platformHost === ref.platformHost &&
+          unsavedLocalBody.owner === owner &&
+          unsavedLocalBody.name === name &&
+          unsavedLocalBody.number === number
+        ) {
+          unsavedLocalBody = null;
+        }
       }
     } catch (err) {
       storeError =
@@ -640,6 +703,176 @@ export function createDetailStore(
     // Refresh pulls list independently -- don't let a
     // refresh failure revert a successful edit.
     refreshPullsIfActive().catch(() => {});
+  }
+
+  // Replaces the in-memory PR body without touching the server. Pair
+  // with savePRBodyInBackground for instant-feedback edits (e.g. task-
+  // list checkbox clicks): apply the change locally first, then push
+  // it asynchronously so the click never blocks on the network. Marks
+  // the body as unsaved so a background refresh can't revert it
+  // before the debounced PATCH lands.
+  function setLocalPRBody(
+    provider: string,
+    platformHost: string | undefined,
+    owner: string,
+    name: string,
+    number: number,
+    body: string,
+  ): void {
+    if (!detail || !isDetailShowing(owner, name, number)) return;
+    unsavedLocalBody = { provider, platformHost, owner, name, number };
+    detail = {
+      ...detail,
+      merge_request: { ...detail.merge_request, Body: body },
+    };
+  }
+
+  // Single-flight body-save state, keyed per PR. Each entry tracks
+  // the in-flight PATCH and the latest queued body waiting to send
+  // once the in-flight save completes. The queue collapses to a
+  // single pending body — if the user toggles many times while a
+  // save is in flight, only the latest body lands. This prevents
+  // out-of-order PATCH responses from clobbering a newer body with
+  // an older one.
+  type QueuedSave = {
+    body: string;
+    routeRef: {
+      provider: string;
+      platformHost?: string | undefined;
+      repoPath: string;
+    };
+  };
+  const inflightSaves = new Map<string, Promise<void>>();
+  const queuedSaves = new Map<string, QueuedSave>();
+  function saveQueueKey(
+    provider: string,
+    platformHost: string | undefined,
+    owner: string,
+    name: string,
+    number: number,
+  ): string {
+    // JSON encoding stores each field as its own array element, so
+    // an owner or name that contains a delimiter character can't
+    // forge a collision with a different target. provider and
+    // platformHost are part of the key so the same owner/name/number
+    // on different hosts or providers can't share a queue slot.
+    return JSON.stringify([
+      provider, platformHost ?? "", owner, name, number,
+    ]);
+  }
+
+  async function runPRBodyPatch(
+    owner: string,
+    name: string,
+    number: number,
+    body: string,
+    routeRef: QueuedSave["routeRef"],
+  ): Promise<void> {
+    const ref = detailRequestRef(owner, name, number, routeRef);
+    let succeeded = false;
+    // Capture whether the locally-displayed body still equals what we
+    // sent BEFORE we overwrite `detail` with the server response. If
+    // the server normalizes the body (e.g. line endings), a post-
+    // overwrite comparison would falsely look like a newer user edit
+    // and strand `unsavedLocalBody` indefinitely. Also include
+    // provider + platform host so a save response that returns after
+    // the user navigated to the same owner/name/number on another
+    // host doesn't replace the new repo's detail.
+    let localBodyMatchesSent = false;
+    try {
+      const { data, error: requestError } =
+        await apiClient.PATCH(
+          providerItemPath("pulls", ref, ""),
+          {
+            params: {
+              path: { ...providerRouteParams(ref), number },
+            },
+            body: { body },
+          },
+        );
+      if (requestError) {
+        throw new Error(
+          apiErrorMessage(
+            requestError,
+            "failed to update PR",
+          ),
+        );
+      }
+      succeeded = true;
+      localBodyMatchesSent =
+        detail !== null &&
+        isDetailShowing(owner, name, number) &&
+        detail.repo?.provider === routeRef.provider &&
+        detail.repo?.platform_host === routeRef.platformHost &&
+        detail.merge_request.Body === body;
+      if (data && localBodyMatchesSent) {
+        detail = data as PullDetail;
+      }
+    } catch (err) {
+      storeError =
+        err instanceof Error ? err.message : String(err);
+    }
+    // Clear the unsaved-body flag only when the captured local body
+    // matched what we sent — i.e. no newer toggle landed during the
+    // request. Using the captured value (rather than a fresh check)
+    // is what keeps a server-normalized body from masquerading as a
+    // newer edit and leaving the flag stuck.
+    if (
+      succeeded &&
+      localBodyMatchesSent &&
+      unsavedLocalBody &&
+      unsavedLocalBody.provider === routeRef.provider &&
+      unsavedLocalBody.platformHost === routeRef.platformHost &&
+      unsavedLocalBody.owner === owner &&
+      unsavedLocalBody.name === name &&
+      unsavedLocalBody.number === number
+    ) {
+      unsavedLocalBody = null;
+    }
+    refreshPullsIfActive().catch(() => {});
+  }
+
+  // Fire-and-forget PATCH for the PR body. Does NOT apply an optimistic
+  // update or revert on failure — the caller already owns local state.
+  // On error, storeError is set so the surface can surface a banner.
+  //
+  // The caller passes the full route ref so the PATCH always targets
+  // the captured PR even if the user has since navigated away. Only
+  // the response is gated on the currently displayed detail. Saves
+  // for the same PR are serialized so older requests can't overwrite
+  // newer bodies via out-of-order responses.
+  function savePRBodyInBackground(
+    owner: string,
+    name: string,
+    number: number,
+    body: string,
+    routeRef: {
+      provider: string;
+      platformHost?: string | undefined;
+      repoPath: string;
+    },
+  ): Promise<void> {
+    const key = saveQueueKey(
+      routeRef.provider, routeRef.platformHost, owner, name, number,
+    );
+    queuedSaves.set(key, { body, routeRef });
+    const existing = inflightSaves.get(key);
+    if (existing) return existing;
+    const flight = (async () => {
+      try {
+        while (queuedSaves.has(key)) {
+          const next = queuedSaves.get(key)!;
+          queuedSaves.delete(key);
+          await runPRBodyPatch(
+            owner, name, number, next.body, next.routeRef,
+          );
+        }
+      } finally {
+        inflightSaves.delete(key);
+      }
+    })();
+    inflightSaves.set(key, flight);
+    return flight;
   }
 
   function startDetailPolling(
@@ -836,6 +1069,9 @@ export function createDetailStore(
     refreshDetailOnly,
     updateKanbanState,
     updatePRContent,
+    setLocalPRBody,
+    savePRBodyInBackground,
+    hasUnsavedLocalBody,
     startDetailPolling,
     stopDetailPolling,
     toggleDetailPRStar,

@@ -209,6 +209,9 @@ func (m *mockGH) EditPullRequest(context.Context, string, string, int, ghclient.
 func (m *mockGH) EditIssue(context.Context, string, string, int, string) (*gh.Issue, error) {
 	return nil, nil
 }
+func (m *mockGH) EditIssueContent(context.Context, string, string, int, *string, *string) (*gh.Issue, error) {
+	return nil, nil
+}
 func (m *mockGH) ListPullRequestsPage(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error) {
 	return nil, false, nil
 }

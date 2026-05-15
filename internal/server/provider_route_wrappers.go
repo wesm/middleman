@@ -133,6 +133,18 @@ type editPRContentHostInput struct {
 	}
 }
 
+type editIssueContentHostInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string `path:"platform_host"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Body         struct {
+		Title *string `json:"title,omitempty"`
+		Body  *string `json:"body,omitempty"`
+	}
+}
+
 type githubStateHostInput struct {
 	Provider     string `path:"provider"`
 	PlatformHost string `path:"platform_host"`
@@ -222,6 +234,18 @@ func (s *Server) editPRContentOnHost(ctx context.Context, input *editPRContentHo
 		Body:         input.Body,
 	}
 	return s.editPRContent(ctx, &next)
+}
+
+func (s *Server) editIssueContentOnHost(ctx context.Context, input *editIssueContentHostInput) (*editIssueContentOutput, error) {
+	next := editIssueContentInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        input.Owner,
+		Name:         input.Name,
+		Number:       input.Number,
+		Body:         input.Body,
+	}
+	return s.editIssueContent(ctx, &next)
 }
 
 func (s *Server) postCommentOnHost(ctx context.Context, input *postCommentHostInput) (*postCommentOutput, error) {
