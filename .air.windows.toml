@@ -2,8 +2,8 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
-cmd = "./scripts/dev-backend-build.sh"
-entrypoint = "./tmp/middleman"
+cmd = "sh.exe ./scripts/dev-backend-build.sh"
+entrypoint = "./tmp/middleman.exe"
 delay = 500
 exclude_dir = ["frontend", "internal/web/dist", "internal/apiclient/generated", "node_modules", "tmp", "vendor", ".git"]
 include_ext = ["go", "tpl", "tmpl", "html"]
