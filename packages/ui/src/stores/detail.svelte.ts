@@ -771,9 +771,13 @@ export function createDetailStore(
       storeError =
         err instanceof Error ? err.message : String(err);
     }
-    // On a successful save, the captured target is now in sync with
-    // the server. Clear the unsaved flag if it pointed here, even
-    // when the user has since navigated away.
+    // On a successful save, the captured target may be in sync with
+    // the server — but only if the user hasn't typed more since the
+    // request went out. If `detail` is still showing this PR AND the
+    // local body diverges from the body we sent, treat the new edits
+    // as still pending and keep the flag set so the next polling
+    // refresh preserves them. Otherwise (matching body, or user
+    // navigated away), the saved body is canonical and we can clear.
     if (
       succeeded &&
       unsavedLocalBody &&
@@ -781,7 +785,13 @@ export function createDetailStore(
       unsavedLocalBody.name === name &&
       unsavedLocalBody.number === number
     ) {
-      unsavedLocalBody = null;
+      const newerEditInFlight =
+        detail !== null &&
+        isDetailShowing(owner, name, number) &&
+        detail.merge_request.Body !== body;
+      if (!newerEditInFlight) {
+        unsavedLocalBody = null;
+      }
     }
     refreshPullsIfActive().catch(() => {});
   }

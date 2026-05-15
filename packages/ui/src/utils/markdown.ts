@@ -98,13 +98,22 @@ export interface RenderMarkdownOpts {
 
 // Per-render state for the custom checkbox renderer. Marked is single-
 // threaded synchronous, so a module-level variable is safe.
-let renderState = {
+//
+// `itemStack` is a stack of pending listitem invocation scopes. When a
+// listitem fires, it pushes a fresh frame; the checkbox renderer (for
+// THIS item's `[ ]`) writes its allocated index to the top frame; the
+// listitem reads the same frame back on its way out and pops. Nested
+// task children push their own frames on top, so a parent's frame is
+// preserved while inner items emit their own checkboxes.
+type ListItemFrame = { checkboxIndex: number };
+let renderState: {
+  taskIndex: number;
+  interactiveTasks: boolean;
+  itemStack: ListItemFrame[];
+} = {
   taskIndex: 0,
   interactiveTasks: false,
-  // Set by the checkbox renderer to the index it just emitted, then
-  // read by the listitem renderer (which fires AFTER its inner tokens)
-  // so a single task carries the same index on both elements.
-  lastCheckboxIndex: -1,
+  itemStack: [],
 };
 
 const htmlCache = new Map<string, string>();
@@ -130,13 +139,17 @@ function getMarked(repo?: RepoContext): Marked {
     instance.use({ extensions: [itemRefExtension(repo)] });
     instance.use({
       renderer: {
-        // The checkbox renderer runs first (as the parser walks the
-        // inner tokens of a task list item) and owns the index; the
-        // listitem renderer reads that index back to attach a matching
-        // drag handle and wrapper data attribute.
+        // The checkbox renderer is called during the recursive parse
+        // of a listitem's inner tokens. It allocates the next task
+        // index and writes it onto the top frame of itemStack so the
+        // enclosing listitem can pick up THIS item's index — even if
+        // nested children push and pop frames of their own first.
         checkbox({ checked }: { checked: boolean }): string {
           const index = renderState.taskIndex++;
-          renderState.lastCheckboxIndex = index;
+          const stack = renderState.itemStack;
+          if (stack.length > 0) {
+            stack[stack.length - 1]!.checkboxIndex = index;
+          }
           const checkedAttr = checked ? ' checked=""' : "";
           if (renderState.interactiveTasks) {
             return `<input${checkedAttr} type="checkbox" data-task-index="${index}">`;
@@ -151,18 +164,18 @@ function getMarked(repo?: RepoContext): Marked {
           const self = this as unknown as {
             parser: { parse(toks: unknown[], loose: boolean): string };
           };
-          // Reset the checkbox index sentinel so the listitem renderer
-          // can detect whether the inner parse actually emitted one.
-          renderState.lastCheckboxIndex = -1;
+          const frame: ListItemFrame = { checkboxIndex: -1 };
+          renderState.itemStack.push(frame);
           const inner = self.parser.parse(
             (token.tokens ?? []) as unknown[],
             !!token.loose,
           );
+          renderState.itemStack.pop();
           if (!token.task) return `<li>${inner}</li>\n`;
           if (!renderState.interactiveTasks) {
             return `<li class="task-list-item">${inner}</li>\n`;
           }
-          const index = renderState.lastCheckboxIndex;
+          const index = frame.checkboxIndex;
           const handle =
             `<span class="task-drag-handle" `
             + `data-task-index="${index}" `
@@ -199,7 +212,7 @@ export function renderMarkdown(
   const cached = htmlCache.get(key);
   if (cached !== undefined) return cached;
 
-  renderState = { taskIndex: 0, interactiveTasks, lastCheckboxIndex: -1 };
+  renderState = { taskIndex: 0, interactiveTasks, itemStack: [] };
   const html = DOMPurify.sanitize(
     getMarked(repo).parse(raw) as string,
     {

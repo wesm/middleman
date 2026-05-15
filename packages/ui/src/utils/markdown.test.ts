@@ -74,4 +74,43 @@ describe("renderMarkdown task lists", () => {
     const matches = html.match(/<input/g) ?? [];
     expect(matches.length).toBe(1);
   });
+
+  it("preserves per-listitem indices when task items are nested", () => {
+    // Each <li> and its drag handle MUST carry the same index as the
+    // checkbox that lives directly inside that <li>. A nested child
+    // must not leak its index back up to its parent's wrapper.
+    const html = renderMarkdown(
+      "- [ ] outer\n  - [ ] inner\n- [x] sibling",
+      undefined,
+      { interactiveTasks: true },
+    );
+    // The outer <li> wraps both the outer checkbox AND the nested
+    // list — its data-task-index must match its OWN checkbox (0),
+    // not the nested child's (1).
+    expect(html).toContain(
+      '<li class="task-list-item task-list-item--interactive" data-task-index="0">',
+    );
+    expect(html).toContain(
+      '<li class="task-list-item task-list-item--interactive" data-task-index="1">',
+    );
+    expect(html).toContain(
+      '<li class="task-list-item task-list-item--interactive" data-task-index="2">',
+    );
+    expect(html).toContain(
+      '<span class="task-drag-handle" data-task-index="0"',
+    );
+    expect(html).toContain(
+      '<span class="task-drag-handle" data-task-index="1"',
+    );
+    expect(html).toContain(
+      '<span class="task-drag-handle" data-task-index="2"',
+    );
+    // Sanity-check pairing: the outer <li> contains the nested <li>
+    // in its inner content, and the outer's drag handle precedes
+    // the outer's checkbox.
+    const outerOpen = html.indexOf(
+      'data-task-index="0"><span class="task-drag-handle" data-task-index="0"',
+    );
+    expect(outerOpen).toBeGreaterThanOrEqual(0);
+  });
 });
