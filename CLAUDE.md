@@ -2,30 +2,45 @@
 
 ## Project Overview
 
-middleman is a local-first GitHub PR monitoring dashboard for a maintainer managing a small fixed set of repositories. It syncs PR data from GitHub into SQLite on a timer, serves a Svelte 5 SPA via an embedded Go HTTP server, and provides a focused workflow for triage, review, and merge without living in GitHub's notification UI.
+middleman is a local-first dashboard for tracking pull and merge requests across a maintainer's fixed set of repositories on multiple platforms. It syncs PR/MR data into SQLite on a timer, serves a Svelte 5 SPA via an embedded Go HTTP server, and provides a focused workflow for triage, review, and merge from one place rather than each provider's notification UI.
 
 ## Architecture
 
 ```
 CLI (middleman) → Config (TOML) → DB (SQLite)
                     ↓                ↓
-               Sync Engine → GitHub API (go-github/v84)
+               Sync Engine → Platform Registry → {GitHub, GitLab, Forgejo, Gitea}
                     ↓                ↓
                HTTP Server → REST API + Embedded SPA
 ```
 
 - **Server**: Huma-based HTTP server on loopback (default 127.0.0.1:8091)
 - **Storage**: SQLite with WAL mode (pure Go driver: modernc.org/sqlite)
-- **Sync**: Periodic pull from GitHub API (configurable, default 5m)
+- **Sync**: Periodic pull from each configured provider host (configurable, default 5m)
 - **Frontend**: Svelte 5 SPA embedded in the Go binary at build time
-- **Config**: TOML at `~/.config/middleman/config.toml`, GitHub token from env var `MIDDLEMAN_GITHUB_TOKEN`
+- **Config**: TOML at `~/.config/middleman/config.toml`; per-provider tokens via `MIDDLEMAN_GITHUB_TOKEN`, `MIDDLEMAN_GITLAB_TOKEN`, `MIDDLEMAN_FORGEJO_TOKEN`, `MIDDLEMAN_GITEA_TOKEN` env vars (with optional repo-level `token_env` overrides)
+
+## Provider Support
+
+middleman supports GitHub, GitLab, Forgejo, and Gitea. The `gitealike` package is the shared Forgejo/Gitea adapter.
+
+New features must work across all four providers to the extent each provider's API allows. Concrete rules:
+
+- Provider-specific capability differences go behind the capability model in `internal/platform`. Declare capabilities in `Capabilities()`, check them before mutations, and return typed `unsupported_capability` errors when a provider can't satisfy an operation. Do not silently fall back to GitHub-only behavior for other providers.
+- Identity is `(platform, platform_host, owner, name)` everywhere; never owner/name/number alone. Repo-scoped routes use provider-aware paths like `/pulls/{provider}/{owner}/{name}/{number}`, with `/host/{platform_host}/...` for non-default or self-hosted instances.
+- GitHub-only optimizations (GraphQL bulk fetch, ETag recovery, detailed diff behavior) stay in `internal/github/` and remain optional around the neutral persistence path.
+- Frontend stores and components must thread the full provider ref (`provider`, `platformHost`, `owner`, `name`, `repoPath`) through the shared route helpers in `packages/ui/src/api/provider-routes.ts`. Do not hand-build `/api/v1` URLs or assume GitHub defaults inside components.
+
+For package layout and the new-provider checklist, see `context/provider-architecture.md`. For identity, tokens, freshness, and route shape, see `context/platform-sync-invariants.md`. For GitHub-only sync behavior, see `context/github-sync-invariants.md`.
 
 ## Project Structure
 
 - `cmd/middleman/` - Go server entrypoint
 - `internal/config/` - TOML config loading and validation
 - `internal/db/` - SQLite schema, connection, queries, types
-- `internal/github/` - GitHub API client, normalization, sync engine
+- `internal/platform/` - Provider-neutral types, capability interfaces, registry, persistence helpers
+- `internal/platform/{github,gitlab,forgejo,gitea,gitealike}/` - Per-provider API transport and normalization
+- `internal/github/` - GitHub-only sync orchestration (GraphQL bulk fetch, ETag/rate-limit transports) consumed by the platform registry
 - `internal/server/` - HTTP handlers and routing
 - `internal/web/` - Embedded frontend (dist/ copied at build time)
 - `frontend/` - Svelte 5 SPA (Vite, TypeScript)
@@ -40,9 +55,14 @@ CLI (middleman) → Config (TOML) → DB (SQLite)
 | `internal/db/db.go` | Database open, WAL, migration init |
 | `internal/db/queries.go` | All CRUD operations |
 | `internal/db/types.go` | DB model types |
-| `internal/github/client.go` | GitHub API interface and live implementation |
-| `internal/github/normalize.go` | Convert GitHub types to DB types |
-| `internal/github/sync.go` | Periodic sync engine |
+| `internal/platform/types.go` | Provider-neutral domain types (Repository, MergeRequest, Issue, events, labels, releases, checks) |
+| `internal/platform/registry.go` | `(platform, platform_host)` provider lookup and capability error types |
+| `internal/platform/metadata.go` | Provider metadata (kind, label, default host, owner casing/nesting behavior) |
+| `internal/platform/persist.go` | Conversion between neutral platform types and DB rows |
+| `internal/platform/<provider>/` | Per-provider client, normalization, and capability implementations |
+| `internal/github/client.go` | GitHub SDK transport used by `internal/platform/github` |
+| `internal/github/sync.go` | Periodic sync engine (dispatches per-provider work through the platform registry) |
+| `internal/github/graphql.go` | GitHub-only GraphQL bulk-fetch optimization |
 | `internal/server/server.go` | HTTP router, SPA serving |
 | `internal/server/huma_routes.go` | Huma API registrations and handlers |
 | `internal/server/api_types.go` | Shared API response types used by Huma |
@@ -91,7 +111,7 @@ make vet        # go vet
 - All tests use `t.TempDir()` for temp directories
 - Tests should be fast and isolated
 - Do not run tests with `-v` (especially `go test`) — default output has enough signal to debug failures, and verbose output wastes tokens. Only use `-v` if the user asks for it or a failure genuinely needs the extra detail
-- For GraphQL query changes, follow `context/testing.md` and enable `MIDDLEMAN_LIVE_GITHUB_TESTS=1` to validate query shape against GitHub's live GraphQL API
+- For GitHub GraphQL query changes (a GitHub-only optimization), enable `MIDDLEMAN_LIVE_GITHUB_TESTS=1` to validate against GitHub's live GraphQL API; see `context/testing.md`. For GitLab REST drift, use the GitLab CE container fixture; Forgejo and Gitea have optional container fixtures when fake transports are too weak. See `context/platform-sync-invariants.md`.
 
 ## Build Requirements
 
