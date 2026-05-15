@@ -2134,6 +2134,8 @@ func (d *DB) GetMergeRequest(ctx context.Context, owner, name string, number int
 		       p.created_at, p.updated_at, p.last_activity_at,
 		       p.merged_at, p.closed_at, p.mergeable_state,
 		       p.detail_fetched_at, p.ci_had_pending,
+		       p.workflow_approval_checked_at, p.workflow_approval_head_sha,
+		       p.workflow_approval_required, p.workflow_approval_count,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
 		FROM middleman_merge_requests p
@@ -2155,6 +2157,8 @@ func (d *DB) GetMergeRequest(ctx context.Context, owner, name string, number int
 		&mr.CreatedAt, &mr.UpdatedAt, &mr.LastActivityAt,
 		&mr.MergedAt, &mr.ClosedAt, &mr.MergeableState,
 		&mr.DetailFetchedAt, &mr.CIHadPending,
+		&mr.WorkflowApprovalCheckedAt, &mr.WorkflowApprovalHeadSHA,
+		&mr.WorkflowApprovalRequired, &mr.WorkflowApprovalCount,
 		&mr.KanbanStatus, &mr.Starred,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -2186,6 +2190,8 @@ func (d *DB) GetMergeRequestByRepoIDAndNumber(ctx context.Context, repoID int64,
 		       p.created_at, p.updated_at, p.last_activity_at,
 		       p.merged_at, p.closed_at, p.mergeable_state,
 		       p.detail_fetched_at, p.ci_had_pending,
+		       p.workflow_approval_checked_at, p.workflow_approval_head_sha,
+		       p.workflow_approval_required, p.workflow_approval_count,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
 		FROM middleman_merge_requests p
@@ -2206,6 +2212,8 @@ func (d *DB) GetMergeRequestByRepoIDAndNumber(ctx context.Context, repoID int64,
 		&mr.CreatedAt, &mr.UpdatedAt, &mr.LastActivityAt,
 		&mr.MergedAt, &mr.ClosedAt, &mr.MergeableState,
 		&mr.DetailFetchedAt, &mr.CIHadPending,
+		&mr.WorkflowApprovalCheckedAt, &mr.WorkflowApprovalHeadSHA,
+		&mr.WorkflowApprovalRequired, &mr.WorkflowApprovalCount,
 		&mr.KanbanStatus, &mr.Starred,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -3255,6 +3263,35 @@ func (d *DB) UpdateMRDetailFetchedByRepoID(
 	)
 	if err != nil {
 		return fmt.Errorf("update mr detail fetched by repo id: %w", err)
+	}
+	return nil
+}
+
+// UpdateMRWorkflowApproval persists the GitHub Actions approval state
+// for a PR. The result is tied to headSHA: a later GET must compare
+// the stored head SHA to the PR's current PlatformHeadSHA and only
+// trust the snapshot when they match. checkedAt is normalized to UTC
+// so SQLite text ordering stays sane.
+func (d *DB) UpdateMRWorkflowApproval(
+	ctx context.Context,
+	repoID int64,
+	number int,
+	checkedAt time.Time,
+	headSHA string,
+	required bool,
+	count int,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_merge_requests
+		SET workflow_approval_checked_at = ?,
+		    workflow_approval_head_sha   = ?,
+		    workflow_approval_required   = ?,
+		    workflow_approval_count      = ?
+		WHERE repo_id = ? AND number = ?`,
+		checkedAt.UTC(), headSHA, required, count, repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf("update mr workflow approval: %w", err)
 	}
 	return nil
 }

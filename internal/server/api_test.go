@@ -1264,6 +1264,158 @@ func TestAPISyncPRPreservesMergeableStateWhenRefreshHasNoAnswer(t *testing.T) {
 	}
 }
 
+// TestAPIEnqueuePRSyncPersistsWorkflowApproval verifies that the
+// background sync path (POST /sync/async) computes and persists
+// workflow approval state so a subsequent DB-only GET sees it. The
+// frontend's default detail-load flow uses this path, so without
+// persistence the Approve Workflows button never appears.
+func TestAPIEnqueuePRSyncPersistsWorkflowApproval(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			id := int64(2001)
+			sha := "abc123"
+			state := "open"
+			title := "Async synced PR"
+			url := "https://github.com/acme/widget/pull/1"
+			updatedAt := gh.Timestamp{Time: time.Now().UTC()}
+			createdAt := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.PullRequest{
+				ID:        &id,
+				Number:    &number,
+				State:     &state,
+				Title:     &title,
+				HTMLURL:   &url,
+				UpdatedAt: &updatedAt,
+				CreatedAt: &createdAt,
+				Head:      &gh.PullRequestBranch{SHA: &sha, Ref: new("feature")},
+				Base:      &gh.PullRequestBranch{Ref: new("main")},
+			}, nil
+		},
+		listWorkflowRunsForHeadFn: func(_ context.Context, _, _, headSHA string) ([]*gh.WorkflowRun, error) {
+			require.Equal("abc123", headSHA)
+			return []*gh.WorkflowRun{
+				{
+					ID:           new(int64(77)),
+					HeadSHA:      new("abc123"),
+					Event:        new("pull_request"),
+					PullRequests: []*gh.PullRequest{{Number: new(1)}},
+				},
+			}, nil
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.EnqueuePrSyncWithResponse(
+		t.Context(), "gh", "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, resp.StatusCode())
+
+	require.Eventually(func() bool {
+		detail, dErr := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+			t.Context(), "gh", "acme", "widget", 1,
+		)
+		if dErr != nil || detail.JSON200 == nil {
+			return false
+		}
+		wa := detail.JSON200.WorkflowApproval
+		return wa.Checked && wa.Required && wa.Count == 1
+	}, 3*time.Second, 25*time.Millisecond,
+		"GET should return persisted workflow_approval after async sync")
+
+	detail, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+		t.Context(), "gh", "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.NotNil(detail.JSON200)
+	assert.True(detail.JSON200.WorkflowApproval.Checked)
+	assert.True(detail.JSON200.WorkflowApproval.Required)
+	assert.Equal(int64(1), detail.JSON200.WorkflowApproval.Count)
+}
+
+// TestAPIGetPullClearsWorkflowApprovalWhenHeadMoves verifies that a
+// persisted "required" approval from a prior head SHA does not bleed
+// onto the new head. After a sync that moves the head forward (and
+// finds no pending runs), GET must report checked=true, required=false.
+func TestAPIGetPullClearsWorkflowApprovalWhenHeadMoves(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	var headSHA atomic.Value
+	headSHA.Store("abc123")
+
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			id := int64(2002)
+			sha := headSHA.Load().(string)
+			state := "open"
+			title := "Force-pushed PR"
+			url := "https://github.com/acme/widget/pull/1"
+			updatedAt := gh.Timestamp{Time: time.Now().UTC()}
+			createdAt := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.PullRequest{
+				ID:        &id,
+				Number:    &number,
+				State:     &state,
+				Title:     &title,
+				HTMLURL:   &url,
+				UpdatedAt: &updatedAt,
+				CreatedAt: &createdAt,
+				Head:      &gh.PullRequestBranch{SHA: &sha, Ref: new("feature")},
+				Base:      &gh.PullRequestBranch{Ref: new("main")},
+			}, nil
+		},
+		listWorkflowRunsForHeadFn: func(_ context.Context, _, _, sha string) ([]*gh.WorkflowRun, error) {
+			if sha == "abc123" {
+				return []*gh.WorkflowRun{
+					{
+						ID:           new(int64(77)),
+						HeadSHA:      new("abc123"),
+						Event:        new("pull_request"),
+						PullRequests: []*gh.PullRequest{{Number: new(1)}},
+					},
+				}, nil
+			}
+			return nil, nil
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	// First sync: persists required=true for abc123.
+	syncResp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(
+		t.Context(), "gh", "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, syncResp.StatusCode())
+	require.True(syncResp.JSON200.WorkflowApproval.Required)
+
+	// Head moves forward (force-push); new SHA has no action_required runs.
+	headSHA.Store("def456")
+	syncResp2, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(
+		t.Context(), "gh", "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, syncResp2.StatusCode())
+
+	detail, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+		t.Context(), "gh", "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.NotNil(detail.JSON200)
+	wa := detail.JSON200.WorkflowApproval
+	assert.True(wa.Checked, "head re-synced: approval state was rechecked")
+	assert.False(wa.Required, "new head has no pending runs")
+	assert.Equal(int64(0), wa.Count)
+}
+
 func TestAPIApproveWorkflows(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -11004,6 +11156,10 @@ func TestAPIActivityStartupRepairsLegacyTimestampStorage(t *testing.T) {
 			ALTER TABLE middleman_labels DROP COLUMN platform_external_id;
 			ALTER TABLE middleman_issues DROP COLUMN platform_external_id;
 			ALTER TABLE middleman_merge_requests DROP COLUMN platform_external_id;
+			ALTER TABLE middleman_merge_requests DROP COLUMN workflow_approval_checked_at;
+			ALTER TABLE middleman_merge_requests DROP COLUMN workflow_approval_head_sha;
+			ALTER TABLE middleman_merge_requests DROP COLUMN workflow_approval_required;
+			ALTER TABLE middleman_merge_requests DROP COLUMN workflow_approval_count;
 			ALTER TABLE middleman_repos DROP COLUMN default_branch;
 			ALTER TABLE middleman_repos DROP COLUMN clone_url;
 			ALTER TABLE middleman_repos DROP COLUMN web_url;

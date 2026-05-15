@@ -169,9 +169,17 @@ type MergeRequest struct {
 	MergeableState     string
 	DetailFetchedAt    *time.Time
 	CIHadPending       bool
-	KanbanStatus       string
-	Starred            bool
-	Labels             []Label `json:"labels,omitempty"`
+	// WorkflowApprovalCheckedAt is when middleman last reconciled the
+	// GitHub Actions approval state for this PR. Nil means never
+	// checked; the GET path treats persisted state as authoritative
+	// only when WorkflowApprovalHeadSHA matches PlatformHeadSHA.
+	WorkflowApprovalCheckedAt *time.Time `json:"-"`
+	WorkflowApprovalHeadSHA   string     `json:"-"`
+	WorkflowApprovalRequired  bool       `json:"-"`
+	WorkflowApprovalCount     int        `json:"-"`
+	KanbanStatus              string
+	Starred                   bool
+	Labels                    []Label `json:"labels,omitempty"`
 }
 
 func (mr MergeRequest) Compare(other MergeRequest) int {

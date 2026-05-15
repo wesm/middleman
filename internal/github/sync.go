@@ -4407,6 +4407,82 @@ func (s *Syncer) fetchGitHubCIStatus(
 	}, nil
 }
 
+// refreshWorkflowApproval fetches action_required workflow runs at the
+// given head SHA and persists the result on the merge request row.
+//
+// The persisted snapshot is keyed by head SHA so that a later DB-only
+// read can ignore the snapshot once the PR's head moves (force-push),
+// preventing a stale "Approve workflows" button on a fresh commit.
+//
+// Failures (no client, network errors, closed PR) are intentionally
+// silent: this is a refresh, not a precondition. The previous
+// persisted state stays in place rather than being clobbered.
+func (s *Syncer) refreshWorkflowApproval(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	number int,
+	headSHA string,
+	ghPR *gh.PullRequest,
+	normalized *db.MergeRequest,
+) {
+	if headSHA == "" {
+		return
+	}
+	state := ""
+	switch {
+	case ghPR != nil:
+		state = ghPR.GetState()
+	case normalized != nil:
+		state = normalized.State
+	}
+	if state != "open" {
+		return
+	}
+
+	client, err := s.clientFor(repo)
+	if err != nil {
+		return
+	}
+	runs, err := client.ListWorkflowRunsForHeadSHA(ctx, repo.Owner, repo.Name, headSHA)
+	if err != nil {
+		slog.Warn("list workflow runs for approval refresh failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", number,
+			"err", err,
+		)
+		return
+	}
+
+	headRepoFullName := ""
+	headRef := ""
+	if ghPR != nil && ghPR.GetHead() != nil {
+		headRepoFullName = ghPR.GetHead().GetRepo().GetFullName()
+		headRef = ghPR.GetHead().GetRef()
+	} else if normalized != nil {
+		headRepoFullName = ParseHeadRepoFullName(normalized.HeadRepoCloneURL)
+		headRef = normalized.HeadBranch
+	}
+
+	approval := WorkflowApprovalStateFromRuns(
+		FilterWorkflowRunsAwaitingApproval(runs, PRSource{
+			Number:           number,
+			HeadSHA:          headSHA,
+			HeadRepoFullName: headRepoFullName,
+			HeadRef:          headRef,
+		}),
+	)
+	if err := s.db.UpdateMRWorkflowApproval(
+		ctx, repoID, number, time.Now().UTC(), headSHA, approval.Required, approval.Count,
+	); err != nil {
+		slog.Warn("persist workflow approval state failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", number,
+			"err", err,
+		)
+	}
+}
+
 // ciHasPending parses the CI checks JSON and returns true if any
 // check has a status other than "completed".
 func ciHasPending(ciChecksJSON string) bool {
@@ -5717,6 +5793,16 @@ func (s *Syncer) syncMRForRepo(
 		if err := s.refreshCIStatus(ctx, repo, repoID, number, syncMRHeadSHA); err != nil {
 			return err
 		}
+
+		// Refresh workflow approval state for the current head SHA.
+		// Persisting it here (instead of computing live on every GET)
+		// means the DB-only detail path the frontend uses by default
+		// can show the Approve Workflows button without a foreground
+		// sync round-trip. The result is tied to syncMRHeadSHA so a
+		// later read can detect a stale snapshot after force-push.
+		s.refreshWorkflowApproval(
+			ctx, repo, repoID, number, syncMRHeadSHA, ghPR, normalized,
+		)
 
 		// Update ci_had_pending after refreshing CI status.
 		fresh, freshErr := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)

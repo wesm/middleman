@@ -629,6 +629,7 @@ func TestOpenRepairsLegacyTimestampStorage(t *testing.T) {
 	)
 	require.NoError(err)
 	require.NoError(rewriteWorkspacesToVersion9ForTest(raw))
+	require.NoError(removeWorkflowApprovalColumnsForTest(raw))
 	require.NoError(removeMergeRequestLockedColumnForTest(raw))
 	require.NoError(removeProviderIdentityColumnsForTest(raw))
 	_, err = raw.ExecContext(ctx,
@@ -732,6 +733,7 @@ func TestOpenRepairsBrokenWorkspaceMigrationVersion11(t *testing.T) {
 	raw, err := sql.Open("sqlite", path)
 	require.NoError(err)
 	require.NoError(rewriteWorkspacesToVersion11ForTest(raw))
+	require.NoError(removeWorkflowApprovalColumnsForTest(raw))
 	require.NoError(removeMergeRequestLockedColumnForTest(raw))
 	require.NoError(removeProviderIdentityColumnsForTest(raw))
 	_, err = raw.Exec(`UPDATE schema_migrations SET version = 11, dirty = FALSE`)
@@ -850,6 +852,7 @@ func TestOpenMigratesWorkspaceUniquenessAndPreservesSetupEvents(t *testing.T) {
 	raw, err := sql.Open("sqlite", path)
 	require.NoError(err)
 	require.NoError(rewriteWorkspacesToVersion11ForTest(raw))
+	require.NoError(removeWorkflowApprovalColumnsForTest(raw))
 	require.NoError(removeMergeRequestLockedColumnForTest(raw))
 	require.NoError(removeProviderIdentityColumnsForTest(raw))
 	_, err = raw.Exec(`UPDATE schema_migrations SET version = 11, dirty = FALSE`)
@@ -1284,6 +1287,22 @@ func removeProviderIdentityColumnsForTest(raw *sql.DB) error {
 func removeMergeRequestLockedColumnForTest(raw *sql.DB) error {
 	_, err := raw.Exec(`ALTER TABLE middleman_merge_requests DROP COLUMN is_locked`)
 	return err
+}
+
+func removeWorkflowApprovalColumnsForTest(raw *sql.DB) error {
+	for _, col := range []string{
+		"workflow_approval_checked_at",
+		"workflow_approval_head_sha",
+		"workflow_approval_required",
+		"workflow_approval_count",
+	} {
+		if _, err := raw.Exec(
+			"ALTER TABLE middleman_merge_requests DROP COLUMN " + col,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func openSchemaVersion4DBForTest(t *testing.T) (string, *sql.DB) {
