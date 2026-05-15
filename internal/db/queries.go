@@ -153,9 +153,9 @@ func mergeLabelRowAssociationsTx(ctx context.Context, tx *sql.Tx, fromLabelID, t
 	var shouldCopySourceName bool
 	if err := tx.QueryRowContext(ctx, `
 		SELECT source.name,
-		       source.catalog_seen_at IS NOT NULL
-		           AND (target.catalog_seen_at IS NULL OR source.catalog_seen_at > target.catalog_seen_at)
-		       OR source.updated_at > target.updated_at
+		       (source.catalog_seen_at IS NOT NULL
+		           AND (target.catalog_seen_at IS NULL OR source.catalog_seen_at > target.catalog_seen_at))
+		       OR (target.catalog_present = 0 AND source.updated_at > target.updated_at)
 		FROM middleman_labels AS source
 		JOIN middleman_labels AS target ON target.id = ?
 		WHERE source.id = ?`,
@@ -168,19 +168,19 @@ func mergeLabelRowAssociationsTx(ctx context.Context, tx *sql.Tx, fromLabelID, t
 		UPDATE middleman_labels
 		SET description = CASE
 		        WHEN (SELECT catalog_seen_at FROM middleman_labels WHERE id = ?) > COALESCE(catalog_seen_at, '')
-		          OR (SELECT updated_at FROM middleman_labels WHERE id = ?) > updated_at
+		          OR (catalog_present = 0 AND (SELECT updated_at FROM middleman_labels WHERE id = ?) > updated_at)
 		        THEN (SELECT description FROM middleman_labels WHERE id = ?)
 		        ELSE description
 		    END,
 		    color = CASE
 		        WHEN (SELECT catalog_seen_at FROM middleman_labels WHERE id = ?) > COALESCE(catalog_seen_at, '')
-		          OR (SELECT updated_at FROM middleman_labels WHERE id = ?) > updated_at
+		          OR (catalog_present = 0 AND (SELECT updated_at FROM middleman_labels WHERE id = ?) > updated_at)
 		        THEN (SELECT color FROM middleman_labels WHERE id = ?)
 		        ELSE color
 		    END,
 		    is_default = CASE
 		        WHEN (SELECT catalog_seen_at FROM middleman_labels WHERE id = ?) > COALESCE(catalog_seen_at, '')
-		          OR (SELECT updated_at FROM middleman_labels WHERE id = ?) > updated_at
+		          OR (catalog_present = 0 AND (SELECT updated_at FROM middleman_labels WHERE id = ?) > updated_at)
 		        THEN (SELECT is_default FROM middleman_labels WHERE id = ?)
 		        ELSE is_default
 		    END,
@@ -1169,9 +1169,16 @@ func mergeRepoLabelNameConflictsTx(ctx context.Context, tx *sql.Tx, fromRepoID, 
 		FROM middleman_labels AS source
 		JOIN middleman_labels AS target
 		  ON target.repo_id = ?
-		 AND source.platform_id IS NOT NULL
-		 AND target.platform_id IS NOT NULL
-		 AND source.platform_id = target.platform_id
+		 AND (
+		     source.platform_id IS NOT NULL
+		     AND target.platform_id IS NOT NULL
+		     AND source.platform_id = target.platform_id
+		     OR (
+		         source.platform_external_id <> ''
+		         AND target.platform_external_id <> ''
+		         AND source.platform_external_id = target.platform_external_id
+		     )
+		 )
 		JOIN middleman_labels AS conflict
 		  ON conflict.repo_id = ?
 		 AND conflict.name = source.name
@@ -1330,6 +1337,11 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			                      AND middleman_labels.platform_id IS NOT NULL
 			                      AND target.platform_id = middleman_labels.platform_id
 			                  )
+			                  OR (
+			                      target.platform_external_id <> ''
+			                      AND middleman_labels.platform_external_id <> ''
+			                      AND target.platform_external_id = middleman_labels.platform_external_id
+			                  )
 			              )
 			        )`,
 			args: []any{toRepoID, fromRepoID, toRepoID},
@@ -1349,6 +1361,11 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			                        AND target.platform_id IS NOT NULL
 			                        AND source.platform_id = target.platform_id
 			                    )
+			                    OR (
+			                        source.platform_external_id <> ''
+			                        AND target.platform_external_id <> ''
+			                        AND source.platform_external_id = target.platform_external_id
+			                    )
 			                )
 			              ORDER BY source.catalog_seen_at DESC
 			              LIMIT 1
@@ -1364,6 +1381,11 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			                        source.platform_id IS NOT NULL
 			                        AND target.platform_id IS NOT NULL
 			                        AND source.platform_id = target.platform_id
+			                    )
+			                    OR (
+			                        source.platform_external_id <> ''
+			                        AND target.platform_external_id <> ''
+			                        AND source.platform_external_id = target.platform_external_id
 			                    )
 			                )
 			              ORDER BY source.catalog_seen_at DESC
@@ -1381,6 +1403,11 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			                        AND target.platform_id IS NOT NULL
 			                        AND source.platform_id = target.platform_id
 			                    )
+			                    OR (
+			                        source.platform_external_id <> ''
+			                        AND target.platform_external_id <> ''
+			                        AND source.platform_external_id = target.platform_external_id
+			                    )
 			                )
 			              ORDER BY source.catalog_seen_at DESC
 			              LIMIT 1
@@ -1396,6 +1423,11 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			                        source.platform_id IS NOT NULL
 			                        AND target.platform_id IS NOT NULL
 			                        AND source.platform_id = target.platform_id
+			                    )
+			                    OR (
+			                        source.platform_external_id <> ''
+			                        AND target.platform_external_id <> ''
+			                        AND source.platform_external_id = target.platform_external_id
 			                    )
 			                )
 			              ORDER BY source.catalog_seen_at DESC
@@ -1413,6 +1445,11 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			                        AND target.platform_id IS NOT NULL
 			                        AND source.platform_id = target.platform_id
 			                    )
+			                    OR (
+			                        source.platform_external_id <> ''
+			                        AND target.platform_external_id <> ''
+			                        AND source.platform_external_id = target.platform_external_id
+			                    )
 			                )
 			              ORDER BY source.catalog_seen_at DESC
 			              LIMIT 1
@@ -1429,6 +1466,11 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			                            source.platform_id IS NOT NULL
 			                            AND target.platform_id IS NOT NULL
 			                            AND source.platform_id = target.platform_id
+			                        )
+			                        OR (
+			                            source.platform_external_id <> ''
+			                            AND target.platform_external_id <> ''
+			                            AND source.platform_external_id = target.platform_external_id
 			                        )
 			                    )
 			              )
@@ -1448,6 +1490,11 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			                            AND target.platform_id IS NOT NULL
 			                            AND source.platform_id = target.platform_id
 			                        )
+			                        OR (
+			                            source.platform_external_id <> ''
+			                            AND target.platform_external_id <> ''
+			                            AND source.platform_external_id = target.platform_external_id
+			                        )
 			                    )
 			              )
 			              WHEN (
@@ -1461,6 +1508,11 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			                            AND target.platform_id IS NOT NULL
 			                            AND source.platform_id = target.platform_id
 			                        )
+			                        OR (
+			                            source.platform_external_id <> ''
+			                            AND target.platform_external_id <> ''
+			                            AND source.platform_external_id = target.platform_external_id
+			                        )
 			                    )
 			              ) > catalog_seen_at
 			              THEN (
@@ -1473,6 +1525,11 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			                            source.platform_id IS NOT NULL
 			                            AND target.platform_id IS NOT NULL
 			                            AND source.platform_id = target.platform_id
+			                        )
+			                        OR (
+			                            source.platform_external_id <> ''
+			                            AND target.platform_external_id <> ''
+			                            AND source.platform_external_id = target.platform_external_id
 			                        )
 			                    )
 			              )
@@ -1489,6 +1546,11 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			                      source.platform_id IS NOT NULL
 			                      AND target.platform_id IS NOT NULL
 			                      AND source.platform_id = target.platform_id
+			                  )
+			                  OR (
+			                      source.platform_external_id <> ''
+			                      AND target.platform_external_id <> ''
+			                      AND source.platform_external_id = target.platform_external_id
 			                  )
 			              )
 			        )`,
@@ -1520,6 +1582,11 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			                     target.platform_id IS NOT NULL
 			                     AND source.platform_id IS NOT NULL
 			                     AND target.platform_id = source.platform_id
+			                 )
+			                 OR (
+			                     target.platform_external_id <> ''
+			                     AND source.platform_external_id <> ''
+			                     AND target.platform_external_id = source.platform_external_id
 			                 )
 			             )
 			          WHERE source.repo_id = ?
@@ -1559,6 +1626,11 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			                     target.platform_id IS NOT NULL
 			                     AND source.platform_id IS NOT NULL
 			                     AND target.platform_id = source.platform_id
+			                 )
+			                 OR (
+			                     target.platform_external_id <> ''
+			                     AND source.platform_external_id <> ''
+			                     AND target.platform_external_id = source.platform_external_id
 			                 )
 			             )
 			          WHERE source.repo_id = ?

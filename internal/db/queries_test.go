@@ -1369,6 +1369,33 @@ func TestRepoMergePreservesLabelCatalogFreshnessAndMembership(t *testing.T) {
 	assert.Equal(syncedAt, *freshness.SyncedAt)
 }
 
+func TestLabelMergeDoesNotLetItemRowOverwriteCatalogMetadata(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	catalogAt := baseTime()
+	itemAt := catalogAt.Add(time.Hour)
+
+	require.NoError(d.ReplaceRepoLabelCatalog(ctx, repoID, []Label{{
+		PlatformID:  7,
+		Name:        "catalog",
+		Description: "catalog metadata",
+		Color:       "0e8a16",
+		UpdatedAt:   catalogAt,
+	}}, catalogAt))
+	require.NoError(d.UpsertLabels(ctx, repoID, []Label{{Name: "stale", Description: "item metadata", Color: "d73a4a", UpdatedAt: itemAt}}))
+	require.NoError(d.UpsertLabels(ctx, repoID, []Label{{PlatformID: 7, Name: "stale", Description: "item metadata", Color: "d73a4a", UpdatedAt: itemAt}}))
+
+	catalog, _, err := d.ListRepoLabelCatalog(ctx, repoID)
+	require.NoError(err)
+	require.Len(catalog, 1)
+	assert.Equal("catalog", catalog[0].Name)
+	assert.Equal("catalog metadata", catalog[0].Description)
+	assert.Equal("0e8a16", catalog[0].Color)
+}
+
 func TestCatalogMetadataOverridesItemMetadata(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -1642,6 +1669,34 @@ func TestRepoMergeCopiesFresherDuplicateLabelMetadata(t *testing.T) {
 	assert.Equal("new", catalog[0].Description)
 	assert.Equal("0e8a16", catalog[0].Color)
 	assert.True(catalog[0].IsDefault)
+}
+
+func TestRepoMergeCoalescesPlatformExternalIDDuplicateLabels(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	oldSync := baseTime()
+	newSync := oldSync.Add(time.Hour)
+	externalID := "gid://gitlab/ProjectLabel/300"
+
+	sourceID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{Platform: "gitlab", PlatformHost: "gitlab.com", PlatformRepoID: "gid://gitlab/Project/42", Owner: "old-group", Name: "old-name"})
+	require.NoError(err)
+	require.NoError(d.ReplaceRepoLabelCatalog(ctx, sourceID, []Label{{PlatformExternalID: externalID, Name: "new-name", Description: "fresh", Color: "0e8a16", UpdatedAt: newSync}}, newSync))
+
+	destinationID, err := d.UpsertRepo(ctx, RepoIdentity{Platform: "gitlab", PlatformHost: "gitlab.com", Owner: "new-group", Name: "new-name"})
+	require.NoError(err)
+	require.NoError(d.ReplaceRepoLabelCatalog(ctx, destinationID, []Label{{PlatformExternalID: externalID, Name: "old-name", Description: "stale", Color: "cccccc", UpdatedAt: oldSync}}, oldSync))
+
+	_, err = d.UpsertRepoByProviderID(ctx, RepoIdentity{Platform: "gitlab", PlatformHost: "gitlab.com", PlatformRepoID: "gid://gitlab/Project/42", Owner: "new-group", Name: "new-name"})
+	require.NoError(err)
+
+	catalog, _, err := d.ListRepoLabelCatalog(ctx, destinationID)
+	require.NoError(err)
+	require.Len(catalog, 1)
+	assert.Equal("new-name", catalog[0].Name)
+	assert.Equal("fresh", catalog[0].Description)
+	assert.Equal("0e8a16", catalog[0].Color)
 }
 
 func TestRepoMergeCoalescesDestinationNameConflictBeforeCatalogRename(t *testing.T) {
