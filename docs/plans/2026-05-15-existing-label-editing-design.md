@@ -150,7 +150,17 @@ Server behavior:
 4. Validate requested names against `catalog_present=true` labels in the cached repo catalog. Label name matching is exact and provider-case-sensitive in v1.
 5. Call provider `LabelMutator` with the full desired label name set.
 6. Persist returned labels through existing replace-label DB functions for the item.
-7. Return updated PR or issue response/detail shape with current labels.
+7. Return a dedicated label mutation response, not a full detail reload:
+
+```json
+{
+  "labels": [
+    { "name": "bug", "description": "Something is broken", "color": "d73a4a", "is_default": true }
+  ]
+}
+```
+
+Both PR and issue label mutation routes use this `itemLabelsResponse` body shape. Generated clients can type this once, and detail stores update only the visible item's labels from the response.
 
 The UI does not block on full detail reload after mutation. It updates labels from the mutation response.
 
@@ -160,8 +170,8 @@ Desktop PR and issue detail headers add a small `Labels` `ActionButton` near exi
 
 Button states:
 
-- Enabled when `label_mutation=true` and detail item is not stale relative to route props.
-- Disabled when mutation is unavailable, with accessible explanatory text.
+- Enabled when both `read_labels=true` and `label_mutation=true`, and detail item is not stale relative to route props.
+- Disabled when catalog read or mutation is unavailable, with accessible explanatory text.
 - Hidden or omitted from mobile-specific routes for this iteration.
 
 Picker behavior:
@@ -210,7 +220,19 @@ This keeps the first implementation loop grounded in a real provider API while a
 - Provider rejects label set: `502 Bad Gateway` with provider API error message shape consistent with existing mutation routes.
 - Catalog sync failure: recorded on repo label freshness metadata and returned as `sync_error` by `GET repo labels`; it does not fail regular PR/issue sync.
 - Mutation succeeds but DB persist fails: return `500`; UI rolls back optimistic state.
-- Route/detail drift: mutation handlers must short-circuit like existing PR/issue state handlers when visible detail does not match current route props.
+- Route/detail drift: frontend mutation handlers must short-circuit like existing PR/issue state handlers when visible detail does not match current route props. Compare provider, platform host, repo path, owner, name, and number before opening the picker or sending `PUT .../labels`. Server handlers still validate only route identity, capabilities, catalog membership, and provider/DB errors.
+
+## Implementation boundaries
+
+Keep new label work in focused files where possible:
+
+- DB migration: add label catalog membership fields and repo freshness fields.
+- DB queries: add catalog upsert/list/freshness helpers, plus a repo/catalog-present/name lookup index for validation and picker listing.
+- Platform: add label reader/mutator interfaces and capability flags in `internal/platform`.
+- Providers: implement label reader/mutator methods in GitHub, GitLab, Forgejo, and Gitea provider packages.
+- Sync: add a small label catalog refresh helper called from repo sync and from stale `GET repo labels` enqueue path.
+- Server: keep label route input/output types and handlers in dedicated label API files if possible, then register them from provider route registration.
+- Frontend: add shared `LabelPicker`, detail header integration, store/client helpers, and command palette action without duplicating provider route construction.
 
 ## Testing plan
 
@@ -227,7 +249,7 @@ Server e2e with real SQLite:
 - `GET repo labels` returns cached catalog, freshness fields, and catalog sync errors.
 - Stale catalog request enqueues a deduped refresh without blocking response and reports `syncing=true` while queued/running.
 - Unsupported read-label capability returns expected problem response.
-- `PUT PR labels` validates names, calls mutator, persists returned labels, and returns updated labels.
+- `PUT PR labels` validates names, calls mutator, persists returned labels, and returns `itemLabelsResponse`.
 - `PUT issue labels` same.
 - Unsupported provider/capability returns expected problem response.
 
