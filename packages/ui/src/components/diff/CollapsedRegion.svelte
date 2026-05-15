@@ -22,7 +22,7 @@
     border-bottom: 1px dashed var(--diff-collapsed-border);
     background: var(--diff-collapsed-bg);
     color: var(--diff-line-num);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     line-height: 20px;
     user-select: none;
   }
@@ -36,7 +36,7 @@
   .collapsed-label {
     padding: 2px 12px;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--diff-hunk-text);
   }
 </style>

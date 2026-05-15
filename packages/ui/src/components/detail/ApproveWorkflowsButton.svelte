@@ -105,7 +105,7 @@
   }
 
   .workflow-approval-error {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--accent-red);
   }
 </style>

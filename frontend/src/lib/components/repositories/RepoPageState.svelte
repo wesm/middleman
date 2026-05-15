@@ -49,7 +49,7 @@
   .repo-state h2 {
     margin-bottom: 6px;
     color: var(--text-primary);
-    font-size: 15px;
+    font-size: var(--font-size-lg);
     font-weight: 600;
   }
 

@@ -171,7 +171,7 @@
   }
 
   .chip-chevron {
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     transition: transform 0.15s;
   }
 
@@ -199,7 +199,7 @@
   }
 
   .ci-section-label {
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -216,7 +216,7 @@
     align-items: center;
     gap: 8px;
     padding: 6px 12px;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--text-primary);
     text-decoration: none;
   }
@@ -240,7 +240,7 @@
 
   .ci-icon {
     font-weight: 700;
-    font-size: 13px;
+    font-size: var(--font-size-root);
     flex-shrink: 0;
     width: 16px;
     text-align: center;
@@ -255,14 +255,14 @@
   }
 
   .ci-app {
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     color: var(--text-muted);
     flex-shrink: 0;
   }
 
   .ci-duration {
     font-variant-numeric: tabular-nums;
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     color: var(--text-muted);
     flex-shrink: 0;
   }
@@ -270,7 +270,7 @@
   .ci-arrow {
     color: var(--text-muted);
     flex-shrink: 0;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 
   .loading-placeholder {
@@ -278,7 +278,7 @@
     align-items: center;
     gap: 8px;
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     background: var(--bg-inset);
     border: 1px solid var(--border-muted);
     border-radius: var(--radius-md);

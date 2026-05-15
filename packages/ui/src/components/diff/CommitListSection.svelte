@@ -117,7 +117,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     width: 12px;
     height: 12px;
     color: var(--text-muted);
@@ -129,14 +129,14 @@
   }
 
   .commit-section__label {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.4px;
   }
 
   .commit-section__count {
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     font-family: var(--font-mono);
     color: var(--text-muted);
     background: var(--diff-bg);
@@ -153,7 +153,7 @@
 
   .commit-section__state {
     padding: 8px 22px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 

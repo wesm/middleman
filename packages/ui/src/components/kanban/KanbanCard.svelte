@@ -61,7 +61,7 @@
   }
 
   .card-title {
-    font-size: 13px;
+    font-size: var(--font-size-md);
     font-weight: 500;
     color: var(--text-primary);
     line-height: 1.4;
@@ -74,7 +74,7 @@
   }
 
   .card-meta {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     margin-bottom: 8px;
     white-space: nowrap;
@@ -90,7 +90,7 @@
   }
 
   .card-author {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
@@ -99,7 +99,7 @@
   }
 
   .card-time {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     flex-shrink: 0;
   }

@@ -138,7 +138,7 @@
     background: transparent;
     color: var(--text-muted);
     font: inherit;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 500;
     letter-spacing: 0.005em;
     cursor: pointer;

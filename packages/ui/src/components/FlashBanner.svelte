@@ -24,7 +24,7 @@
     border: 1px solid var(--border-default);
     border-radius: var(--radius-md);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-    font-size: 13px;
+    font-size: var(--font-size-md);
     color: var(--text-primary);
     max-width: 480px;
   }
@@ -39,7 +39,7 @@
     border: none;
     color: var(--text-muted);
     cursor: pointer;
-    font-size: 14px;
+    font-size: var(--font-size-lg);
     padding: 0 2px;
     line-height: 1;
   }

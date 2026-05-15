@@ -1,6 +1,8 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import config, {
+  resolveViteAllowedHosts,
+  resolveViteHmr,
   resolveViteServerPort,
   webSocketDebugEnabled,
 } from "../../../vite.config";
@@ -81,5 +83,30 @@ describe("vite config", () => {
     expect(resolveViteServerPort(["vite", "--port", "4173"])).toBe(4173);
     expect(resolveViteServerPort(["vite", "--port=4180"])).toBe(4180);
     expect(resolveViteServerPort(["vite"])).toBe(5174);
+  });
+
+  it("allows explicitly configured tailnet hosts", () => {
+    expect(resolveViteAllowedHosts({})).toBeUndefined();
+    expect(
+      resolveViteAllowedHosts({
+        MIDDLEMAN_VITE_ALLOWED_HOSTS:
+          "mariuss-macbook-pro.emperor-gopher.ts.net, another.ts.net",
+      }),
+    ).toEqual(["mariuss-macbook-pro.emperor-gopher.ts.net", "another.ts.net"]);
+  });
+
+  it("can advertise HMR through the tailnet HTTPS endpoint", () => {
+    expect(
+      resolveViteHmr(5174, {
+        MIDDLEMAN_VITE_HMR_HOST: "mariuss-macbook-pro.emperor-gopher.ts.net",
+        MIDDLEMAN_VITE_HMR_PROTOCOL: "wss",
+        MIDDLEMAN_VITE_HMR_CLIENT_PORT: "443",
+      }),
+    ).toEqual({
+      protocol: "wss",
+      host: "mariuss-macbook-pro.emperor-gopher.ts.net",
+      clientPort: 443,
+      path: "/__vite_hmr",
+    });
   });
 });

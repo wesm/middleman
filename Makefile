@@ -26,7 +26,7 @@ DEV_BACKEND_LOG ?= $(DEV_LOG_DIR)/backend-dev.log
 .PHONY: ensure-embed-dir ensure-tmp-dir check-air air-install build build-release install \
         frontend-deps frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
         dev test test-short test-integration test-e2e test-e2e-roborev test-gitlab-container gitlab-fixture-bake vet lint nilaway testify-helper-check \
-        frontend-api-client-check huma-route-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help
+        frontend-api-client-check font-size-token-check huma-route-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help
 
 # gotestsum prints package names on success and full output on failure,
 # while persisting raw `go test -json` events for downstream reporters.
@@ -93,16 +93,20 @@ frontend-check: frontend-deps
 frontend-api-client-check:
 	bun scripts/lint-api-urls.mjs
 
+# Ensure frontend font sizes use design tokens
+font-size-token-check:
+	bun scripts/check-font-size-tokens.ts
+
 # Prevent application HTTP routes from bypassing Huma registration
 huma-route-check:
 	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go run ./tools/nohttpmux ./...
 
 # Run lightweight script regression tests
 script-tests:
-	bun test scripts/*.test.mjs
+	bun test scripts/*.test.mjs scripts/*.test.ts
 
 # Run lightweight generated-client/Huma guardrails
-guardrail-check: frontend-api-client-check huma-route-check script-tests
+guardrail-check: frontend-api-client-check font-size-token-check huma-route-check script-tests
 
 
 # Regenerate the checked-in OpenAPI document and generated clients
@@ -267,6 +271,7 @@ help:
 	@echo "  frontend-dev-bun - Install deps with Bun and run Vite dev server (honors MIDDLEMAN_CONFIG)"
 	@echo "  frontend-check - Run TS/Svelte lint and typecheck for frontend and packages/ui"
 	@echo "  frontend-api-client-check - Prevent manual /api/v1 frontend calls outside generated clients"
+	@echo "  font-size-token-check - Enforce --font-size design tokens in frontend styles"
 	@echo "  api-generate   - Regenerate checked-in OpenAPI and TS schema"
 	@echo ""
 	@echo "  test           - Run all tests"
@@ -280,7 +285,7 @@ help:
 	@echo "  nilaway        - Run NilAway against first-party Go packages"
 	@echo "  testify-helper-check - Enforce Assert.New(t) in assertion-heavy Go tests"
 	@echo "  huma-route-check - Prevent non-Huma Go route registrations"
-	@echo "  guardrail-check - Run generated-client and Huma route guardrails"
+	@echo "  guardrail-check - Run generated-client, font-size token, and Huma route guardrails"
 	@echo "  tidy           - Tidy go.mod"
 	@echo "  svelte-skills  - Sync repo-local Svelte AI skills and per-agent symlinks"
 	@echo "  svelte-skills-sync - Alias for svelte-skills"

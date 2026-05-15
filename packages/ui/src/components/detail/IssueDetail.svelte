@@ -777,7 +777,7 @@
   }
 
   .state-msg {
-    font-size: 13px;
+    font-size: var(--font-size-root);
     color: var(--text-muted);
   }
 
@@ -813,7 +813,7 @@
   }
 
   .detail-title {
-    font-size: 18px;
+    font-size: var(--font-size-xl);
     font-weight: 600;
     color: var(--text-primary);
     line-height: 1.35;
@@ -867,12 +867,12 @@
   }
 
   .meta-item {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
   .meta-sep {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
   }
 
@@ -880,7 +880,7 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--accent-blue);
   }
 
@@ -905,7 +905,7 @@
   }
 
   .section-title {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -913,7 +913,7 @@
   }
 
   .section-title-inline {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -967,7 +967,7 @@
   }
 
   .inset-box {
-    font-size: 13px;
+    font-size: var(--font-size-root);
     color: var(--text-primary);
     background: var(--bg-inset);
     border: 1px solid var(--border-muted);
@@ -985,7 +985,7 @@
   }
 
   .action-error {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--accent-red, #d73a49);
   }
 
@@ -996,7 +996,7 @@
     padding: 4px 12px;
     background: var(--bg-inset);
     border-radius: var(--radius-sm);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     margin-bottom: 8px;
   }
@@ -1006,7 +1006,7 @@
     background: var(--accent-red-soft, color-mix(in srgb, var(--accent-red) 12%, transparent));
     color: var(--accent-red);
     border-bottom: 1px solid var(--border-subtle);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     flex-shrink: 0;
     margin-bottom: 8px;
   }
@@ -1030,7 +1030,7 @@
     justify-content: center;
     gap: 8px;
     padding: 24px 0;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
   }
 
@@ -1069,7 +1069,7 @@
 
   .modal-title {
     margin: 0;
-    font-size: 15px;
+    font-size: var(--font-size-lg);
     font-weight: 600;
     color: var(--text-primary);
   }
@@ -1105,7 +1105,7 @@
 
   .modal-copy {
     margin: 0;
-    font-size: 13px;
+    font-size: var(--font-size-root);
     color: var(--text-secondary);
     line-height: 1.5;
   }
@@ -1121,14 +1121,14 @@
   }
 
   .branch-conflict-heading {
-    font-size: 13px;
+    font-size: var(--font-size-root);
     font-weight: 600;
     color: var(--text-primary);
     margin-bottom: 4px;
   }
 
   .branch-conflict-copy {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     line-height: 1.5;
   }
@@ -1139,7 +1139,7 @@
   }
 
   .field-label {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     color: var(--text-primary);
   }
@@ -1152,18 +1152,18 @@
     border-radius: 8px;
     background: var(--bg-canvas);
     color: var(--text-primary);
-    font-size: 13px;
+    font-size: var(--font-size-root);
   }
 
   .field-hint {
     margin: 0;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 
   .merge-error {
     margin: 0;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--accent-red, #d73a49);
   }
 
@@ -1175,4 +1175,117 @@
     border-top: 1px solid var(--border-muted);
   }
 
+  @media (max-width: 640px) {
+    .issue-detail {
+      --detail-mobile-type-xs: var(--mobile-type-xs, var(--font-size-mobile-xs));
+      --detail-mobile-type-sm: var(--mobile-type-sm, var(--font-size-mobile-sm));
+      --detail-mobile-type-body: var(--mobile-type-body, 1rem);
+      --detail-mobile-type-title: var(--mobile-type-title, var(--font-size-mobile-title));
+      --detail-mobile-space-xs: 0.5rem;
+      --detail-mobile-space-sm: 0.75rem;
+      --detail-mobile-space-md: 1rem;
+      --detail-mobile-hit-target: 2.85rem;
+      padding: var(--detail-mobile-space-md);
+      font-size: var(--font-size-mobile-body);
+      line-height: 1.5;
+    }
+
+    .issue-detail-content {
+      gap: var(--detail-mobile-space-md);
+      max-width: 100%;
+    }
+
+    .detail-header {
+      gap: var(--detail-mobile-space-sm);
+    }
+
+    .detail-title {
+      font-size: var(--font-size-mobile-title);
+      line-height: 1.25;
+    }
+
+    .star-btn,
+    .gh-link,
+    .copy-icon-btn,
+    .meta-row :global(.copy-number-btn) {
+      min-width: var(--detail-mobile-hit-target);
+      min-height: var(--detail-mobile-hit-target);
+      justify-content: center;
+      padding: var(--detail-mobile-space-xs);
+      margin-top: 0;
+    }
+
+    .meta-row {
+      gap: var(--detail-mobile-space-xs);
+    }
+
+    .meta-item,
+    .meta-sep,
+    .sync-indicator,
+    .section-title,
+    .section-title-inline,
+    .action-error,
+    .refresh-banner,
+    .loading-placeholder {
+      font-size: var(--font-size-mobile-sm);
+      line-height: 1.35;
+    }
+
+    .inset-box,
+    .modal-copy,
+    .branch-conflict-heading,
+    .branch-conflict-copy,
+    .field-label,
+    .field-input,
+    .field-hint,
+    .merge-error,
+    .detail-load-error,
+    :global(.markdown-body) {
+      font-size: var(--font-size-mobile-body);
+      line-height: 1.55;
+    }
+
+    .inset-box {
+      padding: var(--detail-mobile-space-sm) var(--detail-mobile-space-md);
+      border-radius: 0.75rem;
+    }
+
+    :global(.markdown-body pre),
+    :global(.markdown-body code) {
+      max-width: 100%;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    :global(.markdown-body code) {
+      font-size: 0.9em;
+    }
+
+    .issue-detail :global(.chip),
+    .issue-detail :global(.state-chip),
+    .issue-detail :global(.status-chip) {
+      min-height: calc(var(--detail-mobile-hit-target) * 0.65);
+      padding: 0.2rem var(--detail-mobile-space-xs);
+      border-radius: 999rem;
+      font-size: var(--font-size-mobile-xs);
+      line-height: 1.25;
+    }
+
+    .actions-row {
+      gap: var(--detail-mobile-space-sm);
+    }
+
+    .actions-row :global(.action-button),
+    .modal-close,
+    .field-input {
+      min-height: var(--detail-mobile-hit-target);
+      font-size: var(--font-size-mobile-sm);
+    }
+
+    .copy-icon-btn {
+      position: static;
+      opacity: 1;
+    }
+  }
 </style>

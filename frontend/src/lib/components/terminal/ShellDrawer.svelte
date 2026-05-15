@@ -78,7 +78,7 @@
     background: transparent;
     color: var(--text-secondary);
     font: inherit;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 650;
     cursor: pointer;
   }
@@ -99,6 +99,6 @@
     justify-content: center;
     height: 100%;
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: var(--font-size-md);
   }
 </style>

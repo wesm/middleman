@@ -216,10 +216,10 @@
 
 <style>
   .repo-import-entry { display: flex; flex-direction: column; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--border-muted); }
-  .primary-import-btn { align-self: flex-start; padding: 6px 14px; font-size: 13px; font-weight: 600; color: white; background: var(--accent-blue); border-radius: var(--radius-sm); }
-  .repo-import-entry p { margin: 0; color: var(--text-muted); font-size: 12px; }
+  .primary-import-btn { align-self: flex-start; padding: 6px 14px; font-size: var(--font-size-md); font-weight: 600; color: white; background: var(--accent-blue); border-radius: var(--radius-sm); }
+  .repo-import-entry p { margin: 0; color: var(--text-muted); font-size: var(--font-size-sm); }
   .advanced-add { padding-top: 8px; }
-  .advanced-add summary { cursor: pointer; color: var(--text-secondary); font-size: 12px; }
+  .advanced-add summary { cursor: pointer; color: var(--text-secondary); font-size: var(--font-size-sm); }
   .advanced-body { padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
   .repo-list { display: flex; flex-direction: column; }
   .repo-row {
@@ -229,11 +229,11 @@
   }
   .repo-row:last-child { border-bottom: none; }
   .repo-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-  .repo-name { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-primary); font-weight: 500; }
+  .repo-name { display: inline-flex; align-items: center; gap: 6px; font-size: var(--font-size-md); color: var(--text-primary); font-weight: 500; }
   :global(.repo-provider-icon) { color: var(--text-secondary); }
   .repo-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
   .refresh-btn {
-    padding: 4px 10px; font-size: 12px; font-weight: 500;
+    padding: 4px 10px; font-size: var(--font-size-sm); font-weight: 500;
     color: var(--accent-blue); border: 1px solid color-mix(in srgb, var(--accent-blue) 35%, var(--border-muted));
     border-radius: var(--radius-sm); transition: background 0.12s, opacity 0.12s;
   }
@@ -242,31 +242,31 @@
   }
   .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .remove-btn {
-    font-size: 16px; color: var(--text-muted); padding: 2px 6px;
+    font-size: var(--font-size-lg); color: var(--text-muted); padding: 2px 6px;
     border-radius: var(--radius-sm); line-height: 1; transition: color 0.1s, background 0.1s;
   }
   .remove-btn:hover:not(:disabled) {
     color: var(--accent-red); background: color-mix(in srgb, var(--accent-red) 10%, transparent);
   }
   .remove-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-  .confirm-prompt { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
-  .confirm-btn { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: var(--radius-sm); }
+  .confirm-prompt { font-size: var(--font-size-sm); color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
+  .confirm-btn { font-size: var(--font-size-xs); font-weight: 600; padding: 2px 8px; border-radius: var(--radius-sm); }
   .confirm-yes { color: var(--accent-red); border: 1px solid var(--accent-red); }
   .confirm-yes:hover { background: color-mix(in srgb, var(--accent-red) 10%, transparent); }
   .confirm-no { color: var(--text-muted); border: 1px solid var(--border-muted); }
   .confirm-no:hover { background: var(--bg-surface-hover); }
   .add-form { display: flex; gap: 8px; }
   .add-input {
-    flex: 1; font-size: 13px; padding: 6px 10px;
+    flex: 1; font-size: var(--font-size-md); padding: 6px 10px;
     background: var(--bg-inset); border: 1px solid var(--border-muted); border-radius: var(--radius-sm);
   }
   .add-input:focus { border-color: var(--accent-blue); outline: none; }
   .add-btn {
-    padding: 6px 14px; font-size: 13px; font-weight: 500; color: white;
+    padding: 6px 14px; font-size: var(--font-size-md); font-weight: 500; color: white;
     background: var(--accent-blue); border-radius: var(--radius-sm); transition: opacity 0.12s;
   }
   .add-btn:hover:not(:disabled) { opacity: 0.9; }
   .add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .error-msg { font-size: 12px; color: var(--accent-red); padding: 4px 0; }
+  .error-msg { font-size: var(--font-size-sm); color: var(--accent-red); padding: 4px 0; }
   .row-error { padding: 0; }
 </style>

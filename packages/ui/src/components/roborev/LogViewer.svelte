@@ -103,7 +103,7 @@
     padding: 6px 12px;
     border-bottom: 1px solid var(--border-muted);
     flex-shrink: 0;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 
   .log-status {
@@ -138,7 +138,7 @@
     border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-secondary);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     cursor: pointer;
   }
 
@@ -158,7 +158,7 @@
     background: var(--bg-inset);
     padding: 8px 12px;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
   }
 
@@ -181,6 +181,6 @@
     text-align: center;
     color: var(--text-muted);
     font-family: var(--font-sans);
-    font-size: 13px;
+    font-size: var(--font-size-md);
   }
 </style>

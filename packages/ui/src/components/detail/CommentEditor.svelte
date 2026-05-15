@@ -523,7 +523,7 @@
     max-height: 200px;
     overflow-y: auto;
     resize: vertical;
-    font-size: 13px;
+    font-size: var(--font-size-root);
     line-height: 1.5;
     background: var(--bg-surface);
     border: 1px solid var(--border-default);
@@ -576,7 +576,7 @@
     padding: 6px 8px;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     width: 100%;
     border: 0;
     background: transparent;

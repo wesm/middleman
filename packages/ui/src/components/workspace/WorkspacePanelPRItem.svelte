@@ -110,13 +110,13 @@
 
   .pr-number {
     font-family: var(--font-mono, monospace);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     flex-shrink: 0;
   }
 
   .pr-title {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 500;
     color: var(--text-primary);
     white-space: nowrap;
@@ -132,7 +132,7 @@
   }
 
   .state-pill {
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     font-weight: 600;
     padding: 1px 6px;
     border-radius: 8px;
@@ -178,7 +178,7 @@
   }
 
   .wt-chip {
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     padding: 1px 5px;
     border: 1px solid var(--border-muted);
     border-radius: 3px;
@@ -199,7 +199,7 @@
   }
 
   .create-wt-btn {
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     font-weight: 600;
     padding: 1px 6px;
     border: 1px solid var(--border-muted);

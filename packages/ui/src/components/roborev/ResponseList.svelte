@@ -112,18 +112,18 @@
   }
 
   .responder {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     color: var(--text-primary);
   }
 
   .timestamp {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 
   .response-body {
-    font-size: 13px;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     line-height: 1.5;
     white-space: pre-wrap;
@@ -131,7 +131,7 @@
 
   .no-responses {
     padding: 12px 0;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     text-align: center;
   }
@@ -151,7 +151,7 @@
     border-radius: var(--radius-sm);
     background: var(--bg-surface);
     color: var(--text-primary);
-    font-size: 13px;
+    font-size: var(--font-size-md);
     font-family: inherit;
     line-height: 1.4;
     resize: vertical;
@@ -177,7 +177,7 @@
     border-radius: var(--radius-sm);
     background: var(--accent-blue);
     color: #fff;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 500;
     cursor: pointer;
     white-space: nowrap;

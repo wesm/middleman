@@ -24,6 +24,7 @@
     onSelectItem?: (item: ActivityItem) => void;
     onCloseDrawer?: () => void;
     onDetailTabChange?: (tab: "conversation" | "files") => void;
+    phone?: boolean;
   }
 
   let {
@@ -32,6 +33,7 @@
     onSelectItem,
     onCloseDrawer,
     onDetailTabChange,
+    phone = false,
   }: Props = $props();
 
   // Internal state used when no controlled props are
@@ -147,6 +149,7 @@
   class="activity-shell"
   class:activity-shell--split={activeDrawer !== null}
   class:activity-shell--full={activeDrawer === null}
+  class:activity-shell--phone={phone}
 >
   <section
     class="activity-pane"
@@ -175,7 +178,7 @@
     {/if}
     <div class="activity-feed-wrap">
       <ActivityFeed
-        compact={activeDrawer !== null}
+        compact={phone || activeDrawer !== null}
         selectedItem={activeDrawer}
         onSelectItem={handleSelect}
       />
@@ -294,7 +297,7 @@
     border-bottom: 1px solid var(--border-default);
     background: var(--bg-surface);
     color: var(--text-primary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
   }
 
@@ -349,5 +352,13 @@
     .activity-shell--split :global(.activity-split-resize-handle) {
       display: none;
     }
+  }
+
+  .activity-shell--phone .activity-pane {
+    width: 100%;
+  }
+
+  .activity-shell--phone .activity-feed-wrap {
+    min-width: 0;
   }
 </style>

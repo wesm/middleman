@@ -941,7 +941,7 @@ test.describe("activity split view and detail drawers", () => {
     await page.setViewportSize({ width: 600, height: 800 });
     await mockDiffForAllPRs(page, tinyDiff);
 
-    await page.goto("/");
+    await page.goto("/?desktop=1");
     await waitForActivityTable(page);
 
     const detail = await openActivityPRSplit(page);

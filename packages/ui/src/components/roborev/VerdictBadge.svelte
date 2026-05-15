@@ -56,7 +56,7 @@
     display: inline-flex;
     align-items: center;
     gap: 3px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 500;
     white-space: nowrap;
   }

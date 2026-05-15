@@ -142,7 +142,7 @@
 
   .modal-header h3 {
     margin: 0;
-    font-size: 14px;
+    font-size: var(--font-size-lg);
     font-weight: 600;
     color: var(--text-primary);
   }
@@ -157,7 +157,7 @@
     border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     cursor: pointer;
   }
@@ -176,7 +176,7 @@
 
   .shortcut-group h4 {
     margin: 0 0 8px;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     color: var(--text-secondary);
     text-transform: uppercase;
@@ -205,14 +205,14 @@
 
   .shortcut-row dd {
     margin: 0;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
   kbd {
     display: inline-block;
     padding: 1px 5px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     color: var(--text-primary);
     background: var(--bg-surface-hover);

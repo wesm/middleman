@@ -114,7 +114,7 @@
     display: block;
     margin-bottom: 2px;
     color: var(--text-primary);
-    font-size: 18px;
+    font-size: var(--font-size-xl);
     font-weight: 700;
     line-height: 1;
   }
@@ -122,7 +122,7 @@
   .repo-metric__label {
     display: block;
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     line-height: 1.2;
   }
 

@@ -212,7 +212,7 @@
     background: var(--diff-stale-bg);
     color: var(--diff-stale-text);
     border-bottom: 1px solid var(--diff-stale-border);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     flex-shrink: 0;
   }
 
@@ -253,7 +253,7 @@
   }
 
   .diff-state-msg {
-    font-size: 13px;
+    font-size: var(--font-size-md);
     color: var(--text-muted);
   }
 

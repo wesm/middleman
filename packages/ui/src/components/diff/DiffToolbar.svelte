@@ -216,7 +216,7 @@
   }
 
   .toolbar-label {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     user-select: none;
     white-space: nowrap;
@@ -228,7 +228,7 @@
     gap: 6px;
     min-width: 0;
     color: var(--text-secondary);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     white-space: nowrap;
   }
 
@@ -289,7 +289,7 @@
   .compact-menu-title {
     margin-bottom: 5px;
     color: var(--text-muted);
-    font-size: 9px;
+    font-size: 0.9em;
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -313,7 +313,7 @@
     border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-secondary);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     text-align: left;
   }
 
@@ -353,7 +353,7 @@
     background: transparent;
     color: var(--text-muted);
     cursor: pointer;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 500;
     white-space: nowrap;
   }

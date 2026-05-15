@@ -81,7 +81,7 @@
     display: flex; flex-direction: column; gap: 16px;
     overflow-y: auto; height: 100%;
   }
-  .page-title { font-size: 18px; font-weight: 600; color: var(--text-primary); margin: 0; }
-  .state-msg { padding: 40px; text-align: center; color: var(--text-muted); font-size: 13px; }
+  .page-title { font-size: var(--font-size-xl); font-weight: 600; color: var(--text-primary); margin: 0; }
+  .state-msg { padding: 40px; text-align: center; color: var(--text-muted); font-size: var(--font-size-md); }
   .state-error { color: var(--accent-red); }
 </style>

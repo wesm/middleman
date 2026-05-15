@@ -251,7 +251,7 @@
     align-items: center;
     gap: 5px;
     padding: 3px 10px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 500;
     color: var(--text-muted);
     background: var(--bg-inset);
@@ -283,7 +283,7 @@
   }
 
   .filter-badge {
-    font-size: 9px;
+    font-size: 0.9em;
     font-weight: 700;
     background: var(--accent-blue);
     color: white;
@@ -310,7 +310,7 @@
 
   .filter-section-title {
     padding: 4px 12px 4px;
-    font-size: 9px;
+    font-size: 0.9em;
     font-weight: 600;
     color: var(--text-muted);
     text-transform: uppercase;
@@ -329,7 +329,7 @@
     gap: 8px;
     width: 100%;
     padding: 4px 12px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     text-align: left;
     cursor: pointer;
@@ -377,7 +377,7 @@
     width: calc(100% - 16px);
     margin: 4px 8px 2px;
     padding: 4px 8px;
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     color: var(--text-muted);
     text-align: center;
     border: 0;

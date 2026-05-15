@@ -100,7 +100,7 @@
     justify-content: center;
     flex: 1;
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     padding: 24px;
   }
 
@@ -116,7 +116,7 @@
     cursor: pointer;
     color: var(--text-primary);
     font-family: inherit;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     width: 100%;
   }
 
@@ -151,13 +151,13 @@
 
   .job-id {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     flex-shrink: 0;
   }
 
   .job-type {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -166,7 +166,7 @@
 
   .job-time {
     margin-left: auto;
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     color: var(--text-muted);
     flex-shrink: 0;
   }
@@ -179,7 +179,7 @@
   }
 
   .commit-subject {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -190,7 +190,7 @@
 
   .commit-ref {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 </style>

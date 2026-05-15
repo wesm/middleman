@@ -57,7 +57,7 @@
     color: var(--text-secondary);
     cursor: pointer;
     font: inherit;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     line-height: inherit;
     padding: 0;
     transition: box-shadow 0.1s, color 0.1s;
@@ -83,5 +83,16 @@
     cursor: default;
     color: var(--text-muted);
     text-decoration: none;
+  }
+
+  @media (max-width: 640px) {
+    .copy-number-btn {
+      min-width: var(--detail-mobile-hit-target, 2.85rem);
+      min-height: var(--detail-mobile-hit-target, 2.85rem);
+      padding: var(--detail-mobile-space-xs, 0.5rem);
+      border-radius: 0.65rem;
+      font-size: var(--font-size-mobile-sm);
+      line-height: 1.35;
+    }
   }
 </style>

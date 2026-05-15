@@ -91,13 +91,13 @@
 
 <style>
   .setting-row { display: flex; align-items: center; justify-content: space-between; min-height: 32px; }
-  .setting-label { font-size: 13px; color: var(--text-secondary); }
+  .setting-label { font-size: var(--font-size-md); color: var(--text-secondary); }
   .segmented-control {
     display: flex; align-items: center; gap: 1px;
     background: var(--bg-inset); border-radius: var(--radius-sm); padding: 2px;
   }
   .seg-btn {
-    padding: 4px 12px; font-size: 12px; font-weight: 500; color: var(--text-muted);
+    padding: 4px 12px; font-size: var(--font-size-sm); font-weight: 500; color: var(--text-muted);
     border-radius: calc(var(--radius-sm) - 1px); transition: background 0.12s, color 0.12s;
   }
   .seg-btn.active { background: var(--bg-surface); color: var(--text-primary); box-shadow: var(--shadow-sm); }

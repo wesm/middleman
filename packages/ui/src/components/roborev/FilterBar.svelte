@@ -148,7 +148,7 @@
     border-radius: var(--radius-sm);
     background: var(--bg-surface);
     color: var(--text-primary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     outline: none;
     min-width: 140px;
     flex: 1;
@@ -167,7 +167,7 @@
     display: flex;
     align-items: center;
     gap: 4px;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     cursor: pointer;
     white-space: nowrap;
@@ -188,7 +188,7 @@
     border-radius: var(--radius-sm);
     background: var(--bg-surface);
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     cursor: pointer;
     flex-shrink: 0;

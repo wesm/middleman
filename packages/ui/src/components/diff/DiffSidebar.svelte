@@ -141,7 +141,7 @@
 
   .diff-files-filter__input {
     width: 100%;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     padding: 3px 8px;
     border-radius: var(--radius-sm);
     border: 1px solid var(--border-muted);
@@ -156,7 +156,7 @@
 
   .diff-files-state {
     padding: 6px 24px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 
@@ -172,7 +172,7 @@
   .diff-dir-header {
     padding: 5px 12px 2px 24px;
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     color: var(--text-muted);
     white-space: nowrap;
     overflow: hidden;
@@ -206,7 +206,7 @@
 
   .diff-file-status {
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     font-weight: 700;
     width: 12px;
     flex-shrink: 0;
@@ -215,7 +215,7 @@
 
   .diff-file-name {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;

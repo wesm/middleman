@@ -229,6 +229,7 @@ interface MiddlemanNavigateEvent {
 interface Window {
   __BASE_PATH__?: string;
   __MIDDLEMAN_DEV_API_URL__?: string;
+  __MIDDLEMAN_FORCE_MOBILE_ROUTES__?: boolean;
   __middleman_config?: MiddlemanConfig;
   __middleman_event_source_counts?: () => { created: number; closed: number };
   __middleman_notify_config_changed?: () => void;

@@ -228,14 +228,14 @@
   }
 
   .chevron {
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     color: var(--text-muted);
     flex-shrink: 0;
     width: 12px;
   }
 
   .project-name {
-    font-size: 13px;
+    font-size: var(--font-size-md);
     font-weight: 700;
     color: var(--text-primary);
     white-space: nowrap;
@@ -244,7 +244,7 @@
   }
 
   .platform-repo {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
@@ -254,17 +254,17 @@
 
   .worktree-count {
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
   }
 
   .stale-dot {
     color: var(--accent-amber);
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
   }
 
   .repo-link {
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     text-decoration: none;
   }
 
@@ -274,7 +274,7 @@
 
   .hidden-count {
     margin-left: auto;
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     color: var(--text-muted);
     white-space: nowrap;
     flex-shrink: 0;
@@ -291,7 +291,7 @@
     width: 100%;
     padding: 4px 12px;
     text-align: left;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     background: none;
     border: none;
@@ -318,7 +318,7 @@
     width: 100%;
     padding: 6px 12px;
     text-align: left;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--text-primary);
     background: none;
     border: none;

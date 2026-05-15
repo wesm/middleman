@@ -110,7 +110,7 @@
     border: 1px solid transparent;
     border-radius: 999px;
     padding: 1px 8px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     line-height: 1.5;
     white-space: nowrap;
@@ -120,13 +120,13 @@
 
   .github-labels--compact .label-pill {
     max-width: 120px;
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     padding: 1px 6px;
   }
 
   .label-more {
     flex-shrink: 0;
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
   }
 </style>

@@ -108,7 +108,7 @@
     background: var(--bg-surface);
     border-top: 1px solid var(--border-muted);
     flex-shrink: 0;
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     color: var(--text-muted);
   }
   .status-left, .status-right {

@@ -272,7 +272,7 @@
     background: var(--bg-inset);
     border: 1px solid var(--border-muted);
     border-radius: var(--radius-sm);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     cursor: pointer;
     transition: border-color 0.15s;
@@ -302,7 +302,7 @@
     background: var(--bg-inset);
     border: 1px solid var(--accent-blue);
     border-radius: var(--radius-sm);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-primary);
     outline: none;
     box-sizing: border-box;
@@ -334,7 +334,7 @@
 
   .typeahead-option {
     padding: 4px 8px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     cursor: pointer;
     border-radius: 3px;
@@ -362,7 +362,7 @@
 
   .typeahead-empty {
     padding: 6px 8px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     font-style: italic;
   }

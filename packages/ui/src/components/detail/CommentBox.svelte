@@ -153,11 +153,11 @@
   .comment-box {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--focus-detail-space-sm, 0.62rem);
   }
 
   .error-msg {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--accent-red);
   }
 
@@ -166,18 +166,18 @@
   }
 
   .comment-editor-shell :global(.comment-editor-input) {
-    min-height: 112px;
+    min-height: 8.62rem;
     max-height: 75dvh;
-    padding-bottom: 46px;
+    padding-bottom: calc(var(--focus-detail-hit-target, 3.05rem) + var(--focus-detail-space-sm, 0.57rem));
   }
 
   .submit-btn {
     position: absolute;
-    right: 8px;
-    bottom: 8px;
-    font-size: 13px;
+    right: var(--focus-detail-space-sm, 0.62rem);
+    bottom: var(--focus-detail-space-sm, 0.62rem);
+    font-size: var(--font-size-root);
     font-weight: 500;
-    padding: 6px 14px;
+    padding: var(--focus-detail-space-xs, 0.46rem) var(--focus-detail-space-md, 1.08rem);
     background: var(--accent-blue);
     color: #fff;
     border-radius: var(--radius-sm);

@@ -17,6 +17,8 @@ const testingLibrarySvelteEntry = require.resolve("@testing-library/svelte");
 
 const apiUrl = resolveDevApiUrl();
 const devServerPort = resolveViteServerPort();
+const devServerAllowedHosts = resolveViteAllowedHosts();
+const devServerHmr = resolveViteHmr(devServerPort);
 const workspaceRoot = searchForWorkspaceRoot(process.cwd());
 const uiPkg = path.resolve(process.cwd(), "../packages/ui");
 const uiIndex = path.resolve(process.cwd(), "../packages/ui/src/index.ts");
@@ -78,6 +80,36 @@ function parsePort(value: string | undefined): number | null {
     return null;
   }
   return parsed;
+}
+
+function parseHostList(value: string | undefined): string[] {
+  return (value ?? "")
+    .split(",")
+    .map((host) => host.trim())
+    .filter(Boolean);
+}
+
+export function resolveViteAllowedHosts(
+  env: Record<string, string | undefined> = process.env,
+): string[] | undefined {
+  const hosts = parseHostList(env.MIDDLEMAN_VITE_ALLOWED_HOSTS);
+  return hosts.length > 0 ? hosts : undefined;
+}
+
+export function resolveViteHmr(
+  port = resolveViteServerPort(),
+  env: Record<string, string | undefined> = process.env,
+) {
+  const protocol = env.MIDDLEMAN_VITE_HMR_PROTOCOL === "wss" ? "wss" : "ws";
+  const host = env.MIDDLEMAN_VITE_HMR_HOST?.trim() || "127.0.0.1";
+  const clientPort = parsePort(env.MIDDLEMAN_VITE_HMR_CLIENT_PORT) ?? port;
+
+  return {
+    protocol,
+    host,
+    clientPort,
+    path: "/__vite_hmr",
+  };
 }
 
 function logWebSocketProxyRequests(): NonNullable<
@@ -216,12 +248,8 @@ const config = {
     host: "127.0.0.1",
     port: devServerPort,
     strictPort: true,
-    hmr: {
-      protocol: "ws",
-      host: "127.0.0.1",
-      clientPort: devServerPort,
-      path: "/__vite_hmr",
-    },
+    ...(devServerAllowedHosts ? { allowedHosts: devServerAllowedHosts } : {}),
+    hmr: devServerHmr,
     fs: { allow: [workspaceRoot, uiPkg] },
     proxy: {
       "/api": {

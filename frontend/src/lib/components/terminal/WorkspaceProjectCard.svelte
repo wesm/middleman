@@ -230,7 +230,7 @@
   .project-card__status {
     margin: 0;
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: var(--font-size-md);
   }
 
   .project-card__header {
@@ -241,14 +241,14 @@
 
   .project-card__title {
     margin: 0;
-    font-size: 18px;
+    font-size: var(--font-size-xl);
     font-weight: 600;
   }
 
   .project-card__path {
     margin: 0;
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     display: flex;
     align-items: center;
     gap: 6px;
@@ -274,7 +274,7 @@
     background: var(--bg-inset);
     color: var(--text-secondary);
     font-family: var(--font-mono, monospace);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
   }
 
   :global(.project-card__platform-icon) {
@@ -284,7 +284,7 @@
   .project-card__branch {
     margin: 0;
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 
   .project-card__branch code {
@@ -296,7 +296,7 @@
 
   .project-card__section-title {
     margin: 0 0 4px 0;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -306,7 +306,7 @@
   .project-card__empty {
     margin: 0;
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: var(--font-size-md);
   }
 
   .project-card__worktree-list {
@@ -330,13 +330,13 @@
 
   .project-card__worktree-branch {
     font-weight: 600;
-    font-size: 13px;
+    font-size: var(--font-size-md);
   }
 
   .project-card__worktree-path {
     font-family: var(--font-mono, monospace);
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     word-break: break-all;
   }
 
@@ -368,7 +368,7 @@
     border-radius: var(--radius-md, 8px);
     background: color-mix(in srgb, var(--accent-red) 10%, transparent);
     color: var(--accent-red);
-    font-size: 13px;
+    font-size: var(--font-size-md);
   }
 
   .project-card__retry {
@@ -380,6 +380,6 @@
     background: var(--bg-surface);
     cursor: pointer;
     font: inherit;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 </style>

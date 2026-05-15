@@ -26,7 +26,7 @@
   .review-empty {
     padding: 24px;
     text-align: center;
-    font-size: 13px;
+    font-size: var(--font-size-md);
     color: var(--text-muted);
   }
 
@@ -36,7 +36,7 @@
 
   /* Markdown prose styling */
   .markdown-body {
-    font-size: 13px;
+    font-size: var(--font-size-md);
     line-height: 1.6;
     color: var(--text-primary);
     word-wrap: break-word;
@@ -44,7 +44,7 @@
   }
 
   .markdown-body :global(h1) {
-    font-size: 20px;
+    font-size: var(--font-size-xl);
     font-weight: 600;
     margin: 20px 0 10px;
     padding-bottom: 6px;
@@ -52,7 +52,7 @@
   }
 
   .markdown-body :global(h2) {
-    font-size: 17px;
+    font-size: var(--font-size-lg);
     font-weight: 600;
     margin: 18px 0 8px;
     padding-bottom: 4px;
@@ -60,7 +60,7 @@
   }
 
   .markdown-body :global(h3) {
-    font-size: 15px;
+    font-size: var(--font-size-lg);
     font-weight: 600;
     margin: 16px 0 6px;
   }
@@ -68,7 +68,7 @@
   .markdown-body :global(h4),
   .markdown-body :global(h5),
   .markdown-body :global(h6) {
-    font-size: 13px;
+    font-size: var(--font-size-md);
     font-weight: 600;
     margin: 14px 0 4px;
   }
@@ -101,7 +101,7 @@
 
   .markdown-body :global(code) {
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     padding: 2px 5px;
     border-radius: var(--radius-sm);
     background: var(--bg-inset);
@@ -118,7 +118,7 @@
   .markdown-body :global(pre code) {
     padding: 0;
     background: none;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
   }
 
@@ -126,7 +126,7 @@
     width: 100%;
     border-collapse: collapse;
     margin: 0 0 10px;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 
   .markdown-body :global(th),

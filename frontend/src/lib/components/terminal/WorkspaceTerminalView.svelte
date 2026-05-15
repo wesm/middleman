@@ -1219,7 +1219,7 @@
     gap: 10px;
     flex: 1;
     color: var(--text-muted);
-    font-size: 14px;
+    font-size: var(--font-size-lg);
   }
 
   .state-message.error {
@@ -1235,7 +1235,7 @@
     border-radius: 50%;
     background: var(--accent-red);
     color: #fff;
-    font-size: 13px;
+    font-size: var(--font-size-md);
     font-weight: 700;
     flex-shrink: 0;
   }
@@ -1246,7 +1246,7 @@
     border-radius: var(--radius-sm);
     background: var(--bg-surface);
     color: var(--text-primary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     cursor: pointer;
   }
 
@@ -1267,7 +1267,7 @@
 
   .action-error {
     color: var(--accent-red);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 
   :global(.spinner) {
@@ -1301,7 +1301,7 @@
   }
 
   .header-name {
-    font-size: 12.5px;
+    font-size: var(--font-size-md);
     font-weight: 600;
     color: var(--text-primary);
     overflow: hidden;
@@ -1312,7 +1312,7 @@
 
   .header-branch {
     font-family: var(--font-mono);
-    font-size: 11.5px;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     background: var(--bg-inset);
     padding: 1px 6px;
@@ -1336,7 +1336,7 @@
     border-radius: 3px;
     background: var(--bg-surface);
     color: var(--text-secondary);
-    font-size: 11.5px;
+    font-size: var(--font-size-sm);
     font-weight: 500;
     cursor: pointer;
     transition: background-color 80ms ease, color 80ms ease,
@@ -1394,7 +1394,7 @@
     border-bottom: 1px solid var(--border-default);
     background: color-mix(in srgb, var(--accent-red) 12%, var(--bg-surface));
     color: var(--accent-red);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 
   .workspace-stage {
@@ -1434,7 +1434,7 @@
     border: none;
     background: transparent;
     color: var(--text-secondary);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 500;
     letter-spacing: 0.01em;
     cursor: pointer;

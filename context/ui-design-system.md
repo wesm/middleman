@@ -23,6 +23,7 @@ Use this document as the intent-level guide for frontend UI work in `middleman`.
 - Routed item references and URL builders: `packages/ui/src/routes.ts`
 - Svelte guidance: `skills/svelte-core-bestpractices/` (`svelte-core-bestpractices`) and `skills/svelte-code-writer/` (`svelte-code-writer`)
 - Interaction contracts: `context/ui-interaction-contracts.md`
+- Mobile UX principles: `context/mobile-ux.md`
 - This guidance: `context/ui-design-system.md`
 
 ## Shared primitives

@@ -297,7 +297,7 @@
     gap: 12px;
     flex: 1;
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: var(--font-size-md);
   }
 
   .empty-state button {
@@ -306,7 +306,7 @@
     border: 1px solid var(--border-default);
     background: var(--bg-surface);
     color: var(--text-primary);
-    font-size: 13px;
+    font-size: var(--font-size-md);
     cursor: pointer;
   }
 

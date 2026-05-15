@@ -43,7 +43,7 @@
     display: flex;
     align-items: stretch;
     line-height: 20px;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     background: var(--diff-bg);
   }
 
@@ -61,7 +61,7 @@
     text-align: right;
     padding: 0 8px 0 0;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--diff-line-num);
     user-select: none;
     line-height: 20px;
@@ -81,7 +81,7 @@
     flex-shrink: 0;
     text-align: center;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--diff-text);
     user-select: none;
     line-height: 20px;
@@ -100,7 +100,7 @@
     margin: 0;
     padding: 0 8px 0 4px;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     line-height: 20px;
     color: var(--diff-text);
     white-space: pre;
@@ -128,6 +128,6 @@
   .no-newline {
     color: var(--diff-line-num);
     font-style: italic;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
   }
 </style>

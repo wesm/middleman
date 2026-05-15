@@ -23,7 +23,7 @@
 
   .prompt-text {
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
     color: var(--text-primary);
     white-space: pre-wrap;
@@ -34,7 +34,7 @@
   .prompt-empty {
     padding: 24px;
     text-align: center;
-    font-size: 13px;
+    font-size: var(--font-size-md);
     color: var(--text-muted);
   }
 </style>

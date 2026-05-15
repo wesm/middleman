@@ -199,7 +199,7 @@
   .stack-header {
     color: var(--accent-purple);
     font-weight: 600;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     margin-bottom: 12px;
@@ -241,7 +241,7 @@
   .chain-member {
     flex: 1;
     min-width: 0;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     padding-bottom: 12px;
   }
 
@@ -260,7 +260,7 @@
   .current-label {
     color: var(--text-primary);
     font-weight: 600;
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     text-transform: uppercase;
     letter-spacing: 0.3px;
     margin-bottom: 1px;
@@ -272,7 +272,7 @@
     background: none;
     border: none;
     padding: 0;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     text-align: left;
     display: block;
   }
@@ -285,18 +285,18 @@
     display: flex;
     gap: 4px;
     margin-top: 2px;
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
   }
 
   .ready-label {
     color: #238636;
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     margin-top: 2px;
   }
 
   .blocked-label {
     color: #f85149;
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     font-style: italic;
     margin-top: 2px;
   }

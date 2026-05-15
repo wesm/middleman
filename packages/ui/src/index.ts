@@ -119,6 +119,9 @@ export {
   default as ActivityFeedView,
 } from "./views/ActivityFeedView.svelte";
 export {
+  default as MobileActivityView,
+} from "./views/MobileActivityView.svelte";
+export {
   default as KanbanBoardView,
 } from "./views/KanbanBoardView.svelte";
 export {

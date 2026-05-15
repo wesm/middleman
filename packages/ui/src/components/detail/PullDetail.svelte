@@ -1259,7 +1259,7 @@
   }
 
   .state-msg {
-    font-size: 13px;
+    font-size: var(--font-size-root);
     color: var(--text-muted);
   }
 
@@ -1280,7 +1280,7 @@
     background: var(--accent-red-soft, color-mix(in srgb, var(--accent-red) 12%, transparent));
     color: var(--accent-red);
     border-bottom: 1px solid var(--border-subtle);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     flex-shrink: 0;
   }
 
@@ -1322,7 +1322,7 @@
   }
 
   .detail-title {
-    font-size: 18px;
+    font-size: var(--font-size-xl);
     font-weight: 600;
     color: var(--text-primary);
     line-height: 1.35;
@@ -1335,7 +1335,7 @@
     color: var(--text-muted);
     cursor: pointer;
     padding: 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-2xs);
     flex-shrink: 0;
     margin-top: 3px;
   }
@@ -1353,7 +1353,7 @@
 
   .title-edit-input {
     flex: 1;
-    font-size: 1.125rem;
+    font-size: var(--font-size-lg);
     font-weight: 600;
     font-family: var(--font-sans);
     padding: 4px 8px;
@@ -1366,7 +1366,7 @@
 
   .title-edit-save,
   .title-edit-cancel {
-    font-size: 0.75rem;
+    font-size: var(--font-size-2xs);
     padding: 4px 10px;
     border-radius: var(--radius-sm);
     cursor: pointer;
@@ -1441,12 +1441,12 @@
   }
 
   .meta-item {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
   .meta-sep {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
   }
 
@@ -1454,7 +1454,7 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--accent-blue);
   }
 
@@ -1470,7 +1470,7 @@
     display: inline-flex;
     align-items: center;
     gap: 3px;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 
   .branch-icon {
@@ -1482,7 +1482,7 @@
     position: relative;
     color: var(--text-secondary);
     font-family: "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
-    font-size: 11.5px;
+    font-size: var(--font-size-sm);
     background: none;
     border: none;
     padding: 1px 4px;
@@ -1510,7 +1510,7 @@
     left: 50%;
     transform: translateX(-50%);
     font-family: inherit;
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     font-weight: 600;
     letter-spacing: 0.02em;
     color: #fff;
@@ -1641,7 +1641,7 @@
     border-radius: var(--radius-sm);
     background: var(--bg-surface);
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     cursor: pointer;
   }
@@ -1710,7 +1710,7 @@
   }
 
   .action-error {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--accent-red, #d73a49);
   }
 
@@ -1739,7 +1739,7 @@
   }
 
   .section-title {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -1747,7 +1747,7 @@
   }
 
   .section-title-inline {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -1801,7 +1801,7 @@
   }
 
   .inset-box {
-    font-size: 13px;
+    font-size: var(--font-size-root);
     color: var(--text-primary);
     background: var(--bg-inset);
     border: 1px solid var(--border-muted);
@@ -1812,7 +1812,7 @@
   }
 
   .merge-warning {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     padding: 8px 12px;
     border-radius: var(--radius-sm);
     display: flex;
@@ -1840,7 +1840,7 @@
 
   .files-stat {
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
   }
 
@@ -1859,7 +1859,7 @@
     padding: 4px 12px;
     background: var(--bg-inset);
     border-radius: var(--radius-sm);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     margin-bottom: 8px;
   }
@@ -1883,7 +1883,7 @@
     justify-content: center;
     gap: 8px;
     padding: 24px 0;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
   }
 
@@ -1896,7 +1896,7 @@
   }
 
   .detail-tab {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 500;
     padding: 8px 16px;
     color: var(--text-secondary);
@@ -1929,7 +1929,7 @@
     color: var(--text-muted);
     cursor: pointer;
     padding: 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-2xs);
   }
 
   .edit-body-btn:hover {
@@ -1946,7 +1946,7 @@
     width: 100%;
     min-height: 120px;
     font-family: var(--font-mono);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-xs);
     line-height: 1.5;
     padding: 10px;
     background: var(--bg-inset);
@@ -1970,12 +1970,134 @@
     padding: 12px;
     width: 100%;
     cursor: pointer;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-xs);
     text-align: center;
   }
 
   .add-description-btn:hover {
     border-color: var(--accent-blue);
     color: var(--accent-blue);
+  }
+
+  @media (max-width: 640px) {
+    .pull-detail {
+      --detail-mobile-type-xs: var(--mobile-type-xs, var(--font-size-mobile-xs));
+      --detail-mobile-type-sm: var(--mobile-type-sm, var(--font-size-mobile-sm));
+      --detail-mobile-type-body: var(--mobile-type-body, 1rem);
+      --detail-mobile-type-title: var(--mobile-type-title, var(--font-size-mobile-title));
+      --detail-mobile-space-xs: 0.5rem;
+      --detail-mobile-space-sm: 0.75rem;
+      --detail-mobile-space-md: 1rem;
+      --detail-mobile-hit-target: 2.85rem;
+      padding: var(--detail-mobile-space-md);
+      font-size: var(--font-size-mobile-body);
+      line-height: 1.5;
+    }
+
+    .pull-detail-content {
+      gap: var(--detail-mobile-space-md);
+      max-width: 100%;
+    }
+
+    .detail-header,
+    .title-line {
+      gap: var(--detail-mobile-space-sm);
+    }
+
+    .detail-title {
+      font-size: var(--font-size-mobile-title);
+      line-height: 1.25;
+    }
+
+    .edit-title-btn,
+    .edit-body-btn,
+    .star-btn,
+    .gh-link,
+    .copy-icon-btn,
+    .meta-row :global(.copy-number-btn) {
+      min-width: var(--detail-mobile-hit-target);
+      min-height: var(--detail-mobile-hit-target);
+      justify-content: center;
+      padding: var(--detail-mobile-space-xs);
+      margin-top: 0;
+      font-size: var(--font-size-mobile-sm);
+    }
+
+    .meta-row,
+    .chips-row,
+    .actions-row,
+    .body-edit-actions {
+      gap: var(--detail-mobile-space-xs);
+    }
+
+    .meta-item,
+    .meta-sep,
+    .meta-branch,
+    .branch-name-btn,
+    .sync-indicator,
+    .section-title,
+    .section-title-inline,
+    .files-stat,
+    .merge-warning,
+    .action-error,
+    .refresh-banner,
+    .loading-placeholder,
+    .detail-tab {
+      font-size: var(--font-size-mobile-sm);
+      line-height: 1.35;
+    }
+
+    .inset-box,
+    .body-edit-textarea,
+    .title-edit-input,
+    .title-edit-save,
+    .title-edit-cancel,
+    .add-description-btn,
+    .detail-load-error,
+    :global(.markdown-body) {
+      font-size: var(--font-size-mobile-body);
+      line-height: 1.55;
+    }
+
+    .inset-box {
+      padding: var(--detail-mobile-space-sm) var(--detail-mobile-space-md);
+      border-radius: 0.75rem;
+    }
+
+    :global(.markdown-body pre),
+    :global(.markdown-body code) {
+      max-width: 100%;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    :global(.markdown-body code) {
+      font-size: 0.9em;
+    }
+
+    .pull-detail :global(.chip),
+    .pull-detail :global(.state-chip),
+    .pull-detail :global(.status-chip) {
+      min-height: calc(var(--detail-mobile-hit-target) * 0.65);
+      padding: 0.2rem var(--detail-mobile-space-xs);
+      border-radius: 999rem;
+      font-size: var(--font-size-mobile-xs);
+      line-height: 1.25;
+    }
+
+    .actions-row :global(.action-button),
+    .actions-menu-trigger,
+    .detail-tab,
+    .title-edit-save,
+    .title-edit-cancel,
+    .add-description-btn {
+      min-height: var(--detail-mobile-hit-target);
+    }
+
+    .copy-icon-btn {
+      position: static;
+      opacity: 1;
+    }
   }
 </style>

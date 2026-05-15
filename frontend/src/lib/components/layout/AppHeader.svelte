@@ -223,6 +223,7 @@
 
   .header-left {
     flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
     gap: 12px;
@@ -243,7 +244,7 @@
 
   .logo {
     font-weight: 600;
-    font-size: 15px;
+    font-size: var(--font-size-lg);
     color: var(--text-primary);
     letter-spacing: -0.01em;
   }
@@ -266,7 +267,7 @@
   .view-tab {
     padding: 4px 14px;
     border-radius: calc(var(--radius-md) - 2px);
-    font-size: 13px;
+    font-size: var(--font-size-md);
     font-weight: 500;
     color: var(--text-secondary);
     transition: background 0.15s, color 0.15s;
@@ -294,7 +295,7 @@
   .action-btn {
     padding: 5px 12px;
     border-radius: var(--radius-sm);
-    font-size: 13px;
+    font-size: var(--font-size-md);
     font-weight: 500;
     color: var(--text-secondary);
     border: 1px solid var(--border-default);
@@ -314,7 +315,7 @@
   }
 
   .nav-select {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     padding: 4px 8px;
     border: 1px solid var(--border-default);
     border-radius: var(--radius-sm);
@@ -336,5 +337,67 @@
   [data-filled-icon="moon"] :global(svg path) {
     fill: currentColor;
     stroke: none;
+  }
+
+  :global(#app.container-narrow) .app-header {
+    height: auto;
+    min-height: 82px;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 8px;
+    padding: 6px 10px;
+  }
+
+  :global(#app.container-narrow) .header-left {
+    flex: 1 1 100%;
+    gap: 8px;
+    order: 1;
+  }
+
+  :global(#app.container-narrow) .brand {
+    gap: 6px;
+  }
+
+  :global(#app.container-narrow) .app-icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  :global(#app.container-narrow) .logo {
+    font-size: var(--font-size-lg);
+  }
+
+  :global(#app.container-narrow) .header-left :global(.typeahead) {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: none;
+  }
+
+  :global(#app.container-narrow) .header-left :global(.typeahead-trigger),
+  :global(#app.container-narrow) .header-left :global(.typeahead-input) {
+    height: 30px;
+  }
+
+  :global(#app.container-narrow) .header-center {
+    flex: 1 1 min(190px, 100%);
+    min-width: 0;
+    order: 2;
+  }
+
+  :global(#app.container-narrow) .nav-select {
+    width: 100%;
+    min-height: 32px;
+    font-size: var(--font-size-md);
+  }
+
+  :global(#app.container-narrow) .header-right {
+    flex: 0 0 auto;
+    order: 3;
+    gap: 6px;
+  }
+
+  :global(#app.container-narrow) .action-btn {
+    min-height: 32px;
+    padding-inline: 10px;
   }
 </style>

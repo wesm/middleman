@@ -8,6 +8,7 @@ const approvedIconNames = [
   "ChevronDownIcon",
   "ExternalLinkIcon",
   "MergeConflictIcon",
+  "MonitorIcon",
   "MoonIcon",
   "RefreshIcon",
   "SearchIcon",

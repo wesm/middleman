@@ -64,6 +64,10 @@ export function buildFocusPullRequestRoute(ref: PullRequestRouteRef): string {
   return `/focus${buildProviderPullRequestRoute(providerRouteRef(ref))}`;
 }
 
+export function buildFocusPullRequestFilesRoute(ref: PullRequestRouteRef): string {
+  return `/focus${buildProviderPullRequestFilesRoute(providerRouteRef(ref))}`;
+}
+
 export function buildFocusIssueRoute(ref: IssueRouteRef): string {
   return `/focus${buildProviderIssueRoute(providerRouteRef(ref))}`;
 }

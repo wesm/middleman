@@ -69,7 +69,7 @@
     align-items: center;
     gap: 8px;
     padding: 4px 12px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     border-bottom: 1px solid var(--border-muted);
     background: var(--bg-surface);
@@ -126,7 +126,7 @@
     border-radius: var(--radius-sm);
     background: var(--bg-surface);
     color: var(--text-secondary);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     cursor: pointer;
   }
 

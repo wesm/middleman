@@ -169,7 +169,7 @@
 
   .home-title {
     margin: 0;
-    font-size: 15px;
+    font-size: var(--font-size-lg);
     line-height: 1.3;
     font-weight: 600;
     color: var(--text-primary);
@@ -180,7 +180,7 @@
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
   }
 
   .meta-chip {
@@ -200,7 +200,7 @@
 
   .meta-chip.mono {
     font-family: var(--font-mono);
-    font-size: 10.5px;
+    font-size: var(--font-size-xs);
     background: var(--bg-inset);
     color: var(--text-secondary);
   }
@@ -214,7 +214,7 @@
   .meta-chip-num {
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 10.5px;
+    font-size: var(--font-size-xs);
     font-weight: 500;
   }
 
@@ -237,7 +237,7 @@
   }
 
   .section-title {
-    font-size: 10.5px;
+    font-size: var(--font-size-xs);
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.08em;
@@ -253,7 +253,7 @@
     border-radius: 3px;
     background: var(--bg-inset);
     color: var(--text-muted);
-    font-size: 9.5px;
+    font-size: var(--font-size-2xs);
     font-weight: 600;
     font-family: var(--font-mono);
   }
@@ -280,7 +280,7 @@
     background: var(--bg-surface);
     color: var(--text-primary);
     font: inherit;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     text-align: left;
     cursor: pointer;
     transition: border-color 80ms ease, background-color 80ms ease,
@@ -324,7 +324,7 @@
 
   .card-source {
     color: var(--text-muted);
-    font-size: 10.5px;
+    font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     letter-spacing: 0;
   }
@@ -333,7 +333,7 @@
     grid-column: 1 / -1;
     margin-top: -2px;
     color: var(--accent-amber);
-    font-size: 10.5px;
+    font-size: var(--font-size-xs);
     font-family: var(--font-mono);
   }
 
@@ -353,7 +353,7 @@
     background: var(--bg-surface);
     color: var(--text-secondary);
     font: inherit;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     text-align: left;
     cursor: pointer;
     transition: background-color 80ms ease, color 80ms ease;
@@ -411,7 +411,7 @@
 
   .session-status {
     color: var(--text-muted);
-    font-size: 10.5px;
+    font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     letter-spacing: 0;
   }

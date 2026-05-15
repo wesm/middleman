@@ -6,6 +6,7 @@
   import { WebglAddon } from "@xterm/addon-webgl";
   import "@xterm/xterm/css/xterm.css";
   import { workspaceTmuxWebSocketPath } from "../../api/workspace-runtime.js";
+  import { buildTerminalFontFamily } from "./terminalFontFamily.js";
   import { createTmuxMouseDragFilter } from "./tmuxMouseDragFilter.js";
 
   interface TerminalPaneProps {
@@ -61,7 +62,7 @@
     const configured = settingsStore
       .getTerminalFontFamily()
       .trim();
-    return configured || defaultTerminalFontFamily();
+    return buildTerminalFontFamily(configured, defaultTerminalFontFamily());
   });
 
   function defaultWebsocketPath(): string {

@@ -127,7 +127,7 @@
     gap: 3px;
   }
   .budget-label {
-    font-size: 9px;
+    font-size: 0.9em;
     font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.3px;
@@ -148,6 +148,6 @@
   }
   .budget-count {
     color: var(--budget-blue);
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
   }
 </style>

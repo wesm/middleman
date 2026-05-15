@@ -271,7 +271,7 @@
   }
 
   .job-id {
-    font-size: 13px;
+    font-size: var(--font-size-md);
     font-weight: 600;
     color: var(--text-primary);
     white-space: nowrap;
@@ -281,7 +281,7 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 
   .repo-name {
@@ -295,18 +295,18 @@
 
   .git-ref {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 
   .header-agent {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     white-space: nowrap;
   }
 
   .review-type {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     padding: 1px 6px;
     border: 1px solid var(--border-muted);
@@ -347,7 +347,7 @@
     border-bottom: 2px solid transparent;
     background: transparent;
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 500;
     cursor: pointer;
     margin-bottom: -1px;
@@ -396,7 +396,7 @@
     border-radius: var(--radius-sm);
     background: var(--bg-surface);
     color: var(--text-primary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     cursor: pointer;
     white-space: nowrap;
   }
@@ -419,7 +419,7 @@
   }
 
   .token-usage {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     color: var(--text-muted);
     white-space: nowrap;
