@@ -102,6 +102,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   // different issue is unaffected, and navigating away doesn't
   // strand the flag on the wrong target.
   type UnsavedIssueTarget = {
+    provider: string;
+    platformHost: string | undefined;
     owner: string;
     name: string;
     number: number;
@@ -247,11 +249,16 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   // Apply a fresh IssueDetail from the server. When the user has an
   // unsynced local body edit on the same issue, keep that body so a
-  // polling refresh can't revert a pending optimistic toggle.
+  // polling refresh can't revert a pending optimistic toggle. Match on
+  // provider + platformHost too so an unrelated repo with the same
+  // owner/name/number (different host or provider) doesn't inherit
+  // another repo's pending body.
   function withPreservedLocalBody(next: IssueDetail): IssueDetail {
     if (!unsavedLocalBody) return next;
     if (!issueDetail) return next;
     if (
+      unsavedLocalBody.provider !== next.repo?.provider ||
+      unsavedLocalBody.platformHost !== next.repo?.platform_host ||
       unsavedLocalBody.owner !== next.repo_owner ||
       unsavedLocalBody.name !== next.repo_name ||
       unsavedLocalBody.number !== next.issue?.Number
@@ -666,6 +673,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   // background refresh can't revert it before the debounced PATCH
   // lands.
   function setLocalIssueBody(
+    provider: string,
+    platformHost: string | undefined,
     owner: string,
     name: string,
     number: number,
@@ -679,7 +688,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     ) {
       return;
     }
-    unsavedLocalBody = { owner, name, number };
+    unsavedLocalBody = { provider, platformHost, owner, name, number };
     issueDetail = {
       ...issueDetail,
       issue: { ...issueDetail.issue, Body: body },
@@ -702,12 +711,20 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   const inflightIssueSaves = new Map<string, Promise<void>>();
   const queuedIssueSaves = new Map<string, QueuedIssueSave>();
   function issueSaveQueueKey(
-    owner: string, name: string, number: number,
+    provider: string,
+    platformHost: string | undefined,
+    owner: string,
+    name: string,
+    number: number,
   ): string {
     // JSON encoding stores each field as its own array element, so
     // an owner or name that contains a delimiter character can't
-    // forge a collision with a different (owner, name, number).
-    return JSON.stringify([owner, name, number]);
+    // forge a collision with a different target. provider and
+    // platformHost are part of the key so the same owner/name/number
+    // on different hosts or providers can't share a queue slot.
+    return JSON.stringify([
+      provider, platformHost ?? "", owner, name, number,
+    ]);
   }
 
   async function runIssueBodyPatch(
@@ -767,6 +784,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     if (
       succeeded &&
       unsavedLocalBody &&
+      unsavedLocalBody.provider === routeRef.provider &&
+      unsavedLocalBody.platformHost === routeRef.platformHost &&
       unsavedLocalBody.owner === owner &&
       unsavedLocalBody.name === name &&
       unsavedLocalBody.number === number
@@ -804,7 +823,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       repoPath: string;
     },
   ): Promise<void> {
-    const key = issueSaveQueueKey(owner, name, number);
+    const key = issueSaveQueueKey(
+      routeRef.provider, routeRef.platformHost, owner, name, number,
+    );
     queuedIssueSaves.set(key, { body, routeRef });
     const existing = inflightIssueSaves.get(key);
     if (existing) return existing;

@@ -97,6 +97,8 @@ export function createDetailStore(
   // THIS specific PR — a poll on a different PR is unaffected, and
   // navigating away doesn't strand the flag on the wrong target.
   type UnsavedTarget = {
+    provider: string;
+    platformHost: string | undefined;
     owner: string;
     name: string;
     number: number;
@@ -189,11 +191,16 @@ export function createDetailStore(
 
   // Apply a fresh PullDetail from the server. When the user has an
   // unsynced local body edit on the same PR, keep that body so a
-  // polling refresh can't revert a pending optimistic toggle.
+  // polling refresh can't revert a pending optimistic toggle. Match on
+  // provider + platformHost too so an unrelated repo with the same
+  // owner/name/number (different host or provider) doesn't inherit
+  // another repo's pending body.
   function withPreservedLocalBody(next: PullDetail): PullDetail {
     if (!unsavedLocalBody) return next;
     if (!detail) return next;
     if (
+      unsavedLocalBody.provider !== next.repo?.provider ||
+      unsavedLocalBody.platformHost !== next.repo?.platform_host ||
       unsavedLocalBody.owner !== next.repo_owner ||
       unsavedLocalBody.name !== next.repo_name ||
       unsavedLocalBody.number !== next.merge_request?.Number
@@ -665,6 +672,8 @@ export function createDetailStore(
         detail = data as PullDetail;
         if (
           unsavedLocalBody &&
+          unsavedLocalBody.provider === ref.provider &&
+          unsavedLocalBody.platformHost === ref.platformHost &&
           unsavedLocalBody.owner === owner &&
           unsavedLocalBody.name === name &&
           unsavedLocalBody.number === number
@@ -703,13 +712,15 @@ export function createDetailStore(
   // the body as unsaved so a background refresh can't revert it
   // before the debounced PATCH lands.
   function setLocalPRBody(
+    provider: string,
+    platformHost: string | undefined,
     owner: string,
     name: string,
     number: number,
     body: string,
   ): void {
     if (!detail || !isDetailShowing(owner, name, number)) return;
-    unsavedLocalBody = { owner, name, number };
+    unsavedLocalBody = { provider, platformHost, owner, name, number };
     detail = {
       ...detail,
       merge_request: { ...detail.merge_request, Body: body },
@@ -734,12 +745,20 @@ export function createDetailStore(
   const inflightSaves = new Map<string, Promise<void>>();
   const queuedSaves = new Map<string, QueuedSave>();
   function saveQueueKey(
-    owner: string, name: string, number: number,
+    provider: string,
+    platformHost: string | undefined,
+    owner: string,
+    name: string,
+    number: number,
   ): string {
     // JSON encoding stores each field as its own array element, so
     // an owner or name that contains a delimiter character can't
-    // forge a collision with a different (owner, name, number).
-    return JSON.stringify([owner, name, number]);
+    // forge a collision with a different target. provider and
+    // platformHost are part of the key so the same owner/name/number
+    // on different hosts or providers can't share a queue slot.
+    return JSON.stringify([
+      provider, platformHost ?? "", owner, name, number,
+    ]);
   }
 
   async function runPRBodyPatch(
@@ -796,6 +815,8 @@ export function createDetailStore(
     if (
       succeeded &&
       unsavedLocalBody &&
+      unsavedLocalBody.provider === routeRef.provider &&
+      unsavedLocalBody.platformHost === routeRef.platformHost &&
       unsavedLocalBody.owner === owner &&
       unsavedLocalBody.name === name &&
       unsavedLocalBody.number === number
@@ -831,7 +852,9 @@ export function createDetailStore(
       repoPath: string;
     },
   ): Promise<void> {
-    const key = saveQueueKey(owner, name, number);
+    const key = saveQueueKey(
+      routeRef.provider, routeRef.platformHost, owner, name, number,
+    );
     queuedSaves.set(key, { body, routeRef });
     const existing = inflightSaves.get(key);
     if (existing) return existing;

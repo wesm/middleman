@@ -653,7 +653,9 @@
     // optimistic store update rather than the browser's default toggle
     // (which would race with our re-render).
     event.preventDefault();
-    detailStore.setLocalPRBody(owner, name, number, newBody);
+    detailStore.setLocalPRBody(
+      provider, platformHost, owner, name, number, newBody,
+    );
     scheduleBodySave(newBody);
   }
 
@@ -779,7 +781,9 @@
     if (target === from) return;
     const newBody = moveTaskListItem(mr.Body, from, target);
     if (newBody === mr.Body) return;
-    detailStore.setLocalPRBody(owner, name, number, newBody);
+    detailStore.setLocalPRBody(
+      provider, platformHost, owner, name, number, newBody,
+    );
     scheduleBodySave(newBody);
   }
 

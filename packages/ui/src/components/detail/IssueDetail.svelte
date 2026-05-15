@@ -466,7 +466,9 @@
     const newBody = toggleTaskListItem(detail.issue.Body, index);
     if (newBody === detail.issue.Body) return;
     event.preventDefault();
-    issues.setLocalIssueBody(owner, name, number, newBody);
+    issues.setLocalIssueBody(
+      provider, platformHost, owner, name, number, newBody,
+    );
     scheduleBodySave(newBody);
   }
 
@@ -562,7 +564,9 @@
     if (target === from) return;
     const newBody = moveTaskListItem(detail.issue.Body, from, target);
     if (newBody === detail.issue.Body) return;
-    issues.setLocalIssueBody(owner, name, number, newBody);
+    issues.setLocalIssueBody(
+      provider, platformHost, owner, name, number, newBody,
+    );
     scheduleBodySave(newBody);
   }
 
