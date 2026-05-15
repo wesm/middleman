@@ -8926,6 +8926,7 @@ func TestAPIGitealikeMergeConflictReturnsConflict(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()
 	base := time.Date(2026, 5, 3, 12, 0, 0, 0, time.UTC)
+	unmergeable := false
 	transport := &apiTestGitealikeTransport{
 		mergeErr: &gitealike.HTTPError{StatusCode: http.StatusConflict, Message: "pull request is out of date"},
 		repo: gitealike.RepositoryDTO{
@@ -8948,7 +8949,7 @@ func TestAPIGitealikeMergeConflictReturnsConflict(t *testing.T) {
 			State:     "open",
 			Head:      gitealike.BranchDTO{Ref: "feature", SHA: "abc123"},
 			Base:      gitealike.BranchDTO{Ref: "main", SHA: "def456"},
-			Mergeable: false,
+			Mergeable: &unmergeable,
 			Created:   base,
 			Updated:   base,
 		}},

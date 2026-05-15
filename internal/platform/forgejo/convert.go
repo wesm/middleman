@@ -48,7 +48,7 @@ func convertPullRequest(pr *forgejosdk.PullRequest) gitealike.PullRequestDTO {
 		Base:      convertBranch(pr.Base),
 		Labels:    convertLabels(pr.Labels),
 		Comments:  pr.Comments,
-		Mergeable: pr.Mergeable,
+		Mergeable: new(pr.Mergeable),
 		Created:   timeValue(pr.Created),
 		Updated:   timeValue(pr.Updated),
 		Merged:    pr.HasMerged,

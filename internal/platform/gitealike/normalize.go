@@ -74,7 +74,7 @@ func NormalizePullRequest(repo platform.RepoRef, pr PullRequestDTO) platform.Mer
 		BaseSHA:            pr.Base.SHA,
 		HeadRepoCloneURL:   pr.Head.RepoCloneURL,
 		CommentCount:       pr.Comments,
-		MergeableState:     normalizeBoolMergeable(pr.Mergeable),
+		MergeableState:     normalizeMergeable(pr.Mergeable),
 		CreatedAt:          pr.Created.UTC(),
 		UpdatedAt:          pr.Updated.UTC(),
 		LastActivityAt:     pr.Updated.UTC(),
@@ -84,8 +84,11 @@ func NormalizePullRequest(repo platform.RepoRef, pr PullRequestDTO) platform.Mer
 	}
 }
 
-func normalizeBoolMergeable(mergeable bool) string {
-	if mergeable {
+func normalizeMergeable(mergeable *bool) string {
+	if mergeable == nil {
+		return ""
+	}
+	if *mergeable {
 		return "clean"
 	}
 	return "dirty"

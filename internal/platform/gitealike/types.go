@@ -100,7 +100,7 @@ type PullRequestDTO struct {
 	Base      BranchDTO
 	Labels    []LabelDTO
 	Comments  int
-	Mergeable bool
+	Mergeable *bool
 	Created   time.Time
 	Updated   time.Time
 	Merged    bool

@@ -52,6 +52,8 @@ func TestNormalizeMergeRequestIssueEventsAndArtifacts(t *testing.T) {
 	assert := Assert.New(t)
 	base := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	closed := base.Add(2 * time.Hour)
+	mergeable := true
+	unmergeable := false
 	repo := platform.RepoRef{
 		Platform: platform.KindGitea,
 		Host:     "gitea.com",
@@ -73,7 +75,7 @@ func TestNormalizeMergeRequestIssueEventsAndArtifacts(t *testing.T) {
 		Labels:    []LabelDTO{{ID: 1, Name: "kind/feature", Color: "00ff00", Description: "feature", IsDefault: true}},
 		Created:   base,
 		Updated:   base.Add(time.Hour),
-		Mergeable: true,
+		Mergeable: &mergeable,
 		Merged:    true,
 		MergedAt:  &closed,
 		Closed:    &closed,
@@ -119,11 +121,23 @@ func TestNormalizeMergeRequestIssueEventsAndArtifacts(t *testing.T) {
 		Title:     "Conflicted tea",
 		User:      UserDTO{UserName: "alice"},
 		State:     "open",
-		Mergeable: false,
+		Mergeable: &unmergeable,
 		Created:   base,
 		Updated:   base,
 	})
 	assert.Equal("dirty", conflictedPR.MergeableState)
+
+	unknownMergeablePR := NormalizePullRequest(repo, PullRequestDTO{
+		ID:      104,
+		Index:   11,
+		Title:   "Unchecked tea",
+		User:    UserDTO{UserName: "alice"},
+		State:   "open",
+		Created: base,
+		Updated: base,
+	})
+	assert.Empty(unknownMergeablePR.MergeableState)
+
 	assert.Equal("main", pr.BaseBranch)
 	assert.Equal("def456", pr.BaseSHA)
 	assert.Equal("https://example/head.git", pr.HeadRepoCloneURL)
