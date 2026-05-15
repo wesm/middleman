@@ -150,6 +150,19 @@ func labelPlatformIDTx(ctx context.Context, tx *sql.Tx, labelID int64) (sql.Null
 
 func mergeLabelRowAssociationsTx(ctx context.Context, tx *sql.Tx, fromLabelID, toLabelID int64) error {
 	if _, err := tx.ExecContext(ctx, `
+		UPDATE middleman_labels
+		SET catalog_present = CASE
+		        WHEN catalog_present = 1 OR (SELECT catalog_present FROM middleman_labels WHERE id = ?) = 1
+		        THEN 1
+		        ELSE catalog_present
+		    END,
+		    catalog_seen_at = COALESCE(catalog_seen_at, (SELECT catalog_seen_at FROM middleman_labels WHERE id = ?))
+		WHERE id = ?`,
+		fromLabelID, fromLabelID, toLabelID,
+	); err != nil {
+		return fmt.Errorf("merge label catalog metadata: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO middleman_issue_labels (issue_id, label_id)
 		SELECT issue_id, ? FROM middleman_issue_labels WHERE label_id = ?
 		ON CONFLICT(issue_id, label_id) DO NOTHING`,
@@ -1074,9 +1087,16 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			              WHEN default_branch = ''
 			              THEN (SELECT default_branch FROM middleman_repos WHERE id = ?)
 			              ELSE default_branch
+			          END,
+			          label_catalog_synced_at = COALESCE(label_catalog_synced_at, (SELECT label_catalog_synced_at FROM middleman_repos WHERE id = ?)),
+			          label_catalog_checked_at = COALESCE(label_catalog_checked_at, (SELECT label_catalog_checked_at FROM middleman_repos WHERE id = ?)),
+			          label_catalog_sync_error = CASE
+			              WHEN label_catalog_sync_error = ''
+			              THEN (SELECT label_catalog_sync_error FROM middleman_repos WHERE id = ?)
+			              ELSE label_catalog_sync_error
 			          END
 			      WHERE id = ?`,
-			args: []any{fromRepoID, fromRepoID, fromRepoID, toRepoID},
+			args: []any{fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, toRepoID},
 		},
 		{
 			name: "move merge requests",
@@ -1139,6 +1159,62 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			              )
 			        )`,
 			args: []any{toRepoID, fromRepoID, toRepoID},
+		},
+		{
+			name: "copy duplicate label catalog metadata",
+			sql: `UPDATE middleman_labels AS target
+			      SET catalog_present = CASE
+			              WHEN catalog_present = 1 OR EXISTS (
+			                  SELECT 1
+			                  FROM middleman_labels AS source
+			                  WHERE source.repo_id = ?
+			                    AND source.catalog_present = 1
+			                    AND (
+			                        source.name = target.name
+			                        OR (
+			                            source.platform_id IS NOT NULL
+			                            AND target.platform_id IS NOT NULL
+			                            AND source.platform_id = target.platform_id
+			                        )
+			                    )
+			              )
+			              THEN 1
+			              ELSE catalog_present
+			          END,
+			          catalog_seen_at = COALESCE(
+			              catalog_seen_at,
+			              (
+			                  SELECT source.catalog_seen_at
+			                  FROM middleman_labels AS source
+			                  WHERE source.repo_id = ?
+			                    AND source.catalog_seen_at IS NOT NULL
+			                    AND (
+			                        source.name = target.name
+			                        OR (
+			                            source.platform_id IS NOT NULL
+			                            AND target.platform_id IS NOT NULL
+			                            AND source.platform_id = target.platform_id
+			                        )
+			                    )
+			                  ORDER BY source.catalog_seen_at DESC
+			                  LIMIT 1
+			              )
+			          )
+			      WHERE target.repo_id = ?
+			        AND EXISTS (
+			            SELECT 1
+			            FROM middleman_labels AS source
+			            WHERE source.repo_id = ?
+			              AND (
+			                  source.name = target.name
+			                  OR (
+			                      source.platform_id IS NOT NULL
+			                      AND target.platform_id IS NOT NULL
+			                      AND source.platform_id = target.platform_id
+			                  )
+			              )
+			        )`,
+			args: []any{fromRepoID, fromRepoID, toRepoID, fromRepoID},
 		},
 		{
 			name: "copy issue label associations to duplicate labels",

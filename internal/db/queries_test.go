@@ -1277,6 +1277,98 @@ func TestReplaceRepoLabelCatalogKeepsAssignedHistoricalLabels(t *testing.T) {
 	assert.Equal("old", issue.Labels[0].Name)
 }
 
+func TestLabelMergePreservesCatalogMembership(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	now := baseTime()
+	issueID := insertTestIssueWithOptions(t, d, testIssue(repoID, 7, withIssueTitle("issue")))
+
+	require.NoError(d.ReplaceIssueLabels(ctx, repoID, issueID, []Label{{
+		PlatformID: 7,
+		Name:       "provider-label",
+		Color:      "cccccc",
+		UpdatedAt:  now,
+	}}))
+	require.NoError(d.ReplaceRepoLabelCatalog(ctx, repoID, []Label{{
+		Name:      "bug",
+		Color:     "d73a4a",
+		UpdatedAt: now,
+	}}, now))
+
+	require.NoError(d.UpsertLabels(ctx, repoID, []Label{{
+		PlatformID: 7,
+		Name:       "bug",
+		Color:      "d73a4a",
+		UpdatedAt:  now.Add(time.Minute),
+	}}))
+
+	catalog, _, err := d.ListRepoLabelCatalog(ctx, repoID)
+	require.NoError(err)
+	require.Len(catalog, 1)
+	assert.Equal("bug", catalog[0].Name)
+	assert.True(catalog[0].CatalogPresent)
+	require.NotNil(catalog[0].CatalogSeenAt)
+	assert.Equal(now, *catalog[0].CatalogSeenAt)
+}
+
+func TestRepoMergePreservesLabelCatalogFreshnessAndMembership(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	syncedAt := baseTime()
+
+	sourceID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.com",
+		PlatformRepoID: "gid://gitlab/Project/42",
+		Owner:          "old-group",
+		Name:           "old-name",
+	})
+	require.NoError(err)
+	require.NoError(d.ReplaceRepoLabelCatalog(ctx, sourceID, []Label{{
+		PlatformID: 300,
+		Name:       "bug",
+		Color:      "d73a4a",
+		UpdatedAt:  syncedAt,
+	}}, syncedAt))
+
+	destinationID, err := d.UpsertRepo(ctx, RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.com",
+		Owner:        "new-group",
+		Name:         "new-name",
+	})
+	require.NoError(err)
+	require.NoError(d.UpsertLabels(ctx, destinationID, []Label{{
+		PlatformID: 300,
+		Name:       "bug",
+		Color:      "b60205",
+		UpdatedAt:  syncedAt.Add(time.Minute),
+	}}))
+
+	gotID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.com",
+		PlatformRepoID: "gid://gitlab/Project/42",
+		Owner:          "new-group",
+		Name:           "new-name",
+	})
+	require.NoError(err)
+	assert.Equal(destinationID, gotID)
+
+	catalog, freshness, err := d.ListRepoLabelCatalog(ctx, destinationID)
+	require.NoError(err)
+	require.Len(catalog, 1)
+	assert.Equal("bug", catalog[0].Name)
+	assert.True(catalog[0].CatalogPresent)
+	require.NotNil(freshness.SyncedAt)
+	assert.Equal(syncedAt, *freshness.SyncedAt)
+}
+
 func TestRepoLabelCatalogFreshnessTracksCheckedSyncedAndErrors(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
