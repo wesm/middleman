@@ -415,11 +415,26 @@ func upsertLabelsTx(ctx context.Context, tx *sql.Tx, repoID int64, labels []Labe
 				UPDATE middleman_labels
 				SET platform_id = COALESCE(NULLIF(?, 0), platform_id),
 				    platform_external_id = COALESCE(NULLIF(?, ''), platform_external_id),
-				    name = CASE WHEN ? >= updated_at THEN ? ELSE name END,
-				    description = CASE WHEN ? >= updated_at THEN ? ELSE description END,
-				    color = CASE WHEN ? >= updated_at THEN ? ELSE color END,
-				    is_default = CASE WHEN ? >= updated_at THEN ? ELSE is_default END,
-				    updated_at = CASE WHEN ? >= updated_at THEN ? ELSE updated_at END,
+				    name = CASE
+				        WHEN (? IS NOT NULL AND (catalog_seen_at IS NULL OR ? >= catalog_seen_at)) OR (catalog_present = 0 AND ? >= updated_at) THEN ?
+				        ELSE name
+				    END,
+				    description = CASE
+				        WHEN (? IS NOT NULL AND (catalog_seen_at IS NULL OR ? >= catalog_seen_at)) OR (catalog_present = 0 AND ? >= updated_at) THEN ?
+				        ELSE description
+				    END,
+				    color = CASE
+				        WHEN (? IS NOT NULL AND (catalog_seen_at IS NULL OR ? >= catalog_seen_at)) OR (catalog_present = 0 AND ? >= updated_at) THEN ?
+				        ELSE color
+				    END,
+				    is_default = CASE
+				        WHEN (? IS NOT NULL AND (catalog_seen_at IS NULL OR ? >= catalog_seen_at)) OR (catalog_present = 0 AND ? >= updated_at) THEN ?
+				        ELSE is_default
+				    END,
+				    updated_at = CASE
+				        WHEN (? IS NOT NULL AND (catalog_seen_at IS NULL OR ? >= catalog_seen_at)) OR (catalog_present = 0 AND ? >= updated_at) THEN ?
+				        ELSE updated_at
+				    END,
 				    catalog_present = CASE WHEN ? THEN 1 ELSE catalog_present END,
 				    catalog_seen_at = CASE
 				        WHEN ? IS NULL THEN catalog_seen_at
@@ -428,10 +443,12 @@ func upsertLabelsTx(ctx context.Context, tx *sql.Tx, repoID int64, labels []Labe
 				    END
 				WHERE id = ?`,
 				label.PlatformID, label.PlatformExternalID,
-				label.UpdatedAt, label.Name, label.UpdatedAt, label.Description,
-				label.UpdatedAt, label.Color, label.UpdatedAt, label.IsDefault,
-				label.UpdatedAt, label.UpdatedAt, label.CatalogPresent,
-				catalogSeenAt, catalogSeenAt, catalogSeenAt, id,
+				catalogSeenAt, catalogSeenAt, label.UpdatedAt, label.Name,
+				catalogSeenAt, catalogSeenAt, label.UpdatedAt, label.Description,
+				catalogSeenAt, catalogSeenAt, label.UpdatedAt, label.Color,
+				catalogSeenAt, catalogSeenAt, label.UpdatedAt, label.IsDefault,
+				catalogSeenAt, catalogSeenAt, label.UpdatedAt, label.UpdatedAt,
+				label.CatalogPresent, catalogSeenAt, catalogSeenAt, catalogSeenAt, id,
 			)
 			if err != nil {
 				return nil, fmt.Errorf("update label %s: %w", label.Name, err)
@@ -1146,6 +1163,51 @@ func mergeWorkspaceRowsForIdentityChangeTx(
 	return nil
 }
 
+func mergeRepoLabelNameConflictsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64) error {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT conflict.id, target.id
+		FROM middleman_labels AS source
+		JOIN middleman_labels AS target
+		  ON target.repo_id = ?
+		 AND source.platform_id IS NOT NULL
+		 AND target.platform_id IS NOT NULL
+		 AND source.platform_id = target.platform_id
+		JOIN middleman_labels AS conflict
+		  ON conflict.repo_id = ?
+		 AND conflict.name = source.name
+		 AND conflict.id <> target.id
+		WHERE source.repo_id = ?
+		  AND source.catalog_present = 1`,
+		toRepoID, toRepoID, fromRepoID,
+	)
+	if err != nil {
+		return fmt.Errorf("list label name conflicts: %w", err)
+	}
+	defer rows.Close()
+
+	type mergePair struct {
+		fromID int64
+		toID   int64
+	}
+	pairs := []mergePair{}
+	for rows.Next() {
+		var pair mergePair
+		if err := rows.Scan(&pair.fromID, &pair.toID); err != nil {
+			return fmt.Errorf("scan label name conflict: %w", err)
+		}
+		pairs = append(pairs, pair)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate label name conflicts: %w", err)
+	}
+	for _, pair := range pairs {
+		if err := mergeLabelRowAssociationsTx(ctx, tx, pair.fromID, pair.toID); err != nil {
+			return fmt.Errorf("merge destination label name conflict: %w", err)
+		}
+	}
+	return nil
+}
+
 func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64) error {
 	if fromRepoID == toRepoID {
 		return nil
@@ -1573,6 +1635,11 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 	}
 
 	for _, step := range steps {
+		if step.name == "copy duplicate label catalog metadata" {
+			if err := mergeRepoLabelNameConflictsTx(ctx, tx, fromRepoID, toRepoID); err != nil {
+				return err
+			}
+		}
 		if _, err := tx.ExecContext(ctx, step.sql, step.args...); err != nil {
 			return fmt.Errorf("%s: %w", step.name, err)
 		}
