@@ -1514,6 +1514,49 @@ func TestSyncPreservesMergeableState(t *testing.T) {
 	assert.Equal("dirty", stored2.MergeableState, "MergeableState should be preserved when full fetch is skipped")
 }
 
+func TestIndexUpsertMergeRequestUpdatesKnownMergeableState(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
+	require.NoError(err)
+
+	baseMR := platform.MergeRequest{
+		PlatformID:     1001,
+		Number:         1,
+		URL:            "https://github.com/owner/repo/pull/1",
+		Title:          "Conflicted PR",
+		State:          "open",
+		HeadBranch:     "feature",
+		BaseBranch:     "main",
+		HeadSHA:        "abc123",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	}
+	_, err = d.UpsertMergeRequest(ctx, platform.DBMergeRequest(repoID, baseMR))
+	require.NoError(err)
+
+	syncer := NewSyncer(nil, d, nil, nil, time.Minute, nil, testBudget(500))
+	incoming := baseMR
+	incoming.MergeableState = "dirty"
+	err = syncer.indexUpsertMergeRequest(
+		ctx,
+		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
+		repoID,
+		incoming,
+	)
+	require.NoError(err)
+
+	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("dirty", stored.MergeableState)
+}
+
 func TestSyncTriggersFullFetchForUnknownMergeableState(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
