@@ -3291,20 +3291,23 @@ func (d *DB) InsertWorkspace(
 	if err != nil {
 		return err
 	}
+	if ws.TerminalBackend == "" {
+		ws.TerminalBackend = "tmux"
+	}
 	_, err = d.rw.ExecContext(ctx, `
 		INSERT INTO middleman_workspaces
 		    (id, platform, platform_host, repo_owner, repo_name,
 		     repo_owner_key, repo_name_key, repo_path_key,
 		     item_type, item_number, associated_pr_number,
 		     git_head_ref, mr_head_repo, workspace_branch,
-		     worktree_path, tmux_session, status,
+		     worktree_path, tmux_session, terminal_backend, status,
 		     error_message)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		ws.ID, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 		repoOwnerKey, repoNameKey, repoPathKey,
 		ws.ItemType, ws.ItemNumber, ws.AssociatedPRNumber,
 		ws.GitHeadRef, ws.MRHeadRepo, ws.WorkspaceBranch,
-		ws.WorktreePath, ws.TmuxSession, ws.Status,
+		ws.WorktreePath, ws.TmuxSession, ws.TerminalBackend, ws.Status,
 		ws.ErrorMessage,
 	)
 	if err != nil {
@@ -3322,14 +3325,14 @@ func (d *DB) GetWorkspace(
 		SELECT id, platform, platform_host, repo_owner, repo_name,
 		       item_type, item_number, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
-		       worktree_path, tmux_session, status,
+		       worktree_path, tmux_session, terminal_backend, status,
 		       error_message, created_at
 		FROM middleman_workspaces WHERE id = ?`, id,
 	).Scan(
 		&ws.ID, &ws.Platform, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
 		&ws.ItemType, &ws.ItemNumber, &ws.AssociatedPRNumber,
 		&ws.GitHeadRef, &ws.MRHeadRepo, &ws.WorkspaceBranch,
-		&ws.WorktreePath, &ws.TmuxSession, &ws.Status,
+		&ws.WorktreePath, &ws.TmuxSession, &ws.TerminalBackend, &ws.Status,
 		&ws.ErrorMessage, &ws.CreatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -3355,7 +3358,7 @@ func (d *DB) GetWorkspaceByMR(
 		SELECT id, platform, platform_host, repo_owner, repo_name,
 		       item_type, item_number, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
-		       worktree_path, tmux_session, status,
+		       worktree_path, tmux_session, terminal_backend, status,
 		       error_message, created_at
 		FROM middleman_workspaces
 		WHERE platform_host = ? AND repo_owner_key = ?
@@ -3365,7 +3368,7 @@ func (d *DB) GetWorkspaceByMR(
 		&ws.ID, &ws.Platform, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
 		&ws.ItemType, &ws.ItemNumber, &ws.AssociatedPRNumber,
 		&ws.GitHeadRef, &ws.MRHeadRepo, &ws.WorkspaceBranch,
-		&ws.WorktreePath, &ws.TmuxSession, &ws.Status,
+		&ws.WorktreePath, &ws.TmuxSession, &ws.TerminalBackend, &ws.Status,
 		&ws.ErrorMessage, &ws.CreatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -3391,7 +3394,7 @@ func (d *DB) GetWorkspaceByIssue(
 		SELECT id, platform, platform_host, repo_owner, repo_name,
 		       item_type, item_number, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
-		       worktree_path, tmux_session, status,
+		       worktree_path, tmux_session, terminal_backend, status,
 		       error_message, created_at
 		FROM middleman_workspaces
 		WHERE platform_host = ? AND repo_owner_key = ?
@@ -3401,7 +3404,7 @@ func (d *DB) GetWorkspaceByIssue(
 		&ws.ID, &ws.Platform, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
 		&ws.ItemType, &ws.ItemNumber, &ws.AssociatedPRNumber,
 		&ws.GitHeadRef, &ws.MRHeadRepo, &ws.WorkspaceBranch,
-		&ws.WorktreePath, &ws.TmuxSession, &ws.Status,
+		&ws.WorktreePath, &ws.TmuxSession, &ws.TerminalBackend, &ws.Status,
 		&ws.ErrorMessage, &ws.CreatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -3423,7 +3426,7 @@ func (d *DB) ListWorkspaces(
 		SELECT id, platform, platform_host, repo_owner, repo_name,
 		       item_type, item_number, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
-		       worktree_path, tmux_session, status,
+		       worktree_path, tmux_session, terminal_backend, status,
 		       error_message, created_at
 		FROM middleman_workspaces
 		ORDER BY created_at DESC`,
@@ -3443,7 +3446,7 @@ func (d *DB) ListWorkspaces(
 			&ws.GitHeadRef, &ws.MRHeadRepo,
 			&ws.WorkspaceBranch,
 			&ws.WorktreePath, &ws.TmuxSession,
-			&ws.Status, &ws.ErrorMessage, &ws.CreatedAt,
+			&ws.TerminalBackend, &ws.Status, &ws.ErrorMessage, &ws.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan workspace: %w", err)
 		}
@@ -3760,7 +3763,7 @@ const workspaceSummaryColumns = `
 	w.id, w.platform, w.platform_host, w.repo_owner, w.repo_name,
 	w.item_type, w.item_number, w.associated_pr_number,
 	w.git_head_ref, w.mr_head_repo, w.workspace_branch,
-	w.worktree_path, w.tmux_session, w.status,
+	w.worktree_path, w.tmux_session, w.terminal_backend, w.status,
 	w.error_message, w.created_at,
 	CASE
 	    WHEN w.item_type = 'issue' THEN i.title
@@ -3799,7 +3802,7 @@ func scanWorkspaceSummary(
 		&s.ID, &s.Platform, &s.PlatformHost, &s.RepoOwner, &s.RepoName,
 		&s.ItemType, &s.ItemNumber, &s.AssociatedPRNumber,
 		&s.GitHeadRef, &s.MRHeadRepo, &s.WorkspaceBranch,
-		&s.WorktreePath, &s.TmuxSession, &s.Status,
+		&s.WorktreePath, &s.TmuxSession, &s.TerminalBackend, &s.Status,
 		&s.ErrorMessage, &s.CreatedAt,
 		&s.MRTitle, &s.MRState, &s.MRIsDraft, &s.MRCIStatus,
 		&s.MRReviewDecision, &s.MRAdditions, &s.MRDeletions,

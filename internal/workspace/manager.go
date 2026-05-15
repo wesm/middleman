@@ -31,13 +31,15 @@ import (
 // intentionally not a generic host worktree browser or arbitrary Git
 // automation layer.
 type Manager struct {
-	db            *db.DB
-	worktreeDir   string
-	clones        *gitclone.Manager
-	tmuxCmd       []string
-	retryMu       sync.Mutex
-	retryQueued   map[string]bool
-	runtimeTmuxMu sync.Mutex
+	db             *db.DB
+	worktreeDir    string
+	clones         *gitclone.Manager
+	tmuxCmd        []string
+	ptyOwner       PtyOwnerClient
+	preferPtyOwner bool
+	retryMu        sync.Mutex
+	retryQueued    map[string]bool
+	runtimeTmuxMu  sync.Mutex
 }
 
 // CreateIssueOptions controls how issue-backed workspaces choose their branch.
@@ -186,8 +188,9 @@ func (m *Manager) Create(
 			m.worktreeDir, platformHost, owner, name,
 			fmt.Sprintf("pr-%d", mrNumber),
 		),
-		TmuxSession: "middleman-" + id,
-		Status:      "creating",
+		TmuxSession:     "middleman-" + id,
+		TerminalBackend: m.PreferredTerminalBackend(),
+		Status:          "creating",
 	}
 
 	if err := m.db.InsertWorkspace(ctx, ws); err != nil {
@@ -300,8 +303,9 @@ func (m *Manager) CreateIssue(
 			m.worktreeDir, platformHost, owner, name,
 			fmt.Sprintf("issue-%d", issueNumber),
 		),
-		TmuxSession: "middleman-" + id,
-		Status:      "creating",
+		TmuxSession:     "middleman-" + id,
+		TerminalBackend: m.PreferredTerminalBackend(),
+		Status:          "creating",
 	}
 
 	if err := m.db.InsertWorkspace(ctx, ws); err != nil {
@@ -400,7 +404,7 @@ func (m *Manager) Setup(
 		)
 	}
 
-	err = m.newTmuxSession(ctx, ws.TmuxSession, ws.WorktreePath)
+	err = m.newTerminalSession(ctx, ws)
 	if err != nil {
 		m.rollbackWorktree(ctx, cloneDir, ws, branch)
 		return m.failSetup(
@@ -411,7 +415,7 @@ func (m *Manager) Setup(
 	m.recordSetupEvent(
 		ctx,
 		ws.ID, workspaceSetupStageTmuxSession, "success",
-		"tmux session started",
+		"terminal session started",
 	)
 
 	if err := m.updateWorkspaceStatus(
@@ -915,11 +919,29 @@ func (m *Manager) cleanupWorkspaceArtifactsForDelete(
 func (m *Manager) cleanupTmuxSession(
 	ctx context.Context, ws *Workspace,
 ) error {
+	usesPtyOwner := m.UsesPtyOwnerForWorkspace(ws)
+	if usesPtyOwner {
+		if m.ptyOwner == nil {
+			return fmt.Errorf("pty owner backend unavailable")
+		}
+		if err := m.ptyOwner.Stop(ctx, ws.TmuxSession); err != nil {
+			return fmt.Errorf(
+				"stop pty owner session %q: %w", ws.TmuxSession, err,
+			)
+		}
+	}
+
 	type cleanupTarget struct {
 		session string
 		main    bool
 	}
-	sessions := []cleanupTarget{{session: ws.TmuxSession, main: true}}
+	var sessions []cleanupTarget
+	if !usesPtyOwner {
+		sessions = append(sessions, cleanupTarget{
+			session: ws.TmuxSession,
+			main:    true,
+		})
+	}
 	stored, err := m.db.ListWorkspaceTmuxSessions(ctx, ws.ID)
 	if err != nil {
 		return err
@@ -1106,6 +1128,9 @@ func (m *Manager) PruneMissingTmuxSessions(ctx context.Context) error {
 		if ws.Status != "ready" ||
 			ws.TmuxSession == "" ||
 			live[ws.TmuxSession] {
+			continue
+		}
+		if m.usesPtyOwnerForWorkspace(&ws) {
 			continue
 		}
 		msg := fmt.Sprintf(
@@ -1405,6 +1430,26 @@ func (m *Manager) TmuxPaneTitle(
 	ctx context.Context, session string,
 ) (string, error) {
 	return m.tmuxPaneTitle(ctx, session)
+}
+
+// TerminalPaneSnapshot returns recent terminal output for the backend
+// that owns the workspace's primary terminal. Runtime sessions remain
+// tmux-backed and should use TmuxPaneSnapshot directly.
+func (m *Manager) TerminalPaneSnapshot(
+	ctx context.Context, ws *db.Workspace,
+	session string,
+) (TmuxPaneSnapshot, error) {
+	if ws != nil && session == ws.TmuxSession && m.UsesPtyOwnerForWorkspace(ws) {
+		if m.ptyOwner == nil {
+			return TmuxPaneSnapshot{}, fmt.Errorf("pty owner backend unavailable")
+		}
+		output, err := m.ptyOwner.Snapshot(ctx, session)
+		if err != nil {
+			return TmuxPaneSnapshot{}, err
+		}
+		return TmuxPaneSnapshot{Output: string(output)}, nil
+	}
+	return m.TmuxPaneSnapshot(ctx, session)
 }
 
 // TmuxPaneSnapshot returns the active pane title and recent pane

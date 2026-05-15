@@ -18,6 +18,7 @@ import (
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitclone"
 	"github.com/wesm/middleman/internal/gitenv"
+	"github.com/wesm/middleman/internal/ptyowner"
 	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
@@ -795,6 +796,91 @@ func TestManagerEnsureTmuxHasSessionPrefix(t *testing.T) {
 	)
 }
 
+func TestManagerEnsureTerminalUsesPtyOwnerWhenConfigured(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	script, record := writeRecorderScript(t)
+	owner := &fakePtyOwnerClient{}
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr.SetTmuxCommand([]string{script, "wrap"})
+	mgr.SetPtyOwnerClient(owner)
+
+	require.NoError(mgr.EnsureTerminal(t.Context(), &db.Workspace{
+		TmuxSession:     "sess-owner",
+		WorktreePath:    "/tmp/ws",
+		TerminalBackend: TerminalBackendPtyOwner,
+	}))
+
+	assert.Equal([]fakePtyOwnerCall{{
+		Op: "ensure", Session: "sess-owner", Cwd: "/tmp/ws",
+	}}, owner.Calls)
+	_, err := os.Stat(record)
+	assert.True(os.IsNotExist(err))
+}
+
+func TestManagerCleanupTerminalUsesPtyOwnerForBaseSession(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	script, record := writeRecorderScript(t)
+	owner := &fakePtyOwnerClient{}
+	d := openTestDB(t)
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMR(t, d, repoID, 42, "feature/thing")
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{script, "wrap"})
+	mgr.SetPtyOwnerClient(owner)
+
+	ws, err := mgr.Create(t.Context(), "github.com", "acme", "widget", 42)
+	require.NoError(err)
+	_, err = mgr.Delete(t.Context(), ws.ID, true, nil)
+	require.NoError(err)
+
+	assert.Equal([]fakePtyOwnerCall{{
+		Op: "stop", Session: ws.TmuxSession,
+	}}, owner.Calls)
+	_, err = os.Stat(record)
+	assert.True(os.IsNotExist(err))
+}
+
+func TestManagerCleanupPtyOwnerWorkspaceStopsStoredRuntimeTmuxSessions(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	script, record := writeRecorderScript(t)
+	owner := &fakePtyOwnerClient{}
+	d := openTestDB(t)
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMR(t, d, repoID, 42, "feature/thing")
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{script, "wrap"})
+	mgr.SetPtyOwnerClient(owner)
+
+	ws, err := mgr.Create(t.Context(), "github.com", "acme", "widget", 42)
+	require.NoError(err)
+	require.NoError(mgr.RecordRuntimeTmuxSession(
+		t.Context(), ws.ID, "middleman-runtime-session", "agent-1",
+		time.Date(2026, 4, 29, 1, 0, 0, 0, time.UTC),
+	))
+
+	_, err = mgr.Delete(t.Context(), ws.ID, true, nil)
+	require.NoError(err)
+
+	assert.Equal([]fakePtyOwnerCall{{
+		Op: "stop", Session: ws.TmuxSession,
+	}}, owner.Calls)
+	argvs := readRecorderArgv(t, record)
+	require.Len(argvs, 1)
+	assert.Equal(
+		[]string{"wrap", "kill-session", "-t", "middleman-runtime-session"},
+		argvs[0],
+	)
+	stored, err := d.ListWorkspaceTmuxSessions(t.Context(), ws.ID)
+	require.NoError(err)
+	assert.Empty(stored)
+}
+
 func TestManagerDeleteUsesTmuxPrefix(t *testing.T) {
 	assert := Assert.New(t)
 
@@ -1180,6 +1266,11 @@ func TestManagerPruneMissingTmuxSessionsRemovesStaleRecords(
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
+	mgr.SetPtyOwnerFallbackClient(&fakePtyOwnerClient{
+		StateSessions: map[string]bool{
+			"middleman-0000000000000003": true,
+		},
+	})
 	ctx := context.Background()
 
 	require.NoError(d.InsertWorkspace(ctx, &Workspace{
@@ -1206,6 +1297,24 @@ func TestManagerPruneMissingTmuxSessionsRemovesStaleRecords(
 		TmuxSession:  "middleman-0000000000000002",
 		Status:       "ready",
 	}))
+	require.NoError(d.InsertWorkspace(ctx, &Workspace{
+		ID:           "0000000000000003",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "legacy-owner",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   3,
+		GitHeadRef:   "feature/owner",
+		WorktreePath: filepath.Join(t.TempDir(), "owner"),
+		TmuxSession:  "middleman-0000000000000003",
+		Status:       "ready",
+	}))
+	_, err := d.WriteDB().ExecContext(
+		ctx,
+		`UPDATE middleman_workspaces SET terminal_backend = '' WHERE id = ?`,
+		"0000000000000003",
+	)
+	require.NoError(err)
 	require.NoError(d.UpsertWorkspaceTmuxSession(
 		ctx,
 		&db.WorkspaceTmuxSession{
@@ -1245,6 +1354,11 @@ func TestManagerPruneMissingTmuxSessionsRemovesStaleRecords(
 	require.NotNil(stale.ErrorMessage)
 	assert.Contains(*stale.ErrorMessage, "tmux session is no longer running")
 	assert.Contains(*stale.ErrorMessage, "middleman-0000000000000002")
+
+	legacyOwner, err := d.GetWorkspace(ctx, "0000000000000003")
+	require.NoError(err)
+	require.NotNil(legacyOwner)
+	assert.Equal("ready", legacyOwner.Status)
 }
 
 func TestManagerTmuxSessionsForWorkspaceReadsStoredRuntimeSessions(
@@ -2124,4 +2238,57 @@ func TestManagerEnsureTmuxIgnoresAbsencePhraseOnStdout(t *testing.T) {
 	require.Error(err)
 	require.Contains(err.Error(), "tmux has-session")
 	require.Contains(err.Error(), "real failure")
+}
+
+type fakePtyOwnerCall struct {
+	Op      string
+	Session string
+	Cwd     string
+}
+
+type fakePtyOwnerClient struct {
+	Calls         []fakePtyOwnerCall
+	StateExists   bool
+	StateSessions map[string]bool
+}
+
+func (f *fakePtyOwnerClient) HasState(session string) bool {
+	return f.StateExists || f.StateSessions[session]
+}
+
+func (f *fakePtyOwnerClient) Ensure(
+	_ context.Context,
+	session string,
+	cwd string,
+) error {
+	f.Calls = append(f.Calls, fakePtyOwnerCall{
+		Op: "ensure", Session: session, Cwd: cwd,
+	})
+	return nil
+}
+
+func (f *fakePtyOwnerClient) Attach(
+	context.Context,
+	string,
+	int,
+	int,
+) (*ptyowner.Attachment, error) {
+	return nil, nil
+}
+
+func (f *fakePtyOwnerClient) Stop(
+	_ context.Context,
+	session string,
+) error {
+	f.Calls = append(f.Calls, fakePtyOwnerCall{
+		Op: "stop", Session: session,
+	})
+	return nil
+}
+
+func (f *fakePtyOwnerClient) Snapshot(
+	context.Context,
+	string,
+) ([]byte, error) {
+	return nil, nil
 }

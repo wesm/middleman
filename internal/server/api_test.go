@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -44,6 +45,7 @@ import (
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/platform"
 	"github.com/wesm/middleman/internal/platform/gitealike"
+	"github.com/wesm/middleman/internal/ptyowner"
 	"github.com/wesm/middleman/internal/stacks"
 	"github.com/wesm/middleman/internal/testutil"
 	"github.com/wesm/middleman/internal/testutil/dbtest"
@@ -11573,25 +11575,49 @@ func setupTestServerWithWorkspacesServer(
 }
 
 type workspaceServerFixture struct {
-	server   *Server
-	client   *apiclient.Client
-	database *db.DB
-	bare     string
-	remote   string
+	server    *Server
+	client    *apiclient.Client
+	database  *db.DB
+	clones    *gitclone.Manager
+	worktrees string
+	bare      string
+	remote    string
 }
 
 func setupWorkspaceServerFixture(
 	t *testing.T,
 	cfg *config.Config,
 ) workspaceServerFixture {
+	return setupWorkspaceServerFixtureWithOptions(t, cfg, ServerOptions{})
+}
+
+func setupWorkspaceServerFixtureWithOptions(
+	t *testing.T,
+	cfg *config.Config,
+	options ServerOptions,
+) workspaceServerFixture {
 	t.Helper()
-	return setupWorkspaceServerFixtureWithHost(t, cfg, "github.com")
+	return setupWorkspaceServerFixtureWithHostAndOptions(
+		t, cfg, "github.com", options,
+	)
 }
 
 func setupWorkspaceServerFixtureWithHost(
 	t *testing.T,
 	cfg *config.Config,
 	platformHost string,
+) workspaceServerFixture {
+	t.Helper()
+	return setupWorkspaceServerFixtureWithHostAndOptions(
+		t, cfg, platformHost, ServerOptions{},
+	)
+}
+
+func setupWorkspaceServerFixtureWithHostAndOptions(
+	t *testing.T,
+	cfg *config.Config,
+	platformHost string,
+	options ServerOptions,
 ) workspaceServerFixture {
 	t.Helper()
 
@@ -11653,10 +11679,9 @@ func setupWorkspaceServerFixtureWithHost(
 	if cfg != nil && cfg.BasePath != "" {
 		basePath = cfg.BasePath
 	}
-	srv := New(database, syncer, nil, basePath, cfg, ServerOptions{
-		Clones:      clones,
-		WorktreeDir: worktreeDir,
-	})
+	options.Clones = clones
+	options.WorktreeDir = worktreeDir
+	srv := New(database, syncer, nil, basePath, cfg, options)
 	// Cleanup callbacks run LIFO. Drain the server first so async
 	// workspace setup cannot create a tmux session after fixture
 	// artifact cleanup has listed workspaces. The DB cleanup was
@@ -11672,11 +11697,13 @@ func setupWorkspaceServerFixtureWithHost(
 	}
 	client := setupTestClientWithBaseURL(t, srv, clientBaseURL)
 	return workspaceServerFixture{
-		server:   srv,
-		client:   client,
-		database: database,
-		bare:     bare,
-		remote:   remote,
+		server:    srv,
+		client:    client,
+		database:  database,
+		clones:    clones,
+		worktrees: worktreeDir,
+		bare:      bare,
+		remote:    remote,
 	}
 }
 
@@ -11963,6 +11990,256 @@ func TestWorkspaceRuntimeTargetsRefreshAfterSettingsUpdateE2E(t *testing.T) {
 	assert.True(codex.Available)
 	require.NotNil(codex.Command)
 	assert.Equal([]string{agentPath, "--full-auto"}, *codex.Command)
+}
+
+func TestWorkspaceCreatesPtyOwnerSessionWhenTmuxUnavailableE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	fixture, dir, ptyOwnerDir := setupPtyOwnerWorkspaceFixture(t)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, fixture.client)
+	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, ws.TmuxSession)
+
+	require.Equal("ready", ws.Status)
+	assert.NotEmpty(ws.TmuxSession)
+
+	stored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal(workspace.TerminalBackendPtyOwner, stored.TerminalBackend)
+
+	ts := httptest.NewServer(fixture.server)
+	t.Cleanup(ts.Close)
+	workspaceTerminalWriteRead(
+		t, ctx, ts.URL, ws.Id, "printf 'owner-one\n'\n", "owner-one",
+	)
+
+	snapshot, err := fixture.server.workspaces.TerminalPaneSnapshot(
+		ctx, stored, ws.TmuxSession,
+	)
+	require.NoError(err)
+	assert.Contains(snapshot.Output, "owner-one")
+
+	_, err = fixture.database.WriteDB().ExecContext(
+		ctx,
+		`UPDATE middleman_workspaces SET terminal_backend = '' WHERE id = ?`,
+		ws.Id,
+	)
+	require.NoError(err)
+	legacyStored, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	require.NoError(err)
+	require.NotNil(legacyStored)
+	assert.Empty(legacyStored.TerminalBackend)
+
+	ts.Close()
+	gracefulShutdown(t, fixture.server)
+
+	availableTmux := filepath.Join(dir, "available-tmux")
+	require.NoError(os.WriteFile(
+		availableTmux,
+		[]byte("#!/bin/sh\nexit 0\n"),
+		0o755,
+	))
+	restartedCfg := &config.Config{Tmux: config.Tmux{
+		Command: []string{availableTmux},
+	}}
+	restarted := New(
+		fixture.database, fixture.server.syncer, nil, "/", restartedCfg,
+		ServerOptions{
+			Clones:      fixture.clones,
+			WorktreeDir: fixture.worktrees,
+			PtyOwnerDir: ptyOwnerDir,
+		},
+	)
+	t.Cleanup(func() { gracefulShutdown(t, restarted) })
+	restartedClient := setupTestClient(t, restarted)
+	restartedTS := httptest.NewServer(restarted)
+	t.Cleanup(restartedTS.Close)
+
+	workspaceTerminalWriteRead(
+		t, ctx, restartedTS.URL, ws.Id, "printf 'owner-two\n'\n", "owner-two",
+	)
+
+	force := true
+	delResp, err := restartedClient.HTTP.DeleteWorkspaceWithResponse(
+		ctx, ws.Id, &generated.DeleteWorkspaceParams{Force: &force},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNoContent, delResp.StatusCode())
+
+	deleted, err := fixture.database.GetWorkspace(ctx, ws.Id)
+	require.NoError(err)
+	assert.Nil(deleted)
+	_, err = os.Stat(filepath.Join(ptyOwnerDir, ws.TmuxSession))
+	assert.True(os.IsNotExist(err))
+}
+
+func TestWorkspacePtyOwnerTerminalRejectsConcurrentAttachmentsE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	fixture, _, ptyOwnerDir := setupPtyOwnerWorkspaceFixture(t)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, fixture.client)
+	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, ws.TmuxSession)
+
+	ts := httptest.NewServer(fixture.server)
+	t.Cleanup(ts.Close)
+
+	first, _, err := workspaceTerminalDial(ctx, ts.URL, ws.Id)
+	require.NoError(err)
+	defer first.Close(websocket.StatusNormalClosure, "done")
+
+	second, resp, err := workspaceTerminalDial(ctx, ts.URL, ws.Id)
+	require.Error(err)
+	if second != nil {
+		second.Close(websocket.StatusNormalClosure, "done")
+	}
+	require.NotNil(resp)
+	assert.Equal(http.StatusConflict, resp.StatusCode)
+	if resp.Body != nil {
+		resp.Body.Close()
+	}
+
+	require.NoError(first.Close(websocket.StatusNormalClosure, "done"))
+	third := workspaceTerminalDialEventually(t, ctx, ts.URL, ws.Id)
+	defer third.Close(websocket.StatusNormalClosure, "done")
+	workspaceTerminalConnWriteRead(
+		t, ctx, third, "printf 'owner-after-close\n'\n", "owner-after-close",
+	)
+}
+
+func TestWorkspacePtyOwnerTerminalFlushesFinalOutputOnExitE2E(t *testing.T) {
+	require := require.New(t)
+
+	fixture, _, ptyOwnerDir := setupPtyOwnerWorkspaceFixture(t)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, fixture.client)
+	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, ws.TmuxSession)
+
+	ts := httptest.NewServer(fixture.server)
+	t.Cleanup(ts.Close)
+
+	conn, _, err := workspaceTerminalDial(ctx, ts.URL, ws.Id)
+	require.NoError(err)
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+
+	require.NoError(conn.Write(
+		ctx, websocket.MessageBinary,
+		[]byte("printf 'final-owner-output\n'; exit\n"),
+	))
+	readCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	var got strings.Builder
+	for {
+		typ, data, readErr := conn.Read(readCtx)
+		if readErr != nil {
+			break
+		}
+		if typ == websocket.MessageBinary {
+			got.WriteString(string(data))
+		}
+		if strings.Contains(got.String(), "final-owner-output") {
+			return
+		}
+	}
+	require.Contains(got.String(), "final-owner-output")
+}
+
+func setupPtyOwnerWorkspaceFixture(
+	t *testing.T,
+) (workspaceServerFixture, string, string) {
+	t.Helper()
+
+	dir := t.TempDir()
+	ptyOwnerDir := filepath.Join(dir, "pty-owner")
+	cfg := &config.Config{Tmux: config.Tmux{
+		Command: []string{filepath.Join(dir, "missing-tmux")},
+	}}
+	t.Setenv("MIDDLEMAN_SERVER_PTY_OWNER_HELPER", "1")
+	return setupWorkspaceServerFixtureWithOptions(
+		t, cfg, ptyOwnerServerOptions(ptyOwnerDir),
+	), dir, ptyOwnerDir
+}
+
+func ptyOwnerServerOptions(ptyOwnerDir string) ServerOptions {
+	return ServerOptions{
+		PtyOwnerDir:     ptyOwnerDir,
+		PtyOwnerExePath: os.Args[0],
+		PtyOwnerExeArgs: []string{
+			"-test.run=TestServerPtyOwnerHelperProcess",
+			"--",
+		},
+	}
+}
+
+func cleanupPtyOwnerWorkspace(
+	t *testing.T,
+	ptyOwnerDir string,
+	session string,
+) {
+	t.Helper()
+	t.Cleanup(func() {
+		_ = (&ptyowner.Client{Root: ptyOwnerDir}).Stop(
+			context.Background(), session,
+		)
+	})
+}
+
+func TestWorkspaceRuntimeLaunchUnavailableTargetE2E(t *testing.T) {
+	disabled := false
+	cfg := &config.Config{Agents: []config.Agent{{
+		Key:     "disabled",
+		Label:   "Disabled",
+		Enabled: &disabled,
+	}}}
+	client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	resp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id,
+		generated.LaunchWorkspaceRuntimeSessionInputBody{
+			TargetKey: "disabled",
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode())
+	require.Contains(t, string(resp.Body), "not available")
+}
+
+func TestWorkspaceRuntimeLaunchPlainShellUsesShellSessionE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, nil)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	resp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id,
+		generated.LaunchWorkspaceRuntimeSessionInputBody{
+			TargetKey: "plain_shell",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	shell := resp.JSON200
+	assert.Equal("plain_shell", shell.TargetKey)
+	assert.Equal(string(localruntime.LaunchTargetPlainShell), shell.Kind)
+	assert.Equal(string(localruntime.SessionStatusRunning), shell.Status)
+
+	getResp, err := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, ws.Id)
+	require.NoError(err)
+	require.Equal(http.StatusOK, getResp.StatusCode())
+	require.NotNil(getResp.JSON200)
+	require.NotNil(getResp.JSON200.ShellSession)
+	require.NotNil(getResp.JSON200.Sessions)
+	assert.Equal(shell.Key, getResp.JSON200.ShellSession.Key)
+	assert.Empty(*getResp.JSON200.Sessions)
 }
 
 func TestWorkspaceRuntimeLaunchSingletonAndStopE2E(t *testing.T) {
@@ -13052,6 +13329,20 @@ func TestWorkspaceDeleteDirtyKeepsRuntimeSessionsE2E(t *testing.T) {
 	// The 409 must not have killed the runtime sessions.
 	assert.Len(srv.runtime.ListSessions(ws.Id), 1)
 	assert.NotNil(srv.runtime.ShellSession(ws.Id))
+
+	stopResp, err := client.HTTP.StopWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id, launchResp.JSON200.Key,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNoContent, stopResp.StatusCode())
+
+	launchAfterRejectResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id,
+		generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "helper"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, launchAfterRejectResp.StatusCode())
+	assert.Len(srv.runtime.ListSessions(ws.Id), 1)
 }
 
 // TestWorkspaceListReportsCommitsAheadBehindE2E verifies that the
@@ -14010,6 +14301,93 @@ func TestWorkspaceRuntimeSessionTerminalWebSocketBasePathE2E(t *testing.T) {
 	require.Contains(got.String(), "echo:ping")
 }
 
+func workspaceTerminalWriteRead(
+	t *testing.T,
+	ctx context.Context,
+	serverURL string,
+	workspaceID string,
+	input string,
+	needle string,
+) {
+	t.Helper()
+
+	conn, resp, err := workspaceTerminalDial(ctx, serverURL, workspaceID)
+	if err != nil && resp != nil && resp.Body != nil {
+		body, readErr := io.ReadAll(resp.Body)
+		require.NoError(t, readErr)
+		require.NoError(t, err, string(body))
+	}
+	require.NoError(t, err)
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+
+	workspaceTerminalConnWriteRead(t, ctx, conn, input, needle)
+}
+
+func workspaceTerminalConnWriteRead(
+	t *testing.T,
+	ctx context.Context,
+	conn *websocket.Conn,
+	input string,
+	needle string,
+) {
+	t.Helper()
+
+	require.NoError(t, conn.Write(
+		ctx, websocket.MessageBinary, []byte(input),
+	))
+	readCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	var got strings.Builder
+	for {
+		typ, data, readErr := conn.Read(readCtx)
+		if readErr != nil {
+			break
+		}
+		if typ != websocket.MessageBinary {
+			continue
+		}
+		got.WriteString(string(data))
+		if strings.Contains(got.String(), needle) {
+			return
+		}
+	}
+	require.Contains(t, got.String(), needle)
+}
+
+func workspaceTerminalDialEventually(
+	t *testing.T,
+	ctx context.Context,
+	serverURL string,
+	workspaceID string,
+) *websocket.Conn {
+	t.Helper()
+
+	var conn *websocket.Conn
+	require.Eventually(t, func() bool {
+		var resp *http.Response
+		var err error
+		conn, resp, err = workspaceTerminalDial(ctx, serverURL, workspaceID)
+		if err != nil && conn != nil {
+			conn.Close(websocket.StatusNormalClosure, "done")
+		}
+		if resp != nil && resp.Body != nil {
+			resp.Body.Close()
+		}
+		return err == nil
+	}, 2*time.Second, 20*time.Millisecond)
+	return conn
+}
+
+func workspaceTerminalDial(
+	ctx context.Context,
+	serverURL string,
+	workspaceID string,
+) (*websocket.Conn, *http.Response, error) {
+	wsURL := "ws" + strings.TrimPrefix(serverURL, "http") +
+		"/api/v1/workspaces/" + workspaceID + "/terminal"
+	return websocket.Dial(ctx, wsURL, nil)
+}
+
 func TestWorkspaceRuntimeSessionTerminalSkipsAltScreenReplayE2E(t *testing.T) {
 	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
 
@@ -14311,20 +14689,20 @@ func TestServerRuntimeHelperProcess(t *testing.T) {
 	mode := args[len(args)-1]
 	switch mode {
 	case "sleep":
-		select {}
+		blockServerRuntimeHelper()
 	case "echo":
 		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 		if err == nil {
 			fmt.Print("echo:" + line)
 		}
-		select {}
+		blockServerRuntimeHelper()
 	case "altscreen":
 		fmt.Print("\x1b[?1049h\x1b[Hcodex screen")
 		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 		if err == nil {
 			fmt.Print("\x1b[Hlive:" + line)
 		}
-		select {}
+		blockServerRuntimeHelper()
 	case "size":
 		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 		if err == nil {
@@ -14357,6 +14735,50 @@ func TestServerRuntimeHelperProcess(t *testing.T) {
 	default:
 		os.Exit(2)
 	}
+}
+
+func blockServerRuntimeHelper() {
+	for {
+		time.Sleep(time.Hour)
+	}
+}
+
+func TestServerPtyOwnerHelperProcess(t *testing.T) {
+	if os.Getenv("MIDDLEMAN_SERVER_PTY_OWNER_HELPER") != "1" {
+		return
+	}
+	args := os.Args
+	sep := slices.Index(args, "--")
+	if sep >= 0 {
+		args = args[sep+1:]
+	}
+	if len(args) > 0 && args[0] == "pty-owner" {
+		args = args[1:]
+	}
+	fs := flag.NewFlagSet("test pty-owner", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	root := fs.String("root", "", "pty owner state root")
+	session := fs.String("session", "", "session name")
+	cwd := fs.String("cwd", "", "working directory")
+	commandJSON := fs.String("command-json", "", "JSON command argv")
+	if err := fs.Parse(args); err != nil {
+		os.Exit(2)
+	}
+	var command []string
+	if *commandJSON != "" {
+		if err := json.Unmarshal([]byte(*commandJSON), &command); err != nil {
+			os.Exit(2)
+		}
+	}
+	if err := ptyowner.RunOwner(context.Background(), ptyowner.Options{
+		Root:    *root,
+		Session: *session,
+		Cwd:     *cwd,
+		Command: command,
+	}); err != nil {
+		os.Exit(1)
+	}
+	os.Exit(0)
 }
 
 func gitOutput(t *testing.T, dir string, args ...string) string {

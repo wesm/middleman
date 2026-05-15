@@ -133,6 +133,11 @@ func runMigrations(rw *sql.DB) (int, error) {
 			fmt.Errorf("database ended at migration version %d, expected %d", version, latest),
 		)
 	}
+	if err := reconcileWorkspaceTerminalBackendColumn(rw); err != nil {
+		return migratedb.NilVersion, wrapMigrationError(
+			fmt.Errorf("repair workspace terminal backend column: %w", err),
+		)
+	}
 
 	return startVersion, nil
 }
@@ -227,6 +232,26 @@ func hasColumn(
 	}
 
 	return false, rows.Err()
+}
+
+func reconcileWorkspaceTerminalBackendColumn(rw *sql.DB) error {
+	if !hasTable(rw, "middleman_workspaces") {
+		return nil
+	}
+	hasTerminalBackend, err := hasColumn(
+		rw, "middleman_workspaces", "terminal_backend",
+	)
+	if err != nil {
+		return err
+	}
+	if hasTerminalBackend {
+		return nil
+	}
+	_, err = rw.Exec(`
+		ALTER TABLE middleman_workspaces
+		    ADD COLUMN terminal_backend TEXT NOT NULL DEFAULT ''
+	`)
+	return err
 }
 
 func reconcileWorkspaceSetupMigrationVersion10(

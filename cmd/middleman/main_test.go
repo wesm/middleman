@@ -428,3 +428,28 @@ func TestRunCLIConfigReadPortCreatesDefaultConfig(t *testing.T) {
 	require.NoError(err)
 	assert.Contains(string(content), "port = 8091")
 }
+
+func TestRunCLIPtyOwnerRejectsMissingRequiredFlags(t *testing.T) {
+	var stdout bytes.Buffer
+
+	err := runCLI([]string{"pty-owner"}, &stdout)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "session")
+}
+
+func TestRunCLIPtyOwnerParsesBeforeServerStartup(t *testing.T) {
+	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "")
+	var stdout bytes.Buffer
+
+	err := runCLI([]string{
+		"pty-owner",
+		"-root", t.TempDir(),
+		"-session", "bad/session",
+		"-cwd", t.TempDir(),
+		"-command-json", `["sh","-c","exit 0"]`,
+	}, &stdout)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unsafe pty owner session")
+}
