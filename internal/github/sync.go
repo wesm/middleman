@@ -3691,6 +3691,15 @@ func (s *Syncer) syncOpenMRFromBulk(
 				"number", number, "err", err,
 			)
 		}
+		// Refresh workflow approval state so the DB-only detail GET
+		// can render the Approve workflows button without a foreground
+		// sync. GraphQL doesn't return action_required runs, so this
+		// stays a one-extra REST call per fully-synced PR — matching
+		// the REST detail-drain budget.
+		s.refreshWorkflowApproval(
+			ctx, repo, repoID, number,
+			normalized.PlatformHeadSHA, bulk.PR, normalized,
+		)
 	}
 
 	// Fire onMRSynced hook.
@@ -4468,8 +4477,16 @@ func (s *Syncer) refreshWorkflowApproval(
 	if ghPR != nil && ghPR.GetHead() != nil {
 		headRepoFullName = ghPR.GetHead().GetRepo().GetFullName()
 		headRef = ghPR.GetHead().GetRef()
-	} else if normalized != nil {
+	}
+	// GraphQL bulk fetch populates clone URL but not full name on the
+	// head repo struct, so fall back to parsing the persisted clone
+	// URL. Without this, fork PRs synced via bulk would lose the head
+	// repo identity needed to match fork-triggered workflow runs whose
+	// pull_requests array is empty.
+	if headRepoFullName == "" && normalized != nil {
 		headRepoFullName = ParseHeadRepoFullName(normalized.HeadRepoCloneURL)
+	}
+	if headRef == "" && normalized != nil {
 		headRef = normalized.HeadBranch
 	}
 
