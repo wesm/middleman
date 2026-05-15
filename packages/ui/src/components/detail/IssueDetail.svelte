@@ -401,13 +401,13 @@
   }
 </script>
 
-{#if issues.isIssueDetailLoading() && (issues.getIssueDetail() === null || staleIssue)}
+{#if issues.isIssueDetailLoading() && issues.getIssueDetail() === null}
   <div class="state-center"><p class="state-msg">Loading...</p></div>
-{:else if issues.getIssueDetailError() !== null && (issues.getIssueDetail() === null || staleIssue)}
+{:else if issues.getIssueDetailError() !== null && issues.getIssueDetail() === null}
   <div class="state-center"><p class="state-msg state-msg--error">Error: {issues.getIssueDetailError()}</p></div>
 {:else}
   {@const detail = issues.getIssueDetail()}
-  {#if detail !== null && !staleIssue}
+  {#if detail !== null}
     {@const issue = detail.issue}
     {@const labels = issue.labels ?? []}
     {@const capabilities = detail.repo?.capabilities ?? defaultProviderCapabilities}

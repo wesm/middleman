@@ -605,13 +605,13 @@
 <svelte:window onkeydown={onActionMenuKeydown} />
 <svelte:document onmousedown={onActionMenuDocumentMousedown} />
 
-{#if detailStore.isDetailLoading() && (detailStore.getDetail() === null || stalePR)}
+{#if detailStore.isDetailLoading() && detailStore.getDetail() === null}
   <div class="state-center"><p class="state-msg">Loading…</p></div>
-{:else if detailStore.getDetailError() !== null && (detailStore.getDetail() === null || stalePR)}
+{:else if detailStore.getDetailError() !== null && detailStore.getDetail() === null}
   <div class="state-center"><p class="state-msg state-msg--error">Error: {detailStore.getDetailError()}</p></div>
 {:else}
   {@const detail = detailStore.getDetail()}
-  {#if detail !== null && !stalePR}
+  {#if detail !== null}
     {@const pr = detail.merge_request}
     {@const capabilities = detail.repo?.capabilities ?? defaultProviderCapabilities}
     {@const lockedSupported = supportsLocked(
@@ -835,20 +835,20 @@
       {/if}
 
       <!-- Mergeable state warnings -->
-      {#if pr.State === "open" && pr.MergeableState === "dirty"}
+      {#if !stalePR && pr.State === "open" && pr.MergeableState === "dirty"}
         <div class="merge-warning merge-warning--conflict">
           <span>This branch has conflicts that must be resolved before merging.</span>
           <a href={pr.URL} target="_blank" rel="noopener noreferrer">View on GitHub</a>
         </div>
-      {:else if pr.State === "open" && pr.MergeableState === "blocked"}
+      {:else if !stalePR && pr.State === "open" && pr.MergeableState === "blocked"}
         <div class="merge-warning merge-warning--info">
           <span>Branch protection rules may prevent this merge.</span>
         </div>
-      {:else if pr.State === "open" && pr.MergeableState === "behind"}
+      {:else if !stalePR && pr.State === "open" && pr.MergeableState === "behind"}
         <div class="merge-warning merge-warning--info">
           <span>This branch is behind the base branch and may need to be updated.</span>
         </div>
-      {:else if pr.State === "open" && pr.MergeableState === "unstable"}
+      {:else if !stalePR && pr.State === "open" && pr.MergeableState === "unstable"}
         <div class="merge-warning merge-warning--info">
           <span>Required status checks have not passed.</span>
         </div>
