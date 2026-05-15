@@ -1056,6 +1056,9 @@ func (m *Manager) ReapOrphanTmuxSessions(ctx context.Context) error {
 
 	sessions, err := m.listTmuxSessions(ctx)
 	if err != nil {
+		if isTmuxCommandUnavailable(err) {
+			return nil
+		}
 		return err
 	}
 	for _, session := range sessions {
@@ -1263,6 +1266,10 @@ func (m *Manager) EnsureTmux(
 		return nil
 	}
 	return m.newTmuxSession(ctx, session, cwd)
+}
+
+func isTmuxCommandUnavailable(err error) bool {
+	return errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist)
 }
 
 func (m *Manager) listTmuxSessions(

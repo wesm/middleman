@@ -11777,6 +11777,9 @@ func cleanupWorkspaceServerFixtureArtifactsWithContext(
 			)
 		}
 	}
+	if err := srv.workspaces.ReapOrphanTmuxSessions(ctx); err != nil {
+		errs = append(errs, fmt.Errorf("reap orphan tmux sessions: %w", err))
+	}
 	return errors.Join(errs...)
 }
 
