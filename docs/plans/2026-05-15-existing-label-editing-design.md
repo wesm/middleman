@@ -98,7 +98,7 @@ Background repo sync adds a label-catalog step after repo identity is known. The
 1. Looks up a `LabelReader` for the repo provider/host.
 2. Performs a conditional list request when provider transport supports it.
 3. On `NotModified`, leaves labels unchanged, clears catalog error, and updates `label_catalog_checked_at` and `label_catalog_synced_at`.
-4. On changed payload, applies the catalog transaction above, clears catalog error, and updates freshness/check metadata.
+4. On changed payload, fetches all label pages before applying the full-catalog transaction above, clears catalog error, and updates freshness/check metadata.
 5. On provider/catalog failure, records `label_catalog_sync_error` and `label_catalog_checked_at`, but does not fail PR/issue sync.
 
 Foreground `GET repo labels` does not fetch provider labels directly. If cache is stale, it enqueues a label refresh through an in-process single-flight/dedup key scoped by repo ID. `syncing=true` means a label refresh is currently queued or running for that repo.
@@ -134,6 +134,8 @@ Non-default host routes:
 }
 ```
 
+For never-synced repos, `synced_at` and `checked_at` are omitted, `stale=true`, and `syncing=true` when the endpoint successfully enqueues refresh.
+
 If catalog is stale, endpoint enqueues a repo label refresh through the existing sync path and still returns cached labels immediately. UI shows a small spinner when `syncing=true`. If `sync_error` is non-empty, the picker can still show cached labels and display the error only when useful, for example when no catalog labels are available.
 
 `PUT` body:
@@ -145,7 +147,7 @@ If catalog is stale, endpoint enqueues a repo label refresh through the existing
 Server behavior:
 
 1. Resolve repo through provider-aware lookup.
-2. Check `LabelMutation` capability.
+2. Check both `ReadLabels` and `LabelMutation` capabilities, because mutation validation depends on cached catalog data.
 3. Normalize requested names by trimming whitespace, reject empty names, and reject duplicate names after exact string comparison.
 4. Validate requested names against `catalog_present=true` labels in the cached repo catalog. Label name matching is exact and provider-case-sensitive in v1.
 5. Call provider `LabelMutator` with the full desired label name set.
@@ -232,7 +234,7 @@ Keep new label work in focused files where possible:
 - Providers: implement label reader/mutator methods in GitHub, GitLab, Forgejo, and Gitea provider packages.
 - Sync: add a small label catalog refresh helper called from repo sync and from stale `GET repo labels` enqueue path.
 - Server: keep label route input/output types and handlers in dedicated label API files if possible, then register them from provider route registration.
-- Frontend: add shared `LabelPicker`, detail header integration, store/client helpers, and command palette action without duplicating provider route construction.
+- Frontend: add shared `LabelPicker`, detail header integration, store/client helpers, provider-route helper suffix support for `/labels`, and command palette action without duplicating provider route construction.
 
 ## Testing plan
 
