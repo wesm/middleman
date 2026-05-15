@@ -459,6 +459,13 @@ func (d *DB) UpsertLabels(ctx context.Context, repoID int64, labels []Label) err
 // by the provider stop appearing in catalog results.
 func (d *DB) ReplaceRepoLabelCatalog(ctx context.Context, repoID int64, labels []Label, syncedAt time.Time) error {
 	syncedAt = canonicalUTCTime(syncedAt)
+	freshness, err := d.GetRepoLabelCatalogFreshness(ctx, repoID)
+	if err != nil {
+		return err
+	}
+	if freshness.SyncedAt != nil && syncedAt.Before(*freshness.SyncedAt) {
+		return nil
+	}
 	return d.Tx(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE middleman_labels SET catalog_present = 0 WHERE repo_id = ?`,
@@ -479,10 +486,16 @@ func (d *DB) ReplaceRepoLabelCatalog(ctx context.Context, repoID int64, labels [
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE middleman_repos
 			SET label_catalog_synced_at = ?,
-			    label_catalog_checked_at = ?,
-			    label_catalog_sync_error = ''
+			    label_catalog_checked_at = CASE
+			        WHEN ? >= COALESCE(label_catalog_checked_at, '') THEN ?
+			        ELSE label_catalog_checked_at
+			    END,
+			    label_catalog_sync_error = CASE
+			        WHEN ? >= COALESCE(label_catalog_checked_at, '') THEN ''
+			        ELSE label_catalog_sync_error
+			    END
 			WHERE id = ?`,
-			syncedAt, syncedAt, repoID,
+			syncedAt, syncedAt, syncedAt, syncedAt, repoID,
 		); err != nil {
 			return fmt.Errorf("mark label catalog synced: %w", err)
 		}
@@ -559,8 +572,9 @@ func (d *DB) UpdateRepoLabelCatalogCheck(ctx context.Context, repoID int64, chec
 	_, err := d.rw.ExecContext(ctx, `
 		UPDATE middleman_repos
 		SET label_catalog_checked_at = ?, label_catalog_sync_error = ?
-		WHERE id = ?`,
-		checkedAt, syncErr, repoID,
+		WHERE id = ?
+		  AND (? >= COALESCE(label_catalog_checked_at, ''))`,
+		checkedAt, syncErr, repoID, checkedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("update label catalog check: %w", err)
@@ -572,11 +586,20 @@ func (d *DB) MarkRepoLabelCatalogSynced(ctx context.Context, repoID int64, synce
 	syncedAt = canonicalUTCTime(syncedAt)
 	_, err := d.rw.ExecContext(ctx, `
 		UPDATE middleman_repos
-		SET label_catalog_synced_at = ?,
-		    label_catalog_checked_at = ?,
-		    label_catalog_sync_error = ''
+		SET label_catalog_synced_at = CASE
+		        WHEN ? >= COALESCE(label_catalog_synced_at, '') THEN ?
+		        ELSE label_catalog_synced_at
+		    END,
+		    label_catalog_checked_at = CASE
+		        WHEN ? >= COALESCE(label_catalog_checked_at, '') THEN ?
+		        ELSE label_catalog_checked_at
+		    END,
+		    label_catalog_sync_error = CASE
+		        WHEN ? >= COALESCE(label_catalog_checked_at, '') THEN ''
+		        ELSE label_catalog_sync_error
+		    END
 		WHERE id = ?`,
-		syncedAt, syncedAt, repoID,
+		syncedAt, syncedAt, syncedAt, syncedAt, syncedAt, repoID,
 	)
 	if err != nil {
 		return fmt.Errorf("mark label catalog synced: %w", err)
@@ -1197,7 +1220,62 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 		{
 			name: "copy duplicate label catalog metadata",
 			sql: `UPDATE middleman_labels AS target
-			      SET catalog_present = CASE
+			      SET name = COALESCE((
+			              SELECT source.name
+			              FROM middleman_labels AS source
+			              WHERE source.repo_id = ?
+			                AND source.catalog_present = 1
+			                AND source.platform_id IS NOT NULL
+			                AND target.platform_id IS NOT NULL
+			                AND source.platform_id = target.platform_id
+			              ORDER BY source.catalog_seen_at DESC
+			              LIMIT 1
+			          ), name),
+			          description = COALESCE((
+			              SELECT source.description
+			              FROM middleman_labels AS source
+			              WHERE source.repo_id = ?
+			                AND source.catalog_present = 1
+			                AND source.platform_id IS NOT NULL
+			                AND target.platform_id IS NOT NULL
+			                AND source.platform_id = target.platform_id
+			              ORDER BY source.catalog_seen_at DESC
+			              LIMIT 1
+			          ), description),
+			          color = COALESCE((
+			              SELECT source.color
+			              FROM middleman_labels AS source
+			              WHERE source.repo_id = ?
+			                AND source.catalog_present = 1
+			                AND source.platform_id IS NOT NULL
+			                AND target.platform_id IS NOT NULL
+			                AND source.platform_id = target.platform_id
+			              ORDER BY source.catalog_seen_at DESC
+			              LIMIT 1
+			          ), color),
+			          is_default = COALESCE((
+			              SELECT source.is_default
+			              FROM middleman_labels AS source
+			              WHERE source.repo_id = ?
+			                AND source.catalog_present = 1
+			                AND source.platform_id IS NOT NULL
+			                AND target.platform_id IS NOT NULL
+			                AND source.platform_id = target.platform_id
+			              ORDER BY source.catalog_seen_at DESC
+			              LIMIT 1
+			          ), is_default),
+			          updated_at = COALESCE((
+			              SELECT source.updated_at
+			              FROM middleman_labels AS source
+			              WHERE source.repo_id = ?
+			                AND source.catalog_present = 1
+			                AND source.platform_id IS NOT NULL
+			                AND target.platform_id IS NOT NULL
+			                AND source.platform_id = target.platform_id
+			              ORDER BY source.catalog_seen_at DESC
+			              LIMIT 1
+			          ), updated_at),
+			          catalog_present = CASE
 			              WHEN catalog_present = 1 OR EXISTS (
 			                  SELECT 1
 			                  FROM middleman_labels AS source
@@ -1272,7 +1350,7 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			                  )
 			              )
 			        )`,
-			args: []any{fromRepoID, fromRepoID, fromRepoID, fromRepoID, toRepoID, fromRepoID},
+			args: []any{fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, toRepoID, fromRepoID},
 		},
 		{
 			name: "copy issue label associations to duplicate labels",

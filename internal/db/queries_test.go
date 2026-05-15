@@ -1568,6 +1568,83 @@ func TestRepoMergeKeepsSuccessfulSyncWhenNewerCheckFailed(t *testing.T) {
 	assert.Equal("provider down", freshness.SyncError)
 }
 
+func TestRepoMergeCopiesFresherDuplicateLabelMetadata(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	oldSync := baseTime()
+	newSync := oldSync.Add(time.Hour)
+
+	sourceID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{Platform: "gitlab", PlatformHost: "gitlab.com", PlatformRepoID: "gid://gitlab/Project/42", Owner: "old-group", Name: "old-name"})
+	require.NoError(err)
+	require.NoError(d.ReplaceRepoLabelCatalog(ctx, sourceID, []Label{{PlatformID: 300, Name: "new-name", Description: "new", Color: "0e8a16", IsDefault: true, UpdatedAt: newSync}}, newSync))
+
+	destinationID, err := d.UpsertRepo(ctx, RepoIdentity{Platform: "gitlab", PlatformHost: "gitlab.com", Owner: "new-group", Name: "new-name"})
+	require.NoError(err)
+	require.NoError(d.ReplaceRepoLabelCatalog(ctx, destinationID, []Label{{PlatformID: 300, Name: "old-name", Description: "old", Color: "cccccc", UpdatedAt: oldSync}}, oldSync))
+
+	_, err = d.UpsertRepoByProviderID(ctx, RepoIdentity{Platform: "gitlab", PlatformHost: "gitlab.com", PlatformRepoID: "gid://gitlab/Project/42", Owner: "new-group", Name: "new-name"})
+	require.NoError(err)
+
+	catalog, _, err := d.ListRepoLabelCatalog(ctx, destinationID)
+	require.NoError(err)
+	require.Len(catalog, 1)
+	assert.Equal("new-name", catalog[0].Name)
+	assert.Equal("new", catalog[0].Description)
+	assert.Equal("0e8a16", catalog[0].Color)
+	assert.True(catalog[0].IsDefault)
+}
+
+func TestRepoLabelCatalogWritesIgnoreStaleResults(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	oldTime := baseTime()
+	newTime := oldTime.Add(time.Hour)
+
+	require.NoError(d.ReplaceRepoLabelCatalog(ctx, repoID, []Label{{Name: "new", Color: "0e8a16", UpdatedAt: newTime}}, newTime))
+	require.NoError(d.ReplaceRepoLabelCatalog(ctx, repoID, []Label{{Name: "old", Color: "cccccc", UpdatedAt: oldTime}}, oldTime))
+	catalog, freshness, err := d.ListRepoLabelCatalog(ctx, repoID)
+	require.NoError(err)
+	require.Len(catalog, 1)
+	assert.Equal("new", catalog[0].Name)
+	require.NotNil(freshness.SyncedAt)
+	assert.Equal(newTime, *freshness.SyncedAt)
+
+	require.NoError(d.UpdateRepoLabelCatalogCheck(ctx, repoID, oldTime, "old failure"))
+	_, freshness, err = d.ListRepoLabelCatalog(ctx, repoID)
+	require.NoError(err)
+	assert.Empty(freshness.SyncError)
+	require.NotNil(freshness.CheckedAt)
+	assert.Equal(newTime, *freshness.CheckedAt)
+}
+
+func TestRepoLabelCatalogOlderSuccessKeepsNewerFailedCheck(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	oldSuccess := baseTime()
+	newFailure := oldSuccess.Add(time.Hour)
+
+	require.NoError(d.UpdateRepoLabelCatalogCheck(ctx, repoID, newFailure, "provider down"))
+	require.NoError(d.ReplaceRepoLabelCatalog(ctx, repoID, []Label{{Name: "bug", Color: "d73a4a", UpdatedAt: oldSuccess}}, oldSuccess))
+
+	catalog, freshness, err := d.ListRepoLabelCatalog(ctx, repoID)
+	require.NoError(err)
+	require.Len(catalog, 1)
+	assert.Equal("bug", catalog[0].Name)
+	require.NotNil(freshness.SyncedAt)
+	assert.Equal(oldSuccess, *freshness.SyncedAt)
+	require.NotNil(freshness.CheckedAt)
+	assert.Equal(newFailure, *freshness.CheckedAt)
+	assert.Equal("provider down", freshness.SyncError)
+}
+
 func TestRepoLabelCatalogFreshnessTracksCheckedSyncedAndErrors(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
