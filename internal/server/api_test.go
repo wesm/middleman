@@ -1143,6 +1143,53 @@ func TestAPISyncPRIncludesWorkflowApproval(t *testing.T) {
 	assert.Equal(int64(1), resp.JSON200.WorkflowApproval.Count)
 }
 
+func TestAPISyncPRPersistsMergeableState(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	mergeableState := "dirty"
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, _ string, _ string, number int) (*gh.PullRequest, error) {
+			id := int64(1001)
+			sha := "abc123"
+			state := "open"
+			title := "Conflicted PR"
+			url := "https://github.com/acme/widget/pull/1"
+			updatedAt := gh.Timestamp{Time: now}
+			createdAt := gh.Timestamp{Time: now}
+			return &gh.PullRequest{
+				ID:             &id,
+				Number:         &number,
+				State:          &state,
+				Title:          &title,
+				HTMLURL:        &url,
+				UpdatedAt:      &updatedAt,
+				CreatedAt:      &createdAt,
+				MergeableState: &mergeableState,
+				Head:           &gh.PullRequestBranch{SHA: &sha, Ref: new("feature")},
+				Base:           &gh.PullRequestBranch{Ref: new("main")},
+			}, nil
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(
+		t.Context(), "gh", "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+	require.NotNil(resp.JSON200)
+	assert.Equal("dirty", resp.JSON200.MergeRequest.MergeableState)
+
+	stored, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("dirty", stored.MergeableState)
+}
+
 func TestAPIApproveWorkflows(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
