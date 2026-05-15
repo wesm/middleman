@@ -57,7 +57,7 @@
     color: var(--text-secondary);
     cursor: pointer;
     font: inherit;
-    font-size: 0.92rem;
+    font-size: var(--font-size-sm);
     line-height: inherit;
     padding: 0;
     transition: box-shadow 0.1s, color 0.1s;
@@ -91,7 +91,7 @@
       min-height: var(--detail-mobile-hit-target, 2.85rem);
       padding: var(--detail-mobile-space-xs, 0.5rem);
       border-radius: 0.65rem;
-      font-size: var(--detail-mobile-type-sm, 0.95rem);
+      font-size: var(--font-size-mobile-sm);
       line-height: 1.35;
     }
   }

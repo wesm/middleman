@@ -251,7 +251,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 13px;
+    font-size: var(--font-size-md);
     font-weight: 500;
     color: var(--text-primary);
     white-space: nowrap;
@@ -275,7 +275,7 @@
   }
 
   .meta-left {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     white-space: nowrap;
     overflow: hidden;
@@ -305,7 +305,7 @@
   }
 
   .time {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 
@@ -341,7 +341,7 @@
   }
 
   .worktree-name {
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     font-weight: 500;
     color: var(--accent-teal, var(--accent-green));
     white-space: nowrap;
@@ -434,7 +434,7 @@
 
   :global(.mobile-main) .pull-item {
     min-height: calc(var(--focus-mobile-hit-target, 2.85rem) * 1.65);
-    font-size: var(--mobile-type-body, 1rem);
+    font-size: var(--font-size-mobile-body);
     padding: var(--focus-mobile-space-sm, 0.75rem) var(--focus-mobile-space-md, 1rem);
     border-bottom: thin solid var(--border-muted);
     border-left-width: 0.25rem;
@@ -443,7 +443,7 @@
   :global(.mobile-main) .title {
     gap: var(--focus-mobile-space-xs, 0.5rem);
     margin-bottom: var(--focus-mobile-space-xs, 0.5rem);
-    font-size: var(--mobile-type-title, 1.25rem);
+    font-size: var(--font-size-mobile-title);
     line-height: 1.3;
     white-space: normal;
     display: -webkit-box;
@@ -468,7 +468,7 @@
   :global(.mobile-main) .meta-left,
   :global(.mobile-main) .time,
   :global(.mobile-main) .worktree-name {
-    font-size: var(--mobile-type-sm, 0.95rem);
+    font-size: var(--font-size-mobile-sm);
     line-height: 1.35;
   }
 
@@ -482,7 +482,7 @@
     min-height: calc(var(--focus-mobile-hit-target, 2.85rem) * 0.65);
     padding: 0.2rem var(--focus-mobile-space-xs, 0.5rem);
     border-radius: 999rem;
-    font-size: var(--mobile-type-xs, 0.875rem);
+    font-size: var(--font-size-mobile-xs);
     line-height: 1.25;
   }
 </style>

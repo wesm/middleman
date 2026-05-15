@@ -181,7 +181,7 @@
 
   .first-run__title {
     margin: 0;
-    font-size: 18px;
+    font-size: calc(var(--font-size-lg) * 1.285714);
     font-weight: 600;
     color: var(--text-primary);
   }
@@ -189,7 +189,7 @@
   .first-run__lede {
     margin: 0;
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: var(--font-size-md);
     line-height: 1.5;
   }
 
@@ -245,13 +245,13 @@
 
   .first-run-action__description {
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 
   .first-run-action__reason {
     margin: 0 0 0 14px;
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 
   .first-run__error {
@@ -261,6 +261,6 @@
     border-radius: var(--radius-md, 8px);
     background: color-mix(in srgb, var(--accent-red) 10%, transparent);
     color: var(--accent-red);
-    font-size: 13px;
+    font-size: var(--font-size-md);
   }
 </style>

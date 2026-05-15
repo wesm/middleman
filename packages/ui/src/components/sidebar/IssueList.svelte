@@ -334,7 +334,7 @@
 
   .search-input {
     width: 100%;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     padding: 5px 8px 5px 28px;
     background: var(--bg-inset);
     border: 1px solid var(--border-muted);
@@ -379,7 +379,7 @@
 
   .state-message {
     padding: 24px 16px;
-    font-size: 13px;
+    font-size: var(--font-size-md);
     color: var(--text-muted);
     text-align: center;
   }
@@ -391,7 +391,7 @@
   .settings-link {
     color: var(--accent-blue);
     cursor: pointer;
-    font-size: 13px;
+    font-size: var(--font-size-md);
     margin-top: 4px;
     display: inline-block;
   }
@@ -425,7 +425,7 @@
   }
 
   .repo-header {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -477,7 +477,7 @@
 
   .repo-header__count {
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     color: var(--text-muted);
     flex-shrink: 0;
   }
@@ -489,7 +489,7 @@
   }
 
   .add-repo-link {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     cursor: pointer;
     transition: color 0.1s;
@@ -528,7 +528,7 @@
   }
 
   .state-btn {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     padding: 2px 8px;
     border: none;
     border-radius: 4px;
@@ -543,7 +543,7 @@
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
   }
   .state-note {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     padding: 4px 10px;
     margin: 0;
@@ -559,7 +559,7 @@
     transform-origin: right center;
   }
   .group-btn {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     padding: 2px 8px;
     border: none;
     border-radius: 4px;

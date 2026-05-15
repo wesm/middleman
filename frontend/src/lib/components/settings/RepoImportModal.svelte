@@ -297,18 +297,18 @@
   .modal-backdrop { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; padding: 24px; background: color-mix(in srgb, black 38%, transparent); }
   .modal { width: min(1040px, 100%); max-height: min(760px, 92vh); display: flex; flex-direction: column; gap: 14px; background: var(--bg-surface); color: var(--text-primary); border: 1px solid var(--border-default); border-radius: var(--radius-lg); box-shadow: 0 24px 80px rgb(0 0 0 / 35%); padding: 18px; }
   .modal-header, .modal-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-  h2 { margin: 0; font-size: 16px; }
-  p { margin: 4px 0 0; color: var(--text-muted); font-size: 12px; }
-  .close-btn { color: var(--text-muted); font-size: 20px; }
+  h2 { margin: 0; font-size: calc(var(--font-size-lg) * 1.142857); }
+  p { margin: 4px 0 0; color: var(--text-muted); font-size: var(--font-size-sm); }
+  .close-btn { color: var(--text-muted); font-size: calc(var(--font-size-lg) * 1.428571); }
   .preview-form { display: flex; gap: 10px; align-items: end; }
-  label { flex: 1; display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+  label { flex: 1; display: flex; flex-direction: column; gap: 6px; font-size: var(--font-size-sm); color: var(--text-secondary); }
   .provider-field { flex: 0 0 120px; }
   .host-field { flex: 0 0 190px; }
-  input, select { font-size: 13px; padding: 7px 10px; color: var(--text-primary); background: var(--bg-inset); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); }
-  .preview-btn, .submit-btn { padding: 7px 14px; font-size: 13px; font-weight: 600; color: white; background: var(--accent-blue); border-radius: var(--radius-sm); }
-  .secondary-btn { padding: 7px 14px; font-size: 13px; color: var(--text-secondary); background: var(--bg-inset); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); }
+  input, select { font-size: var(--font-size-md); padding: 7px 10px; color: var(--text-primary); background: var(--bg-inset); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); }
+  .preview-btn, .submit-btn { padding: 7px 14px; font-size: var(--font-size-md); font-weight: 600; color: white; background: var(--accent-blue); border-radius: var(--radius-sm); }
+  .secondary-btn { padding: 7px 14px; font-size: var(--font-size-md); color: var(--text-secondary); background: var(--bg-inset); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
-  .error-msg { color: var(--accent-red); font-size: 12px; }
-  .empty-preview { border: 1px dashed var(--border-muted); border-radius: var(--radius-md); padding: 28px; color: var(--text-muted); text-align: center; font-size: 13px; }
+  .error-msg { color: var(--accent-red); font-size: var(--font-size-sm); }
+  .empty-preview { border: 1px dashed var(--border-muted); border-radius: var(--radius-md); padding: 28px; color: var(--text-muted); text-align: center; font-size: var(--font-size-md); }
   .footer-actions { display: flex; gap: 8px; }
 </style>

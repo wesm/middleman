@@ -113,7 +113,7 @@
     display: flex;
     align-items: center;
     padding: 0 10px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 700;
     color: var(--text-muted);
     text-transform: uppercase;
@@ -143,7 +143,7 @@
   }
 
   .session-name {
-    font-size: 13px;
+    font-size: var(--font-size-md);
     color: var(--text-primary);
     white-space: nowrap;
     overflow: hidden;
@@ -157,7 +157,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 14px;
+    font-size: var(--font-size-lg);
     color: var(--text-muted);
     background: none;
     border: none;
@@ -181,7 +181,7 @@
     width: 100%;
     padding: 4px 12px;
     text-align: left;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     background: none;
     border: none;

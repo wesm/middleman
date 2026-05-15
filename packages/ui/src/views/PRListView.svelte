@@ -152,18 +152,18 @@
 
   .placeholder-text {
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: var(--font-size-md);
   }
 
   .placeholder-hint {
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     margin-top: 8px;
     opacity: 0.7;
   }
 
   .detail-tab {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 500;
     padding: 8px 16px;
     color: var(--text-secondary);

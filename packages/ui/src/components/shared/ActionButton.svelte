@@ -76,7 +76,7 @@
     justify-content: center;
     gap: 6px;
     min-height: 28px;
-    font-size: 13px;
+    font-size: var(--font-size-md);
     font-weight: 500;
     padding: 6px 14px;
     border-radius: var(--radius-sm);
@@ -95,7 +95,7 @@
     min-height: 24px;
     padding: 4px 12px;
     border-radius: 6px;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 
   .action-button :global(svg) {

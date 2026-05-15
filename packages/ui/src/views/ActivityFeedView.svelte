@@ -297,7 +297,7 @@
     border-bottom: 1px solid var(--border-default);
     background: var(--bg-surface);
     color: var(--text-primary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
   }
 

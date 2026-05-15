@@ -23,7 +23,7 @@
     gap: 12px;
     padding: 0 10px;
     height: 28px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     background: var(--bg-surface);
     border-top: 1px solid var(--border-muted);

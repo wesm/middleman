@@ -121,7 +121,7 @@
 
   .job-row td {
     padding: 6px 10px;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--text-primary);
     vertical-align: middle;
     white-space: nowrap;
@@ -129,7 +129,7 @@
 
   .mono {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
   }
 
   .col-id {
@@ -153,12 +153,12 @@
 
   .repo-name {
     font-weight: 500;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 
   .branch-name {
     color: var(--accent-purple);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
   }
 
   .git-ref {
@@ -167,7 +167,7 @@
 
   .commit-subject {
     display: block;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     overflow: hidden;
     text-overflow: ellipsis;

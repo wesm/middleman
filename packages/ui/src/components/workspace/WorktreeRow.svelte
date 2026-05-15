@@ -351,7 +351,7 @@
   }
 
   .name {
-    font-size: 13px;
+    font-size: var(--font-size-md);
     font-weight: 600;
     color: var(--text-primary);
     white-space: nowrap;
@@ -361,7 +361,7 @@
 
   .stale-icon {
     color: var(--accent-amber);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     flex-shrink: 0;
   }
 
@@ -371,7 +371,7 @@
     border: none;
     color: var(--text-muted);
     cursor: pointer;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     padding: 2px 4px;
     border-radius: 3px;
     flex-shrink: 0;
@@ -394,7 +394,7 @@
     align-items: center;
     gap: 6px;
     padding-left: 0;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
   }
 
   .checks-icon {
@@ -405,7 +405,7 @@
     display: flex;
     align-items: center;
     gap: 4px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-family: var(--font-mono);
   }
 
@@ -420,7 +420,7 @@
   .branch-text {
     font-family: var(--font-mono);
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
   }
 
   .context-menu {
@@ -439,7 +439,7 @@
     width: 100%;
     padding: 6px 12px;
     text-align: left;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--text-primary);
     background: none;
     border: none;

@@ -244,7 +244,7 @@
 
   .logo {
     font-weight: 600;
-    font-size: 15px;
+    font-size: calc(var(--font-size-lg) * 1.071429);
     color: var(--text-primary);
     letter-spacing: -0.01em;
   }
@@ -267,7 +267,7 @@
   .view-tab {
     padding: 4px 14px;
     border-radius: calc(var(--radius-md) - 2px);
-    font-size: 13px;
+    font-size: var(--font-size-md);
     font-weight: 500;
     color: var(--text-secondary);
     transition: background 0.15s, color 0.15s;
@@ -295,7 +295,7 @@
   .action-btn {
     padding: 5px 12px;
     border-radius: var(--radius-sm);
-    font-size: 13px;
+    font-size: var(--font-size-md);
     font-weight: 500;
     color: var(--text-secondary);
     border: 1px solid var(--border-default);
@@ -315,7 +315,7 @@
   }
 
   .nav-select {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     padding: 4px 8px;
     border: 1px solid var(--border-default);
     border-radius: var(--radius-sm);
@@ -364,7 +364,7 @@
   }
 
   :global(#app.container-narrow) .logo {
-    font-size: 14px;
+    font-size: var(--font-size-lg);
   }
 
   :global(#app.container-narrow) .header-left :global(.typeahead) {
@@ -387,7 +387,7 @@
   :global(#app.container-narrow) .nav-select {
     width: 100%;
     min-height: 32px;
-    font-size: 13px;
+    font-size: var(--font-size-md);
   }
 
   :global(#app.container-narrow) .header-right {

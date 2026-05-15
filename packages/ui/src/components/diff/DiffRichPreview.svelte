@@ -194,7 +194,7 @@
     min-height: 140px;
     padding: 20px;
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: var(--font-size-md);
   }
 
   .preview-state--error {
@@ -224,7 +224,7 @@
   .markdown-rich-diff__label {
     margin-bottom: 10px;
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     text-transform: uppercase;
   }
@@ -302,7 +302,7 @@
     color: var(--diff-text);
     background: var(--diff-bg);
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     line-height: 1.55;
     white-space: pre-wrap;
     overflow-wrap: anywhere;

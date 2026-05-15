@@ -200,7 +200,7 @@
 
   .issue-modal__title-group h2 {
     color: var(--text-primary);
-    font-size: 15px;
+    font-size: calc(var(--font-size-lg) * 1.071429);
     font-weight: 600;
   }
 
@@ -221,7 +221,7 @@
 
   .issue-modal__field > span {
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
   }
 
@@ -231,7 +231,7 @@
 
   .issue-modal__error {
     color: var(--accent-red);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 
   :global(.comment-editor-menu) {

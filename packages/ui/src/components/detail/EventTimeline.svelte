@@ -395,7 +395,7 @@
 
 <style>
   .empty {
-    font-size: var(--focus-detail-type-sm, 1rem);
+    font-size: var(--font-size-root);
     color: var(--text-muted);
     padding: 1.25rem 0;
   }
@@ -474,26 +474,26 @@
   }
 
   .event-type {
-    font-size: var(--focus-detail-type-xs, 0.85rem);
+    font-size: var(--font-size-xs);
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
 
   .event-author {
-    font-size: var(--focus-detail-type-sm, 0.92rem);
+    font-size: var(--font-size-sm);
     font-weight: 500;
     color: var(--text-primary);
   }
 
   .event-time {
-    font-size: var(--focus-detail-type-xs, 0.85rem);
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     margin-left: auto;
   }
 
   .event-summary {
-    font-size: var(--focus-detail-type-sm, 0.92rem);
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     margin-top: var(--focus-detail-space-xs, 0.31rem);
     font-family: var(--font-mono);
@@ -504,7 +504,7 @@
 
   .commit-sha {
     font-family: var(--font-mono);
-    font-size: var(--focus-detail-type-sm, 0.92rem);
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
@@ -530,7 +530,7 @@
   .system-event-summary,
   .system-event-link {
     flex: 1;
-    font-size: var(--focus-detail-type-sm, 0.92rem);
+    font-size: var(--font-size-sm);
   }
 
   .system-event-summary {
@@ -605,7 +605,7 @@
   }
 
   .event-body {
-    font-size: var(--focus-detail-type-body, 0.92rem);
+    font-size: var(--font-size-sm);
     color: var(--text-primary);
     padding: var(--focus-detail-space-sm, 0.62rem) calc(var(--focus-detail-hit-target, 2rem) + var(--focus-detail-space-sm, 0.62rem)) var(--focus-detail-space-sm, 0.62rem) var(--focus-detail-space-sm, 0.77rem);
     white-space: pre-wrap;
@@ -638,7 +638,7 @@
     border: 1px solid var(--border-default);
     background: var(--bg-inset);
     color: var(--text-secondary);
-    font-size: var(--focus-detail-type-sm, 0.92rem);
+    font-size: var(--font-size-sm);
     font-weight: 600;
   }
 
@@ -665,7 +665,7 @@
 
   .edit-error {
     margin-top: var(--focus-detail-space-xs, 0.46rem);
-    font-size: var(--focus-detail-type-sm, 0.92rem);
+    font-size: var(--font-size-sm);
     color: var(--accent-red);
   }
 

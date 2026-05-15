@@ -412,7 +412,7 @@
   .repo-card__name {
     min-width: 0;
     color: var(--text-primary);
-    font-size: 15px;
+    font-size: calc(var(--font-size-lg) * 1.071429);
     font-weight: 700;
     line-height: 1.25;
     overflow-wrap: anywhere;
@@ -458,13 +458,13 @@
     justify-content: space-between;
     gap: 12px;
     color: var(--text-secondary);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     line-height: 1.2;
   }
 
   .repo-card__release-head strong {
     color: var(--text-primary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     text-align: right;
   }
 
@@ -472,7 +472,7 @@
     flex-wrap: wrap;
     gap: 8px;
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 
   .repo-card__commits-copy {
@@ -567,7 +567,7 @@
     background: var(--bg-surface);
     box-shadow: var(--shadow-md);
     color: var(--text-primary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     line-height: 1.3;
     pointer-events: none;
     transform: translateX(-50%);
@@ -579,7 +579,7 @@
 
   .repo-card__timeline-popover strong {
     color: var(--accent-blue);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     overflow-wrap: anywhere;
   }
 
@@ -590,14 +590,14 @@
 
   .repo-card__timeline-popover time {
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
   }
 
   .repo-card__timeline-labels {
     display: flex;
     justify-content: space-between;
     color: var(--text-secondary);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
   }
 
   .repo-card__issues {
@@ -609,7 +609,7 @@
 
   .repo-card__issues h2 {
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 500;
   }
 
@@ -656,7 +656,7 @@
     flex-shrink: 0;
     gap: 8px;
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 
   .repo-card__avatar {
@@ -670,7 +670,7 @@
 
   .repo-card__empty-note {
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 
   .repo-card__footer {
@@ -678,7 +678,7 @@
     padding: 9px 14px;
     border-top: 1px solid var(--border-muted);
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 
   .repo-card__status {

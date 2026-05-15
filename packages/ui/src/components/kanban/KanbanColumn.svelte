@@ -94,14 +94,14 @@
   }
 
   .column-title {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
 
   .column-count {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     color: var(--text-muted);
     background: var(--bg-surface);
@@ -122,7 +122,7 @@
   }
 
   .empty-state {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     text-align: center;
     padding: 24px 0;

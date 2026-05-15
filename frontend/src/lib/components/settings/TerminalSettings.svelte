@@ -153,7 +153,7 @@
   }
 
   .setting-label {
-    font-size: 13px;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
   }
 
@@ -177,14 +177,14 @@
   }
 
   .setting-help {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
   }
 
   .save-btn,
   .reset-btn {
     padding: 5px 10px;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 500;
     border-radius: var(--radius-sm);
     transition: background 0.12s, color 0.12s, opacity 0.12s,

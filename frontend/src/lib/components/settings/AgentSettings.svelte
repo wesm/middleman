@@ -479,13 +479,13 @@
     align-items: center;
     flex: 1 1 auto;
     color: var(--text-primary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
   }
 
   .field span {
     color: var(--text-muted);
-    font-size: 10.5px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     text-transform: uppercase;
   }
@@ -494,7 +494,7 @@
     width: 100%;
     min-width: 0;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 
   .row-actions {
@@ -548,7 +548,7 @@
     min-height: 28px;
     padding: 5px 10px;
     border-radius: var(--radius-sm);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 500;
   }
 
@@ -582,7 +582,7 @@
   .error-msg {
     margin: 0;
     color: var(--accent-red);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 
   @media (max-width: 860px) {

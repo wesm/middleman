@@ -264,7 +264,7 @@
     gap: 6px;
     padding: 4px 10px;
     height: 28px;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     background: var(--bg-surface);
     border: 1px solid var(--border-muted);
@@ -296,7 +296,7 @@
     gap: 6px;
     padding: 4px 10px;
     height: 28px;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     background: var(--bg-surface);
     border: 1px solid var(--border-muted);
@@ -310,7 +310,7 @@
   }
 
   .status-text {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     white-space: nowrap;
   }
@@ -340,7 +340,7 @@
   }
 
   .transport-badge {
-    font-size: 9px;
+    font-size: 0.9em;
     font-weight: 600;
     padding: 1px 4px;
     border-radius: 3px;
@@ -353,7 +353,7 @@
   }
 
   .platform-icon {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 
   .status-dot {
@@ -382,7 +382,7 @@
   .retry-btn {
     flex-shrink: 0;
     padding: 2px 8px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--accent-amber);
     background: none;
     border: 1px solid var(--border-muted);
@@ -409,7 +409,7 @@
     display: block;
     width: 100%;
     padding: 8px 10px;
-    font-size: 13px;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     text-align: center;
     background: var(--bg-surface);

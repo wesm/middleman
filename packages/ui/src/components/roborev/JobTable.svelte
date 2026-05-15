@@ -136,7 +136,7 @@
 
   th {
     padding: 6px 10px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     color: var(--text-muted);
     text-align: left;
@@ -165,21 +165,21 @@
   .loading-bar {
     padding: 12px;
     text-align: center;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
   }
 
   .error-bar {
     padding: 12px;
     text-align: center;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--accent-red);
   }
 
   .empty-state {
     padding: 32px;
     text-align: center;
-    font-size: 13px;
+    font-size: var(--font-size-md);
     color: var(--text-muted);
   }
 
@@ -195,7 +195,7 @@
     border-radius: var(--radius-sm);
     background: var(--bg-surface);
     color: var(--text-primary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     cursor: pointer;
   }
 

@@ -36,7 +36,7 @@
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     padding: 2px 8px;
     border-radius: 999px;
     line-height: 1.4;
@@ -74,12 +74,12 @@
 
   .scope-pill__label {
     font-family: var(--font-mono);
-    font-size: 9.5px;
+    font-size: var(--font-size-2xs);
   }
 
   .scope-pill__reset {
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     line-height: 1;
     margin-left: 2px;
   }

@@ -519,7 +519,7 @@
   .repo-page__title {
     margin-bottom: 6px;
     color: var(--text-primary);
-    font-size: 22px;
+    font-size: calc(var(--font-size-lg) * 1.571429);
     font-weight: 700;
     line-height: 1.2;
   }
@@ -527,7 +527,7 @@
   .repo-page__subtitle {
     max-width: 560px;
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: var(--font-size-md);
   }
 
   .repo-page__toolbar {
@@ -589,7 +589,7 @@
     border-right: 1px solid var(--border-muted);
     background: transparent;
     color: var(--text-primary);
-    font-size: 13px;
+    font-size: var(--font-size-md);
     font-weight: 500;
     min-width: max-content;
     white-space: nowrap;
@@ -623,7 +623,7 @@
     background: var(--bg-surface);
     box-shadow: var(--shadow-sm);
     color: var(--text-primary);
-    font-size: 13px;
+    font-size: var(--font-size-md);
   }
 
   .repo-page__sort-dropdown :global(.filter-trigger-label) {
@@ -638,7 +638,7 @@
 
   .repo-page__results {
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     white-space: nowrap;
   }
 

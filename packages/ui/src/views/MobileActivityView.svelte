@@ -414,7 +414,7 @@
     --mobile-radius-md: 1.25rem;
     --mobile-hit-target: 3.5rem;
     container-type: inline-size;
-    font-size: var(--mobile-type-body);
+    font-size: var(--font-size-mobile-body);
     flex: 1;
     min-height: 0;
     overflow: hidden;
@@ -430,7 +430,7 @@
       var(--mobile-space-md)
       var(--mobile-space-sm)
       max(var(--mobile-space-lg), env(safe-area-inset-bottom));
-    font-size: var(--mobile-type-body);
+    font-size: var(--font-size-mobile-body);
   }
 
   .mobile-activity-hero {
@@ -440,7 +440,7 @@
   .mobile-activity-eyebrow {
     margin: 0 0 var(--mobile-space-2xs);
     color: var(--text-muted);
-    font-size: var(--mobile-type-sm);
+    font-size: var(--font-size-mobile-sm);
     font-weight: 700;
     letter-spacing: 0.02em;
   }
@@ -448,7 +448,7 @@
   .mobile-activity-hero h1 {
     margin: 0;
     color: var(--text-primary);
-    font-size: var(--mobile-type-display);
+    font-size: var(--font-size-mobile-display);
     line-height: 1;
     letter-spacing: -0.045em;
   }
@@ -474,7 +474,7 @@
     outline: 0;
     background: transparent;
     color: var(--text-primary);
-    font-size: var(--mobile-type-body);
+    font-size: var(--font-size-mobile-body);
   }
 
   .mobile-activity-search .search-input::placeholder {
@@ -508,7 +508,7 @@
 
   .mobile-filter-select span {
     color: var(--text-muted);
-    font-size: var(--mobile-type-xs);
+    font-size: var(--font-size-mobile-xs);
     font-weight: 750;
     letter-spacing: 0.01em;
   }
@@ -521,7 +521,7 @@
     color: var(--text-primary);
     background: transparent;
     font: inherit;
-    font-size: var(--mobile-type-sm);
+    font-size: var(--font-size-mobile-sm);
     font-weight: 750;
   }
 
@@ -534,7 +534,7 @@
     border-radius: 999rem;
     color: var(--text-secondary);
     background: color-mix(in srgb, var(--bg-surface) 86%, transparent);
-    font-size: var(--mobile-type-sm);
+    font-size: var(--font-size-mobile-sm);
     font-weight: 750;
   }
 
@@ -566,7 +566,7 @@
   .mobile-activity-metric strong {
     display: block;
     color: var(--text-primary);
-    font-size: var(--mobile-type-metric);
+    font-size: var(--font-size-mobile-metric);
     line-height: 1;
     letter-spacing: -0.04em;
   }
@@ -575,7 +575,7 @@
     display: block;
     margin-top: var(--mobile-space-2xs);
     color: var(--text-muted);
-    font-size: var(--mobile-type-sm);
+    font-size: var(--font-size-mobile-sm);
   }
 
   .mobile-activity-card-list {
@@ -626,20 +626,20 @@
     min-height: calc(var(--mobile-hit-target) * 0.55);
     padding: 0 var(--mobile-space-xs);
     border-radius: 999rem;
-    font-size: var(--mobile-type-xs);
+    font-size: var(--font-size-mobile-xs);
   }
 
   .mobile-activity-card__top time {
     margin-left: auto;
     flex-shrink: 0;
     color: var(--text-muted);
-    font-size: var(--mobile-type-sm);
+    font-size: var(--font-size-mobile-sm);
     font-weight: 700;
   }
 
   .mobile-activity-number {
     color: var(--text-muted);
-    font-size: var(--mobile-type-sm);
+    font-size: var(--font-size-mobile-sm);
     font-weight: 700;
   }
 
@@ -647,7 +647,7 @@
     display: -webkit-box;
     overflow: hidden;
     color: var(--text-primary);
-    font-size: var(--mobile-type-title);
+    font-size: var(--font-size-mobile-title);
     font-weight: 800;
     line-height: 1.22;
     letter-spacing: -0.018em;
@@ -661,7 +661,7 @@
     flex-wrap: wrap;
     gap: var(--mobile-space-xs) var(--mobile-space-sm);
     color: var(--text-muted);
-    font-size: var(--mobile-type-sm);
+    font-size: var(--font-size-mobile-sm);
     line-height: 1.25;
   }
 
@@ -720,7 +720,7 @@
   .mobile-activity-event__body strong {
     display: block;
     color: var(--text-primary);
-    font-size: var(--mobile-type-sm);
+    font-size: var(--font-size-mobile-sm);
     font-weight: 750;
   }
 
@@ -728,14 +728,14 @@
     display: block;
     overflow: hidden;
     color: var(--text-muted);
-    font-size: var(--mobile-type-xs);
+    font-size: var(--font-size-mobile-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .mobile-activity-event time {
     color: var(--text-muted);
-    font-size: var(--mobile-type-xs);
+    font-size: var(--font-size-mobile-xs);
     font-weight: 750;
   }
 
@@ -756,7 +756,7 @@
     border-radius: var(--mobile-radius-md);
     color: var(--text-muted);
     background: color-mix(in srgb, var(--bg-surface) 84%, transparent);
-    font-size: var(--mobile-type-sm);
+    font-size: var(--font-size-mobile-sm);
     text-align: center;
   }
 

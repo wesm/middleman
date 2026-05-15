@@ -50,7 +50,7 @@
     width: 100%;
     padding: 3px 10px 3px 12px;
     color: var(--text-secondary);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     line-height: 1.4;
     cursor: pointer;
     text-align: left;
@@ -69,7 +69,7 @@
 
   .commit-item__sha {
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     color: var(--text-muted);
     width: 52px;
     flex-shrink: 0;
@@ -88,7 +88,7 @@
   }
 
   .commit-item__date {
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     color: var(--text-muted);
     flex-shrink: 0;
     margin-left: auto;

@@ -104,7 +104,7 @@
     padding: 4px 8px;
     border-radius: var(--radius-sm);
     color: var(--text-muted);
-    font-size: 14px;
+    font-size: var(--font-size-lg);
   }
 
   .close-btn:hover {
@@ -113,7 +113,7 @@
   }
 
   .drawer-title {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
   }
 

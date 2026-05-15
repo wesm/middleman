@@ -146,14 +146,14 @@
     justify-content: center;
     flex: 1;
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: var(--font-size-md);
     text-align: center;
   }
 
   .settings-link {
     color: var(--accent-blue);
     cursor: pointer;
-    font-size: 13px;
+    font-size: var(--font-size-md);
     margin-top: 4px;
   }
 

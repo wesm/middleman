@@ -218,7 +218,7 @@
     color: var(--text-secondary);
     cursor: pointer;
     font-family: inherit;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     text-align: left;
     transition: border-color 0.15s, color 0.15s, background 0.15s;
@@ -276,7 +276,7 @@
     color: var(--text-secondary);
     cursor: pointer;
     font-family: inherit;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     text-align: left;
     white-space: nowrap;
   }

@@ -404,7 +404,7 @@
   }
 
   .sidebar-header-label {
-    font-size: 10.5px;
+    font-size: var(--font-size-xs);
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -413,7 +413,7 @@
 
   .sidebar-header-count {
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     color: var(--text-muted);
     opacity: 0.7;
   }
@@ -448,7 +448,7 @@
     border: 0;
     background: transparent;
     font-family: var(--font-mono);
-    font-size: 10.5px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     color: var(--text-muted);
     text-align: left;
@@ -489,7 +489,7 @@
 
   .group-count {
     flex-shrink: 0;
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     color: var(--text-muted);
     opacity: 0.65;
     padding: 0 1px;
@@ -591,7 +591,7 @@
   .ws-name {
     flex: 1;
     min-width: 0;
-    font-size: 12.5px;
+    font-size: var(--font-size-md);
     font-weight: 500;
     color: var(--text-primary);
     overflow: hidden;
@@ -637,7 +637,7 @@
     min-width: 0;
     overflow: hidden;
     font-family: var(--font-mono);
-    font-size: 10.5px;
+    font-size: var(--font-size-xs);
     font-weight: 500;
     color: var(--text-secondary);
     letter-spacing: 0;
@@ -679,7 +679,7 @@
     background: var(--bubble-bg);
     color: var(--bubble-fg);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     font-weight: 700;
     line-height: 1;
     letter-spacing: 0.01em;
@@ -723,7 +723,7 @@
     align-items: center;
     gap: 4px;
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     font-variant-numeric: tabular-nums;
     color: var(--text-secondary);
   }
@@ -748,7 +748,7 @@
     display: inline-flex;
     gap: 4px;
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     font-variant-numeric: tabular-nums;
     color: var(--text-muted);
   }

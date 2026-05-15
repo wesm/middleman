@@ -157,7 +157,7 @@
   }
 
   .error-msg {
-    font-size: var(--focus-detail-type-sm, 0.92rem);
+    font-size: var(--font-size-sm);
     color: var(--accent-red);
   }
 
@@ -175,7 +175,7 @@
     position: absolute;
     right: var(--focus-detail-space-sm, 0.62rem);
     bottom: var(--focus-detail-space-sm, 0.62rem);
-    font-size: var(--focus-detail-type-sm, 1rem);
+    font-size: var(--font-size-root);
     font-weight: 500;
     padding: var(--focus-detail-space-xs, 0.46rem) var(--focus-detail-space-md, 1.08rem);
     background: var(--accent-blue);

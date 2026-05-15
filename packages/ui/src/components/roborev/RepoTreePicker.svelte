@@ -232,7 +232,7 @@
     border-radius: var(--radius-sm);
     background: var(--bg-surface);
     color: var(--text-primary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     cursor: pointer;
     white-space: nowrap;
   }
@@ -269,7 +269,7 @@
     border-bottom: 1px solid var(--border-muted);
     background: transparent;
     color: var(--text-primary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     outline: none;
     flex-shrink: 0;
   }
@@ -292,7 +292,7 @@
     border: none;
     background: transparent;
     color: var(--text-primary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     text-align: left;
     cursor: pointer;
   }
@@ -353,7 +353,7 @@
   }
 
   .branch-item {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     padding: 3px 10px;
     color: var(--text-secondary);
   }
@@ -362,12 +362,12 @@
   .no-results {
     display: block;
     padding: 6px 10px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 
   .count {
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     color: var(--text-muted);
     flex-shrink: 0;
   }

@@ -142,7 +142,7 @@
   .section-kicker {
     margin: 0;
     color: var(--accent-blue);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -157,7 +157,7 @@
 
   h1 {
     color: var(--text-primary);
-    font-size: 28px;
+    font-size: calc(var(--font-size-lg) * 2);
     line-height: 1.1;
   }
 
@@ -165,7 +165,7 @@
   .section-copy,
   .behavior-card p {
     color: var(--text-secondary);
-    font-size: 14px;
+    font-size: var(--font-size-lg);
     line-height: 1.5;
     max-width: 70ch;
   }
@@ -198,7 +198,7 @@
 
   h2 {
     color: var(--text-primary);
-    font-size: 18px;
+    font-size: calc(var(--font-size-lg) * 1.285714);
     line-height: 1.2;
     margin-top: 4px;
   }
@@ -218,7 +218,7 @@
 
   .matrix-label {
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -253,7 +253,7 @@
 
   h3 {
     color: var(--text-primary);
-    font-size: 15px;
+    font-size: calc(var(--font-size-lg) * 1.071429);
     line-height: 1.3;
   }
 

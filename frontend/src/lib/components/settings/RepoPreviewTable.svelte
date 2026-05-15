@@ -140,13 +140,13 @@
 
 <style>
   .repo-preview-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .filter-input { flex: 1; min-width: 220px; font-size: 13px; padding: 6px 10px; background: var(--bg-inset); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); }
-  select { font-size: 13px; padding: 6px 8px; background: var(--bg-inset); color: var(--text-primary); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); }
-  .toggle-filter { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+  .filter-input { flex: 1; min-width: 220px; font-size: var(--font-size-md); padding: 6px 10px; background: var(--bg-inset); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); }
+  select { font-size: var(--font-size-md); padding: 6px 8px; background: var(--bg-inset); color: var(--text-primary); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); }
+  .toggle-filter { display: inline-flex; align-items: center; gap: 5px; font-size: var(--font-size-sm); color: var(--text-secondary); white-space: nowrap; }
   .toggle-filter input { margin: 0; }
-  .shortcut-btn, .sort-btn { font-size: 12px; color: var(--accent-blue); }
+  .shortcut-btn, .sort-btn { font-size: var(--font-size-sm); color: var(--accent-blue); }
   .table-wrap { overflow: auto; border: 1px solid var(--border-muted); border-radius: var(--radius-md); }
-  .repo-preview-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .repo-preview-table { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); }
   th, td { padding: 8px 10px; border-bottom: 1px solid var(--border-muted); text-align: left; vertical-align: middle; }
   th { color: var(--text-muted); font-weight: 600; background: var(--bg-inset); }
   tr:last-child td { border-bottom: none; }
@@ -155,7 +155,7 @@
   .description { color: var(--text-secondary); min-width: 180px; }
   .disabled-row { opacity: 0.72; }
   .empty-cell { text-align: center; color: var(--text-muted); padding: 24px; }
-  .chip { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; min-height: 18px; margin-right: 4px; padding: 0 6px; border-radius: 9px; font-size: 10px; font-weight: 600; line-height: 1; letter-spacing: 0.03em; text-transform: uppercase; white-space: nowrap; }
+  .chip { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; min-height: 18px; margin-right: 4px; padding: 0 6px; border-radius: 9px; font-size: var(--font-size-2xs); font-weight: 600; line-height: 1; letter-spacing: 0.03em; text-transform: uppercase; white-space: nowrap; }
   .chip-muted { background: var(--bg-inset); color: var(--text-muted); }
   .chip-amber { background: color-mix(in srgb, var(--accent-amber) 15%, transparent); color: var(--accent-amber); }
 </style>

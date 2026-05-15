@@ -269,7 +269,7 @@
   }
 
   .modal-title {
-    font-size: 1.08rem;
+    font-size: var(--font-size-lg);
     font-weight: 600;
   }
 
@@ -304,13 +304,13 @@
   }
 
   .field-label {
-    font-size: 0.92rem;
+    font-size: var(--font-size-sm);
     font-weight: 500;
     color: var(--text-secondary);
   }
 
   .field-input {
-    font-size: 1rem;
+    font-size: var(--font-size-root);
     padding: 6px 10px;
     background: var(--bg-inset);
     border: 1px solid var(--border-default);
@@ -323,7 +323,7 @@
   }
 
   .field-textarea {
-    font-size: 1rem;
+    font-size: var(--font-size-root);
     padding: 8px 10px;
     background: var(--bg-inset);
     border: 1px solid var(--border-default);
@@ -346,7 +346,7 @@
   }
 
   .method-option {
-    font-size: 0.92rem;
+    font-size: var(--font-size-sm);
     font-weight: 500;
     padding: 5px 12px;
     border-radius: var(--radius-sm);
@@ -370,7 +370,7 @@
   }
 
   .merge-error {
-    font-size: 0.92rem;
+    font-size: var(--font-size-sm);
     color: var(--accent-red);
     padding: 8px 10px;
     background: color-mix(

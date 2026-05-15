@@ -119,7 +119,7 @@
 
   .scope-label {
     color: var(--text-secondary);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.08em;
@@ -142,7 +142,7 @@
     border-radius: 3px;
     background: transparent;
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     cursor: pointer;
   }

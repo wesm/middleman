@@ -101,7 +101,7 @@
     min-height: 16px;
     padding: 1px 5px;
     border-radius: 4px;
-    font-size: 9px;
+    font-size: 0.9em;
     line-height: 1.15;
   }
 
@@ -109,14 +109,14 @@
     min-height: 18px;
     padding: 0 6px;
     border-radius: 9px;
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
   }
 
   .chip--md {
     min-height: 22px;
     padding: 0 8px;
     border-radius: 10px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
   }
 
   .chip--interactive {

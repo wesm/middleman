@@ -305,13 +305,13 @@
   }
 
   .repo-name {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     color: var(--text-primary);
   }
 
   .repo-stats {
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     color: var(--text-muted);
   }
 
@@ -335,13 +335,13 @@
   }
 
   .item-ref {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     flex-shrink: 0;
   }
 
   .item-title {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -351,7 +351,7 @@
   }
 
   .item-time {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     flex-shrink: 0;
     margin-left: auto;
@@ -378,7 +378,7 @@
   }
 
   .event-type {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 500;
     flex-shrink: 0;
     color: var(--text-secondary);
@@ -390,12 +390,12 @@
   .event-type.evt-force-push { color: var(--accent-red); }
 
   .event-author {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 
   .event-time {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     margin-left: auto;
     flex-shrink: 0;
@@ -405,7 +405,7 @@
     padding: 40px;
     text-align: center;
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: var(--font-size-md);
   }
 
   :global(.repo-chip) {

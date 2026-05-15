@@ -592,7 +592,7 @@
 
   .seg-btn {
     padding: 3px 10px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 500;
     color: var(--text-muted);
     border-radius: calc(var(--radius-sm) - 1px);
@@ -612,7 +612,7 @@
   .search-input {
     margin-left: auto;
     width: 180px;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     padding: 4px 8px;
   }
 
@@ -698,7 +698,7 @@
 
   .compact-title {
     color: var(--text-primary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 500;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -708,13 +708,13 @@
   .compact-time {
     margin-left: auto;
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     flex-shrink: 0;
   }
 
   .compact-meta {
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
   }
 
   .compact-meta > span {
@@ -739,7 +739,7 @@
   .activity-table th {
     text-align: left;
     padding: 6px 10px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -782,7 +782,7 @@
   }
 
   :global(.evt-label) {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
@@ -793,7 +793,7 @@
 
   .col-repo {
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 
   .item-number {
@@ -807,17 +807,17 @@
 
   .col-author {
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 
   .col-when {
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 
   .link-btn {
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: var(--font-size-md);
     padding: 2px 4px;
     border-radius: var(--radius-sm);
   }
@@ -831,13 +831,13 @@
     padding: 40px;
     text-align: center;
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: var(--font-size-md);
   }
 
   .settings-link {
     color: var(--accent-blue);
     cursor: pointer;
-    font-size: 13px;
+    font-size: var(--font-size-md);
     margin-top: 4px;
     display: inline-block;
   }
@@ -850,13 +850,13 @@
     padding: 8px 16px;
     background: color-mix(in srgb, var(--accent-red) 10%, transparent);
     color: var(--accent-red);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     border-bottom: 1px solid var(--border-default);
   }
 
   .capped-notice {
     padding: 6px 16px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     color: var(--accent-amber);
     background: color-mix(in srgb, var(--accent-amber) 8%, transparent);
     border-top: 1px solid var(--border-default);

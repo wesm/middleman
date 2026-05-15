@@ -376,7 +376,7 @@
     justify-content: center;
     flex: 1;
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     padding: 24px;
     text-align: center;
   }

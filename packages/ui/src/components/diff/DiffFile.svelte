@@ -290,7 +290,7 @@
     padding: 6px 12px;
     background: var(--diff-header-bg);
     border-bottom: 1px solid var(--diff-border);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     text-align: left;
     cursor: pointer;
     color: var(--diff-text);
@@ -311,7 +311,7 @@
 
   .file-path {
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: var(--diff-text);
     flex: 1;
     min-width: 0;
@@ -332,7 +332,7 @@
 
   .stat {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     min-width: 3.5ch;
     text-align: right;
@@ -371,7 +371,7 @@
     padding: 20px;
     text-align: center;
     color: var(--diff-line-num);
-    font-size: 13px;
+    font-size: var(--font-size-md);
     font-style: italic;
   }
 
@@ -381,7 +381,7 @@
     background: var(--diff-hunk-bg);
     color: var(--diff-hunk-text);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     line-height: 20px;
   }
 

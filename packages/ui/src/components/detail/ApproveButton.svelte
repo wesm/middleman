@@ -135,7 +135,7 @@
   }
 
   .approve-comment {
-    font-size: 1rem;
+    font-size: var(--font-size-root);
     padding: 8px 10px;
     background: var(--bg-inset);
     border: 1px solid var(--border-default);
@@ -151,7 +151,7 @@
   }
 
   .approve-error {
-    font-size: 0.92rem;
+    font-size: var(--font-size-sm);
     color: var(--accent-red);
   }
 

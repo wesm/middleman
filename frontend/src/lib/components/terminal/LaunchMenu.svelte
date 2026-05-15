@@ -128,7 +128,7 @@
     background: var(--bg-surface);
     color: var(--text-primary);
     font: inherit;
-    font-size: 11.5px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     letter-spacing: 0.01em;
     cursor: pointer;
@@ -174,7 +174,7 @@
   .popover-heading {
     padding: 4px 8px 6px;
     color: var(--text-muted);
-    font-size: 10.5px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
@@ -195,7 +195,7 @@
     background: transparent;
     color: var(--text-primary);
     font: inherit;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     text-align: left;
     cursor: pointer;
   }
@@ -238,7 +238,7 @@
 
   .option-source {
     color: var(--text-muted);
-    font-size: 10.5px;
+    font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     text-transform: lowercase;
     letter-spacing: 0;

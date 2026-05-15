@@ -841,7 +841,7 @@
 
   .mobile-title {
     color: var(--text-primary);
-    font-size: var(--mobile-type-body);
+    font-size: var(--font-size-mobile-body);
     font-weight: 700;
     letter-spacing: -0.01em;
   }
@@ -878,7 +878,7 @@
     justify-content: center;
     border-radius: calc(var(--radius-md) - 0.16rem);
     color: var(--text-secondary);
-    font-size: var(--mobile-type-body);
+    font-size: var(--font-size-mobile-body);
     font-weight: 650;
     text-decoration: none;
   }
@@ -960,7 +960,7 @@
     width: 100%;
     max-width: none;
     padding: var(--focus-detail-space-sm);
-    font-size: var(--focus-detail-type-body);
+    font-size: var(--font-size-mobile-body);
     line-height: 1.58;
   }
 
@@ -979,7 +979,7 @@
   }
 
   .focus-layout--phone :global(.detail-title) {
-    font-size: var(--focus-detail-type-title);
+    font-size: var(--font-size-mobile-title);
     line-height: 1.22;
     letter-spacing: -0.015em;
   }
@@ -1019,7 +1019,7 @@
   .focus-layout--phone :global(.section-title-inline),
   .focus-layout--phone :global(.loading-placeholder),
   .focus-layout--phone :global(.detail-tab) {
-    font-size: var(--focus-detail-type-sm);
+    font-size: var(--font-size-mobile-sm);
     line-height: 1.35;
   }
 
@@ -1030,7 +1030,7 @@
   .focus-layout--phone :global(.title-edit-input),
   .focus-layout--phone :global(.add-description-btn),
   .focus-layout--phone :global(.detail-load-error) {
-    font-size: var(--focus-detail-type-body);
+    font-size: var(--font-size-mobile-body);
     line-height: 1.58;
   }
 
@@ -1058,7 +1058,7 @@
   .focus-layout--phone :global(.add-description-btn) {
     min-width: var(--focus-detail-hit-target);
     min-height: var(--focus-detail-hit-target);
-    font-size: var(--focus-detail-type-sm);
+    font-size: var(--font-size-mobile-sm);
   }
 
   .focus-layout--phone :global(.actions-row) {
@@ -1093,7 +1093,7 @@
     gap: var(--mobile-chrome-space-sm, 0.5rem);
     flex: 1;
     color: var(--text-muted);
-    font-size: var(--mobile-type-sm, 0.95rem);
+    font-size: var(--font-size-mobile-sm);
     animation: fade-in 0.3s ease;
   }
 

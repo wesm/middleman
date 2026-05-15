@@ -181,10 +181,10 @@
     padding: 12px 16px;
     box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.2);
     z-index: 100;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
   }
   .popover-header {
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     text-transform: uppercase;
     letter-spacing: 0.8px;
     color: var(--text-muted);
@@ -218,7 +218,7 @@
   }
   .row-label {
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
   }
   .row-bar-cell {
     display: flex;
@@ -238,7 +238,7 @@
   }
   .row-value {
     color: var(--text-primary);
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     font-variant-numeric: tabular-nums;
   }
   .row-unit {
@@ -246,12 +246,12 @@
   }
   .row-reset {
     color: var(--text-muted);
-    font-size: 9px;
+    font-size: 0.9em;
     opacity: 0.7;
   }
   .row-unknown {
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     font-style: italic;
   }
   .budget-spent {
@@ -259,7 +259,7 @@
     font-weight: 600;
   }
   .throttle-indicator {
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     color: var(--accent-amber);
     margin-top: 4px;
   }

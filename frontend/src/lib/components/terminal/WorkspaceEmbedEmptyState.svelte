@@ -28,7 +28,7 @@
     width: 100%;
     height: 100%;
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: var(--font-size-md);
     background: var(--bg-primary);
   }
 </style>

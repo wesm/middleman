@@ -170,7 +170,7 @@
 
   .tooling-block__title {
     margin: 0;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -196,7 +196,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 13px;
+    font-size: var(--font-size-md);
   }
 
   .tooling-row__indicator {
@@ -229,14 +229,14 @@
 
   .tooling-row__detail {
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 
   .tooling-row__recovery {
     margin: 0;
     padding-left: 16px;
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     display: flex;
     align-items: center;
     gap: 6px;
@@ -249,7 +249,7 @@
     background: var(--bg-inset);
     color: var(--text-primary);
     font-family: var(--font-mono, monospace);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
   }
 
   .tooling-row__copy {
@@ -257,6 +257,6 @@
     border: 1px solid var(--border-muted);
     border-radius: 4px;
     color: var(--text-secondary);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
   }
 </style>
