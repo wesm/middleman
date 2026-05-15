@@ -3889,7 +3889,8 @@ func (s *Syncer) fetchMRDetail(
 	if err := s.refreshTimeline(
 		ctx, repo, repoID, mrID, fullPR,
 	); err != nil {
-		// Timeline = 4 calls (comments + reviews + commits + force-push).
+		// Timeline = 4 base calls (comments + reviews + commits + force-push);
+		// provider review-thread sync is handled inside refreshTimeline.
 		calls += 4
 		return calls, err
 	}
@@ -4031,8 +4032,16 @@ func (s *Syncer) syncProviderMRDetailExtras(
 	}
 	if err == nil {
 		dbEvents := make([]db.MREvent, 0, len(events))
+		commentDedupeKeys := make([]string, 0, len(events))
 		for _, event := range events {
-			dbEvents = append(dbEvents, platform.DBMREvent(mrID, event))
+			dbEvent := platform.DBMREvent(mrID, event)
+			dbEvents = append(dbEvents, dbEvent)
+			if dbEvent.EventType == "issue_comment" {
+				commentDedupeKeys = append(commentDedupeKeys, dbEvent.DedupeKey)
+			}
+		}
+		if err := s.db.DeleteMissingMRCommentEvents(ctx, mrID, commentDedupeKeys); err != nil {
+			return calls, false, fmt.Errorf("delete missing comment events for MR #%d: %w", number, err)
 		}
 		if err := s.db.UpsertMREvents(ctx, dbEvents); err != nil {
 			return calls, false, fmt.Errorf("upsert events for MR #%d: %w", number, err)
@@ -4105,6 +4114,8 @@ func (s *Syncer) syncProviderMRReviewThreads(
 
 	dbThreads := make([]db.MRReviewThread, 0, len(threads))
 	events := make([]db.MREvent, 0, len(threads))
+	providerThreadIDs := make([]string, 0, len(threads))
+	seenProviderThreadIDs := make(map[string]struct{}, len(threads))
 	for _, thread := range threads {
 		providerThreadID := thread.ProviderThreadID
 		if providerThreadID == "" {
@@ -4113,6 +4124,11 @@ func (s *Syncer) syncProviderMRReviewThreads(
 		if providerThreadID == "" {
 			continue
 		}
+		if _, ok := seenProviderThreadIDs[providerThreadID]; ok {
+			continue
+		}
+		seenProviderThreadIDs[providerThreadID] = struct{}{}
+		providerThreadIDs = append(providerThreadIDs, providerThreadID)
 		dbThreads = append(dbThreads, db.MRReviewThread{
 			ProviderThreadID:  providerThreadID,
 			ProviderReviewID:  thread.ProviderReviewID,
@@ -4139,6 +4155,9 @@ func (s *Syncer) syncProviderMRReviewThreads(
 			CreatedAt:          createdAt,
 			DedupeKey:          "review_comment:" + providerThreadID,
 		})
+	}
+	if err := s.db.DeleteMissingMRReviewThreads(ctx, mrID, providerThreadIDs); err != nil {
+		return calls, err
 	}
 	if err := s.db.UpsertMRReviewThreads(ctx, mrID, dbThreads); err != nil {
 		return calls, err
@@ -4374,6 +4393,9 @@ func (s *Syncer) refreshTimeline(
 	}
 	if err := s.db.UpsertMREvents(ctx, events); err != nil {
 		return fmt.Errorf("upsert events for MR #%d: %w", number, err)
+	}
+	if _, err := s.syncProviderMRReviewThreads(ctx, repo, mrID, number); err != nil {
+		return fmt.Errorf("sync review threads for MR #%d: %w", number, err)
 	}
 
 	reviewDecision := DeriveReviewDecision(reviews)
@@ -5825,9 +5847,6 @@ func (s *Syncer) syncMRForRepo(
 
 		if err := s.refreshTimeline(ctx, repo, repoID, mrID, ghPR); err != nil {
 			return fmt.Errorf("refresh timeline for MR #%d: %w", number, err)
-		}
-		if _, err := s.syncProviderMRReviewThreads(ctx, repo, mrID, number); err != nil {
-			return fmt.Errorf("sync review threads for MR #%d: %w", number, err)
 		}
 
 		syncMRHeadSHA := ""

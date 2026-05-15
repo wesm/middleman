@@ -282,6 +282,37 @@ func TestNormalizeNotesDropsSystemNotes(t *testing.T) {
 	assert.Equal("gitlab:gitlab.example.com:group/project:issue:5:note:1", issueEvents[0].DedupeKey)
 }
 
+func TestNormalizeMergeRequestNotesDropsPositionedDiffNotes(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	createdAt := time.Date(2026, 4, 4, 10, 0, 0, 0, time.UTC)
+	notes := []*gitlab.Note{
+		{
+			ID:        1,
+			Body:      "top-level note",
+			Author:    gitlab.NoteAuthor{Username: "alice"},
+			CreatedAt: &createdAt,
+		},
+		{
+			ID:        2,
+			Body:      "inline diff note",
+			Author:    gitlab.NoteAuthor{Username: "reviewer"},
+			CreatedAt: &createdAt,
+			Position: &gitlab.NotePosition{
+				NewPath: "src/main.go",
+				NewLine: 9,
+			},
+		},
+	}
+
+	events := NormalizeMergeRequestNotes(testGitLabRepoRef(), 7, notes)
+
+	require.Len(events, 1)
+	assert.Equal("issue_comment", events[0].EventType)
+	assert.Equal("top-level note", events[0].Body)
+	assert.Equal("gitlab:gitlab.example.com:group/project:mr:7:note:1", events[0].DedupeKey)
+}
+
 func TestNormalizeNotesDedupeKeyIncludesRepositoryAndParent(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

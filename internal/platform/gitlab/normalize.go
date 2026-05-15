@@ -262,7 +262,7 @@ func NormalizeMergeRequestNotes(
 ) []platform.MergeRequestEvent {
 	events := make([]platform.MergeRequestEvent, 0, len(notes))
 	for _, note := range notes {
-		if note == nil || note.System {
+		if note == nil || note.System || note.Position != nil {
 			continue
 		}
 		events = append(events, platform.MergeRequestEvent{

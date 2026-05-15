@@ -671,6 +671,8 @@ components:
           type: string
         path:
           type: string
+        provider_comment_id:
+          type: string
         resolved:
           type: boolean
         side:

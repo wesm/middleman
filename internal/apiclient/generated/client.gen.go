@@ -289,23 +289,24 @@ type DiffReviewLineRange struct {
 
 // DiffReviewThreadResponse defines model for DiffReviewThreadResponse.
 type DiffReviewThreadResponse struct {
-	AuthorLogin *string `json:"author_login,omitempty"`
-	Body        string  `json:"body"`
-	CommitSha   *string `json:"commit_sha,omitempty"`
-	CreatedAt   string  `json:"created_at"`
-	DiffHeadSha *string `json:"diff_head_sha,omitempty"`
-	Id          string  `json:"id"`
-	Line        int64   `json:"line"`
-	LineType    string  `json:"line_type"`
-	NewLine     *int64  `json:"new_line,omitempty"`
-	OldLine     *int64  `json:"old_line,omitempty"`
-	OldPath     *string `json:"old_path,omitempty"`
-	Path        string  `json:"path"`
-	Resolved    bool    `json:"resolved"`
-	Side        string  `json:"side"`
-	StartLine   *int64  `json:"start_line,omitempty"`
-	StartSide   *string `json:"start_side,omitempty"`
-	UpdatedAt   string  `json:"updated_at"`
+	AuthorLogin       *string `json:"author_login,omitempty"`
+	Body              string  `json:"body"`
+	CommitSha         *string `json:"commit_sha,omitempty"`
+	CreatedAt         string  `json:"created_at"`
+	DiffHeadSha       *string `json:"diff_head_sha,omitempty"`
+	Id                string  `json:"id"`
+	Line              int64   `json:"line"`
+	LineType          string  `json:"line_type"`
+	NewLine           *int64  `json:"new_line,omitempty"`
+	OldLine           *int64  `json:"old_line,omitempty"`
+	OldPath           *string `json:"old_path,omitempty"`
+	Path              string  `json:"path"`
+	ProviderCommentId *string `json:"provider_comment_id,omitempty"`
+	Resolved          bool    `json:"resolved"`
+	Side              string  `json:"side"`
+	StartLine         *int64  `json:"start_line,omitempty"`
+	StartSide         *string `json:"start_side,omitempty"`
+	UpdatedAt         string  `json:"updated_at"`
 }
 
 // EditCommentHostInputBody defines model for EditCommentHostInputBody.
