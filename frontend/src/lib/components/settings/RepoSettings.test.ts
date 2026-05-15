@@ -164,6 +164,9 @@ describe("RepoSettings", () => {
         hide_closed: false,
         hide_bots: false,
       },
+      notifications: {
+        enabled: false,
+      },
       terminal: { font_family: "", renderer: "xterm" },
       agents: [],
     });
@@ -174,6 +177,9 @@ describe("RepoSettings", () => {
         time_range: "7d",
         hide_closed: false,
         hide_bots: false,
+      },
+      notifications: {
+        enabled: false,
       },
       terminal: { font_family: "", renderer: "xterm" },
       agents: [],

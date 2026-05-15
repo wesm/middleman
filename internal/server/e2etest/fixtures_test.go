@@ -178,6 +178,10 @@ func (m *mockGH) CreateIssueComment(context.Context, string, string, int, string
 func (m *mockGH) EditIssueComment(context.Context, string, string, int64, string) (*gh.IssueComment, error) {
 	return nil, nil
 }
+func (m *mockGH) ListNotifications(context.Context, ghclient.NotificationListOptions) ([]ghclient.NotificationThread, bool, error) {
+	return nil, false, nil
+}
+func (m *mockGH) MarkNotificationThreadRead(context.Context, string) error { return nil }
 func (m *mockGH) GetRepository(
 	ctx context.Context, owner, repo string,
 ) (*gh.Repository, error) {
