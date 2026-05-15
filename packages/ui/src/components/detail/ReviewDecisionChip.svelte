@@ -155,7 +155,7 @@
     padding: 4px 6px;
     border-radius: 4px;
     color: var(--text-primary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     line-height: 1.3;
     text-overflow: ellipsis;
     white-space: nowrap;
