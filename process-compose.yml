@@ -1,0 +1,19 @@
+version: "0.5"
+is_strict: true
+
+shell:
+  shell_command: "sh"
+  shell_argument: "-lc"
+
+processes:
+  backend:
+    description: "Go backend with Air live reload on 127.0.0.1:8091"
+    namespace: dev
+    log_location: "tmp/logs/backend-process-compose.log"
+    command: "sh ./scripts/dev-stack-backend.sh"
+
+  frontend:
+    description: "Vite frontend dev server on 127.0.0.1:5174"
+    namespace: dev
+    log_location: "tmp/logs/frontend-process-compose.log"
+    command: "sh ./scripts/dev-stack-frontend.sh"

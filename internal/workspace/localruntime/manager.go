@@ -1765,7 +1765,7 @@ func (s *session) closeSubscribers() {
 func (s *session) stop() {
 	s.stopOnce.Do(func() {
 		if s.cmd.Process != nil {
-			killSessionProcess(s.cmd.Process)
+			_ = killSessionProcess(s.cmd.Process)
 		}
 		if s.ptmx != nil {
 			_ = s.ptmx.Close()
