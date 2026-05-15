@@ -118,6 +118,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["set-issue-labels-on-host"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/sync": {
         parameters: {
             query?: never;
@@ -351,6 +367,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["set-pr-labels-on-host"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/merge": {
         parameters: {
             query?: never;
@@ -485,6 +517,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/host/{platform_host}/repo/{provider}/{owner}/{name}/labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list-repo-labels-on-host"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/host/{platform_host}/repo/{provider}/{owner}/{name}/refresh": {
         parameters: {
             query?: never;
@@ -610,6 +658,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["set-issue-github-state"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/issues/{provider}/{owner}/{name}/{number}/labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["set-issue-labels"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -930,6 +994,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pulls/{provider}/{owner}/{name}/{number}/labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["set-pr-labels"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pulls/{provider}/{owner}/{name}/{number}/merge": {
         parameters: {
             query?: never;
@@ -1073,6 +1153,22 @@ export interface paths {
         };
         /** Get repo by provider by owner by name comment autocomplete */
         get: operations["get-repo-by-provider-by-owner-by-name-comment-autocomplete"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/repo/{provider}/{owner}/{name}/labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list-repo-labels"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1970,6 +2066,15 @@ export interface components {
             repo_name: string;
             repo_owner: string;
         };
+        ItemLabelsResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ItemLabelsResponse.json
+             */
+            readonly $schema?: string;
+            labels: components["schemas"]["Label"][] | null;
+        };
         Label: {
             color: string;
             description?: string;
@@ -2298,10 +2403,12 @@ export interface components {
         ProviderCapabilitiesResponse: {
             comment_mutation: boolean;
             issue_mutation: boolean;
+            label_mutation: boolean;
             merge_mutation: boolean;
             read_ci: boolean;
             read_comments: boolean;
             read_issues: boolean;
+            read_labels: boolean;
             read_merge_requests: boolean;
             read_releases: boolean;
             read_repositories: boolean;
@@ -2372,6 +2479,20 @@ export interface components {
             readonly $schema?: string;
             branch: string;
             path: string;
+        };
+        RepoLabelsResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RepoLabelsResponse.json
+             */
+            readonly $schema?: string;
+            checked_at?: string;
+            labels: components["schemas"]["Label"][] | null;
+            stale: boolean;
+            sync_error: string;
+            synced_at?: string;
+            syncing: boolean;
         };
         RepoPreviewRequest: {
             /**
@@ -2571,6 +2692,15 @@ export interface components {
              */
             readonly $schema?: string;
             status: string;
+        };
+        SetLabelsRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/SetLabelsRequest.json
+             */
+            readonly $schema?: string;
+            labels: string[] | null;
         };
         SettingsResponse: {
             /**
@@ -3049,6 +3179,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GithubStateOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "set-issue-labels-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetLabelsRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemLabelsResponse"];
                 };
             };
             /** @description Error */
@@ -3627,6 +3796,45 @@ export interface operations {
             };
         };
     };
+    "set-pr-labels-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetLabelsRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemLabelsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "post-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-merge": {
         parameters: {
             query?: never;
@@ -3932,6 +4140,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CommentAutocompleteResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "list-repo-labels-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoLabelsResponse"];
                 };
             };
             /** @description Error */
@@ -4261,6 +4503,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GithubStateOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "set-issue-labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetLabelsRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemLabelsResponse"];
                 };
             };
             /** @description Error */
@@ -5051,6 +5331,44 @@ export interface operations {
             };
         };
     };
+    "set-pr-labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetLabelsRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemLabelsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "post-pulls-by-provider-by-owner-by-name-by-number-merge": {
         parameters: {
             query?: never;
@@ -5376,6 +5694,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CommentAutocompleteResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "list-repo-labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoLabelsResponse"];
                 };
             };
             /** @description Error */

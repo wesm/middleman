@@ -1055,6 +1055,25 @@ components:
         - ClosedAt
         - Starred
       type: object
+    ItemLabelsResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ItemLabelsResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        labels:
+          items:
+            $ref: "#/components/schemas/Label"
+          type:
+            - array
+            - "null"
+      required:
+        - labels
+      type: object
     Label:
       additionalProperties: false
       properties:
@@ -1813,6 +1832,8 @@ components:
           type: boolean
         issue_mutation:
           type: boolean
+        label_mutation:
+          type: boolean
         merge_mutation:
           type: boolean
         read_ci:
@@ -1820,6 +1841,8 @@ components:
         read_comments:
           type: boolean
         read_issues:
+          type: boolean
+        read_labels:
           type: boolean
         read_merge_requests:
           type: boolean
@@ -1842,6 +1865,7 @@ components:
         - read_comments
         - read_releases
         - read_ci
+        - read_labels
         - comment_mutation
         - state_mutation
         - merge_mutation
@@ -1849,6 +1873,7 @@ components:
         - workflow_approval
         - ready_for_review
         - issue_mutation
+        - label_mutation
       type: object
     RateLimitHostStatus:
       additionalProperties: false
@@ -1974,6 +1999,38 @@ components:
       required:
         - branch
         - path
+      type: object
+    RepoLabelsResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/RepoLabelsResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        checked_at:
+          type: string
+        labels:
+          items:
+            $ref: "#/components/schemas/Label"
+          type:
+            - array
+            - "null"
+        stale:
+          type: boolean
+        sync_error:
+          type: string
+        synced_at:
+          type: string
+        syncing:
+          type: boolean
+      required:
+        - labels
+        - stale
+        - syncing
+        - sync_error
       type: object
     RepoPreviewRequest:
       additionalProperties: false
@@ -2446,6 +2503,25 @@ components:
           type: string
       required:
         - status
+      type: object
+    SetLabelsRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/SetLabelsRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        labels:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - labels
       type: object
     SettingsResponse:
       additionalProperties: false
@@ -3218,6 +3294,55 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+  /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/labels:
+    put:
+      operationId: set-issue-labels-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetLabelsRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemLabelsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
   /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/sync:
     post:
       operationId: post-host-by-platform-host-issues-by-provider-by-owner-by-name-by-number-sync
@@ -3963,6 +4088,55 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Get host by platform host pulls by provider by owner by name by number import metadata
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/labels:
+    put:
+      operationId: set-pr-labels-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetLabelsRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemLabelsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/merge:
     post:
       operationId: post-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-merge
@@ -4353,6 +4527,43 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Get host by platform host repo by provider by owner by name comment autocomplete
+  /host/{platform_host}/repo/{provider}/{owner}/{name}/labels:
+    get:
+      operationId: list-repo-labels-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoLabelsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
   /host/{platform_host}/repo/{provider}/{owner}/{name}/refresh:
     post:
       operationId: refresh-repo-on-host
@@ -4739,6 +4950,50 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GithubStateOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+  /issues/{provider}/{owner}/{name}/{number}/labels:
+    put:
+      operationId: set-issue-labels
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetLabelsRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemLabelsResponse"
           description: OK
         default:
           content:
@@ -5605,6 +5860,50 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Get pulls by provider by owner by name by number import metadata
+  /pulls/{provider}/{owner}/{name}/{number}/labels:
+    put:
+      operationId: set-pr-labels
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetLabelsRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemLabelsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
   /pulls/{provider}/{owner}/{name}/{number}/merge:
     post:
       operationId: post-pulls-by-provider-by-owner-by-name-by-number-merge
@@ -5967,6 +6266,38 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Get repo by provider by owner by name comment autocomplete
+  /repo/{provider}/{owner}/{name}/labels:
+    get:
+      operationId: list-repo-labels
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoLabelsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
   /repo/{provider}/{owner}/{name}/refresh:
     post:
       operationId: refresh-repo

@@ -1,5 +1,6 @@
 import type {
   KanbanStatus,
+  Label,
   PullDetail,
 } from "../api/types.js";
 import {
@@ -621,6 +622,44 @@ export function createDetailStore(
     }
   }
 
+  async function setPullLabels(
+    owner: string,
+    name: string,
+    number: number,
+    labels: string[],
+  ): Promise<Label[]> {
+    const ref = currentDetailRef(owner, name, number);
+    const { data, error: requestError } = await apiClient.PUT(
+      providerItemPath("pulls", ref, "/labels"),
+      {
+        params: {
+          path: { ...providerRouteParams(ref), number },
+        },
+        body: { labels },
+      },
+    );
+    if (requestError) {
+      const message = apiErrorMessage(
+        requestError,
+        "failed to update labels",
+      );
+      storeError = message;
+      throw new Error(message);
+    }
+    const nextLabels = (data?.labels ?? []) as Label[];
+    if (isDetailShowing(owner, name, number) && detail) {
+      detail = {
+        ...detail,
+        merge_request: {
+          ...detail.merge_request,
+          labels: nextLabels,
+        },
+      };
+    }
+    void refreshPullsIfActive();
+    return nextLabels;
+  }
+
   async function updatePRContent(
     owner: string,
     name: string,
@@ -1068,6 +1107,7 @@ export function createDetailStore(
     loadDetail,
     refreshDetailOnly,
     updateKanbanState,
+    setPullLabels,
     updatePRContent,
     setLocalPRBody,
     savePRBodyInBackground,

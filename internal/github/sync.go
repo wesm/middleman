@@ -473,6 +473,7 @@ func (p gitHubClientProvider) Capabilities() platform.Capabilities {
 		ReadComments:      true,
 		ReadReleases:      true,
 		ReadCI:            true,
+		ReadLabels:        true,
 		CommentMutation:   true,
 		StateMutation:     true,
 		MergeMutation:     true,
@@ -480,6 +481,7 @@ func (p gitHubClientProvider) Capabilities() platform.Capabilities {
 		WorkflowApproval:  true,
 		ReadyForReview:    true,
 		IssueMutation:     true,
+		LabelMutation:     true,
 	}
 }
 

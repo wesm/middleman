@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
-  import type { ProviderCapabilities } from "../../api/types.js";
+  import { providerItemPath, providerRepoPath, providerRouteParams } from "../../api/provider-routes.js";
+  import type { Label, ProviderCapabilities } from "../../api/types.js";
   import {
     getStores, getClient, getActions,
     getUIConfig, getNavigate,
@@ -17,10 +17,12 @@
   import ActionButton from "../shared/ActionButton.svelte";
   import Chip from "../shared/Chip.svelte";
   import GitHubLabels from "../shared/GitHubLabels.svelte";
+  import LabelPicker from "./LabelPicker.svelte";
   import CopyItemNumber from "./CopyItemNumber.svelte";
   import MonitorUpIcon from "@lucide/svelte/icons/monitor-up";
   import PackagePlusIcon from "@lucide/svelte/icons/package-plus";
   import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
+  import TagsIcon from "@lucide/svelte/icons/tags";
   import XIcon from "@lucide/svelte/icons/x";
 
   const { issues, activity } = getStores();
@@ -36,6 +38,7 @@
     read_comments: true,
     read_releases: true,
     read_ci: true,
+    read_labels: true,
     comment_mutation: true,
     state_mutation: true,
     merge_mutation: true,
@@ -43,6 +46,7 @@
     workflow_approval: true,
     ready_for_review: true,
     issue_mutation: true,
+    label_mutation: true,
   };
 
   function currentCapabilities(): ProviderCapabilities {
@@ -153,10 +157,62 @@
     workspaceCreating = false;
     workspaceError = null;
     stateError = null;
+    labelPickerOpen = false;
+    labelPickerError = null;
+    pendingLabel = null;
   });
 
   let copied = $state(false);
   let copyTimeout: ReturnType<typeof setTimeout> | null = null;
+  let labelPickerOpen = $state(false);
+  let labelCatalog = $state<Label[]>([]);
+  let labelCatalogSyncing = $state(false);
+  let labelPickerError = $state<string | null>(null);
+  let pendingLabel = $state<string | null>(null);
+
+  function closeLabelPicker(): void {
+    labelPickerOpen = false;
+    labelPickerError = null;
+    pendingLabel = null;
+  }
+
+  async function openLabelPicker(): Promise<void> {
+    labelPickerOpen = true;
+    labelPickerError = null;
+    labelCatalogSyncing = true;
+    try {
+      const { data, error } = await client.GET(
+        providerRepoPath(routeRef, "/labels"),
+        { params: { path: providerRouteParams(routeRef) } },
+      );
+      if (error) {
+        throw new Error(error.detail ?? error.title ?? "failed to load labels");
+      }
+      labelCatalog = (data?.labels ?? []) as Label[];
+    } catch (err) {
+      labelPickerError = err instanceof Error ? err.message : String(err);
+    } finally {
+      labelCatalogSyncing = false;
+    }
+  }
+
+  async function toggleLabel(labelName: string): Promise<void> {
+    if (pendingLabel !== null) return;
+    const currentLabels = issues.getIssueDetail()?.issue.labels ?? [];
+    pendingLabel = labelName;
+    labelPickerError = null;
+    const currentNames = currentLabels.map((label) => label.name);
+    const nextNames = currentNames.includes(labelName)
+      ? currentNames.filter((name) => name !== labelName)
+      : [...currentNames, labelName];
+    try {
+      await issues.setIssueLabels(owner, name, number, nextNames);
+    } catch (err) {
+      labelPickerError = err instanceof Error ? err.message : String(err);
+    } finally {
+      pendingLabel = null;
+    }
+  }
 
   function copyBody(text: string): void {
     void copyToClipboard(text).then((ok) => {
@@ -699,9 +755,41 @@
       </div>
 
       <!-- Labels -->
-      {#if labels.length > 0}
-        <GitHubLabels {labels} mode="full" />
-      {/if}
+      <div class="label-editor-row">
+        {#if labels.length > 0}
+          <GitHubLabels {labels} mode="full" />
+        {:else}
+          <span class="label-editor-empty">No labels</span>
+        {/if}
+        {#if capabilities.read_labels && capabilities.label_mutation}
+          <div class="label-editor-anchor">
+            <ActionButton
+              label="Labels"
+              shortLabel="Labels"
+              size="sm"
+              surface="soft"
+              tone="neutral"
+              disabled={staleIssue}
+              onclick={openLabelPicker}
+            >
+              <TagsIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+            </ActionButton>
+            {#if labelPickerOpen}
+              <div class="label-editor-popover">
+                <LabelPicker
+                  catalogLabels={labelCatalog}
+                  selectedLabels={labels}
+                  syncing={labelCatalogSyncing}
+                  {pendingLabel}
+                  error={labelPickerError}
+                  ontoggle={toggleLabel}
+                  onclose={closeLabelPicker}
+                />
+              </div>
+            {/if}
+          </div>
+        {/if}
+      </div>
 
       <!-- Issue body -->
       {#if issue.Body}
@@ -1045,6 +1133,30 @@
     width: 100%;
     max-width: 800px;
     margin-inline: auto;
+  }
+
+  .label-editor-row {
+    display: flex;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .label-editor-empty {
+    color: var(--text-tertiary);
+    font-size: var(--font-size-sm);
+    line-height: 28px;
+  }
+
+  .label-editor-anchor {
+    position: relative;
+  }
+
+  .label-editor-popover {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + 4px);
+    left: 0;
   }
 
   .detail-header {

@@ -16,6 +16,8 @@ const (
 	capabilityWorkflowApproval = "workflow_approval"
 	capabilityReadyForReview   = "ready_for_review"
 	capabilityIssueMutation    = "issue_mutation"
+	capabilityReadLabels       = "read_labels"
+	capabilityLabelMutation    = "label_mutation"
 )
 
 type unsupportedCapabilityDetail struct {
@@ -77,6 +79,10 @@ func capabilityEnabled(
 		return caps.ReadyForReview
 	case capabilityIssueMutation:
 		return caps.IssueMutation
+	case capabilityReadLabels:
+		return caps.ReadLabels
+	case capabilityLabelMutation:
+		return caps.LabelMutation
 	default:
 		return false
 	}

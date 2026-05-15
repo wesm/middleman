@@ -1,4 +1,4 @@
-import type { Issue, IssueDetail, IssuesParams } from "../api/types.js";
+import type { Issue, IssueDetail, IssuesParams, Label } from "../api/types.js";
 import {
   providerItemPath,
   providerRouteParams,
@@ -306,6 +306,19 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     return undefined;
   }
 
+  function isIssueDetailShowing(
+    owner: string,
+    name: string,
+    number: number,
+  ): boolean {
+    return (
+      issueDetail !== null &&
+      issueDetail.repo_owner === owner &&
+      issueDetail.repo_name === name &&
+      issueDetail.issue.Number === number
+    );
+  }
+
   function currentIssueDetailRef(
     owner: string,
     name: string,
@@ -586,6 +599,44 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     detailError = null;
     issueDetailLoaded = false;
     unsavedLocalBody = null;
+  }
+
+  async function setIssueLabels(
+    owner: string,
+    name: string,
+    number: number,
+    labels: string[],
+  ): Promise<Label[]> {
+    const ref = currentIssueDetailRef(owner, name, number);
+    const { data, error: requestError } = await apiClient.PUT(
+      providerItemPath("issues", ref, "/labels"),
+      {
+        params: {
+          path: { ...providerRouteParams(ref), number },
+        },
+        body: { labels },
+      },
+    );
+    if (requestError) {
+      const message = apiErrorMessage(
+        requestError,
+        "failed to update labels",
+      );
+      detailError = message;
+      throw new Error(message);
+    }
+    const nextLabels = (data?.labels ?? []) as Label[];
+    if (isIssueDetailShowing(owner, name, number) && issueDetail) {
+      issueDetail = {
+        ...issueDetail,
+        issue: {
+          ...issueDetail.issue,
+          labels: nextLabels,
+        },
+      };
+    }
+    void refreshIssuesIfActive();
+    return nextLabels;
   }
 
   async function submitIssueComment(
@@ -1016,6 +1067,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     startIssueDetailPolling,
     stopIssueDetailPolling,
     clearIssueDetail,
+    setIssueLabels,
     submitIssueComment,
     editIssueComment,
     setLocalIssueBody,

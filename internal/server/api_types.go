@@ -21,6 +21,7 @@ type providerCapabilitiesResponse struct {
 	ReadComments      bool `json:"read_comments"`
 	ReadReleases      bool `json:"read_releases"`
 	ReadCI            bool `json:"read_ci"`
+	ReadLabels        bool `json:"read_labels"`
 	CommentMutation   bool `json:"comment_mutation"`
 	StateMutation     bool `json:"state_mutation"`
 	MergeMutation     bool `json:"merge_mutation"`
@@ -28,6 +29,7 @@ type providerCapabilitiesResponse struct {
 	WorkflowApproval  bool `json:"workflow_approval"`
 	ReadyForReview    bool `json:"ready_for_review"`
 	IssueMutation     bool `json:"issue_mutation"`
+	LabelMutation     bool `json:"label_mutation"`
 }
 
 type repoResponse struct {

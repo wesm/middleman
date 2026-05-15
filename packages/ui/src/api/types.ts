@@ -46,6 +46,8 @@ export type WorkspaceRuntime =
 
 export type Label = components["schemas"]["Label"];
 export type IssueLabel = Label;
+export type RepoLabelsResponse = components["schemas"]["RepoLabelsResponse"];
+export type ItemLabelsResponse = components["schemas"]["ItemLabelsResponse"];
 
 export type KanbanStatus = "new" | "reviewing" | "waiting" | "awaiting_merge";
 

@@ -157,6 +157,7 @@ func providerCapabilitiesFromPlatform(caps platform.Capabilities) providerCapabi
 		ReadComments:      caps.ReadComments,
 		ReadReleases:      caps.ReadReleases,
 		ReadCI:            caps.ReadCI,
+		ReadLabels:        caps.ReadLabels,
 		CommentMutation:   caps.CommentMutation,
 		StateMutation:     caps.StateMutation,
 		MergeMutation:     caps.MergeMutation,
@@ -164,6 +165,7 @@ func providerCapabilitiesFromPlatform(caps platform.Capabilities) providerCapabi
 		WorkflowApproval:  caps.WorkflowApproval,
 		ReadyForReview:    caps.ReadyForReview,
 		IssueMutation:     caps.IssueMutation,
+		LabelMutation:     caps.LabelMutation,
 	}
 }
 
@@ -175,6 +177,7 @@ func defaultGitHubProviderCapabilities() providerCapabilitiesResponse {
 		ReadComments:      true,
 		ReadReleases:      true,
 		ReadCI:            true,
+		ReadLabels:        true,
 		CommentMutation:   true,
 		StateMutation:     true,
 		MergeMutation:     true,
@@ -182,6 +185,7 @@ func defaultGitHubProviderCapabilities() providerCapabilitiesResponse {
 		WorkflowApproval:  true,
 		ReadyForReview:    true,
 		IssueMutation:     true,
+		LabelMutation:     true,
 	})
 }
 

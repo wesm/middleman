@@ -55,6 +55,7 @@ type PullSuffix =
   | "/file-preview"
   | "/github-state"
   | "/import-metadata"
+  | "/labels"
   | "/merge"
   | "/ready-for-review"
   | "/stack"
@@ -67,6 +68,7 @@ type IssueSuffix =
   | "/comments"
   | "/comments/{comment_id}"
   | "/github-state"
+  | "/labels"
   | "/sync"
   | "/sync/async"
   | "/workspace";
@@ -108,7 +110,7 @@ export function providerItemPath(
   return `/${kind}/{provider}/{owner}/{name}/{number}${suffix}`;
 }
 
-type RepoSuffix = "" | "/comment-autocomplete" | "/refresh" | "/resolve/{number}";
+type RepoSuffix = "" | "/comment-autocomplete" | "/labels" | "/refresh" | "/resolve/{number}";
 
 type RepoPath<S extends RepoSuffix> =
   | `/repo/{provider}/{owner}/{name}${S}`

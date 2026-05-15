@@ -194,6 +194,7 @@ type Capabilities struct {
 	ReadComments      bool
 	ReadReleases      bool
 	ReadCI            bool
+	ReadLabels        bool
 	CommentMutation   bool
 	StateMutation     bool
 	MergeMutation     bool
@@ -201,6 +202,7 @@ type Capabilities struct {
 	WorkflowApproval  bool
 	ReadyForReview    bool
 	IssueMutation     bool
+	LabelMutation     bool
 }
 
 type RepositoryListOptions struct {
