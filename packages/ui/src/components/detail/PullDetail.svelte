@@ -611,6 +611,7 @@
   <div class="state-center"><p class="state-msg state-msg--error">Error: {detailStore.getDetailError()}</p></div>
 {:else}
   {@const detail = detailStore.getDetail()}
+  {@const staleLoadError = stalePR && detailStore.getDetailError() !== null}
   {#if detail !== null}
     {@const pr = detail.merge_request}
     {@const capabilities = detail.repo?.capabilities ?? defaultProviderCapabilities}
@@ -621,7 +622,7 @@
       detail.repo?.name ?? name,
     )}
     <div class="pull-detail-wrap">
-      {#if stalePR && detailStore.getDetailError() !== null}
+      {#if staleLoadError}
         <div class="detail-load-error" data-testid="detail-load-error">
           Couldn't load this pull request: {detailStore.getDetailError()}
         </div>
