@@ -791,12 +791,12 @@
 
 <style>
   .mobile-shell {
-    --mobile-type-xs: 1.08rem;
-    --mobile-type-sm: 1.17rem;
-    --mobile-type-body: 1.24rem;
-    --mobile-type-title: 1.54rem;
-    --mobile-type-display: 2.15rem;
-    --mobile-type-metric: 1.97rem;
+    --mobile-type-xs: var(--font-size-mobile-xs, 1.08rem);
+    --mobile-type-sm: var(--font-size-mobile-sm, 1.17rem);
+    --mobile-type-body: var(--font-size-mobile-body, 1.24rem);
+    --mobile-type-title: var(--font-size-mobile-title, 1.54rem);
+    --mobile-type-display: var(--font-size-mobile-display, 2.15rem);
+    --mobile-type-metric: var(--font-size-mobile-metric, 1.97rem);
     --mobile-chrome-space-xs: 0.5rem;
     --mobile-chrome-space-sm: 0.75rem;
     --mobile-chrome-space-md: 1rem;
@@ -917,12 +917,12 @@
   }
 
   .focus-layout--phone {
-    --mobile-type-xs: 1.08rem;
-    --mobile-type-sm: 1.17rem;
-    --mobile-type-body: 1.24rem;
-    --mobile-type-title: 1.54rem;
-    --mobile-type-display: 2.15rem;
-    --mobile-type-metric: 1.97rem;
+    --mobile-type-xs: var(--font-size-mobile-xs, 1.08rem);
+    --mobile-type-sm: var(--font-size-mobile-sm, 1.17rem);
+    --mobile-type-body: var(--font-size-mobile-body, 1.24rem);
+    --mobile-type-title: var(--font-size-mobile-title, 1.54rem);
+    --mobile-type-display: var(--font-size-mobile-display, 2.15rem);
+    --mobile-type-metric: var(--font-size-mobile-metric, 1.97rem);
     --focus-detail-type-xs: var(--mobile-type-xs);
     --focus-detail-type-sm: var(--mobile-type-sm);
     --focus-detail-type-body: var(--mobile-type-body);

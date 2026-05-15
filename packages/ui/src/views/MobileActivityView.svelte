@@ -399,12 +399,12 @@
 
 <style>
   .mobile-activity-inbox {
-    --mobile-type-xs: 1.08rem;
-    --mobile-type-sm: 1.17rem;
-    --mobile-type-body: 1.24rem;
-    --mobile-type-title: 1.54rem;
-    --mobile-type-display: 2.15rem;
-    --mobile-type-metric: 1.97rem;
+    --mobile-type-xs: var(--font-size-mobile-xs, 1.08rem);
+    --mobile-type-sm: var(--font-size-mobile-sm, 1.17rem);
+    --mobile-type-body: var(--font-size-mobile-body, 1.24rem);
+    --mobile-type-title: var(--font-size-mobile-title, 1.54rem);
+    --mobile-type-display: var(--font-size-mobile-display, 2.15rem);
+    --mobile-type-metric: var(--font-size-mobile-metric, 1.97rem);
     --mobile-space-2xs: 0.36rem;
     --mobile-space-xs: 0.55rem;
     --mobile-space-sm: 0.75rem;

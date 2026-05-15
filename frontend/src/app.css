@@ -30,6 +30,21 @@
   --radius-lg: 8px;
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+
+  /* Typography */
+  --font-size-2xs: 10px;
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-md: 13px;
+  --font-size-lg: 14px;
+  --font-size-root: var(--font-size-md);
+  --font-size-mobile-xs: 1.08rem;
+  --font-size-mobile-sm: 1.17rem;
+  --font-size-mobile-body: 1.24rem;
+  --font-size-mobile-title: 1.54rem;
+  --font-size-mobile-display: 2.15rem;
+  --font-size-mobile-metric: 1.97rem;
+
   --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.1);
   --overlay-bg: rgba(0, 0, 0, 0.3);
   --header-height: 44px;
@@ -151,7 +166,7 @@ html, body {
   height: 100%;
   overflow: hidden;
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: var(--font-size-root);
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   line-height: 1.5;
