@@ -156,9 +156,17 @@ func mergeLabelRowAssociationsTx(ctx context.Context, tx *sql.Tx, fromLabelID, t
 		        THEN 1
 		        ELSE catalog_present
 		    END,
-		    catalog_seen_at = COALESCE(catalog_seen_at, (SELECT catalog_seen_at FROM middleman_labels WHERE id = ?))
+		    catalog_seen_at = CASE
+		        WHEN catalog_seen_at IS NULL
+		        THEN (SELECT catalog_seen_at FROM middleman_labels WHERE id = ?)
+		        WHEN (SELECT catalog_seen_at FROM middleman_labels WHERE id = ?) IS NULL
+		        THEN catalog_seen_at
+		        WHEN (SELECT catalog_seen_at FROM middleman_labels WHERE id = ?) > catalog_seen_at
+		        THEN (SELECT catalog_seen_at FROM middleman_labels WHERE id = ?)
+		        ELSE catalog_seen_at
+		    END
 		WHERE id = ?`,
-		fromLabelID, fromLabelID, toLabelID,
+		fromLabelID, fromLabelID, fromLabelID, fromLabelID, fromLabelID, toLabelID,
 	); err != nil {
 		return fmt.Errorf("merge label catalog metadata: %w", err)
 	}
@@ -1088,15 +1096,23 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			              THEN (SELECT default_branch FROM middleman_repos WHERE id = ?)
 			              ELSE default_branch
 			          END,
-			          label_catalog_synced_at = COALESCE(label_catalog_synced_at, (SELECT label_catalog_synced_at FROM middleman_repos WHERE id = ?)),
-			          label_catalog_checked_at = COALESCE(label_catalog_checked_at, (SELECT label_catalog_checked_at FROM middleman_repos WHERE id = ?)),
+			          label_catalog_synced_at = CASE
+			              WHEN (SELECT label_catalog_checked_at FROM middleman_repos WHERE id = ?) > COALESCE(label_catalog_checked_at, '')
+			              THEN (SELECT label_catalog_synced_at FROM middleman_repos WHERE id = ?)
+			              ELSE label_catalog_synced_at
+			          END,
+			          label_catalog_checked_at = CASE
+			              WHEN (SELECT label_catalog_checked_at FROM middleman_repos WHERE id = ?) > COALESCE(label_catalog_checked_at, '')
+			              THEN (SELECT label_catalog_checked_at FROM middleman_repos WHERE id = ?)
+			              ELSE label_catalog_checked_at
+			          END,
 			          label_catalog_sync_error = CASE
-			              WHEN label_catalog_sync_error = ''
+			              WHEN (SELECT label_catalog_checked_at FROM middleman_repos WHERE id = ?) > COALESCE(label_catalog_checked_at, '')
 			              THEN (SELECT label_catalog_sync_error FROM middleman_repos WHERE id = ?)
 			              ELSE label_catalog_sync_error
 			          END
 			      WHERE id = ?`,
-			args: []any{fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, toRepoID},
+			args: []any{fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, toRepoID},
 		},
 		{
 			name: "move merge requests",
@@ -1181,13 +1197,12 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			              THEN 1
 			              ELSE catalog_present
 			          END,
-			          catalog_seen_at = COALESCE(
-			              catalog_seen_at,
-			              (
-			                  SELECT source.catalog_seen_at
+			          catalog_seen_at = CASE
+			              WHEN catalog_seen_at IS NULL
+			              THEN (
+			                  SELECT MAX(source.catalog_seen_at)
 			                  FROM middleman_labels AS source
 			                  WHERE source.repo_id = ?
-			                    AND source.catalog_seen_at IS NOT NULL
 			                    AND (
 			                        source.name = target.name
 			                        OR (
@@ -1196,10 +1211,35 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			                            AND source.platform_id = target.platform_id
 			                        )
 			                    )
-			                  ORDER BY source.catalog_seen_at DESC
-			                  LIMIT 1
 			              )
-			          )
+			              WHEN (
+			                  SELECT MAX(source.catalog_seen_at)
+			                  FROM middleman_labels AS source
+			                  WHERE source.repo_id = ?
+			                    AND (
+			                        source.name = target.name
+			                        OR (
+			                            source.platform_id IS NOT NULL
+			                            AND target.platform_id IS NOT NULL
+			                            AND source.platform_id = target.platform_id
+			                        )
+			                    )
+			              ) > catalog_seen_at
+			              THEN (
+			                  SELECT MAX(source.catalog_seen_at)
+			                  FROM middleman_labels AS source
+			                  WHERE source.repo_id = ?
+			                    AND (
+			                        source.name = target.name
+			                        OR (
+			                            source.platform_id IS NOT NULL
+			                            AND target.platform_id IS NOT NULL
+			                            AND source.platform_id = target.platform_id
+			                        )
+			                    )
+			              )
+			              ELSE catalog_seen_at
+			          END
 			      WHERE target.repo_id = ?
 			        AND EXISTS (
 			            SELECT 1
@@ -1214,7 +1254,7 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			                  )
 			              )
 			        )`,
-			args: []any{fromRepoID, fromRepoID, toRepoID, fromRepoID},
+			args: []any{fromRepoID, fromRepoID, fromRepoID, fromRepoID, toRepoID, fromRepoID},
 		},
 		{
 			name: "copy issue label associations to duplicate labels",
