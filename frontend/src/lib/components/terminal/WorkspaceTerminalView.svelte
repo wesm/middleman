@@ -110,6 +110,7 @@
   let actionError = $state<string | null>(null);
   let retryingSetup = $state(false);
   let forcePromptMessage = $state<string | null>(null);
+  let forcePromptForId = $state<string | null>(null);
   let forceDeleting = $state(false);
   let cancelForceBtnEl = $state<HTMLButtonElement | null>(null);
   let runtimeError = $state<string | null>(null);
@@ -777,16 +778,18 @@
   async function handleDelete(): Promise<void> {
     if (actionsBlocked) return;
     actionError = null;
+    const targetId = workspaceId;
     const { error, response } = await client.DELETE(
       "/workspaces/{id}",
       {
-        params: { path: { id: workspaceId } },
+        params: { path: { id: targetId } },
       },
     );
     if (response.status === 409) {
       forcePromptMessage =
         error?.detail ??
         "Workspace has uncommitted changes.";
+      forcePromptForId = targetId;
       return;
     }
     if (!response.ok && response.status !== 204) {
@@ -801,6 +804,8 @@
 
   async function confirmForceDelete(): Promise<void> {
     if (forceDeleting) return;
+    const targetId = forcePromptForId;
+    if (targetId === null) return;
     forceDeleting = true;
     actionError = null;
     try {
@@ -808,7 +813,7 @@
         "/workspaces/{id}",
         {
           params: {
-            path: { id: workspaceId },
+            path: { id: targetId },
             query: { force: true },
           },
         },
@@ -819,9 +824,11 @@
           `Delete failed (${response.status})`,
         );
         forcePromptMessage = null;
+        forcePromptForId = null;
         return;
       }
       forcePromptMessage = null;
+      forcePromptForId = null;
       navigate("/workspaces");
     } finally {
       forceDeleting = false;
@@ -831,6 +838,7 @@
   function cancelForceDelete(): void {
     if (forceDeleting) return;
     forcePromptMessage = null;
+    forcePromptForId = null;
   }
 
   let previouslyFocusedEl: HTMLElement | null = null;
@@ -930,6 +938,12 @@
     loadError = null;
     actionError = null;
     runtimeError = null;
+    // A 409 force-delete prompt is bound to the workspace that
+    // produced it. Dismiss it on any route change so the user
+    // can't confirm a destructive action targeting a workspace
+    // they're no longer looking at.
+    forcePromptMessage = null;
+    forcePromptForId = null;
     tmuxTerminalMounted = restoredTab === "tmux";
     mountedSessionKeys = restoredTab.startsWith("session:")
       ? [restoredTab.slice("session:".length)]

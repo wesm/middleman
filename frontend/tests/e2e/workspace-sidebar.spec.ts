@@ -798,6 +798,55 @@ test.describe("terminal state icons", () => {
       await expect(headerDelete).toBeFocused();
     },
   );
+
+  test(
+    "force-delete prompt is dismissed when the workspace route changes",
+    async ({ page }) => {
+      const deleteRequests: string[] = [];
+      page.on("request", (req) => {
+        if (req.method() === "DELETE") {
+          deleteRequests.push(req.url());
+        }
+      });
+
+      await setupTerminalMocks(page, {
+        workspaceDeleteResponses: [
+          {
+            status: 409,
+            body: {
+              detail: "Worktree has uncommitted changes.",
+            },
+          },
+        ],
+      });
+
+      await page.goto("/terminal/ws-123");
+
+      await page
+        .locator(".header-bar")
+        .getByRole("button", { name: "Delete" })
+        .click();
+
+      const dialog = page.getByRole("dialog", {
+        name: "Force delete workspace?",
+      });
+      await expect(dialog).toBeVisible();
+
+      // The component persists across workspaceId changes (no {#key} wrapper),
+      // so the prompt would otherwise stay open after navigation and leak a
+      // destructive confirmation onto the next workspace.
+      await page.evaluate(() => {
+        history.pushState(null, "", "/workspaces");
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      });
+
+      await expect(dialog).toBeHidden();
+      // Only the initial DELETE fired — no force-delete reached the server
+      // after the route change dismissed the prompt.
+      expect(deleteRequests).toHaveLength(1);
+      expect(deleteRequests[0]).not.toContain("force=true");
+    },
+  );
 });
 
 test.describe("workspace launch home", () => {
