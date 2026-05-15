@@ -338,14 +338,26 @@ a:hover {
   list-style: none;
   padding-left: 0;
 }
+/* The <li> is a flex row so the checkbox aligns with the first line of
+   the label, but `flex-wrap: wrap` plus `flex-basis: 100%` on nested
+   lists pushes them onto their own row — otherwise a nested `<ul>` or
+   `<ol>` would render as a flex row sibling of the checkbox and
+   collapse the visible hierarchy. */
 .markdown-body .task-list-item {
   position: relative;
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 6px;
+  column-gap: 6px;
+  row-gap: 0;
   padding: 1px 4px 1px 22px;
   margin: 0;
   border-radius: var(--radius-sm);
+}
+.markdown-body .task-list-item > ul,
+.markdown-body .task-list-item > ol {
+  flex-basis: 100%;
+  margin: 0;
 }
 .markdown-body .task-list-item input[type="checkbox"] {
   margin: 0 4px 0 0;

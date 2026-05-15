@@ -31,6 +31,39 @@ describe("listTaskItems", () => {
     ]);
   });
 
+  it("keeps a longer fence open across shorter inner fences", () => {
+    // A 4-backtick fence is allowed to contain a literal 3-backtick
+    // line; the close fence must match the opener's char and have at
+    // least as many backticks. Without this rule, the inner ``` would
+    // prematurely close the block and the second `[ ] inside` would
+    // wrongly count as a task, shifting indices for the real task.
+    const src = [
+      "````",
+      "```",
+      "- [ ] inside fenced block",
+      "```",
+      "````",
+      "- [ ] real task after fence",
+    ].join("\n");
+    expect(listTaskItems(src)).toEqual([
+      { index: 0, checked: false, line: 5 },
+    ]);
+  });
+
+  it("does not close a backtick fence with a tilde fence", () => {
+    const src = [
+      "```",
+      "- [ ] inside backtick fence",
+      "~~~",
+      "- [ ] still inside backtick fence",
+      "```",
+      "- [ ] real task after fence",
+    ].join("\n");
+    expect(listTaskItems(src)).toEqual([
+      { index: 0, checked: false, line: 5 },
+    ]);
+  });
+
   it("ignores task-shaped lines inside fenced code blocks", () => {
     const src = [
       "- [ ] real one",

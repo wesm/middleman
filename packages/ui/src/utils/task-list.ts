@@ -14,7 +14,12 @@
 // shift indices.
 const TASK_LINE = /^([\t ]*(?:[-*+]|\d+\.)[\t ]+\[)([ xX])(\])(?:[\t ]|$)/;
 const BULLET_LINE = /^[\t ]*(?:[-*+]|\d+\.)[\t ]+/;
-const FENCE_LINE = /^[\t ]*(```|~~~)/;
+// Fenced code block opener: 3+ matching characters (` or ~) with
+// optional leading whitespace. Captures the character and run so the
+// close fence can be validated against the same marker and length per
+// CommonMark — e.g. a four-backtick fence can contain a literal
+// three-backtick line without ending the block.
+const FENCE_LINE = /^[\t ]*(`{3,}|~{3,})/;
 
 export interface TaskItem {
   // Zero-based index of this task in document order.
@@ -53,22 +58,37 @@ type TaskLineVisitor = (
 // context is tracked so an indented task line under a parent bullet
 // is recognized as a nested task rather than a code-block line.
 function walkTaskLines(lines: string[], visitor: TaskLineVisitor): void {
-  let inFence = false;
+  // `openFence` is null outside a fenced code block; while inside,
+  // it records the opener's marker character and minimum length, so
+  // the close fence has to match (same char, at least as long).
+  let openFence: { char: string; length: number } | null = null;
   let listIndent: number | null = null;
   let taskIndex = 0;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
-    if (FENCE_LINE.test(line)) {
-      inFence = !inFence;
-      // A fenced block at the same indent as the list bullet ends
-      // the list — Markdown treats the fence as block-level content.
-      if (!inFence && listIndent !== null
-        && leadingWhitespaceCount(line) <= listIndent) {
-        listIndent = null;
+    const fenceMatch = line.match(FENCE_LINE);
+    if (fenceMatch) {
+      const run = fenceMatch[1]!;
+      const char = run[0]!;
+      if (openFence === null) {
+        openFence = { char, length: run.length };
+        continue;
       }
+      if (char === openFence.char && run.length >= openFence.length) {
+        openFence = null;
+        // A fenced block at the same indent as the list bullet ends
+        // the list — Markdown treats the fence as block-level content.
+        if (listIndent !== null
+          && leadingWhitespaceCount(line) <= listIndent) {
+          listIndent = null;
+        }
+        continue;
+      }
+      // Mismatched marker or shorter run: this line stays inside the
+      // current code block as plain content.
       continue;
     }
-    if (inFence) continue;
+    if (openFence !== null) continue;
     if (line.trim() === "") continue;
 
     const indent = leadingWhitespaceCount(line);
