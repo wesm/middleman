@@ -1118,6 +1118,16 @@ func TestManagerDeleteAllowsErroredWorkspaceWhenTmuxUnavailable(t *testing.T) {
 	assert.Nil(got)
 }
 
+func TestManagerReapOrphanTmuxSessionsIgnoresUnavailableTmux(t *testing.T) {
+	require := require.New(t)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{filepath.Join(t.TempDir(), "missing-tmux")})
+
+	require.NoError(mgr.ReapOrphanTmuxSessions(context.Background()))
+}
+
 func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
