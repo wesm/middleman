@@ -58,6 +58,53 @@ const prSquashOnly = {
   repo_name: "squash-only",
 };
 
+const providerCapabilities = {
+  comment_mutation: true,
+  issue_mutation: true,
+  merge_mutation: true,
+  read_ci: true,
+  read_comments: true,
+  read_issues: true,
+  read_merge_requests: true,
+  read_releases: true,
+  read_repositories: true,
+  ready_for_review: true,
+  review_mutation: true,
+  state_mutation: true,
+  workflow_approval: true,
+};
+
+function repoEnvelope(item: {
+  repo_owner: string;
+  repo_name: string;
+  platform_host: string;
+}) {
+  return {
+    provider: "github",
+    platform_host: item.platform_host,
+    owner: item.repo_owner,
+    name: item.repo_name,
+    repo_path: `${item.repo_owner}/${item.repo_name}`,
+    capabilities: providerCapabilities,
+  };
+}
+
+function pullDetailApiPath(pr: typeof prA): string {
+  return `**/api/v1/pulls/github/${pr.repo_owner}/${pr.repo_name}/${pr.Number}`;
+}
+
+function issueDetailApiPath(issue: {
+  repo_owner: string;
+  repo_name: string;
+  Number: number;
+}): string {
+  return `**/api/v1/issues/github/${issue.repo_owner}/${issue.repo_name}/${issue.Number}`;
+}
+
+function repoSettingsApiPath(pr: typeof prA): string {
+  return `**/api/v1/repo/github/${pr.repo_owner}/${pr.repo_name}`;
+}
+
 const issueX = {
   ID: 31,
   RepoID: 1,
@@ -90,26 +137,34 @@ const issueY = {
   Body: "Body Y",
 };
 
-function detailEnvelopePR(pr: typeof prA): unknown {
+function detailEnvelopePR(
+  pr: typeof prA & { workspace?: { id: string } },
+): unknown {
   return {
     merge_request: pr,
+    repo: repoEnvelope(pr),
     repo_owner: pr.repo_owner,
     repo_name: pr.repo_name,
     detail_loaded: true,
     detail_fetched_at: "2026-04-01T12:00:00Z",
     worktree_links: pr.worktree_links,
+    workspace: pr.workspace,
   };
 }
 
-function detailEnvelopeIssue(issue: typeof issueX): unknown {
+function detailEnvelopeIssue(
+  issue: typeof issueX & { workspace?: { id: string } },
+): unknown {
   return {
     issue,
     events: [],
+    repo: repoEnvelope(issue),
     platform_host: issue.platform_host,
     repo_owner: issue.repo_owner,
     repo_name: issue.repo_name,
     detail_loaded: true,
     detail_fetched_at: "2026-04-01T12:00:00Z",
+    workspace: issue.workspace,
   };
 }
 
@@ -163,6 +218,32 @@ async function mockSettings(page: Page): Promise<void> {
       }),
     });
   });
+
+  await page.route("**/api/v1/repo/github/**", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    const parts = new URL(route.request().url()).pathname.split("/");
+    const owner = parts.at(-2) ?? "acme";
+    const name = parts.at(-1) ?? "widgets";
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ID: name === "squash-only" ? prSquashOnly.RepoID : prA.RepoID,
+        Owner: owner,
+        Name: name,
+        AllowSquashMerge: true,
+        AllowMergeCommit: true,
+        AllowRebaseMerge: true,
+        LastSyncStartedAt: "2026-04-01T12:00:00Z",
+        LastSyncCompletedAt: "2026-04-01T12:00:30Z",
+        LastSyncError: "",
+        CreatedAt: "2026-03-01T00:00:00Z",
+      }),
+    });
+  });
 }
 
 async function setupHeldPR(
@@ -179,7 +260,7 @@ async function setupHeldPR(
 
   // Fast PR: instant detail GET.
   await page.route(
-    `**/api/v1/repos/${fast.repo_owner}/${fast.repo_name}/pulls/${fast.Number}`,
+    pullDetailApiPath(fast),
     async (route: Route) => {
       if (route.request().method() === "GET") {
         await route.fulfill({
@@ -195,7 +276,7 @@ async function setupHeldPR(
 
   // Slow PR: held until release().
   await page.route(
-    `**/api/v1/repos/${slow.repo_owner}/${slow.repo_name}/pulls/${slow.Number}`,
+    pullDetailApiPath(slow),
     async (route: Route) => {
       if (route.request().method() === "GET") {
         await slowDelay;
@@ -226,7 +307,7 @@ async function setupHeldIssue(
   });
 
   await page.route(
-    `**/api/v1/repos/${fast.repo_owner}/${fast.repo_name}/issues/${fast.Number}`,
+    issueDetailApiPath(fast),
     async (route: Route) => {
       if (route.request().method() === "GET") {
         await route.fulfill({
@@ -241,7 +322,7 @@ async function setupHeldIssue(
   );
 
   await page.route(
-    `**/api/v1/repos/${slow.repo_owner}/${slow.repo_name}/issues/${slow.Number}`,
+    issueDetailApiPath(slow),
     async (route: Route) => {
       if (route.request().method() === "GET") {
         await slowDelay;
@@ -270,7 +351,7 @@ test.describe("PR detail merge modal route reset", () => {
     };
 
     await page.route(
-      `**/api/v1/repos/${conflictedPR.repo_owner}/${conflictedPR.repo_name}/pulls/${conflictedPR.Number}`,
+      pullDetailApiPath(conflictedPR),
       async (route) => {
         if (route.request().method() === "GET") {
           await route.fulfill({
@@ -307,7 +388,7 @@ test.describe("PR detail merge modal route reset", () => {
 
     for (const pr of [prA, prB]) {
       await page.route(
-        `**/api/v1/repos/${pr.repo_owner}/${pr.repo_name}/pulls/${pr.Number}`,
+        pullDetailApiPath(pr),
         async (route) => {
           if (route.request().method() === "GET") {
             await route.fulfill({
@@ -356,7 +437,7 @@ test.describe("PR detail merge modal route reset", () => {
 
     for (const pr of [prA, prSquashOnly]) {
       await page.route(
-        `**/api/v1/repos/${pr.repo_owner}/${pr.repo_name}/pulls/${pr.Number}`,
+        pullDetailApiPath(pr),
         async (route) => {
           if (route.request().method() === "GET") {
             await route.fulfill({
@@ -377,7 +458,7 @@ test.describe("PR detail merge modal route reset", () => {
     });
 
     await page.route(
-      `**/api/v1/repos/${prSquashOnly.repo_owner}/${prSquashOnly.repo_name}`,
+      repoSettingsApiPath(prSquashOnly),
       async (route) => {
         if (route.request().method() === "GET") {
           await squashSettingsReady;
@@ -449,7 +530,7 @@ test.describe("detail load-error banner", () => {
     await mockSettings(page);
 
     await page.route(
-      `**/api/v1/repos/${prA.repo_owner}/${prA.repo_name}/pulls/${prA.Number}`,
+      pullDetailApiPath(prA),
       async (route) => {
         if (route.request().method() === "GET") {
           await route.fulfill({
@@ -463,7 +544,7 @@ test.describe("detail load-error banner", () => {
       },
     );
     await page.route(
-      `**/api/v1/repos/${prB.repo_owner}/${prB.repo_name}/pulls/${prB.Number}`,
+      pullDetailApiPath(prB),
       async (route) => {
         if (route.request().method() === "GET") {
           await route.fulfill({
@@ -502,7 +583,7 @@ test.describe("detail load-error banner", () => {
     await mockSettings(page);
 
     await page.route(
-      `**/api/v1/repos/${issueX.repo_owner}/${issueX.repo_name}/issues/${issueX.Number}`,
+      issueDetailApiPath(issueX),
       async (route) => {
         if (route.request().method() === "GET") {
           await route.fulfill({
@@ -516,7 +597,7 @@ test.describe("detail load-error banner", () => {
       },
     );
     await page.route(
-      `**/api/v1/repos/${issueY.repo_owner}/${issueY.repo_name}/issues/${issueY.Number}`,
+      issueDetailApiPath(issueY),
       async (route) => {
         if (route.request().method() === "GET") {
           await route.fulfill({
@@ -556,6 +637,44 @@ test.describe("detail load-error banner", () => {
 });
 
 test.describe("PR detail stale-action gating", () => {
+  test("conflict warning hides while a clean PR is loading", async ({ page }) => {
+    const conflictedPR = {
+      ...prA,
+      MergeableState: "dirty",
+    };
+    const cleanPR = {
+      ...prB,
+      MergeableState: "clean",
+    };
+    const { release } = await setupHeldPR(page, conflictedPR, cleanPR);
+
+    await page.goto(
+      `/pulls/github/${conflictedPR.repo_owner}/${conflictedPR.repo_name}/${conflictedPR.Number}`,
+    );
+    await expect(page.locator(".detail-title")).toContainText(
+      conflictedPR.Title,
+    );
+    await expect(page.getByText("This branch has conflicts")).toBeVisible();
+
+    await page.evaluate(([owner, name, number]) => {
+      window.history.pushState(
+        null,
+        "",
+        `/pulls/github/${owner}/${name}/${number}`,
+      );
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    }, [cleanPR.repo_owner, cleanPR.repo_name, cleanPR.Number] as const);
+
+    await expect(page.locator(".detail-title")).toContainText(
+      conflictedPR.Title,
+    );
+    await expect(page.getByText("This branch has conflicts")).toHaveCount(0);
+
+    release();
+    await expect(page.locator(".detail-title")).toContainText(cleanPR.Title);
+    await expect(page.getByText("This branch has conflicts")).toHaveCount(0);
+  });
+
   test("close, comment, and create-workspace are inert while the new PR is loading", async ({ page }) => {
     const userMutations = recordUserMutations(page);
     const { release } = await setupHeldPR(page, prA, prB);
@@ -576,11 +695,13 @@ test.describe("PR detail stale-action gating", () => {
     // PR A is still on screen because B is held.
     await expect(page.locator(".detail-title")).toContainText(prA.Title);
 
-    // Close button must be disabled — clicking it must not fire
+    const starBtn = page.locator(".pull-detail button.star-btn");
+    await expect(starBtn).toHaveCount(0);
+
+    // Close button must be hidden — clicking stale controls must not fire
     // POST /github-state for PR B.
     const closeBtn = page.locator(".btn--close").first();
-    await expect(closeBtn).toBeDisabled();
-    await closeBtn.click({ force: true }).catch(() => {});
+    await expect(closeBtn).toHaveCount(0);
 
     // Create Workspace button must be disabled. A force-click must
     // not fire POST /workspaces.
@@ -598,10 +719,46 @@ test.describe("PR detail stale-action gating", () => {
     // re-enable.
     release();
     await expect(page.locator(".detail-title")).toContainText(prB.Title);
-    await expect(closeBtn).toBeEnabled();
+    await expect(page.locator(".btn--close").first()).toBeEnabled();
 
     // No user-mutation request was sent during the stale window.
     expect(userMutations).toEqual([]);
+  });
+
+  test("existing workspace navigation is inert while the new PR is loading", async ({ page }) => {
+    const prWithWorkspace = {
+      ...prA,
+      workspace: { id: "ws-pr-a" },
+    };
+    const { release } = await setupHeldPR(page, prWithWorkspace, prB);
+
+    await page.goto(
+      `/pulls/github/${prWithWorkspace.repo_owner}/${prWithWorkspace.repo_name}/${prWithWorkspace.Number}`,
+    );
+    await expect(page.locator(".detail-title")).toContainText(
+      prWithWorkspace.Title,
+    );
+
+    await page.evaluate(([owner, name, number]) => {
+      window.history.pushState(
+        null,
+        "",
+        `/pulls/github/${owner}/${name}/${number}`,
+      );
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    }, [prB.repo_owner, prB.repo_name, prB.Number] as const);
+
+    await expect(page.locator(".detail-title")).toContainText(
+      prWithWorkspace.Title,
+    );
+
+    const openWs = page.locator("button.btn--workspace");
+    await expect(openWs).toBeDisabled();
+    await openWs.click({ force: true }).catch(() => {});
+    await expect(page).not.toHaveURL(/\/terminal\/ws-pr-a/);
+
+    release();
+    await expect(page.locator(".detail-title")).toContainText(prB.Title);
   });
 });
 
@@ -632,8 +789,7 @@ test.describe("issue detail stale-action gating", () => {
     );
 
     const starBtn = page.locator(".issue-detail .star-btn");
-    await expect(starBtn).toBeDisabled();
-    await starBtn.click({ force: true }).catch(() => {});
+    await expect(starBtn).toHaveCount(0);
 
     const closeBtn = page.locator(".issue-detail .btn--close");
     await expect(closeBtn).toBeDisabled();
@@ -656,5 +812,43 @@ test.describe("issue detail stale-action gating", () => {
     await expect(closeBtn).toBeEnabled();
 
     expect(userMutations).toEqual([]);
+  });
+
+  test("existing workspace navigation is inert while the new issue is loading", async ({ page }) => {
+    const issueWithWorkspace = {
+      ...issueX,
+      workspace: { id: "ws-issue-x" },
+    };
+    const { release } = await setupHeldIssue(page, issueWithWorkspace, issueY);
+
+    await page.goto(
+      `/issues/github/${issueWithWorkspace.repo_owner}/${issueWithWorkspace.repo_name}/${issueWithWorkspace.Number}`,
+    );
+    await expect(page.locator(".issue-detail .detail-title")).toContainText(
+      issueWithWorkspace.Title,
+    );
+
+    await page.evaluate(([owner, name, number]) => {
+      window.history.pushState(
+        null,
+        "",
+        `/issues/github/${owner}/${name}/${number}`,
+      );
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    }, [issueY.repo_owner, issueY.repo_name, issueY.Number] as const);
+
+    await expect(page.locator(".issue-detail .detail-title")).toContainText(
+      issueWithWorkspace.Title,
+    );
+
+    const openWs = page.locator(".issue-detail button.btn--workspace");
+    await expect(openWs).toBeDisabled();
+    await openWs.click({ force: true }).catch(() => {});
+    await expect(page).not.toHaveURL(/\/terminal\/ws-issue-x/);
+
+    release();
+    await expect(page.locator(".issue-detail .detail-title")).toContainText(
+      issueY.Title,
+    );
   });
 });

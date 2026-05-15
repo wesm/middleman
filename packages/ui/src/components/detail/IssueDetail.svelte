@@ -57,6 +57,7 @@
     provider: string;
     platformHost?: string | undefined;
     repoPath: string;
+    hideStaleWhileLoading?: boolean;
     autoSync?: IssueDetailSyncMode;
   }
 
@@ -67,6 +68,7 @@
     provider,
     platformHost,
     repoPath,
+    hideStaleWhileLoading = false,
     autoSync = "background",
   }: Props = $props();
 
@@ -102,6 +104,7 @@
     event: { PlatformID: number | null },
     body: string,
   ): Promise<boolean> {
+    if (staleIssue) return false;
     if (event.PlatformID === null) return false;
     return issues.editIssueComment(owner, name, number, event.PlatformID, body);
   }
@@ -618,19 +621,20 @@
   });
 </script>
 
-{#if issues.isIssueDetailLoading() && (issues.getIssueDetail() === null || staleIssue)}
+{#if issues.isIssueDetailLoading() && (issues.getIssueDetail() === null || (staleIssue && hideStaleWhileLoading))}
   <div class="state-center"><p class="state-msg">Loading...</p></div>
-{:else if issues.getIssueDetailError() !== null && (issues.getIssueDetail() === null || staleIssue)}
+{:else if issues.getIssueDetailError() !== null && (issues.getIssueDetail() === null || (staleIssue && hideStaleWhileLoading))}
   <div class="state-center"><p class="state-msg state-msg--error">Error: {issues.getIssueDetailError()}</p></div>
 {:else}
   {@const detail = issues.getIssueDetail()}
-  {#if detail !== null && !staleIssue}
+  {@const staleLoadError = staleIssue && issues.getIssueDetailError() !== null}
+  {#if detail !== null}
     {@const issue = detail.issue}
     {@const labels = issue.labels ?? []}
     {@const capabilities = detail.repo?.capabilities ?? defaultProviderCapabilities}
     <div class="issue-detail">
       <div class="issue-detail-content">
-      {#if staleIssue && issues.getIssueDetailError() !== null}
+      {#if staleLoadError}
         <div class="detail-load-error" data-testid="detail-load-error">
           Couldn't load this issue: {issues.getIssueDetailError()}
         </div>
@@ -644,11 +648,10 @@
       <!-- Header -->
       <div class="detail-header">
         <h2 class="detail-title">{issue.Title}</h2>
-        {#if !uiConfig.hideStar}
+        {#if !uiConfig.hideStar && !staleIssue}
           <button
             class="star-btn"
             onclick={handleStarClick}
-            disabled={staleIssue}
             title={issue.Starred ? "Unstar" : "Star"}
           >
             {#if issue.Starred}
@@ -745,7 +748,11 @@
         {#if workspace}
           <ActionButton
             class="btn--workspace"
-            onclick={() => navigate(`/terminal/${workspace.id}`)}
+            disabled={staleIssue}
+            onclick={() => {
+              if (staleIssue) return;
+              navigate(`/terminal/${workspace.id}`);
+            }}
             tone="info"
             surface="soft"
             size="sm"
@@ -772,7 +779,10 @@
           <ActionButton
             class="btn--close"
             disabled={stateSubmitting || staleIssue}
-            onclick={() => handleStateChange("closed")}
+            onclick={() => {
+              if (staleIssue) return;
+              handleStateChange("closed");
+            }}
             tone="danger"
             surface="outline"
             size="sm"
@@ -785,7 +795,10 @@
           <ActionButton
             class="btn--reopen"
             disabled={stateSubmitting || staleIssue}
-            onclick={() => handleStateChange("open")}
+            onclick={() => {
+              if (staleIssue) return;
+              handleStateChange("open");
+            }}
             tone="success"
             surface="solid"
             size="sm"
@@ -844,7 +857,7 @@
             repoOwner={owner}
             repoName={name}
             {repoPath}
-            onEditComment={capabilities.comment_mutation
+            onEditComment={capabilities.comment_mutation && !staleIssue
               ? editTimelineComment
               : undefined}
           />

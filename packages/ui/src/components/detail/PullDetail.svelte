@@ -93,6 +93,7 @@
     onPullsRefresh?: () => Promise<void>;
     hideTabs?: boolean;
     hideWorkspaceAction?: boolean;
+    hideStaleWhileLoading?: boolean;
     autoSync?: DetailSyncMode;
   }
 
@@ -106,6 +107,7 @@
     onPullsRefresh,
     hideTabs = false,
     hideWorkspaceAction = false,
+    hideStaleWhileLoading = false,
     autoSync = "background",
   }: Props = $props();
 
@@ -132,6 +134,7 @@
     event: { PlatformID: number | null },
     body: string,
   ): Promise<boolean> {
+    if (stalePR) return false;
     if (event.PlatformID === null) return false;
     return detailStore.editComment(owner, name, number, event.PlatformID, body);
   }
@@ -268,6 +271,7 @@
   }
 
   function startEditTitle(): void {
+    if (stalePR) return;
     if (!currentCapabilities().state_mutation) return;
     const mr = currentPR();
     if (!mr) return;
@@ -278,6 +282,13 @@
   function cancelEditTitle(): void {
     editingTitle = false;
     titleDraft = "";
+  }
+
+  function handleStarClick(): void {
+    if (stalePR) return;
+    const mr = currentPR();
+    if (!mr) return;
+    void detailStore.toggleDetailPRStar(owner, name, number, mr.Starred);
   }
 
   async function saveTitle(): Promise<void> {
@@ -318,6 +329,7 @@
   let savingBody = $state(false);
 
   function startEditBody(): void {
+    if (stalePR) return;
     if (!currentCapabilities().state_mutation) return;
     const mr = currentPR();
     if (!mr) return;
@@ -820,13 +832,14 @@
 <svelte:window onkeydown={onActionMenuKeydown} />
 <svelte:document onmousedown={onDocumentMousedown} />
 
-{#if detailStore.isDetailLoading() && (detailStore.getDetail() === null || stalePR)}
+{#if detailStore.isDetailLoading() && (detailStore.getDetail() === null || (stalePR && hideStaleWhileLoading))}
   <div class="state-center"><p class="state-msg">Loading…</p></div>
-{:else if detailStore.getDetailError() !== null && (detailStore.getDetail() === null || stalePR)}
+{:else if detailStore.getDetailError() !== null && (detailStore.getDetail() === null || (stalePR && hideStaleWhileLoading))}
   <div class="state-center"><p class="state-msg state-msg--error">Error: {detailStore.getDetailError()}</p></div>
 {:else}
   {@const detail = detailStore.getDetail()}
-  {#if detail !== null && !stalePR}
+  {@const staleLoadError = stalePR && detailStore.getDetailError() !== null}
+  {#if detail !== null}
     {@const pr = detail.merge_request}
     {@const capabilities = detail.repo?.capabilities ?? defaultProviderCapabilities}
     {@const lockedSupported = supportsLocked(
@@ -836,7 +849,7 @@
       detail.repo?.name ?? name,
     )}
     <div class="pull-detail-wrap">
-      {#if stalePR && detailStore.getDetailError() !== null}
+      {#if staleLoadError}
         <div class="detail-load-error" data-testid="detail-load-error">
           Couldn't load this pull request: {detailStore.getDetailError()}
         </div>
@@ -909,15 +922,16 @@
         {:else if capabilities.state_mutation}
           <div class="title-line">
             <h2 class="detail-title">{pr.Title}</h2>
-            <button class="edit-title-btn" onclick={startEditTitle}>Edit</button>
-            {#if !uiConfig.hideStar}
+            {#if !stalePR}
+              <button
+                class="edit-title-btn"
+                onclick={startEditTitle}
+              >Edit</button>
+            {/if}
+            {#if !uiConfig.hideStar && !stalePR}
               <button
                 class="star-btn"
-                disabled={stalePR}
-                onclick={() => {
-                  if (stalePR) return;
-                  void detailStore.toggleDetailPRStar(owner, name, number, pr.Starred);
-                }}
+                onclick={handleStarClick}
                 title={pr.Starred ? "Unstar" : "Star"}
               >
                 {#if pr.Starred}
@@ -939,13 +953,15 @@
               </svg>
             </a>
           </div>
-          <SelectDropdown
-            class="kanban-select kanban-select--header kanban-select--{pr.KanbanStatus.replace('_', '-')}"
-            value={pr.KanbanStatus}
-            options={kanbanOptions}
-            onchange={onKanbanChange}
-            title="Change workflow status"
-          />
+          {#if !stalePR}
+            <SelectDropdown
+              class="kanban-select kanban-select--header kanban-select--{pr.KanbanStatus.replace('_', '-')}"
+              value={pr.KanbanStatus}
+              options={kanbanOptions}
+              onchange={onKanbanChange}
+              title="Change workflow status"
+            />
+          {/if}
         {/if}
       </div>
 
@@ -1038,33 +1054,35 @@
         />
       </div>
 
-      <SelectDropdown
-        class="kanban-select kanban-select--below-chips kanban-select--{pr.KanbanStatus.replace('_', '-')}"
-        value={pr.KanbanStatus}
-        options={kanbanOptions}
-        onchange={onKanbanChange}
-        title="Change workflow status"
-      />
+      {#if !stalePR}
+        <SelectDropdown
+          class="kanban-select kanban-select--below-chips kanban-select--{pr.KanbanStatus.replace('_', '-')}"
+          value={pr.KanbanStatus}
+          options={kanbanOptions}
+          onchange={onKanbanChange}
+          title="Change workflow status"
+        />
+      {/if}
 
       {#if labels.length > 0}
         <GitHubLabels {labels} mode="full" />
       {/if}
 
       <!-- Mergeable state warnings -->
-      {#if pr.State === "open" && pr.MergeableState === "dirty"}
+      {#if !stalePR && pr.State === "open" && pr.MergeableState === "dirty"}
         <div class="merge-warning merge-warning--conflict">
           <span>This branch has conflicts that must be resolved before merging.</span>
           <a href={pr.URL} target="_blank" rel="noopener noreferrer">View on GitHub</a>
         </div>
-      {:else if pr.State === "open" && pr.MergeableState === "blocked"}
+      {:else if !stalePR && pr.State === "open" && pr.MergeableState === "blocked"}
         <div class="merge-warning merge-warning--info">
           <span>Branch protection rules may prevent this merge.</span>
         </div>
-      {:else if pr.State === "open" && pr.MergeableState === "behind"}
+      {:else if !stalePR && pr.State === "open" && pr.MergeableState === "behind"}
         <div class="merge-warning merge-warning--info">
           <span>This branch is behind the base branch and may need to be updated.</span>
         </div>
-      {:else if pr.State === "open" && pr.MergeableState === "unstable"}
+      {:else if !stalePR && pr.State === "open" && pr.MergeableState === "unstable"}
         <div class="merge-warning merge-warning--info">
           <span>Required status checks have not passed.</span>
         </div>
@@ -1129,9 +1147,10 @@
               title={mergeDisabledByConflicts
                 ? "Resolve merge conflicts before merging"
                 : ""}
-              onclick={() =>
-                runOpenMerge(buildOpenMergeInput(pr, capabilities))
-              }
+              onclick={() => {
+                if (stalePR) return;
+                runOpenMerge(buildOpenMergeInput(pr, capabilities));
+              }}
               tone="success"
               surface="solid"
               size="sm"
@@ -1187,7 +1206,7 @@
       {/snippet}
 
       <!-- Approve / Merge / Close / Reopen actions -->
-      {#if pr.State !== "merged"}
+      {#if pr.State !== "merged" && !stalePR}
         <div class="primary-actions-wrap">
           <div class="actions-row actions-row--primary">
             {@render primaryActionButtons()}
@@ -1221,7 +1240,11 @@
           {#if workspace}
             <ActionButton
               class="btn--workspace"
-              onclick={() => navigate(`/terminal/${workspace.id}`)}
+              disabled={stalePR}
+              onclick={() => {
+                if (stalePR) return;
+                navigate(`/terminal/${workspace.id}`);
+              }}
               tone="info"
               surface="soft"
               size="sm"
@@ -1348,7 +1371,7 @@
       <div class="section body-section">
         <div class="section-header">
           <span class="section-title-inline">Description</span>
-          {#if !editingBody && capabilities.state_mutation}
+          {#if !editingBody && capabilities.state_mutation && !stalePR}
             <button
               class="edit-body-btn"
               onclick={startEditBody}
@@ -1416,8 +1439,11 @@
               ondragend={onBodyDragEnd}
             >{@html renderMarkdown(pr.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation })}</div>
           </div>
-        {:else if capabilities.state_mutation}
-          <button class="add-description-btn" onclick={startEditBody}>
+        {:else if capabilities.state_mutation && !stalePR}
+          <button
+            class="add-description-btn"
+            onclick={startEditBody}
+          >
             Add a description
           </button>
         {/if}
@@ -1455,7 +1481,7 @@
             {repoPath}
             filtered={hasActiveTimelineFilters}
             showCommitDetails={timelineFilter.showCommitDetails}
-            onEditComment={capabilities.comment_mutation
+            onEditComment={capabilities.comment_mutation && !stalePR
               ? editTimelineComment
               : undefined}
           />
