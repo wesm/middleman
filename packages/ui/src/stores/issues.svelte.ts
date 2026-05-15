@@ -736,6 +736,15 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   ): Promise<void> {
     const ref = issueDetailRequestRef(owner, name, number, routeRef);
     let succeeded = false;
+    // Capture whether the locally-displayed body still equals what we
+    // sent BEFORE we overwrite `issueDetail` with the server response.
+    // A server-side body normalization (e.g. line endings) would
+    // otherwise masquerade as a newer user edit on a post-overwrite
+    // check and strand `unsavedLocalBody`. Also include provider +
+    // platform host so a stale response from a since-navigated-away
+    // host can't replace the now-displayed issue from another host
+    // that happens to share owner/name/number.
+    let localBodyMatchesSent = false;
     try {
       const { data, error: requestError } =
         await apiClient.PATCH(
@@ -756,33 +765,24 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         );
       }
       succeeded = true;
-      // Only adopt the server-canonical issue when the user is still
-      // viewing the same issue AND no newer toggle has shifted the
-      // local body away from what we just persisted.
-      if (
-        data &&
-        issueDetail &&
+      localBodyMatchesSent =
+        issueDetail !== null &&
+        issueDetail.repo?.provider === routeRef.provider &&
+        issueDetail.repo?.platform_host === routeRef.platformHost &&
         issueDetail.repo_owner === owner &&
         issueDetail.repo_name === name &&
         issueDetail.issue.Number === number &&
-        issueDetail.issue.Body === body
-      ) {
+        issueDetail.issue.Body === body;
+      if (data && localBodyMatchesSent) {
         issueDetail = data as IssueDetail;
       }
     } catch (err) {
       detailError =
         err instanceof Error ? err.message : String(err);
     }
-    // On a successful save, the captured target may be in sync with
-    // the server — but only if the user hasn't typed more since the
-    // request went out. If `issueDetail` is still showing this issue
-    // AND the local body diverges from the body we sent, treat the
-    // new edits as still pending and keep the flag set so the next
-    // polling refresh preserves them. Otherwise (matching body, or
-    // user navigated away), the saved body is canonical and we can
-    // clear.
     if (
       succeeded &&
+      localBodyMatchesSent &&
       unsavedLocalBody &&
       unsavedLocalBody.provider === routeRef.provider &&
       unsavedLocalBody.platformHost === routeRef.platformHost &&
@@ -790,15 +790,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       unsavedLocalBody.name === name &&
       unsavedLocalBody.number === number
     ) {
-      const newerEditInFlight =
-        issueDetail !== null &&
-        issueDetail.repo_owner === owner &&
-        issueDetail.repo_name === name &&
-        issueDetail.issue.Number === number &&
-        issueDetail.issue.Body !== body;
-      if (!newerEditInFlight) {
-        unsavedLocalBody = null;
-      }
+      unsavedLocalBody = null;
     }
     refreshIssuesIfActive().catch(() => {});
   }

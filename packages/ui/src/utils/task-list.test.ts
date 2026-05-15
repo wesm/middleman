@@ -52,6 +52,23 @@ describe("listTaskItems", () => {
     ]);
   });
 
+  it("does not treat 4-space-indented fence syntax as a real fence", () => {
+    // CommonMark: at top level, 4+ leading spaces means indented code,
+    // even if the rest of the line is `` ``` ``. The `` ``` `` inside
+    // the indented block must NOT open a fence — if it did, the real
+    // task that follows would be hidden inside the bogus fenced
+    // block and the index would drift.
+    const src = [
+      "    ```",
+      "    - [ ] indented code line",
+      "    ```",
+      "- [ ] real task after indented code",
+    ].join("\n");
+    expect(listTaskItems(src)).toEqual([
+      { index: 0, checked: false, line: 3 },
+    ]);
+  });
+
   it("does not close a backtick fence with a tilde fence", () => {
     const src = [
       "```",

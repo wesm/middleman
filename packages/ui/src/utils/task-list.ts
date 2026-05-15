@@ -70,6 +70,22 @@ function walkTaskLines(lines: string[], visitor: TaskLineVisitor): void {
   let taskIndex = 0;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
+    // At top level (outside a list), a line starting with 4 spaces or
+    // a tab is an indented code block per CommonMark — it can't open
+    // a fence, even if the rest of the line is `` ``` ``. Skip it
+    // before fence detection so the `` ``` `` inside doesn't open a
+    // bogus block and shift downstream task indices. Inside a fenced
+    // block (openFence !== null) we still need to fall through so a
+    // matching close-fence line can end the block; inside a list, the
+    // same indent continues the list item and may legitimately open a
+    // fence as part of the item's content.
+    if (
+      openFence === null
+      && listIndent === null
+      && isIndentedCodeStart(line)
+    ) {
+      continue;
+    }
     const fenceMatch = line.match(FENCE_LINE);
     if (fenceMatch) {
       const run = fenceMatch[1]!;
@@ -96,9 +112,6 @@ function walkTaskLines(lines: string[], visitor: TaskLineVisitor): void {
     if (line.trim() === "") continue;
 
     const indent = leadingWhitespaceCount(line);
-    // Outside a list, a 4-space (or tab) indent opens a code block:
-    // any task-shaped line in it is plain code, not a task.
-    if (listIndent === null && isIndentedCodeStart(line)) continue;
 
     // Dedent out of the list when a non-blank line sits at or below
     // the list bullet indent and isn't itself a bullet at that level.

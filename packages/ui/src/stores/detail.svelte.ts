@@ -770,6 +770,15 @@ export function createDetailStore(
   ): Promise<void> {
     const ref = detailRequestRef(owner, name, number, routeRef);
     let succeeded = false;
+    // Capture whether the locally-displayed body still equals what we
+    // sent BEFORE we overwrite `detail` with the server response. If
+    // the server normalizes the body (e.g. line endings), a post-
+    // overwrite comparison would falsely look like a newer user edit
+    // and strand `unsavedLocalBody` indefinitely. Also include
+    // provider + platform host so a save response that returns after
+    // the user navigated to the same owner/name/number on another
+    // host doesn't replace the new repo's detail.
+    let localBodyMatchesSent = false;
     try {
       const { data, error: requestError } =
         await apiClient.PATCH(
@@ -790,30 +799,27 @@ export function createDetailStore(
         );
       }
       succeeded = true;
-      // Apply server-canonical response only when the user is still
-      // looking at the same PR AND hasn't toggled again since this
-      // request was sent (server body matches what we sent).
-      if (
-        data &&
+      localBodyMatchesSent =
+        detail !== null &&
         isDetailShowing(owner, name, number) &&
-        detail &&
-        detail.merge_request.Body === body
-      ) {
+        detail.repo?.provider === routeRef.provider &&
+        detail.repo?.platform_host === routeRef.platformHost &&
+        detail.merge_request.Body === body;
+      if (data && localBodyMatchesSent) {
         detail = data as PullDetail;
       }
     } catch (err) {
       storeError =
         err instanceof Error ? err.message : String(err);
     }
-    // On a successful save, the captured target may be in sync with
-    // the server — but only if the user hasn't typed more since the
-    // request went out. If `detail` is still showing this PR AND the
-    // local body diverges from the body we sent, treat the new edits
-    // as still pending and keep the flag set so the next polling
-    // refresh preserves them. Otherwise (matching body, or user
-    // navigated away), the saved body is canonical and we can clear.
+    // Clear the unsaved-body flag only when the captured local body
+    // matched what we sent — i.e. no newer toggle landed during the
+    // request. Using the captured value (rather than a fresh check)
+    // is what keeps a server-normalized body from masquerading as a
+    // newer edit and leaving the flag stuck.
     if (
       succeeded &&
+      localBodyMatchesSent &&
       unsavedLocalBody &&
       unsavedLocalBody.provider === routeRef.provider &&
       unsavedLocalBody.platformHost === routeRef.platformHost &&
@@ -821,13 +827,7 @@ export function createDetailStore(
       unsavedLocalBody.name === name &&
       unsavedLocalBody.number === number
     ) {
-      const newerEditInFlight =
-        detail !== null &&
-        isDetailShowing(owner, name, number) &&
-        detail.merge_request.Body !== body;
-      if (!newerEditInFlight) {
-        unsavedLocalBody = null;
-      }
+      unsavedLocalBody = null;
     }
     refreshPullsIfActive().catch(() => {});
   }
