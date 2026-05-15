@@ -2,13 +2,6 @@ import { expect, test } from "@playwright/test";
 
 test.describe("provider capabilities", () => {
   test("PR detail shows locked state only for providers that support it", async ({ page }) => {
-    await page.route("**/api/v1/pulls/github/acme/widgets/1", async (route) => {
-      const response = await route.fetch();
-      const body = await response.json();
-      body.merge_request.IsLocked = true;
-      await route.fulfill({ response, json: body });
-    });
-
     await page.goto(
       "/pulls/github/acme/widgets/1",
     );
