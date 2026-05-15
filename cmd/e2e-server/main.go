@@ -776,6 +776,70 @@ func run(
 	)
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/pr-workflow-approval/required" {
+			repo, err := database.GetRepoByOwnerName(
+				r.Context(), "acme", "widgets",
+			)
+			if err != nil || repo == nil {
+				http.Error(w, "repo not found", http.StatusNotFound)
+				return
+			}
+			pendingChecks, err := json.Marshal([]db.CICheck{{
+				Name:       "build",
+				Status:     "in_progress",
+				Conclusion: "",
+				URL:        "https://github.com/acme/widgets/actions/runs/1/job/1",
+				App:        "GitHub Actions",
+			}})
+			if err != nil {
+				http.Error(w, "marshal pending checks", http.StatusInternalServerError)
+				return
+			}
+			if err := database.UpdateMRCIStatus(
+				r.Context(), repo.ID, 1, "pending", string(pendingChecks),
+			); err != nil {
+				http.Error(w, "update pending CI", http.StatusInternalServerError)
+				return
+			}
+			if err := database.UpdateMRDetailFetchedByRepoID(
+				r.Context(), repo.ID, 1, true,
+			); err != nil {
+				http.Error(w, "mark pending CI fetched", http.StatusInternalServerError)
+				return
+			}
+
+			var headSHA string
+			for _, pr := range fc.PRs["acme/widgets"] {
+				if pr.GetNumber() != 1 || pr.GetHead() == nil {
+					continue
+				}
+				headSHA = pr.GetHead().GetSHA()
+				break
+			}
+			if headSHA == "" {
+				http.Error(w, "PR head SHA not found", http.StatusNotFound)
+				return
+			}
+			runID := int64(9001)
+			event := "pull_request"
+			number := 1
+			fc.WorkflowRuns[fmt.Sprintf("acme/widgets@%s", headSHA)] = []*gh.WorkflowRun{{
+				ID:           &runID,
+				HeadSHA:      &headSHA,
+				Event:        &event,
+				PullRequests: []*gh.PullRequest{{Number: &number}},
+			}}
+
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(map[string]any{
+				"status": "required",
+				"run_id": runID,
+			}); err != nil {
+				slog.Warn("write e2e response", "err", err)
+			}
+			return
+		}
+		if r.Method == http.MethodPost &&
 			r.URL.Path == "/__e2e/pr-ci-state/pending" {
 			repo, err := database.GetRepoByOwnerName(
 				r.Context(), "acme", "widgets",

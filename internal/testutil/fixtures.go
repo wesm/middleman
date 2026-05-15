@@ -853,7 +853,8 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 						},
 					},
 				},
-				nextID: 10_000,
+				WorkflowRuns: make(map[string][]*gh.WorkflowRun),
+				nextID:       10_000,
 			}
 		},
 	}

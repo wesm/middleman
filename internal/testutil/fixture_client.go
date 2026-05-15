@@ -40,6 +40,7 @@ type FixtureClient struct {
 	CombinedStatuses          map[string]*gh.CombinedStatus
 	CheckRuns                 map[string][]*gh.CheckRun
 	Labels                    map[string][]*gh.Label
+	WorkflowRuns              map[string][]*gh.WorkflowRun
 	ListRepositoriesByOwnerFn func(context.Context, string) ([]*gh.Repository, error)
 	mu                        sync.Mutex
 	nextID                    int64
@@ -60,6 +61,7 @@ func NewFixtureClient() ghclient.Client {
 		CombinedStatuses: make(map[string]*gh.CombinedStatus),
 		CheckRuns:        make(map[string][]*gh.CheckRun),
 		Labels:           make(map[string][]*gh.Label),
+		WorkflowRuns:     make(map[string][]*gh.WorkflowRun),
 		nextID:           10_000,
 	}
 }
@@ -379,11 +381,15 @@ func (c *FixtureClient) ListCheckRunsForRef(
 	return slices.Clone(runs), nil
 }
 
-// ListWorkflowRunsForHeadSHA returns nil (read-only stub).
+// ListWorkflowRunsForHeadSHA returns seeded action-required workflow runs.
 func (c *FixtureClient) ListWorkflowRunsForHeadSHA(
-	_ context.Context, _, _, _ string,
+	_ context.Context, owner, repo, headSHA string,
 ) ([]*gh.WorkflowRun, error) {
-	return nil, nil
+	runs := c.WorkflowRuns[refKey(owner, repo, headSHA)]
+	if len(runs) == 0 {
+		return nil, nil
+	}
+	return slices.Clone(runs), nil
 }
 
 // ApproveWorkflowRun returns an error (mutations not supported).

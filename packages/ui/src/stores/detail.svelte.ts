@@ -76,6 +76,31 @@ function strongerSyncMode(
   return syncIntentRank(b) > syncIntentRank(a) ? b : a;
 }
 
+function ciChecksHavePending(checksJSON: string | undefined): boolean {
+  if (!checksJSON) return false;
+  try {
+    const checks = JSON.parse(checksJSON) as Array<{ status?: string }>;
+    return checks.some((check) => check.status !== "completed");
+  } catch {
+    return false;
+  }
+}
+
+function needsWorkflowApprovalSync(detail: PullDetail | null): boolean {
+  if (!detail) return false;
+  const pr = detail.merge_request;
+  return Boolean(
+    detail.repo?.capabilities?.workflow_approval &&
+      pr?.State === "open" &&
+      detail.workflow_approval?.checked === false &&
+      (
+        pr.CIStatus === "pending" ||
+        pr.CIHadPending ||
+        ciChecksHavePending(pr.CIChecksJSON)
+      ),
+  );
+}
+
 export function createDetailStore(
   opts: DetailStoreOptions,
 ) {
@@ -442,6 +467,10 @@ export function createDetailStore(
       if (gen === syncGeneration && finalSyncMode === true) {
         void syncDetail(owner, name, number, gen, requestRef);
       } else if (gen === syncGeneration && finalSyncMode === "background") {
+        if (needsWorkflowApprovalSync(detail)) {
+          void syncDetail(owner, name, number, gen, requestRef);
+          return;
+        }
         void enqueueBackgroundDetailSync(
           owner,
           name,
