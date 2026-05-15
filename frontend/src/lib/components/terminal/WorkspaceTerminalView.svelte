@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { tick, untrack } from "svelte";
+  import { pushModalFrame } from "@middleman/ui/stores/keyboard/modal-stack";
   import { navigate } from "../../stores/router.svelte.ts";
   import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
   import TerminalPane from "./TerminalPane.svelte";
@@ -107,6 +109,16 @@
   let loadError = $state<string | null>(null);
   let actionError = $state<string | null>(null);
   let retryingSetup = $state(false);
+  let forcePromptMessage = $state<string | null>(null);
+  let forcePromptForId = $state<string | null>(null);
+  let forceDeleting = $state(false);
+  let cancelForceBtnEl = $state<HTMLButtonElement | null>(null);
+  // Bumps on every workspace route change. Async delete callbacks
+  // capture this at request time and bail out if it has moved on,
+  // covering the case where the user leaves and returns to the same
+  // workspace before an in-flight response settles — an id check
+  // alone would let a stale 409 reopen the prompt.
+  let workspaceGen = 0;
   let runtimeError = $state<string | null>(null);
   let pollTimer = $state<ReturnType<
     typeof setInterval
@@ -772,39 +784,150 @@
   async function handleDelete(): Promise<void> {
     if (actionsBlocked) return;
     actionError = null;
+    const targetId = workspaceId;
+    const targetGen = workspaceGen;
+    // Capture the trigger synchronously: the click handler runs
+    // before `inert` is applied to .terminal-view, so this is the
+    // last point we can read the originating focused element. By
+    // the time the post-await effect runs, the browser has cleared
+    // focus to document.body.
+    const triggerEl =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     const { error, response } = await client.DELETE(
       "/workspaces/{id}",
       {
-        params: { path: { id: workspaceId } },
+        params: { path: { id: targetId } },
       },
     );
+    // Different workspace now: the user has moved on and nothing
+    // about this response applies.
+    if (targetId !== workspaceId) return;
     if (response.status === 409) {
-      const msg =
+      // A 409 that lands after the user briefly left and returned
+      // to the same workspace would feel like an unrequested
+      // prompt; suppress it on a generation mismatch and let the
+      // user retry if they want.
+      if (targetGen !== workspaceGen) return;
+      previouslyFocusedEl = triggerEl;
+      forcePromptForId = targetId;
+      forcePromptMessage =
         error?.detail ??
         "Workspace has uncommitted changes.";
-      if (!confirm(`${msg}\n\nForce delete?`)) return;
-      const force = await client.DELETE("/workspaces/{id}", {
-        params: {
-          path: { id: workspaceId },
-          query: { force: true },
-        },
-      });
-      if (!force.response.ok && force.response.status !== 204) {
-        actionError = apiErrorMessage(
-          force.error,
-          `Delete failed (${force.response.status})`,
-        );
-        return;
-      }
-    } else if (!response.ok && response.status !== 204) {
+      return;
+    }
+    if (!response.ok && response.status !== 204) {
+      if (targetGen !== workspaceGen) return;
       actionError = apiErrorMessage(
         error,
         `Delete failed (${response.status})`,
       );
       return;
     }
+    // Successful delete: the server destroyed this workspace and
+    // the user is still looking at it. Navigate away even after
+    // an A→B→A round trip — otherwise they'd be staring at a
+    // workspace that no longer exists.
     navigate("/workspaces");
   }
+
+  async function confirmForceDelete(): Promise<void> {
+    if (forceDeleting) return;
+    const targetId = forcePromptForId;
+    if (targetId === null) return;
+    const targetGen = workspaceGen;
+    forceDeleting = true;
+    actionError = null;
+    try {
+      const { error, response } = await client.DELETE(
+        "/workspaces/{id}",
+        {
+          params: {
+            path: { id: targetId },
+            query: { force: true },
+          },
+        },
+      );
+      // The force-delete on the server is destructive and runs to
+      // completion either way; once the user has moved to a
+      // different workspace we just drop the response on the
+      // floor so navigate() doesn't pull them away.
+      if (targetId !== workspaceId) return;
+      if (!response.ok && response.status !== 204) {
+        if (targetGen !== workspaceGen) return;
+        actionError = apiErrorMessage(
+          error,
+          `Delete failed (${response.status})`,
+        );
+        forcePromptMessage = null;
+        forcePromptForId = null;
+        return;
+      }
+      // Successful force-delete on the workspace the user is
+      // viewing — navigate away even after an A→B→A round trip
+      // so we don't leave them on a workspace the server just
+      // destroyed.
+      forcePromptMessage = null;
+      forcePromptForId = null;
+      navigate("/workspaces");
+    } finally {
+      forceDeleting = false;
+    }
+  }
+
+  function cancelForceDelete(): void {
+    if (forceDeleting) return;
+    forcePromptMessage = null;
+    forcePromptForId = null;
+  }
+
+  let previouslyFocusedEl: HTMLElement | null = null;
+
+  function handleForcePromptKeydown(event: KeyboardEvent): void {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      cancelForceDelete();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const container = event.currentTarget;
+    if (!(container instanceof HTMLElement)) return;
+    const dialog = container.querySelector("[role='dialog']");
+    if (!(dialog instanceof HTMLElement)) return;
+    const focusable = Array.from(
+      dialog.querySelectorAll<HTMLElement>(
+        "button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex='-1'])",
+      ),
+    );
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (!first || !last) return;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  $effect(() => {
+    if (forcePromptMessage !== null) {
+      void tick().then(() => cancelForceBtnEl?.focus());
+    } else if (previouslyFocusedEl !== null) {
+      previouslyFocusedEl.focus();
+      previouslyFocusedEl = null;
+    }
+  });
+
+  $effect(() => {
+    if (forcePromptMessage === null) return;
+    return untrack(() =>
+      pushModalFrame("workspace-force-delete", []),
+    );
+  });
 
   $effect(() => {
     if (!workspace) return;
@@ -850,6 +973,15 @@
     loadError = null;
     actionError = null;
     runtimeError = null;
+    // A 409 force-delete prompt is bound to the workspace that
+    // produced it. Dismiss it on any route change so the user
+    // can't confirm a destructive action targeting a workspace
+    // they're no longer looking at. Bumping the generation token
+    // also invalidates any in-flight DELETE callback that captured
+    // the previous value.
+    forcePromptMessage = null;
+    forcePromptForId = null;
+    workspaceGen += 1;
     tmuxTerminalMounted = restoredTab === "tmux";
     mountedSessionKeys = restoredTab.startsWith("session:")
       ? [restoredTab.slice("session:".length)]
@@ -901,7 +1033,7 @@
   });
 </script>
 
-<div class="terminal-view">
+<div class="terminal-view" inert={forcePromptMessage !== null}>
   {#snippet terminalMainContent()}
     <div class="terminal-main">
       {#if !workspaceId}
@@ -1196,6 +1328,58 @@
   {/if}
 </div>
 
+{#if forcePromptMessage !== null}
+  <div
+    class="force-delete-backdrop"
+    role="presentation"
+    onkeydown={handleForcePromptKeydown}
+  >
+    <div
+      class="force-delete-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="force-delete-title"
+      aria-describedby="force-delete-message"
+    >
+      <div class="force-delete-header">
+        <AlertIcon
+          class="force-delete-icon"
+          size="20"
+          strokeWidth="2"
+          aria-hidden="true"
+        />
+        <h2 id="force-delete-title">Force delete workspace?</h2>
+      </div>
+      <p id="force-delete-message" class="force-delete-message">
+        {forcePromptMessage}
+      </p>
+      <p class="force-delete-hint">
+        Force-deleting discards any uncommitted changes in the
+        worktree. This cannot be undone.
+      </p>
+      <div class="force-delete-actions">
+        <button
+          type="button"
+          class="force-delete-cancel"
+          disabled={forceDeleting}
+          bind:this={cancelForceBtnEl}
+          onclick={cancelForceDelete}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="force-delete-confirm"
+          disabled={forceDeleting}
+          onclick={() => void confirmForceDelete()}
+        >
+          {forceDeleting ? "Deleting…" : "Force delete"}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
   .terminal-view {
     display: flex;
@@ -1466,5 +1650,132 @@
   .right-sidebar {
     flex-shrink: 0;
     overflow: hidden;
+  }
+
+  .force-delete-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: color-mix(in srgb, black 50%, transparent);
+    backdrop-filter: blur(2px);
+    animation: force-delete-fade 120ms ease-out;
+  }
+
+  .force-delete-dialog {
+    width: min(420px, 100%);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 24px 80px rgb(0 0 0 / 35%);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    animation: force-delete-pop 160ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .force-delete-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  :global(.force-delete-icon) {
+    color: var(--accent-red);
+    flex-shrink: 0;
+  }
+
+  .force-delete-header h2 {
+    margin: 0;
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .force-delete-message {
+    margin: 0;
+    font-size: var(--font-size-md);
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  .force-delete-hint {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  .force-delete-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .force-delete-cancel,
+  .force-delete-confirm {
+    height: 30px;
+    padding: 0 14px;
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background-color 80ms ease, color 80ms ease,
+      border-color 80ms ease;
+  }
+
+  .force-delete-cancel {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    color: var(--text-secondary);
+  }
+
+  .force-delete-cancel:hover:not(:disabled) {
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+
+  .force-delete-confirm {
+    background: var(--accent-red);
+    border: 1px solid var(--accent-red);
+    color: #fff;
+    font-weight: 600;
+  }
+
+  .force-delete-confirm:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent-red) 88%, black);
+    border-color: color-mix(in srgb, var(--accent-red) 88%, black);
+  }
+
+  .force-delete-cancel:disabled,
+  .force-delete-confirm:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  @keyframes force-delete-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes force-delete-pop {
+    from {
+      opacity: 0;
+      transform: scale(0.96) translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
   }
 </style>

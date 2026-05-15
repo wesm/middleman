@@ -158,6 +158,10 @@ async function setupTerminalMocks(
       status: number;
       body?: unknown;
     }>;
+    workspaceDeleteResponses?: Array<{
+      status: number;
+      body?: unknown;
+    }>;
     workspaceRetryResponse?: {
       status: number;
       body?: unknown;
@@ -171,6 +175,9 @@ async function setupTerminalMocks(
   const rrStatus = opts?.roborevStatus ?? roborevStatus;
   const detailResponses = [
     ...(opts?.workspaceDetailResponses ?? []),
+  ];
+  const deleteResponses = [
+    ...(opts?.workspaceDeleteResponses ?? []),
   ];
   const runtime = JSON.parse(
     JSON.stringify(opts?.runtime ?? workspaceRuntime),
@@ -225,7 +232,7 @@ async function setupTerminalMocks(
   );
 
   await page.route(
-    `**/api/v1/workspaces/${ws.id}`,
+    (url) => url.pathname === `/api/v1/workspaces/${ws.id}`,
     async (route) => {
       if (route.request().method() === "GET") {
         const nextResponse = detailResponses.shift();
@@ -247,6 +254,19 @@ async function setupTerminalMocks(
         return;
       }
       // DELETE
+      const nextDelete = deleteResponses.shift();
+      if (nextDelete) {
+        if (nextDelete.body === undefined) {
+          await route.fulfill({ status: nextDelete.status });
+          return;
+        }
+        await route.fulfill({
+          status: nextDelete.status,
+          contentType: "application/json",
+          body: JSON.stringify(nextDelete.body),
+        });
+        return;
+      }
       await route.fulfill({ status: 204 });
     },
   );
@@ -621,6 +641,407 @@ test.describe("terminal state icons", () => {
         .click();
 
       await expect(page).toHaveURL(/\/workspaces$/);
+    },
+  );
+
+  test(
+    "force-delete prompt confirms and retries delete with force=true",
+    async ({ page }) => {
+      const deleteRequests: string[] = [];
+      page.on("request", (req) => {
+        if (
+          req.method() === "DELETE" &&
+          req.url().includes("/api/v1/workspaces/ws-123")
+        ) {
+          deleteRequests.push(req.url());
+        }
+      });
+
+      await setupTerminalMocks(page, {
+        workspaceDeleteResponses: [
+          {
+            status: 409,
+            body: {
+              detail: "Worktree has uncommitted changes.",
+            },
+          },
+          { status: 204 },
+        ],
+      });
+
+      await page.goto("/terminal/ws-123");
+
+      await page
+        .locator(".header-bar")
+        .getByRole("button", { name: "Delete" })
+        .click();
+
+      const dialog = page.getByRole("dialog", {
+        name: "Force delete workspace?",
+      });
+      await expect(dialog).toBeVisible();
+      await expect(dialog).toContainText(
+        "Worktree has uncommitted changes.",
+      );
+
+      await dialog
+        .getByRole("button", { name: "Force delete" })
+        .click();
+
+      await expect(page).toHaveURL(/\/workspaces$/);
+      expect(deleteRequests).toHaveLength(2);
+      expect(deleteRequests[1]).toContain("force=true");
+    },
+  );
+
+  test(
+    "force-delete prompt cancel keeps the workspace and the modal closes",
+    async ({ page }) => {
+      const deleteRequests: string[] = [];
+      page.on("request", (req) => {
+        if (
+          req.method() === "DELETE" &&
+          req.url().includes("/api/v1/workspaces/ws-123")
+        ) {
+          deleteRequests.push(req.url());
+        }
+      });
+
+      await setupTerminalMocks(page, {
+        workspaceDeleteResponses: [
+          {
+            status: 409,
+            body: {
+              detail: "Worktree has uncommitted changes.",
+            },
+          },
+        ],
+      });
+
+      await page.goto("/terminal/ws-123");
+
+      await page
+        .locator(".header-bar")
+        .getByRole("button", { name: "Delete" })
+        .click();
+
+      const dialog = page.getByRole("dialog", {
+        name: "Force delete workspace?",
+      });
+      await expect(dialog).toBeVisible();
+
+      await dialog
+        .getByRole("button", { name: "Cancel" })
+        .click();
+
+      await expect(dialog).toBeHidden();
+      await expect(page).not.toHaveURL(/\/workspaces$/);
+      expect(deleteRequests).toHaveLength(1);
+    },
+  );
+
+  test(
+    "force-delete prompt traps focus, makes background inert, and restores focus on cancel",
+    async ({ page }) => {
+      await setupTerminalMocks(page, {
+        workspaceDeleteResponses: [
+          {
+            status: 409,
+            body: {
+              detail: "Worktree has uncommitted changes.",
+            },
+          },
+        ],
+      });
+
+      await page.goto("/terminal/ws-123");
+
+      const headerDelete = page
+        .locator(".header-bar")
+        .getByRole("button", { name: "Delete" });
+      await headerDelete.click();
+
+      const dialog = page.getByRole("dialog", {
+        name: "Force delete workspace?",
+      });
+      await expect(dialog).toBeVisible();
+
+      const cancel = dialog.getByRole("button", { name: "Cancel" });
+      const force = dialog.getByRole("button", {
+        name: "Force delete",
+      });
+
+      // Initial focus lands on Cancel — the safe default for a destructive action.
+      await expect(cancel).toBeFocused();
+
+      // The workspace shell beneath the modal is inert and unreachable.
+      await expect(page.locator(".terminal-view")).toHaveAttribute(
+        "inert",
+        "",
+      );
+
+      // Tab cycles within the dialog (Cancel -> Force delete -> Cancel).
+      await page.keyboard.press("Tab");
+      await expect(force).toBeFocused();
+      await page.keyboard.press("Tab");
+      await expect(cancel).toBeFocused();
+      await page.keyboard.press("Shift+Tab");
+      await expect(force).toBeFocused();
+
+      // Closing the dialog restores focus to the trigger.
+      await cancel.click();
+      await expect(dialog).toBeHidden();
+      await expect(page.locator(".terminal-view")).not.toHaveAttribute(
+        "inert",
+        "",
+      );
+      await expect(headerDelete).toBeFocused();
+    },
+  );
+
+  test(
+    "force-delete prompt is dismissed when the workspace route changes",
+    async ({ page }) => {
+      const deleteRequests: string[] = [];
+      page.on("request", (req) => {
+        if (req.method() === "DELETE") {
+          deleteRequests.push(req.url());
+        }
+      });
+
+      await setupTerminalMocks(page, {
+        workspaceDeleteResponses: [
+          {
+            status: 409,
+            body: {
+              detail: "Worktree has uncommitted changes.",
+            },
+          },
+        ],
+      });
+
+      await page.goto("/terminal/ws-123");
+
+      await page
+        .locator(".header-bar")
+        .getByRole("button", { name: "Delete" })
+        .click();
+
+      const dialog = page.getByRole("dialog", {
+        name: "Force delete workspace?",
+      });
+      await expect(dialog).toBeVisible();
+
+      // The component persists across workspaceId changes (no {#key} wrapper),
+      // so the prompt would otherwise stay open after navigation and leak a
+      // destructive confirmation onto the next workspace.
+      await page.evaluate(() => {
+        history.pushState(null, "", "/workspaces");
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      });
+
+      await expect(dialog).toBeHidden();
+      // Only the initial DELETE fired — no force-delete reached the server
+      // after the route change dismissed the prompt.
+      expect(deleteRequests).toHaveLength(1);
+      expect(deleteRequests[0]).not.toContain("force=true");
+    },
+  );
+
+  test(
+    "in-flight 409 response does not surface a prompt after the user has navigated away",
+    async ({ page }) => {
+      await setupTerminalMocks(page);
+
+      // Replace the default DELETE handler with one that holds the
+      // 409 response long enough for the test to navigate before
+      // it lands.
+      await page.route(
+        (url) =>
+          url.pathname === "/api/v1/workspaces/ws-123",
+        async (route) => {
+          if (route.request().method() !== "DELETE") {
+            await route.fallback();
+            return;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 400));
+          await route.fulfill({
+            status: 409,
+            contentType: "application/json",
+            body: JSON.stringify({
+              detail: "Worktree has uncommitted changes.",
+            }),
+          });
+        },
+      );
+
+      await page.goto("/terminal/ws-123");
+
+      // Kick off the DELETE, then immediately leave the workspace.
+      // The DELETE handler in handleDelete is async, so this is the
+      // exact race condition the post-await guard exists to handle.
+      await page
+        .locator(".header-bar")
+        .getByRole("button", { name: "Delete" })
+        .click();
+      await page.evaluate(() => {
+        history.pushState(null, "", "/workspaces");
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      });
+
+      // Wait past the route delay so the response settles either way.
+      await page.waitForTimeout(700);
+
+      await expect(
+        page.getByRole("dialog", {
+          name: "Force delete workspace?",
+        }),
+      ).toBeHidden();
+    },
+  );
+
+  test(
+    "stale 409 does not reopen the prompt after the user leaves and returns to the same workspace",
+    async ({ page }) => {
+      await setupTerminalMocks(page);
+
+      await page.route(
+        (url) =>
+          url.pathname === "/api/v1/workspaces/ws-123",
+        async (route) => {
+          if (route.request().method() !== "DELETE") {
+            await route.fallback();
+            return;
+          }
+          // Hold the response long enough for the test to navigate
+          // away and back before it lands.
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          await route.fulfill({
+            status: 409,
+            contentType: "application/json",
+            body: JSON.stringify({
+              detail: "Worktree has uncommitted changes.",
+            }),
+          });
+        },
+      );
+
+      await page.goto("/terminal/ws-123");
+
+      await page
+        .locator(".header-bar")
+        .getByRole("button", { name: "Delete" })
+        .click();
+
+      // A round-trip back to the same workspace would defeat an
+      // id-only guard: the captured targetId matches the current
+      // workspaceId, but the prompt should still not reappear
+      // because the user has explicitly left and returned. Two
+      // separate evaluate calls mirror real user clicks — each
+      // pops an event-loop turn so Svelte's effects flush between
+      // them and the generation counter advances.
+      await page.evaluate(() => {
+        history.pushState(null, "", "/workspaces");
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      });
+      await page.evaluate(() => {
+        history.pushState(null, "", "/terminal/ws-123");
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      });
+
+      await page.waitForTimeout(800);
+
+      await expect(
+        page.getByRole("dialog", {
+          name: "Force delete workspace?",
+        }),
+      ).toBeHidden();
+    },
+  );
+
+  test(
+    "in-flight successful DELETE does not yank the user off the route they chose",
+    async ({ page }) => {
+      await setupTerminalMocks(page);
+
+      await page.route(
+        (url) =>
+          url.pathname === "/api/v1/workspaces/ws-123",
+        async (route) => {
+          if (route.request().method() !== "DELETE") {
+            await route.fallback();
+            return;
+          }
+          // Delay long enough for the user to navigate away
+          // before the 204 lands.
+          await new Promise((resolve) => setTimeout(resolve, 400));
+          await route.fulfill({ status: 204 });
+        },
+      );
+
+      await page.goto("/terminal/ws-123");
+
+      await page
+        .locator(".header-bar")
+        .getByRole("button", { name: "Delete" })
+        .click();
+
+      // Without the post-await guard in handleDelete, the stale
+      // 204 would call navigate("/workspaces") and the user would
+      // be yanked away from /pulls.
+      await page.evaluate(() => {
+        history.pushState(null, "", "/pulls");
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      });
+
+      await page.waitForTimeout(700);
+
+      await expect(page).toHaveURL(/\/pulls$/);
+    },
+  );
+
+  test(
+    "successful DELETE after A→B→A still navigates away from the deleted workspace",
+    async ({ page }) => {
+      await setupTerminalMocks(page);
+
+      await page.route(
+        (url) =>
+          url.pathname === "/api/v1/workspaces/ws-123",
+        async (route) => {
+          if (route.request().method() !== "DELETE") {
+            await route.fallback();
+            return;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          await route.fulfill({ status: 204 });
+        },
+      );
+
+      await page.goto("/terminal/ws-123");
+
+      await page
+        .locator(".header-bar")
+        .getByRole("button", { name: "Delete" })
+        .click();
+
+      // Round-trip back to the same workspace before the 204 lands.
+      // The generation token has advanced, but the workspace the
+      // user is looking at has just been destroyed on the server —
+      // we must still navigate away rather than leave them staring
+      // at a dead workspace.
+      await page.evaluate(() => {
+        history.pushState(null, "", "/workspaces");
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      });
+      await page.evaluate(() => {
+        history.pushState(null, "", "/terminal/ws-123");
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      });
+
+      await expect(page).toHaveURL(/\/workspaces$/, {
+        timeout: 2000,
+      });
     },
   );
 });
