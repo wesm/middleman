@@ -716,23 +716,35 @@ export function createDetailStore(
     };
   }
 
-  // Fire-and-forget PATCH for the PR body. Does NOT apply an optimistic
-  // update or revert on failure — the caller already owns local state.
-  // On error, storeError is set so the surface can surface a banner.
-  //
-  // The caller passes the full route ref so the PATCH always targets
-  // the captured PR even if the user has since navigated away. Only
-  // the response is gated on the currently displayed detail.
-  async function savePRBodyInBackground(
-    owner: string,
-    name: string,
-    number: number,
-    body: string,
+  // Single-flight body-save state, keyed per PR. Each entry tracks
+  // the in-flight PATCH and the latest queued body waiting to send
+  // once the in-flight save completes. The queue collapses to a
+  // single pending body — if the user toggles many times while a
+  // save is in flight, only the latest body lands. This prevents
+  // out-of-order PATCH responses from clobbering a newer body with
+  // an older one.
+  type QueuedSave = {
+    body: string;
     routeRef: {
       provider: string;
       platformHost?: string | undefined;
       repoPath: string;
-    },
+    };
+  };
+  const inflightSaves = new Map<string, Promise<void>>();
+  const queuedSaves = new Map<string, QueuedSave>();
+  function saveQueueKey(
+    owner: string, name: string, number: number,
+  ): string {
+    return `${owner} ${name} ${number}`;
+  }
+
+  async function runPRBodyPatch(
+    owner: string,
+    name: string,
+    number: number,
+    body: string,
+    routeRef: QueuedSave["routeRef"],
   ): Promise<void> {
     const ref = detailRequestRef(owner, name, number, routeRef);
     let succeeded = false;
@@ -794,6 +806,47 @@ export function createDetailStore(
       }
     }
     refreshPullsIfActive().catch(() => {});
+  }
+
+  // Fire-and-forget PATCH for the PR body. Does NOT apply an optimistic
+  // update or revert on failure — the caller already owns local state.
+  // On error, storeError is set so the surface can surface a banner.
+  //
+  // The caller passes the full route ref so the PATCH always targets
+  // the captured PR even if the user has since navigated away. Only
+  // the response is gated on the currently displayed detail. Saves
+  // for the same PR are serialized so older requests can't overwrite
+  // newer bodies via out-of-order responses.
+  function savePRBodyInBackground(
+    owner: string,
+    name: string,
+    number: number,
+    body: string,
+    routeRef: {
+      provider: string;
+      platformHost?: string | undefined;
+      repoPath: string;
+    },
+  ): Promise<void> {
+    const key = saveQueueKey(owner, name, number);
+    queuedSaves.set(key, { body, routeRef });
+    const existing = inflightSaves.get(key);
+    if (existing) return existing;
+    const flight = (async () => {
+      try {
+        while (queuedSaves.has(key)) {
+          const next = queuedSaves.get(key)!;
+          queuedSaves.delete(key);
+          await runPRBodyPatch(
+            owner, name, number, next.body, next.routeRef,
+          );
+        }
+      } finally {
+        inflightSaves.delete(key);
+      }
+    })();
+    inflightSaves.set(key, flight);
+    return flight;
   }
 
   function startDetailPolling(

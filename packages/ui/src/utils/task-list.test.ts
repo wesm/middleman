@@ -76,6 +76,15 @@ describe("listTaskItems", () => {
     ]);
   });
 
+  it("rejects checkbox markers without a trailing space (matches marked)", () => {
+    // Marked treats `- [ ]nospace` as plain text, not a task — the
+    // source helper must agree or data-task-index would drift.
+    const src = "- [ ]nospace\n- [ ] withspace";
+    expect(listTaskItems(src)).toEqual([
+      { index: 0, checked: false, line: 1 },
+    ]);
+  });
+
   it("keeps nested task items inside a list (not as code blocks)", () => {
     // The 4-space indent here is continuation of the list, NOT
     // a code block — list context preserves the nesting rules.
@@ -332,6 +341,26 @@ describe("moveTaskListItem", () => {
         "- [ ] outer B",
         "  - [ ] child B1",
         "  - [ ] child A1",
+      ].join("\n"),
+    );
+  });
+
+  it("carries blank-separated continuation paragraphs along with the task", () => {
+    // Markdown allows a list item's body to span blank-separated
+    // paragraphs as long as continuation stays indented. moveTask
+    // must drag the whole multi-paragraph item together.
+    const src = [
+      "- [ ] first",
+      "",
+      "  paragraph two of first",
+      "- [ ] second",
+    ].join("\n");
+    expect(moveTaskListItem(src, 0, 1)).toBe(
+      [
+        "- [ ] second",
+        "- [ ] first",
+        "",
+        "  paragraph two of first",
       ].join("\n"),
     );
   });

@@ -686,23 +686,33 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     };
   }
 
-  // Fire-and-forget PATCH for the issue body. Does NOT apply an
-  // optimistic update or revert on failure — the caller already owns
-  // local state. On error, detailError surfaces a banner.
-  //
-  // The caller passes the full route ref so the PATCH always targets
-  // the captured issue even if the user has since navigated away.
-  // Only the response is gated on the currently displayed detail.
-  async function saveIssueBodyInBackground(
-    owner: string,
-    name: string,
-    number: number,
-    body: string,
+  // Single-flight body-save state, keyed per issue. Each entry
+  // tracks the in-flight PATCH and the latest queued body waiting
+  // to send once the in-flight save completes. The queue collapses
+  // to a single pending body so out-of-order PATCH responses can't
+  // overwrite a newer body with an older one.
+  type QueuedIssueSave = {
+    body: string;
     routeRef: {
       provider: string;
       platformHost?: string | undefined;
       repoPath: string;
-    },
+    };
+  };
+  const inflightIssueSaves = new Map<string, Promise<void>>();
+  const queuedIssueSaves = new Map<string, QueuedIssueSave>();
+  function issueSaveQueueKey(
+    owner: string, name: string, number: number,
+  ): string {
+    return `${owner} ${name} ${number}`;
+  }
+
+  async function runIssueBodyPatch(
+    owner: string,
+    name: string,
+    number: number,
+    body: string,
+    routeRef: QueuedIssueSave["routeRef"],
   ): Promise<void> {
     const ref = issueDetailRequestRef(owner, name, number, routeRef);
     let succeeded = false;
@@ -769,6 +779,47 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       }
     }
     refreshIssuesIfActive().catch(() => {});
+  }
+
+  // Fire-and-forget PATCH for the issue body. Does NOT apply an
+  // optimistic update or revert on failure — the caller already owns
+  // local state. On error, detailError surfaces a banner.
+  //
+  // The caller passes the full route ref so the PATCH always targets
+  // the captured issue even if the user has since navigated away.
+  // Only the response is gated on the currently displayed detail.
+  // Saves for the same issue are serialized so older requests can't
+  // overwrite newer bodies via out-of-order responses.
+  function saveIssueBodyInBackground(
+    owner: string,
+    name: string,
+    number: number,
+    body: string,
+    routeRef: {
+      provider: string;
+      platformHost?: string | undefined;
+      repoPath: string;
+    },
+  ): Promise<void> {
+    const key = issueSaveQueueKey(owner, name, number);
+    queuedIssueSaves.set(key, { body, routeRef });
+    const existing = inflightIssueSaves.get(key);
+    if (existing) return existing;
+    const flight = (async () => {
+      try {
+        while (queuedIssueSaves.has(key)) {
+          const next = queuedIssueSaves.get(key)!;
+          queuedIssueSaves.delete(key);
+          await runIssueBodyPatch(
+            owner, name, number, next.body, next.routeRef,
+          );
+        }
+      } finally {
+        inflightIssueSaves.delete(key);
+      }
+    })();
+    inflightIssueSaves.set(key, flight);
+    return flight;
   }
 
   async function toggleIssueStar(

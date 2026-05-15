@@ -5,10 +5,14 @@
 
 // A line is a task-list item when it begins with optional leading
 // whitespace, a bullet (-, *, +) or ordered marker (1.), at least one
-// space, and then a checkbox token `[ ]`, `[x]`, or `[X]`. Anything
-// inside a fenced code block is ignored so `[ ]` shown in code samples
-// doesn't shift indices.
-const TASK_LINE = /^([\t ]*(?:[-*+]|\d+\.)[\t ]+\[)([ xX])(\])/;
+// space, the checkbox token `[ ]`, `[x]`, or `[X]`, AND a whitespace
+// character (or end-of-line) after the closing bracket. Marked's
+// renderer applies the same trailing-whitespace rule — without it
+// `- [ ]text` lexes as plain prose, so the source helpers must
+// agree or data-task-index would drift. Anything inside a fenced
+// code block is ignored so `[ ]` shown in code samples doesn't
+// shift indices.
+const TASK_LINE = /^([\t ]*(?:[-*+]|\d+\.)[\t ]+\[)([ xX])(\])(?:[\t ]|$)/;
 const BULLET_LINE = /^[\t ]*(?:[-*+]|\d+\.)[\t ]+/;
 const FENCE_LINE = /^[\t ]*(```|~~~)/;
 
@@ -119,22 +123,40 @@ export function listTaskItems(source: string): TaskItem[] {
 
 // A task block spans the task line plus any immediately-following
 // continuation lines that belong to the same item — more-indented
-// content (multi-line description, nested sub-tasks) is carried along
-// with the task when it moves. The block ends at the first line that
-// is blank or at the same/lower indent than the bullet.
+// content (multi-line description, nested sub-tasks) is carried
+// along with the task when it moves. Blank lines do NOT terminate
+// the block on their own: Markdown allows blank-separated
+// paragraphs that remain part of a list item as long as the next
+// non-blank line is still indented past the bullet. The block ends
+// at the first non-blank line that sits at or below the bullet's
+// indentation.
 function findTaskBlockEnd(
   lines: string[],
   start: number,
 ): number {
   const bulletIndent = leadingWhitespaceCount(lines[start]!);
   let end = start + 1;
+  let pendingBlankRun = 0;
   while (end < lines.length) {
     const line = lines[end]!;
-    if (line.trim() === "") break;
-    if (leadingWhitespaceCount(line) <= bulletIndent) break;
+    if (line.trim() === "") {
+      pendingBlankRun++;
+      end++;
+      continue;
+    }
+    if (leadingWhitespaceCount(line) <= bulletIndent) {
+      // The next non-blank line dedents out of the item — strip
+      // the buffered blank lines, they belong to the separator
+      // between this item and what follows.
+      return end - pendingBlankRun;
+    }
+    // Indented content continues the block, including any blank
+    // lines we buffered on the way here.
+    pendingBlankRun = 0;
     end++;
   }
-  return end;
+  // Reached EOF; drop trailing blanks from the block.
+  return end - pendingBlankRun;
 }
 
 // Returns a new source string with the Nth task-list item moved to
