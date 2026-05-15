@@ -15,11 +15,16 @@
   const approvers = $derived.by(() =>
     approversFromReviewEvents(events ?? []),
   );
-  const label = $derived(reviewLabel(decision, approvers.length));
-  const chipClass = $derived(reviewColor(decision));
+  const normalizedDecision = $derived(normalizeReviewDecision(decision));
+  const label = $derived(reviewLabel(normalizedDecision, approvers.length));
+  const chipClass = $derived(reviewColor(normalizedDecision));
   const canExpand = $derived(
-    decision === "APPROVED" && approvers.length > 0,
+    normalizedDecision === "APPROVED" && approvers.length > 0,
   );
+
+  function normalizeReviewDecision(reviewDecision: string): string {
+    return reviewDecision.trim().toUpperCase();
+  }
 
   function reviewColor(reviewDecision: string): string {
     if (reviewDecision === "APPROVED") return "chip--green";

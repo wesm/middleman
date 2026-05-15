@@ -99,6 +99,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		Additions:         240,
 		Deletions:         30,
 		CommentCount:      3,
+		ReviewDecision:    "approved",
 		CIStatus:          "success",
 		CIChecksJSON:      string(ciChecksJSON),
 		CreatedAt:         w1Created,
@@ -107,6 +108,55 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	})
 	if err != nil {
 		return nil, fmt.Errorf("upsert widgets#1: %w", err)
+	}
+	if err := d.UpsertMREvents(ctx, []db.MREvent{
+		{
+			MergeRequestID: w1ID,
+			PlatformID:     int64Ptr(5011),
+			EventType:      "review",
+			Author:         "alice",
+			Summary:        "APPROVED",
+			CreatedAt:      w1Created.Add(2 * time.Hour),
+			DedupeKey:      "widgets-1-review-alice-approved",
+		},
+		{
+			MergeRequestID: w1ID,
+			PlatformID:     int64Ptr(5012),
+			EventType:      "review",
+			Author:         "bob",
+			Summary:        "CHANGES_REQUESTED",
+			CreatedAt:      w1Created.Add(3 * time.Hour),
+			DedupeKey:      "widgets-1-review-bob-changes-requested",
+		},
+		{
+			MergeRequestID: w1ID,
+			PlatformID:     int64Ptr(5013),
+			EventType:      "review",
+			Author:         "bob",
+			Summary:        "APPROVED",
+			CreatedAt:      w1Created.Add(4 * time.Hour),
+			DedupeKey:      "widgets-1-review-bob-approved",
+		},
+		{
+			MergeRequestID: w1ID,
+			PlatformID:     int64Ptr(5014),
+			EventType:      "review",
+			Author:         "carol",
+			Summary:        "APPROVED",
+			CreatedAt:      w1Created.Add(5 * time.Hour),
+			DedupeKey:      "widgets-1-review-carol-approved",
+		},
+		{
+			MergeRequestID: w1ID,
+			PlatformID:     int64Ptr(5015),
+			EventType:      "review",
+			Author:         "carol",
+			Summary:        "DISMISSED",
+			CreatedAt:      w1Created.Add(6 * time.Hour),
+			DedupeKey:      "widgets-1-review-carol-dismissed",
+		},
+	}); err != nil {
+		return nil, fmt.Errorf("upsert widgets#1 review events: %w", err)
 	}
 
 	// widgets#2: open, bob, dirty merge state
@@ -708,6 +758,16 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		},
 	}
 
+	reviews := map[string][]*gh.PullRequestReview{
+		issueKey("acme", "widgets", 1): {
+			buildGHReview(5011, "alice", "APPROVED", w1Created.Add(2*time.Hour)),
+			buildGHReview(5012, "bob", "CHANGES_REQUESTED", w1Created.Add(3*time.Hour)),
+			buildGHReview(5013, "bob", "APPROVED", w1Created.Add(4*time.Hour)),
+			buildGHReview(5014, "carol", "APPROVED", w1Created.Add(5*time.Hour)),
+			buildGHReview(5015, "carol", "DISMISSED", w1Created.Add(6*time.Hour)),
+		},
+	}
+
 	allIssues := map[string][]*gh.Issue{
 		"acme/widgets": {
 			buildGHIssue("acme", "widgets", 3010, 10, "Widget rendering broken on Safari", "eve", "open", wi10Created, now.Add(-4*time.Hour)),
@@ -732,6 +792,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 				OpenIssues: openIssues,
 				Issues:     allIssues,
 				Comments:   make(map[string][]*gh.IssueComment),
+				Reviews:    reviews,
 				Tags:       make(map[string][]*gh.RepositoryTag),
 				CombinedStatuses: map[string]*gh.CombinedStatus{
 					refKey("acme", "widgets", widgetsPR1HeadSHA): {
@@ -783,6 +844,15 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	return result, nil
 }
 
+func buildGHReview(id int64, login, state string, submittedAt time.Time) *gh.PullRequestReview {
+	return &gh.PullRequestReview{
+		ID:          new(id),
+		User:        &gh.User{Login: new(login)},
+		State:       new(state),
+		SubmittedAt: &gh.Timestamp{Time: submittedAt},
+	}
+}
+
 // buildGHPR creates a minimal *gh.PullRequest for the FixtureClient.
 func buildGHPR(
 	owner, repo string,
@@ -818,6 +888,11 @@ func setPRStats(pr *gh.PullRequest, additions, deletions int) *gh.PullRequest {
 	pr.Additions = &additions
 	pr.Deletions = &deletions
 	return pr
+}
+
+//go:fix inline
+func int64Ptr(value int64) *int64 {
+	return new(value)
 }
 
 func setPRHeadSHA(pr *gh.PullRequest, sha string) *gh.PullRequest {

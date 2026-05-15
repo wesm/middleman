@@ -33,6 +33,7 @@ type FixtureClient struct {
 	OpenIssues                map[string][]*gh.Issue
 	Issues                    map[string][]*gh.Issue
 	Comments                  map[string][]*gh.IssueComment
+	Reviews                   map[string][]*gh.PullRequestReview
 	ReposByOwner              map[string][]*gh.Repository
 	Releases                  map[string][]*gh.RepositoryRelease
 	Tags                      map[string][]*gh.RepositoryTag
@@ -51,6 +52,7 @@ func NewFixtureClient() ghclient.Client {
 		OpenIssues:       make(map[string][]*gh.Issue),
 		Issues:           make(map[string][]*gh.Issue),
 		Comments:         make(map[string][]*gh.IssueComment),
+		Reviews:          make(map[string][]*gh.PullRequestReview),
 		ReposByOwner:     make(map[string][]*gh.Repository),
 		Releases:         make(map[string][]*gh.RepositoryRelease),
 		Tags:             make(map[string][]*gh.RepositoryTag),
@@ -289,11 +291,16 @@ func (c *FixtureClient) ListIssueCommentsIfChanged(
 	return c.ListIssueComments(ctx, owner, repo, number)
 }
 
-// ListReviews returns nil (read-only stub).
 func (c *FixtureClient) ListReviews(
-	_ context.Context, _, _ string, _ int,
+	_ context.Context, owner, repo string, number int,
 ) ([]*gh.PullRequestReview, error) {
-	return nil, nil
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	reviews := c.Reviews[issueKey(owner, repo, number)]
+	if len(reviews) == 0 {
+		return nil, nil
+	}
+	return slices.Clone(reviews), nil
 }
 
 // ListCommits returns nil (read-only stub).

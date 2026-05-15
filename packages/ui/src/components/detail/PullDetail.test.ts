@@ -197,4 +197,18 @@ describe("PullDetail approvals", () => {
 
     expect(document.querySelector(".approval-popup")).toBeNull();
   });
+
+  it("normalizes backend review decision casing before enabling approver popup", async () => {
+    const detail = pullDetail();
+    detail.merge_request.ReviewDecision = "approved";
+
+    renderPullDetail(detail);
+
+    const trigger = screen.getByRole("button", { name: "APPROVED (2)" });
+    await fireEvent.click(trigger);
+
+    const popup = document.querySelector(".approval-popup");
+    expect(popup?.textContent).toContain("alice");
+    expect(popup?.textContent).toContain("bob");
+  });
 });
