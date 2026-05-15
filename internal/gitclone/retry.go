@@ -12,6 +12,21 @@ import (
 // re-issued before surfacing the error to the caller.
 const retryAttempts = internalretry.DefaultMaxTries
 
+var transientGitErrorSubstrings = []string{
+	"internal server error",
+	"returned error: 500",
+	"returned error: 502",
+	"returned error: 503",
+	"returned error: 504",
+	"connection reset",
+	"connection refused",
+	"could not resolve host",
+	"operation timed out",
+	"early eof",
+	"ssl_read",
+	"tls connection",
+}
+
 // isTransientGitError reports whether the stderr captured from git looks
 // like a transient remote or network failure worth retrying. GitHub's
 // smart-HTTP endpoint sporadically returns 5xx on /info/refs even when the
@@ -22,20 +37,7 @@ func isTransientGitError(err error) bool {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
-	for _, needle := range []string{
-		"internal server error",
-		"returned error: 500",
-		"returned error: 502",
-		"returned error: 503",
-		"returned error: 504",
-		"connection reset",
-		"connection refused",
-		"could not resolve host",
-		"operation timed out",
-		"early eof",
-		"ssl_read",
-		"tls connection",
-	} {
+	for _, needle := range transientGitErrorSubstrings {
 		if strings.Contains(msg, needle) {
 			return true
 		}
