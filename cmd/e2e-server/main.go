@@ -823,12 +823,12 @@ func run(
 			runID := int64(9001)
 			event := "pull_request"
 			number := 1
-			fc.WorkflowRuns[fmt.Sprintf("acme/widgets@%s", headSHA)] = []*gh.WorkflowRun{{
+			fc.SetWorkflowRuns("acme", "widgets", headSHA, []*gh.WorkflowRun{{
 				ID:           &runID,
 				HeadSHA:      &headSHA,
 				Event:        &event,
 				PullRequests: []*gh.PullRequest{{Number: &number}},
-			}}
+			}})
 
 			w.Header().Set("Content-Type", "application/json")
 			if err := json.NewEncoder(w).Encode(map[string]any{

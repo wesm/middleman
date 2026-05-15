@@ -385,11 +385,25 @@ func (c *FixtureClient) ListCheckRunsForRef(
 func (c *FixtureClient) ListWorkflowRunsForHeadSHA(
 	_ context.Context, owner, repo, headSHA string,
 ) ([]*gh.WorkflowRun, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	runs := c.WorkflowRuns[refKey(owner, repo, headSHA)]
 	if len(runs) == 0 {
 		return nil, nil
 	}
 	return slices.Clone(runs), nil
+}
+
+// SetWorkflowRuns seeds action-required workflow runs for a repo/head SHA.
+func (c *FixtureClient) SetWorkflowRuns(owner, repo, headSHA string, runs []*gh.WorkflowRun) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.WorkflowRuns == nil {
+		c.WorkflowRuns = make(map[string][]*gh.WorkflowRun)
+	}
+	c.WorkflowRuns[refKey(owner, repo, headSHA)] = slices.Clone(runs)
 }
 
 // ApproveWorkflowRun returns an error (mutations not supported).
