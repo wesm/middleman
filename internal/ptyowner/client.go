@@ -1,6 +1,7 @@
 package ptyowner
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -99,20 +100,24 @@ func (c *Client) Ensure(ctx context.Context, session, cwd string) error {
 				StripEnvVars: c.StripEnvVars,
 			})
 		}()
-		return c.waitReady(ctx, session)
+		return c.waitReady(ctx, session, nil, nil, nil)
 	}
 	exe, args := c.ownerCommand(exe, session, cwd, string(commandJSON))
 	cmd := exec.Command(exe, args...)
 	cmd.Env = c.ownerHelperEnvironment(os.Environ())
 	detachCommand(cmd)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start pty owner: %w", err)
 	}
+	exited := make(chan error, 1)
 	go func() {
-		_ = cmd.Wait()
+		exited <- cmd.Wait()
 	}()
 
-	return c.waitReady(ctx, session)
+	return c.waitReady(ctx, session, exited, &stdout, &stderr)
 }
 
 func acquireStartLock(
@@ -183,7 +188,12 @@ func (c *Client) ownerCommand(
 	return exe, args
 }
 
-func (c *Client) waitReady(ctx context.Context, session string) error {
+func (c *Client) waitReady(
+	ctx context.Context,
+	session string,
+	exited <-chan error,
+	stdout, stderr *bytes.Buffer,
+) error {
 	deadline := time.Now().Add(5 * time.Second)
 	var lastErr error
 	for time.Now().Before(deadline) {
@@ -195,10 +205,26 @@ func (c *Client) waitReady(ctx context.Context, session string) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case err := <-exited:
+			return exitedOwnerError(err, stdout, stderr)
 		case <-time.After(25 * time.Millisecond):
 		}
 	}
 	return fmt.Errorf("pty owner did not become ready: %w", lastErr)
+}
+
+func exitedOwnerError(err error, stdout, stderr *bytes.Buffer) error {
+	msg := strings.TrimSpace(stderr.String())
+	if msg == "" {
+		msg = strings.TrimSpace(stdout.String())
+	}
+	if msg == "" {
+		msg = "no output"
+	}
+	if err != nil {
+		return fmt.Errorf("pty owner exited before ready: %w: %s", err, msg)
+	}
+	return fmt.Errorf("pty owner exited before ready: %s", msg)
 }
 
 func (c *Client) HasState(session string) bool {

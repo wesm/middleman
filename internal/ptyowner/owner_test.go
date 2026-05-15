@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -469,6 +470,97 @@ func TestClientEnsuresExternalManager(t *testing.T) {
 	require.Contains(readUntil(t, attachment.Output, "ready"), "ready")
 	require.NoError(attachment.Write([]byte("hello\r")))
 	require.Contains(readUntil(t, attachment.Output, "got:hello"), "got:hello")
+}
+
+func TestClientEnsuresExternalManagerWithPowerShell(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("PowerShell PTY manager startup coverage is Windows-specific")
+	}
+	require := require.New(t)
+	managerPath := os.Getenv("MIDDLEMAN_PTY_MANAGER_TEST")
+	if managerPath == "" {
+		t.Skip("set MIDDLEMAN_PTY_MANAGER_TEST to an external pty manager binary")
+	}
+
+	root := filepath.Join(t.TempDir(), strings.Repeat("long-owner-root-", 8))
+	require.NoError(os.MkdirAll(root, 0o755))
+	client := Client{
+		Root:        root,
+		ManagerPath: managerPath,
+		Command: []string{
+			"powershell.exe", "-NoLogo", "-NoProfile", "-NoExit",
+		},
+	}
+
+	require.NoError(client.Ensure(t.Context(), "middleman-powershell-test", t.TempDir()))
+	t.Cleanup(func() {
+		_ = client.Stop(context.Background(), "middleman-powershell-test")
+	})
+
+	attachment, err := client.Attach(
+		context.Background(), "middleman-powershell-test", 120, 30,
+	)
+	require.NoError(err)
+	defer attachment.Close()
+
+	require.NoError(attachment.Write([]byte("Write-Output powershell-ready\r")))
+	require.Contains(readUntil(t, attachment.Output, "powershell-ready"), "powershell-ready")
+}
+
+func TestClientEnsuresExternalManagerWithGoTestHelper(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows ConPTY coverage for Go test helpers")
+	}
+	require := require.New(t)
+	managerPath := os.Getenv("MIDDLEMAN_PTY_MANAGER_TEST")
+	if managerPath == "" {
+		t.Skip("set MIDDLEMAN_PTY_MANAGER_TEST to an external pty manager binary")
+	}
+	t.Setenv("MIDDLEMAN_PTYOWNER_TEST_HELPER", "1")
+
+	root := filepath.Join(t.TempDir(), strings.Repeat("long-owner-root-", 8))
+	require.NoError(os.MkdirAll(root, 0o755))
+	client := Client{
+		Root:        root,
+		ManagerPath: managerPath,
+		Command: []string{
+			os.Args[0],
+			"-test.run=TestPtyOwnerEchoHelperProcess",
+			"--",
+			"echo",
+		},
+	}
+
+	require.NoError(client.Ensure(t.Context(), "middleman-go-helper-test", t.TempDir()))
+	t.Cleanup(func() {
+		_ = client.Stop(context.Background(), "middleman-go-helper-test")
+	})
+
+	attachment, err := client.Attach(
+		context.Background(), "middleman-go-helper-test", 120, 30,
+	)
+	require.NoError(err)
+	defer attachment.Close()
+
+	require.NoError(attachment.Write([]byte("ping\r")))
+	require.Contains(readUntil(t, attachment.Output, "echo:ping"), "echo:ping")
+}
+
+func TestPtyOwnerEchoHelperProcess(t *testing.T) {
+	if os.Getenv("MIDDLEMAN_PTYOWNER_TEST_HELPER") != "1" {
+		return
+	}
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err == nil {
+		fmt.Print("echo:" + line)
+	}
+	blockPtyOwnerTestHelper()
+}
+
+func blockPtyOwnerTestHelper() {
+	for {
+		time.Sleep(time.Hour)
+	}
 }
 
 func TestExternalManagerAttachmentWritesUseAttachConnection(t *testing.T) {

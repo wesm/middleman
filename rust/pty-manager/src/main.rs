@@ -8,6 +8,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::env;
+#[cfg(windows)]
+use std::ffi::OsString;
 use std::fs::{self, OpenOptions};
 use std::io::{self, BufRead, BufReader, Write};
 #[cfg(windows)]
@@ -140,6 +142,7 @@ struct Shared {
     attached: bool,
     exited: bool,
     reader_done: bool,
+    stopping: bool,
     exit_code: i32,
 }
 
@@ -367,6 +370,7 @@ fn handle_conn(
         }
         "stop" => {
             write_response(&mut response_stream, ok())?;
+            mark_stopping(&shared);
             let _ = killer.kill();
         }
         "input" => {
@@ -500,6 +504,7 @@ fn handle_attach(
                 resize_pty(&runtime.master, req.cols, req.rows);
             }
             "stop" => {
+                mark_stopping(&runtime.shared);
                 let _ = killer.kill();
             }
             _ => {}
@@ -715,7 +720,16 @@ fn add_subscriber(shared: &mut Shared, tx: mpsc::SyncSender<Vec<u8>>) -> u64 {
 
 fn owner_complete(shared: &Arc<Mutex<Shared>>) -> bool {
     let shared = shared.lock().expect("shared poisoned");
-    shared.exited && shared.reader_done
+    shared.stopping || (shared.exited && shared.reader_done)
+}
+
+fn mark_stopping(shared: &Arc<Mutex<Shared>>) {
+    let subscribers = {
+        let mut shared = shared.lock().expect("shared poisoned");
+        shared.stopping = true;
+        std::mem::take(&mut shared.subscribers)
+    };
+    drop(subscribers);
 }
 
 fn mark_child_exited(shared: &Arc<Mutex<Shared>>, exit_code: i32) {
@@ -832,18 +846,14 @@ fn private_state_file(path: &Path) -> Result<fs::File> {
 
 #[cfg(windows)]
 fn private_state_file(path: &Path) -> Result<fs::File> {
-    let file = OpenOptions::new()
+    // The session directory is created with a protected inheritable DACL, so
+    // files created inside it inherit the same current-user-only access. Calling
+    // SetFileSecurityW again for this long state-file path fails on Windows.
+    Ok(OpenOptions::new()
         .create(true)
         .truncate(true)
         .write(true)
-        .open(path)?;
-    restrict_windows_acl(path, false).with_context(|| {
-        format!(
-            "restrict permissions on pty owner state file {}",
-            path.display()
-        )
-    })?;
-    Ok(file)
+        .open(path)?)
 }
 
 fn create_private_dir(path: &Path) -> Result<()> {
@@ -981,10 +991,25 @@ fn wide_null(value: &str) -> Vec<u16> {
 
 #[cfg(windows)]
 fn wide_path_null(path: &Path) -> Vec<u16> {
-    path.as_os_str()
+    windows_acl_path(path)
         .encode_wide()
         .chain(std::iter::once(0))
         .collect()
+}
+
+#[cfg(windows)]
+fn windows_acl_path(path: &Path) -> OsString {
+    let raw = path.as_os_str().to_string_lossy();
+    if raw.starts_with(r"\\?\") || raw.starts_with(r"\??\") {
+        return path.as_os_str().to_os_string();
+    }
+    if let Some(unc) = raw.strip_prefix(r"\\") {
+        return OsString::from(format!(r"\\?\UNC\{unc}"));
+    }
+    if raw.len() >= 3 && raw.as_bytes()[1] == b':' && raw.as_bytes()[2] == b'\\' {
+        return OsString::from(format!(r"\\?\{raw}"));
+    }
+    path.as_os_str().to_os_string()
 }
 
 #[cfg(windows)]
@@ -1287,6 +1312,20 @@ mod tests {
         assert!(!paths.socket.exists());
 
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_acl_paths_use_extended_length_prefix() {
+        let path = Path::new(r"C:\tmp")
+            .join("long-owner-root-".repeat(8))
+            .join("middleman-abc123")
+            .join("owner.json.tmp");
+
+        assert_eq!(
+            windows_acl_path(&path).to_string_lossy(),
+            format!(r"\\?\{}", path.display())
+        );
     }
 
     #[cfg(windows)]

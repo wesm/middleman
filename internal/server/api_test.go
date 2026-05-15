@@ -12241,7 +12241,7 @@ func TestWorkspaceRuntimeLaunchesRustPtyManagerSessionE2E(t *testing.T) {
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
-	workspaceTerminalConnWriteRead(t, ctx, conn, "ping\n", "echo:ping")
+	workspaceTerminalConnWriteRead(t, ctx, conn, "ping\r", "echo:ping")
 
 	stopResp, err := fixture.client.HTTP.StopWorkspaceRuntimeSessionWithResponse(
 		ctx, ws.Id, session.Key,
