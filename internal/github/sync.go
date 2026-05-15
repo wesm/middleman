@@ -3887,6 +3887,15 @@ func (s *Syncer) fetchMRDetail(
 	}
 	calls += 2
 
+	// Refresh workflow approval state so the DB-only detail GET
+	// can render the Approve workflows button without a foreground
+	// sync. Same path as syncMRForRepo, but the budgeted detail
+	// drain needs to count this call too.
+	s.refreshWorkflowApproval(
+		ctx, repo, repoID, number, ciHeadSHA, fullPR, normalized,
+	)
+	calls++
+
 	// Determine whether CI had pending checks for scoring by
 	// reading the DB row that refreshCIStatus just wrote. Use
 	// ciHasPending (checks individual statuses) rather than the
