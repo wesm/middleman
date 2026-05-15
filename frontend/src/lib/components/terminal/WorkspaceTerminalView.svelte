@@ -833,16 +833,49 @@
     forcePromptMessage = null;
   }
 
+  let previouslyFocusedEl: HTMLElement | null = null;
+
   function handleForcePromptKeydown(event: KeyboardEvent): void {
     if (event.key === "Escape") {
       event.preventDefault();
       cancelForceDelete();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const container = event.currentTarget;
+    if (!(container instanceof HTMLElement)) return;
+    const dialog = container.querySelector("[role='dialog']");
+    if (!(dialog instanceof HTMLElement)) return;
+    const focusable = Array.from(
+      dialog.querySelectorAll<HTMLElement>(
+        "button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex='-1'])",
+      ),
+    );
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (!first || !last) return;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
     }
   }
 
   $effect(() => {
     if (forcePromptMessage !== null) {
+      if (
+        previouslyFocusedEl === null &&
+        document.activeElement instanceof HTMLElement
+      ) {
+        previouslyFocusedEl = document.activeElement;
+      }
       void tick().then(() => cancelForceBtnEl?.focus());
+    } else if (previouslyFocusedEl !== null) {
+      previouslyFocusedEl.focus();
+      previouslyFocusedEl = null;
     }
   });
 
@@ -948,7 +981,7 @@
   });
 </script>
 
-<div class="terminal-view">
+<div class="terminal-view" inert={forcePromptMessage !== null}>
   {#snippet terminalMainContent()}
     <div class="terminal-main">
       {#if !workspaceId}

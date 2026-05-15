@@ -232,7 +232,7 @@ async function setupTerminalMocks(
   );
 
   await page.route(
-    `**/api/v1/workspaces/${ws.id}`,
+    (url) => url.pathname === `/api/v1/workspaces/${ws.id}`,
     async (route) => {
       if (route.request().method() === "GET") {
         const nextResponse = detailResponses.shift();
@@ -256,10 +256,14 @@ async function setupTerminalMocks(
       // DELETE
       const nextDelete = deleteResponses.shift();
       if (nextDelete) {
+        if (nextDelete.body === undefined) {
+          await route.fulfill({ status: nextDelete.status });
+          return;
+        }
         await route.fulfill({
           status: nextDelete.status,
           contentType: "application/json",
-          body: JSON.stringify(nextDelete.body ?? {}),
+          body: JSON.stringify(nextDelete.body),
         });
         return;
       }
@@ -733,6 +737,65 @@ test.describe("terminal state icons", () => {
       await expect(dialog).toBeHidden();
       await expect(page).not.toHaveURL(/\/workspaces$/);
       expect(deleteRequests).toHaveLength(1);
+    },
+  );
+
+  test(
+    "force-delete prompt traps focus, makes background inert, and restores focus on cancel",
+    async ({ page }) => {
+      await setupTerminalMocks(page, {
+        workspaceDeleteResponses: [
+          {
+            status: 409,
+            body: {
+              detail: "Worktree has uncommitted changes.",
+            },
+          },
+        ],
+      });
+
+      await page.goto("/terminal/ws-123");
+
+      const headerDelete = page
+        .locator(".header-bar")
+        .getByRole("button", { name: "Delete" });
+      await headerDelete.click();
+
+      const dialog = page.getByRole("dialog", {
+        name: "Force delete workspace?",
+      });
+      await expect(dialog).toBeVisible();
+
+      const cancel = dialog.getByRole("button", { name: "Cancel" });
+      const force = dialog.getByRole("button", {
+        name: "Force delete",
+      });
+
+      // Initial focus lands on Cancel — the safe default for a destructive action.
+      await expect(cancel).toBeFocused();
+
+      // The workspace shell beneath the modal is inert and unreachable.
+      await expect(page.locator(".terminal-view")).toHaveAttribute(
+        "inert",
+        "",
+      );
+
+      // Tab cycles within the dialog (Cancel -> Force delete -> Cancel).
+      await page.keyboard.press("Tab");
+      await expect(force).toBeFocused();
+      await page.keyboard.press("Tab");
+      await expect(cancel).toBeFocused();
+      await page.keyboard.press("Shift+Tab");
+      await expect(force).toBeFocused();
+
+      // Closing the dialog restores focus to the trigger.
+      await cancel.click();
+      await expect(dialog).toBeHidden();
+      await expect(page.locator(".terminal-view")).not.toHaveAttribute(
+        "inert",
+        "",
+      );
+      await expect(headerDelete).toBeFocused();
     },
   );
 });
