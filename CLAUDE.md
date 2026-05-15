@@ -9,7 +9,7 @@ middleman is a local-first dashboard for tracking pull and merge requests across
 ```
 CLI (middleman) → Config (TOML) → DB (SQLite)
                     ↓                ↓
-               Sync Engine → Platform Registry → {GitHub, GitLab, Forgejo, Gitea}
+               Sync Engine → Platform Registry → Provider Clients
                     ↓                ↓
                HTTP Server → REST API + Embedded SPA
 ```
@@ -18,11 +18,13 @@ CLI (middleman) → Config (TOML) → DB (SQLite)
 - **Storage**: SQLite with WAL mode (pure Go driver: modernc.org/sqlite)
 - **Sync**: Periodic pull from each configured provider host (configurable, default 5m)
 - **Frontend**: Svelte 5 SPA embedded in the Go binary at build time
-- **Config**: TOML at `~/.config/middleman/config.toml`; per-provider tokens via `MIDDLEMAN_GITHUB_TOKEN`, `MIDDLEMAN_GITLAB_TOKEN`, `MIDDLEMAN_FORGEJO_TOKEN`, `MIDDLEMAN_GITEA_TOKEN` env vars (with optional repo-level `token_env` overrides)
+- **Config**: TOML at `~/.config/middleman/config.toml`; per-provider `MIDDLEMAN_<PROVIDER>_TOKEN` env vars (with optional repo-level `token_env` overrides)
 
 ## Provider Support
 
 middleman supports GitHub, GitLab, Forgejo, and Gitea. The `gitealike` package is the shared Forgejo/Gitea adapter.
+
+This paragraph is the single place CLAUDE.md enumerates supported providers. Do not duplicate the list elsewhere in this file: not in the architecture diagram, env-var lists, project structure, key files, or test guidance. Adding or removing a provider updates this paragraph only. Mentioning a specific provider in context (for example, GitHub-only optimizations in `internal/github/`) is fine when it describes real artifacts, not when it restates the supported set.
 
 New features must work across every supported provider to the extent each provider's API allows. Concrete rules:
 
@@ -39,7 +41,7 @@ For package layout and the new-provider checklist, see `context/provider-archite
 - `internal/config/` - TOML config loading and validation
 - `internal/db/` - SQLite schema, connection, queries, types
 - `internal/platform/` - Provider-neutral types, capability interfaces, registry, persistence helpers
-- `internal/platform/{github,gitlab,forgejo,gitea,gitealike}/` - Per-provider API transport and normalization
+- `internal/platform/<provider>/` - Per-provider API transport and normalization
 - `internal/github/` - GitHub-only sync orchestration (GraphQL bulk fetch, ETag/rate-limit transports) consumed by the platform registry
 - `internal/server/` - HTTP handlers and routing
 - `internal/web/` - Embedded frontend (dist/ copied at build time)
@@ -111,7 +113,7 @@ make vet        # go vet
 - All tests use `t.TempDir()` for temp directories
 - Tests should be fast and isolated
 - Do not run tests with `-v` (especially `go test`) — default output has enough signal to debug failures, and verbose output wastes tokens. Only use `-v` if the user asks for it or a failure genuinely needs the extra detail
-- For GitHub GraphQL query changes (a GitHub-only optimization), enable `MIDDLEMAN_LIVE_GITHUB_TESTS=1` to validate against GitHub's live GraphQL API; see `context/testing.md`. For GitLab REST drift, use the GitLab CE container fixture; Forgejo and Gitea have optional container fixtures when fake transports are too weak. See `context/platform-sync-invariants.md`.
+- For provider-specific live or container test fixtures used when fake transports can't catch endpoint or auth drift, follow `context/testing.md` and `context/platform-sync-invariants.md`. The GitHub GraphQL gate is `MIDDLEMAN_LIVE_GITHUB_TESTS=1`.
 
 ## Build Requirements
 
