@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/creack/pty/v2"
+
+	ptyownerruntime "github.com/wesm/middleman/internal/ptyowner/runtime"
 )
 
 type SessionStatus string
@@ -78,6 +80,10 @@ type Options struct {
 	// OnSessionExit is called after a launched runtime session or shell exits
 	// naturally and is removed from the manager's active session maps.
 	OnSessionExit func(SessionInfo)
+	// PtyOwnerRuntime starts direct runtime PTYs through the durable PTY owner
+	// instead of github.com/creack/pty. This is required on Windows, where
+	// creack/pty does not provide a local PTY implementation.
+	PtyOwnerRuntime ptyownerruntime.Owner
 }
 
 type Manager struct {
@@ -92,6 +98,7 @@ type Manager struct {
 	wrapAgentsInTmux bool
 	stripEnvVars     []string
 	onSessionExit    func(SessionInfo)
+	ptyOwnerRuntime  ptyownerruntime.Owner
 	startLocks       map[string]*sync.Mutex
 	stoppingWS       map[string]int
 	inflightWS       map[string]int
@@ -137,6 +144,8 @@ type session struct {
 	info                  SessionInfo
 	cmd                   *exec.Cmd
 	ptmx                  *os.File
+	ptyOwner              ptyownerruntime.Owner
+	pty                   ptyownerruntime.PTY
 	tmuxSession           string
 	done                  chan struct{}
 	outputDone            chan struct{}
@@ -186,6 +195,7 @@ func NewManager(options Options) *Manager {
 		wrapAgentsInTmux: options.WrapAgentSessionsInTmux,
 		stripEnvVars:     dedupeStrings(options.StripEnvVars),
 		onSessionExit:    options.OnSessionExit,
+		ptyOwnerRuntime:  options.PtyOwnerRuntime,
 		startLocks:       make(map[string]*sync.Mutex),
 		stoppingWS:       make(map[string]int),
 		inflightWS:       make(map[string]int),
@@ -305,7 +315,7 @@ func (m *Manager) Launch(
 		"tmux_session", launch.TmuxSession,
 	)
 
-	started, err := startSession(SessionInfo{
+	started, err := m.startSession(ctx, SessionInfo{
 		Key:         key,
 		WorkspaceID: workspaceID,
 		TargetKey:   targetKey,
@@ -432,7 +442,7 @@ func (m *Manager) restoreTmuxSession(
 		"target_key", targetKey,
 		"tmux_session", tmuxSession,
 	)
-	started, err := startSession(SessionInfo{
+	started, err := m.startSession(ctx, SessionInfo{
 		Key:         key,
 		WorkspaceID: workspaceID,
 		TargetKey:   targetKey,
@@ -937,7 +947,7 @@ func (m *Manager) EnsureShell(
 	}
 	defer m.releaseInflight(workspaceID)
 
-	started, err := startSession(SessionInfo{
+	started, err := m.startSession(ctx, SessionInfo{
 		Key:         key,
 		WorkspaceID: workspaceID,
 		TargetKey:   "plain_shell",
@@ -1446,6 +1456,55 @@ func (m *Manager) removeExitedSession(
 	return true
 }
 
+func (m *Manager) startSession(
+	ctx context.Context,
+	info SessionInfo,
+	command []string,
+	cwd string,
+	extraStripVars []string,
+) (*session, error) {
+	if m.ptyOwnerRuntime != nil {
+		return startPtyOwnerSession(
+			ctx, m.ptyOwnerRuntime, info, command, cwd, extraStripVars,
+		)
+	}
+	return startSession(info, command, cwd, extraStripVars)
+}
+
+func startPtyOwnerSession(
+	ctx context.Context,
+	owner ptyownerruntime.Owner,
+	info SessionInfo,
+	command []string,
+	cwd string,
+	extraStripVars []string,
+) (*session, error) {
+	if len(command) == 0 || command[0] == "" {
+		return nil, errors.New("session command is empty")
+	}
+	ptySession, err := owner.Start(ctx, info.Key, cwd, command, extraStripVars)
+	if err != nil {
+		return nil, fmt.Errorf("start pty owner: %w", err)
+	}
+	slog.Debug(
+		"runtime session pty owner started",
+		"workspace_id", info.WorkspaceID,
+		"session_key", info.Key,
+		"target_key", info.TargetKey,
+	)
+	info.Status = SessionStatusRunning
+	s := &session{
+		info:        info,
+		ptyOwner:    owner,
+		pty:         ptySession,
+		done:        make(chan struct{}),
+		outputDone:  make(chan struct{}),
+		subscribers: make(map[chan []byte]struct{}),
+	}
+	go s.drainOutput()
+	return s, nil
+}
+
 func startSession(
 	info SessionInfo,
 	command []string,
@@ -1536,6 +1595,9 @@ func (s *session) snapshot() SessionInfo {
 }
 
 func (s *session) watch() SessionInfo {
+	if s.pty != nil {
+		return s.watchPtyOwner()
+	}
 	exitCode := waitExitCode(s.cmd.Wait())
 	now := time.Now().UTC()
 
@@ -1565,9 +1627,44 @@ func (s *session) watch() SessionInfo {
 	return info
 }
 
+func (s *session) watchPtyOwner() SessionInfo {
+	<-s.pty.Done()
+	exitCode := s.pty.ExitCode()
+	now := time.Now().UTC()
+
+	s.mu.Lock()
+	s.info.Status = SessionStatusExited
+	s.info.ExitedAt = &now
+	s.info.ExitCode = &exitCode
+	info := s.info
+	info.TmuxSession = s.tmuxSession
+	s.mu.Unlock()
+
+	s.closeSubscribers()
+	close(s.done)
+	slog.Debug(
+		"runtime session exited",
+		"workspace_id", info.WorkspaceID,
+		"session_key", info.Key,
+		"target_key", info.TargetKey,
+		"exit_code", exitCode,
+		"pty_backend", "pty_owner",
+	)
+	return info
+}
+
 func (s *session) drainOutput() {
 	if s.outputDone != nil {
 		defer close(s.outputDone)
+	}
+	if s.pty != nil {
+		for chunk := range s.pty.Output() {
+			if len(chunk) > 0 {
+				s.broadcast(chunk)
+			}
+		}
+		s.closeSubscribers()
+		return
 	}
 	buf := make([]byte, 32*1024)
 	for {
@@ -1764,7 +1861,17 @@ func (s *session) closeSubscribers() {
 
 func (s *session) stop() {
 	s.stopOnce.Do(func() {
-		if s.cmd.Process != nil {
+		if s.pty != nil {
+			if s.ptyOwner != nil {
+				ctx, cancel := context.WithTimeout(
+					context.Background(), 2*time.Second,
+				)
+				_ = s.ptyOwner.Stop(ctx, s.info.Key)
+				cancel()
+			}
+			s.pty.Close()
+		}
+		if s.cmd != nil && s.cmd.Process != nil {
 			_ = killSessionProcess(s.cmd.Process)
 		}
 		if s.ptmx != nil {
@@ -1787,6 +1894,9 @@ func (s *session) wasStopRequested() bool {
 
 func (s *session) detach() {
 	s.stopOnce.Do(func() {
+		if s.pty != nil {
+			s.pty.Close()
+		}
 		if s.ptmx != nil {
 			_ = s.ptmx.Close()
 		}
@@ -1800,8 +1910,13 @@ func waitSessionDone(s *session) {
 	}
 }
 
+func SessionKey(workspaceID string, targetKey string) string {
+	sum := sha256.Sum256([]byte(workspaceID + "\x00" + targetKey))
+	return "session-" + hex.EncodeToString(sum[:8])
+}
+
 func sessionKey(workspaceID string, targetKey string) string {
-	return workspaceID + ":" + targetKey
+	return SessionKey(workspaceID, targetKey)
 }
 
 // resolveExecutable returns an absolute path for name. Names that
@@ -1934,12 +2049,18 @@ func attachToSession(
 		Done:   s.done,
 		info:   s.snapshot,
 		write: func(data []byte) error {
+			if s.pty != nil {
+				return s.pty.Write(data)
+			}
 			_, err := s.ptmx.Write(data)
 			return err
 		},
 		resize: func(cols, rows int) error {
 			if cols <= 0 || rows <= 0 {
 				return nil
+			}
+			if s.pty != nil {
+				return s.pty.Resize(cols, rows)
 			}
 			return pty.Setsize(s.ptmx, &pty.Winsize{
 				Rows: uint16(rows),

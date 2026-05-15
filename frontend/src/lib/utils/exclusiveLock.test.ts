@@ -44,7 +44,9 @@ describe("exclusive e2e lock", () => {
     const rootInfo = await stat(root);
 
     expect(info.isDirectory()).toBe(true);
-    expect(rootInfo.mode & 0o777).toBe(0o700);
+    if (process.platform !== "win32") {
+      expect(rootInfo.mode & 0o777).toBe(0o700);
+    }
   });
 
   it("waits for an existing lock file before acquiring", async () => {
@@ -78,7 +80,7 @@ describe("exclusive e2e lock", () => {
     const root = path.join(os.tmpdir(), `middleman-lock-link-${process.pid}`);
     tempRoots.push(root);
     await rm(root, { force: true, recursive: true });
-    await symlink(target, root);
+    await symlink(target, root, process.platform === "win32" ? "junction" : undefined);
 
     await expect(acquireExclusiveLock("workspace-tmux", {
       rootDir: root,

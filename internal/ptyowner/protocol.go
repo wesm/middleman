@@ -27,4 +27,10 @@ type Response struct {
 	Error    string `json:"error,omitempty"`
 	ExitCode *int   `json:"exit_code,omitempty"`
 	Output   []byte `json:"output,omitempty"`
+	Title    string `json:"title,omitempty"`
+}
+
+type Status struct {
+	Output []byte
+	Title  string
 }

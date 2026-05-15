@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -98,6 +99,31 @@ func TestOwnerStopWhileRunOwnerReturns(t *testing.T) {
 	}
 }
 
+func TestTerminalTitleParserTracksOSCSequences(t *testing.T) {
+	assert := Assert.New(t)
+	var parser terminalTitleParser
+
+	title, ok := parser.Update([]byte("before\x1b]0;busy title\x07after"))
+	assert.True(ok)
+	assert.Equal("busy title", title)
+
+	title, ok = parser.Update([]byte("\x1b]2;split"))
+	assert.False(ok)
+	assert.Empty(title)
+
+	title, ok = parser.Update([]byte(" title\x1b\\tail"))
+	assert.True(ok)
+	assert.Equal("split title", title)
+
+	title, ok = parser.Update([]byte("\x1b"))
+	assert.False(ok)
+	assert.Empty(title)
+
+	title, ok = parser.Update([]byte("]0;edge title\x07"))
+	assert.True(ok)
+	assert.Equal("edge title", title)
+}
+
 func TestOwnerRejectsOversizedUnauthenticatedRequest(t *testing.T) {
 	require := require.New(t)
 	if runtime.GOOS == "windows" {
@@ -157,6 +183,20 @@ func TestOwnerHelperEnvironmentStripsCredentials(t *testing.T) {
 		"MIDDLEMAN_GITHUB_TOKEN=secret-1",
 		"GITHUB_TOKEN=secret-2",
 		"GH_TOKEN_WORK=secret-3",
+		"KEEP=value",
+	})
+
+	require.ElementsMatch(t, []string{
+		"PATH=/usr/bin",
+		"KEEP=value",
+	}, out)
+}
+
+func TestClientOwnerHelperEnvironmentStripsConfiguredVariables(t *testing.T) {
+	client := Client{StripEnvVars: []string{"WORKSPACE_TOKEN"}}
+	out := client.ownerHelperEnvironment([]string{
+		"PATH=/usr/bin",
+		"WORKSPACE_TOKEN=secret",
 		"KEEP=value",
 	})
 
@@ -430,6 +470,111 @@ func TestClientEnsuresExternalManager(t *testing.T) {
 	require.Contains(readUntil(t, attachment.Output, "ready"), "ready")
 	require.NoError(attachment.Write([]byte("hello\r")))
 	require.Contains(readUntil(t, attachment.Output, "got:hello"), "got:hello")
+}
+
+func TestClientEnsuresExternalManagerWithPowerShell(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("PowerShell PTY manager startup coverage is Windows-specific")
+	}
+	require := require.New(t)
+	managerPath := os.Getenv("MIDDLEMAN_PTY_MANAGER_TEST")
+	if managerPath == "" {
+		t.Skip("set MIDDLEMAN_PTY_MANAGER_TEST to an external pty manager binary")
+	}
+
+	root := filepath.Join(t.TempDir(), strings.Repeat("long-owner-root-", 8))
+	require.NoError(os.MkdirAll(root, 0o755))
+	client := Client{
+		Root:        root,
+		ManagerPath: managerPath,
+		Command: []string{
+			"powershell.exe", "-NoLogo", "-NoProfile", "-NoExit",
+		},
+	}
+
+	require.NoError(client.Ensure(t.Context(), "middleman-powershell-test", t.TempDir()))
+	t.Cleanup(func() {
+		_ = client.Stop(context.Background(), "middleman-powershell-test")
+	})
+
+	attachment, err := client.Attach(
+		context.Background(), "middleman-powershell-test", 120, 30,
+	)
+	require.NoError(err)
+	defer attachment.Close()
+
+	require.NoError(attachment.Write([]byte("Write-Output powershell-ready\r")))
+	require.Contains(readUntil(t, attachment.Output, "powershell-ready"), "powershell-ready")
+}
+
+func TestClientEnsuresExternalManagerWithGoTestHelper(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows ConPTY coverage for Go test helpers")
+	}
+	require := require.New(t)
+	managerPath := os.Getenv("MIDDLEMAN_PTY_MANAGER_TEST")
+	if managerPath == "" {
+		t.Skip("set MIDDLEMAN_PTY_MANAGER_TEST to an external pty manager binary")
+	}
+	t.Setenv("MIDDLEMAN_PTYOWNER_TEST_HELPER", "1")
+
+	root := filepath.Join(t.TempDir(), strings.Repeat("long-owner-root-", 8))
+	require.NoError(os.MkdirAll(root, 0o755))
+	client := Client{
+		Root:        root,
+		ManagerPath: managerPath,
+		Command: []string{
+			os.Args[0],
+			"-test.run=TestPtyOwnerEchoHelperProcess",
+			"--",
+			"echo",
+		},
+	}
+
+	require.NoError(client.Ensure(t.Context(), "middleman-go-helper-test", t.TempDir()))
+	t.Cleanup(func() {
+		_ = client.Stop(context.Background(), "middleman-go-helper-test")
+	})
+
+	attachment, err := client.Attach(
+		context.Background(), "middleman-go-helper-test", 120, 30,
+	)
+	require.NoError(err)
+	defer attachment.Close()
+
+	require.NoError(attachment.Write([]byte("ping\r")))
+	require.Contains(readUntil(t, attachment.Output, "echo:ping"), "echo:ping")
+}
+
+func TestBoundedOutputBufferRetainsTail(t *testing.T) {
+	assert := Assert.New(t)
+	buf := newBoundedOutputBuffer(8)
+
+	n, err := buf.Write([]byte("hello "))
+	require.NoError(t, err)
+	assert.Equal(6, n)
+	n, err = buf.Write([]byte("world"))
+	require.NoError(t, err)
+	assert.Equal(5, n)
+
+	assert.Equal("lo world", buf.String())
+}
+
+func TestPtyOwnerEchoHelperProcess(t *testing.T) {
+	if os.Getenv("MIDDLEMAN_PTYOWNER_TEST_HELPER") != "1" {
+		return
+	}
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err == nil {
+		fmt.Print("echo:" + line)
+	}
+	blockPtyOwnerTestHelper()
+}
+
+func blockPtyOwnerTestHelper() {
+	for {
+		time.Sleep(time.Hour)
+	}
 }
 
 func TestExternalManagerAttachmentWritesUseAttachConnection(t *testing.T) {

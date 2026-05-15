@@ -3926,7 +3926,7 @@ func (s *Server) stopWorkspaceRuntimeSession(
 		ctx, summary.ID, input.SessionKey,
 	); err != nil {
 		if errors.Is(err, localruntime.ErrSessionNotFound) {
-			if targetKey, ok := runtimeTargetKeyFromSessionKey(
+			if targetKey, ok := legacyRuntimeTargetKeyFromSessionKey(
 				summary.ID, input.SessionKey,
 			); ok {
 				stopped, stopErr := s.workspaces.StopStoredRuntimeTmuxSession(
@@ -3941,6 +3941,17 @@ func (s *Server) stopWorkspaceRuntimeSession(
 				if stopped {
 					return nil, nil
 				}
+			}
+			stopped, stopErr := s.workspaces.StopStoredRuntimeTmuxSessionByKey(
+				ctx, summary.ID, input.SessionKey,
+			)
+			if stopErr != nil {
+				return nil, huma.Error500InternalServerError(
+					"stop stored runtime tmux session: " + stopErr.Error(),
+				)
+			}
+			if stopped {
+				return nil, nil
 			}
 			return nil, huma.Error404NotFound(err.Error())
 		}
@@ -3972,7 +3983,7 @@ func runtimeSessionTmuxSession(
 	return ""
 }
 
-func runtimeTargetKeyFromSessionKey(
+func legacyRuntimeTargetKeyFromSessionKey(
 	workspaceID string,
 	key string,
 ) (string, bool) {

@@ -36,6 +36,20 @@ func TestSessionPathsAreStable(t *testing.T) {
 	assert.Contains(paths.StatePath, "owner.json")
 }
 
+func TestSessionPathsHashFilesystemHostileNames(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	root := t.TempDir()
+
+	paths, err := NewSessionPaths(root, "ws-1:codex")
+
+	require.NoError(err)
+	assert.Equal("ws-1:codex", paths.Session)
+	assert.NotContains(filepath.Base(paths.Dir), ":")
+	assert.Contains(filepath.Base(paths.Dir), "session-")
+	assert.Equal(filepath.Join(paths.Dir, "owner.json"), paths.StatePath)
+}
+
 func TestSessionPathsUsePrivateSocketDirForLongRoots(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -76,6 +90,7 @@ func TestProtocolResponseRoundTrip(t *testing.T) {
 		OK:       true,
 		ExitCode: &code,
 		Output:   []byte("recent output"),
+		Title:    "workspace title",
 	}
 
 	var buf bytes.Buffer

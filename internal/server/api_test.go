@@ -11664,6 +11664,7 @@ func setupWorkspaceServerFixtureWithHostAndOptions(
 		bareDir, platformHost, "acme", "widget.git",
 	)
 	runGit(t, dir, "clone", "--bare", remote, bare)
+	runGit(t, bare, "remote", "set-url", "origin", gitLocalRemoteURL(remote))
 
 	clones := gitclone.New(bareDir, nil)
 	worktreeDir := filepath.Join(dir, "worktrees")
@@ -11690,7 +11691,10 @@ func setupWorkspaceServerFixtureWithHostAndOptions(
 	t.Cleanup(func() { cleanupWorkspaceServerFixtureArtifacts(t, srv, database) })
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
-	seedPROnHost(t, database, platformHost, "acme", "widget", 1)
+	seedPROnHost(
+		t, database, platformHost, "acme", "widget", 1,
+		withSeedPRHeadRepoCloneURL("https://github.com/acme/widget.git"),
+	)
 
 	clientBaseURL := "http://middleman.test"
 	if basePath != "/" {
@@ -12076,19 +12080,66 @@ func TestWorkspaceCreatesPtyOwnerSessionWhenTmuxUnavailableE2E(t *testing.T) {
 	assert.True(os.IsNotExist(err))
 }
 
-func TestWorkspaceCreatesRustPtyManagerSessionE2E(t *testing.T) {
+func TestWorkspacePtyOwnerTitleMarksWorkspaceWorkingE2E(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("rust pty manager currently advertises Unix socket transport")
+		t.Skip("workspace clone fixture uses Unix-style local remotes")
 	}
-	requirePTYAvailable(t)
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	fixture, _, ptyOwnerDir := setupPtyOwnerWorkspaceFixture(t)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, fixture.client)
+	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, ws.TmuxSession)
+
+	ts := httptest.NewServer(fixture.server)
+	t.Cleanup(ts.Close)
+
+	conn, _, err := workspaceTerminalDial(ctx, ts.URL, ws.Id)
+	require.NoError(err)
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+	workspaceTerminalConnWriteRead(
+		t, ctx, conn, "stty -echo\rprintf '%s\\n' $((40+2))\r", "42",
+	)
+	workspaceTerminalConnWriteRead(
+		t, ctx, conn,
+		"printf 'title-sent\\n'; printf '\\033]0;⠴ t3code-b5014b03\\007'\r",
+		"t3code-b5014b03",
+	)
+
+	var got *generated.WorkspaceResponse
+	require.Eventually(func() bool {
+		resp, err := fixture.client.HTTP.GetWorkspacesByIdWithResponse(ctx, ws.Id)
+		if err != nil || resp.StatusCode() != http.StatusOK || resp.JSON200 == nil {
+			return false
+		}
+		got = resp.JSON200
+		return got.TmuxWorking &&
+			got.TmuxActivitySource == tmuxActivitySourceTitle &&
+			got.TmuxPaneTitle != nil
+	}, 6*time.Second, 50*time.Millisecond)
+	require.NotNil(got)
+	assert.True(got.TmuxWorking)
+	assert.Equal(tmuxActivitySourceTitle, got.TmuxActivitySource)
+	require.NotNil(got.TmuxPaneTitle)
+	assert.Equal("⠴ t3code-b5014b03", *got.TmuxPaneTitle)
+}
+
+func TestWorkspaceCreatesRustPtyManagerSessionE2E(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		requirePTYAvailable(t)
+	}
 	require := require.New(t)
 	assert := Assert.New(t)
 
 	managerPath := buildRustPtyManagerForTest(t)
 	ptyOwnerDir := longRustPtyOwnerDirForTest(t)
-	cfg := &config.Config{Tmux: config.Tmux{
-		Command: []string{filepath.Join(t.TempDir(), "missing-tmux")},
-	}}
+	cfg := &config.Config{
+		Tmux: config.Tmux{
+			Command: []string{filepath.Join(t.TempDir(), "missing-tmux")},
+		},
+		Shell: config.Shell{Command: rustPtyManagerShellCommandForTest()},
+	}
 	fixture := setupWorkspaceServerFixtureWithOptions(t, cfg, ServerOptions{
 		PtyOwnerDir:         ptyOwnerDir,
 		PtyOwnerManagerPath: managerPath,
@@ -12110,17 +12161,23 @@ func TestWorkspaceCreatesRustPtyManagerSessionE2E(t *testing.T) {
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
-	workspaceTerminalConnWriteRead(
-		t, ctx, conn, "printf 'rust-owner-one\n'\n", "rust-owner-one",
-	)
-	require.NoError(conn.Write(
-		ctx,
-		websocket.MessageText,
-		[]byte(`{"type":"resize","cols":133,"rows":37}`),
-	))
-	workspaceTerminalConnWriteRead(
-		t, ctx, conn, "printf 'size:'; stty size\n", "size:37 133",
-	)
+	if runtime.GOOS == "windows" {
+		workspaceTerminalConnWriteRead(
+			t, ctx, conn, "Write-Output rust-owner-one\r", "rust-owner-one",
+		)
+	} else {
+		workspaceTerminalConnWriteRead(
+			t, ctx, conn, "printf 'rust-owner-one\n'\r", "rust-owner-one",
+		)
+		require.NoError(conn.Write(
+			ctx,
+			websocket.MessageText,
+			[]byte(`{"type":"resize","cols":133,"rows":37}`),
+		))
+		workspaceTerminalConnWriteRead(
+			t, ctx, conn, "printf 'size:'; stty size\r", "size:37 133",
+		)
+	}
 
 	require.NoError(conn.Close(websocket.StatusNormalClosure, "done"))
 	force := true
@@ -12134,9 +12191,68 @@ func TestWorkspaceCreatesRustPtyManagerSessionE2E(t *testing.T) {
 	assert.True(os.IsNotExist(err))
 }
 
+func TestWorkspaceRuntimeLaunchesRustPtyManagerSessionE2E(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		requirePTYAvailable(t)
+	}
+	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	managerPath := buildRustPtyManagerForTest(t)
+	ptyOwnerDir := longRustPtyOwnerDirForTest(t)
+	disableTmuxAgentSessions := false
+	cfg := &config.Config{
+		Agents: []config.Agent{{
+			Key:     "helper",
+			Label:   "Helper",
+			Command: serverRuntimeHelperCommand("echo"),
+		}},
+		Tmux: config.Tmux{
+			Command:       []string{filepath.Join(t.TempDir(), "missing-tmux")},
+			AgentSessions: &disableTmuxAgentSessions,
+		},
+	}
+	fixture := setupWorkspaceServerFixtureWithOptions(t, cfg, ServerOptions{
+		PtyOwnerDir:         ptyOwnerDir,
+		PtyOwnerManagerPath: managerPath,
+	})
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, fixture.client)
+
+	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id,
+		generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "helper"},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, launchResp.StatusCode())
+	require.NotNil(launchResp.JSON200)
+	session := launchResp.JSON200
+	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, session.Key)
+	assert.Equal("helper", session.TargetKey)
+	assert.Equal(string(localruntime.SessionStatusRunning), session.Status)
+
+	ts := httptest.NewServer(fixture.server)
+	t.Cleanup(ts.Close)
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
+		"/ws/v1/workspaces/" + ws.Id +
+		"/runtime/sessions/" + session.Key + "/terminal?cols=80&rows=24"
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	require.NoError(err)
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+
+	workspaceTerminalConnWriteRead(t, ctx, conn, "ping\r", "echo:ping")
+
+	stopResp, err := fixture.client.HTTP.StopWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id, session.Key,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNoContent, stopResp.StatusCode())
+}
+
 func TestRustPtyManagerRejectsConcurrentAttachmentsE2E(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("rust pty manager currently advertises Unix socket transport")
+		t.Skip("concurrent attach coverage is exercised by the Rust owner tests on Windows")
 	}
 	requirePTYAvailable(t)
 	require := require.New(t)
@@ -12145,13 +12261,24 @@ func TestRustPtyManagerRejectsConcurrentAttachmentsE2E(t *testing.T) {
 	managerPath := buildRustPtyManagerForTest(t)
 	ptyOwnerDir := longRustPtyOwnerDirForTest(t)
 	session := "middleman-rust-concurrent"
+	command := []string{
+		"sh", "-c",
+		"printf ready; while IFS= read -r line; do echo got:$line; done",
+	}
+	readyNeedle := "ready"
+	firstNeedle := "got:before-second"
+	thirdNeedle := "got:after-close"
+	if runtime.GOOS == "windows" {
+		t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
+		command = serverRuntimeHelperCommand("echo")
+		readyNeedle = ""
+		firstNeedle = "echo:before-second"
+		thirdNeedle = "echo:after-close"
+	}
 	client := ptyowner.Client{
 		Root:        ptyOwnerDir,
 		ManagerPath: managerPath,
-		Command: []string{
-			"sh", "-c",
-			"printf ready; while IFS= read -r line; do echo got:$line; done",
-		},
+		Command:     command,
 	}
 	require.NoError(client.Ensure(t.Context(), session, t.TempDir()))
 	t.Cleanup(func() {
@@ -12161,11 +12288,16 @@ func TestRustPtyManagerRejectsConcurrentAttachmentsE2E(t *testing.T) {
 	first, err := client.Attach(context.Background(), session, 120, 30)
 	require.NoError(err)
 	defer first.Close()
-	require.Contains(readPtyOwnerOutputUntil(t, first.Output, "ready"), "ready")
+	if readyNeedle != "" {
+		require.Contains(
+			readPtyOwnerOutputUntil(t, first.Output, readyNeedle),
+			readyNeedle,
+		)
+	}
 	require.NoError(first.Write([]byte("before-second\r")))
 	require.Contains(
-		readPtyOwnerOutputUntil(t, first.Output, "got:before-second"),
-		"got:before-second",
+		readPtyOwnerOutputUntil(t, first.Output, firstNeedle),
+		firstNeedle,
 	)
 
 	second, err := client.Attach(context.Background(), session, 100, 20)
@@ -12184,6 +12316,10 @@ func TestRustPtyManagerRejectsConcurrentAttachmentsE2E(t *testing.T) {
 	}, 2*time.Second, 20*time.Millisecond)
 	defer third.Close()
 	require.NoError(third.Write([]byte("after-close\n")))
+	require.Contains(
+		readPtyOwnerOutputUntil(t, third.Output, thirdNeedle),
+		thirdNeedle,
+	)
 }
 
 func readPtyOwnerOutputUntil(
@@ -12296,6 +12432,7 @@ func setupPtyOwnerWorkspaceFixture(
 	cfg := &config.Config{Tmux: config.Tmux{
 		Command: []string{filepath.Join(dir, "missing-tmux")},
 	}}
+	t.Setenv("SHELL", "/bin/sh")
 	t.Setenv("MIDDLEMAN_SERVER_PTY_OWNER_HELPER", "1")
 	return setupWorkspaceServerFixtureWithOptions(
 		t, cfg, ptyOwnerServerOptions(ptyOwnerDir),
@@ -12311,6 +12448,24 @@ func ptyOwnerServerOptions(ptyOwnerDir string) ServerOptions {
 			"--",
 		},
 	}
+}
+
+func gitLocalRemoteURL(path string) string {
+	if runtime.GOOS != "windows" {
+		return path
+	}
+	slashPath := filepath.ToSlash(path)
+	if !strings.HasPrefix(slashPath, "/") {
+		slashPath = "/" + slashPath
+	}
+	return (&url.URL{Scheme: "file", Path: slashPath}).String()
+}
+
+func rustPtyManagerShellCommandForTest() []string {
+	if runtime.GOOS == "windows" {
+		return []string{"powershell.exe", "-NoLogo", "-NoProfile", "-NoExit"}
+	}
+	return []string{"/bin/sh"}
 }
 
 func buildRustPtyManagerForTest(t *testing.T) string {
@@ -12661,7 +12816,8 @@ exit 0
 	require.Len(*resp.JSON200.Sessions, 1)
 
 	session := (*resp.JSON200.Sessions)[0]
-	assert.Equal(ws.ID+":helper", session.Key)
+	assert.NotEmpty(session.Key)
+	assert.NotContains(session.Key, ":")
 	assert.Equal(ws.ID, session.WorkspaceId)
 	assert.Equal("helper", session.TargetKey)
 	assert.Equal("Helper", session.Label)
@@ -16232,6 +16388,7 @@ func TestWorkspacePRDetailPlatformHost(t *testing.T) {
 func seedPROnHost(
 	t *testing.T, database *db.DB,
 	host, owner, name string, number int,
+	opts ...seedPROpt,
 ) int64 {
 	t.Helper()
 	ctx := t.Context()
@@ -16260,6 +16417,9 @@ func seedPROnHost(
 		CreatedAt:      now,
 		UpdatedAt:      now,
 		LastActivityAt: now,
+	}
+	for _, opt := range opts {
+		opt(pr)
 	}
 
 	prID, err := database.UpsertMergeRequest(ctx, pr)

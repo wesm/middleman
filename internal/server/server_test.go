@@ -29,6 +29,16 @@ func newTestServer(t *testing.T) *Server {
 	return New(openTestDB(t), nil, nil, "/", nil, ServerOptions{})
 }
 
+func TestPreferPtyOwnerForWorkspacesOnWindows(t *testing.T) {
+	require := require.New(t)
+
+	prefer := preferPtyOwnerForWorkspaces("windows", true, ServerOptions{
+		PtyOwnerManagerPath: "middleman-pty-manager.exe",
+	})
+
+	require.True(prefer)
+}
+
 func TestHealthzAndLivez_ReturnOK(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

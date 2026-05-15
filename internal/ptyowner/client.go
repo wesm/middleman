@@ -17,18 +17,20 @@ import (
 )
 
 type Client struct {
-	Root        string
-	ExePath     string
-	ExeArgs     []string
-	ManagerPath string
-	Command     []string
-	InProcess   bool
+	Root         string
+	ExePath      string
+	ExeArgs      []string
+	ManagerPath  string
+	Command      []string
+	StripEnvVars []string
+	InProcess    bool
 }
 
 const (
 	clientRPCTimeout       = 5 * time.Second
 	startLockStaleAfter    = 30 * time.Second
 	startLockRetryInterval = 25 * time.Millisecond
+	ownerOutputLimit       = 64 * 1024
 )
 
 type Attachment struct {
@@ -91,26 +93,32 @@ func (c *Client) Ensure(ctx context.Context, session, cwd string) error {
 	if c.InProcess {
 		go func() {
 			_ = RunOwner(context.Background(), Options{
-				Root:    c.Root,
-				Session: session,
-				Cwd:     cwd,
-				Command: command,
+				Root:         c.Root,
+				Session:      session,
+				Cwd:          cwd,
+				Command:      command,
+				StripEnvVars: c.StripEnvVars,
 			})
 		}()
-		return c.waitReady(ctx, session)
+		return c.waitReady(ctx, session, nil, nil, nil)
 	}
 	exe, args := c.ownerCommand(exe, session, cwd, string(commandJSON))
 	cmd := exec.Command(exe, args...)
-	cmd.Env = ownerHelperEnvironment(os.Environ())
+	cmd.Env = c.ownerHelperEnvironment(os.Environ())
 	detachCommand(cmd)
+	stdout := newBoundedOutputBuffer(ownerOutputLimit)
+	stderr := newBoundedOutputBuffer(ownerOutputLimit)
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start pty owner: %w", err)
 	}
+	exited := make(chan error, 1)
 	go func() {
-		_ = cmd.Wait()
+		exited <- cmd.Wait()
 	}()
 
-	return c.waitReady(ctx, session)
+	return c.waitReady(ctx, session, exited, &stdout, &stderr)
 }
 
 func acquireStartLock(
@@ -181,7 +189,12 @@ func (c *Client) ownerCommand(
 	return exe, args
 }
 
-func (c *Client) waitReady(ctx context.Context, session string) error {
+func (c *Client) waitReady(
+	ctx context.Context,
+	session string,
+	exited <-chan error,
+	stdout, stderr *boundedOutputBuffer,
+) error {
 	deadline := time.Now().Add(5 * time.Second)
 	var lastErr error
 	for time.Now().Before(deadline) {
@@ -193,10 +206,61 @@ func (c *Client) waitReady(ctx context.Context, session string) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case err := <-exited:
+			return exitedOwnerError(err, stdout, stderr)
 		case <-time.After(25 * time.Millisecond):
 		}
 	}
 	return fmt.Errorf("pty owner did not become ready: %w", lastErr)
+}
+
+func exitedOwnerError(err error, stdout, stderr *boundedOutputBuffer) error {
+	msg := ""
+	if stderr != nil {
+		msg = strings.TrimSpace(stderr.String())
+	}
+	if msg == "" && stdout != nil {
+		msg = strings.TrimSpace(stdout.String())
+	}
+	if msg == "" {
+		msg = "no output"
+	}
+	if err != nil {
+		return fmt.Errorf("pty owner exited before ready: %w: %s", err, msg)
+	}
+	return fmt.Errorf("pty owner exited before ready: %s", msg)
+}
+
+type boundedOutputBuffer struct {
+	mu    sync.Mutex
+	limit int
+	data  []byte
+}
+
+func newBoundedOutputBuffer(limit int) boundedOutputBuffer {
+	return boundedOutputBuffer{limit: limit}
+}
+
+func (b *boundedOutputBuffer) Write(p []byte) (int, error) {
+	if b == nil || b.limit <= 0 {
+		return len(p), nil
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.data = append(b.data, p...)
+	if len(b.data) > b.limit {
+		b.data = append([]byte(nil), b.data[len(b.data)-b.limit:]...)
+	}
+	return len(p), nil
+}
+
+func (b *boundedOutputBuffer) String() string {
+	if b == nil {
+		return ""
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return string(b.data)
 }
 
 func (c *Client) HasState(session string) bool {
@@ -231,10 +295,10 @@ func (c *Client) Ping(ctx context.Context, session string) error {
 	return nil
 }
 
-func (c *Client) Snapshot(ctx context.Context, session string) ([]byte, error) {
+func (c *Client) Snapshot(ctx context.Context, session string) (Status, error) {
 	conn, state, err := c.connect(ctx, session)
 	if err != nil {
-		return nil, err
+		return Status{}, err
 	}
 	defer conn.Close()
 	clearDeadline := applyRPCDeadline(ctx, conn)
@@ -242,16 +306,19 @@ func (c *Client) Snapshot(ctx context.Context, session string) ([]byte, error) {
 	enc := json.NewEncoder(conn)
 	dec := json.NewDecoder(conn)
 	if err := enc.Encode(Request{Type: RequestStatus, Token: state.Token}); err != nil {
-		return nil, err
+		return Status{}, err
 	}
 	var resp Response
 	if err := dec.Decode(&resp); err != nil {
-		return nil, err
+		return Status{}, err
 	}
 	if !resp.OK {
-		return nil, errors.New(resp.Error)
+		return Status{}, errors.New(resp.Error)
 	}
-	return append([]byte(nil), resp.Output...), nil
+	return Status{
+		Output: append([]byte(nil), resp.Output...),
+		Title:  resp.Title,
+	}, nil
 }
 
 func (c *Client) Attach(
@@ -387,6 +454,10 @@ func isStaleOwnerConnection(err error) bool {
 
 func ownerHelperEnvironment(env []string) []string {
 	return sessionEnvironment(env, nil)
+}
+
+func (c Client) ownerHelperEnvironment(env []string) []string {
+	return sessionEnvironment(env, c.StripEnvVars)
 }
 
 func applyRPCDeadline(ctx context.Context, conn net.Conn) func() {

@@ -409,7 +409,7 @@ func TestListCommits_NulInMessage(t *testing.T) {
 	mergeBase := gitSHA(t, work, "HEAD")
 
 	commitTestRun(t, work, "git", "checkout", "-b", "pr")
-	require.NoError(os.WriteFile(filepath.Join(work, "nul.txt"), []byte("nul\n"), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(work, "nul-message.txt"), []byte("nul\n"), 0o644))
 	commitTestRun(t, work, "git", "add", ".")
 	commitTestRun(t, work, "git", "commit", "-m", `message with \x00 in it`)
 	commitTestRun(t, work, "git", "push", "origin", "pr")

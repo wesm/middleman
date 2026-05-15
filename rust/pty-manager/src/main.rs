@@ -8,15 +8,38 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::env;
+#[cfg(windows)]
+use std::ffi::OsString;
 use std::fs::{self, OpenOptions};
 use std::io::{self, BufRead, BufReader, Write};
+#[cfg(windows)]
+use std::net::{TcpListener, TcpStream};
+#[cfg(unix)]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+#[cfg(unix)]
 use std::os::unix::net::{UnixListener, UnixStream};
+#[cfg(windows)]
+use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
+#[cfg(windows)]
+use std::ptr;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+#[cfg(windows)]
+use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, LocalFree};
+#[cfg(windows)]
+use windows_sys::Win32::Security::Authorization::{
+    ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+};
+#[cfg(windows)]
+use windows_sys::Win32::Security::{
+    DACL_SECURITY_INFORMATION, GetTokenInformation, PROTECTED_DACL_SECURITY_INFORMATION,
+    PSECURITY_DESCRIPTOR, SetFileSecurityW, TOKEN_QUERY, TOKEN_USER, TokenUser,
+};
+#[cfg(windows)]
+use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
 const MAX_OUTPUT_REPLAY: usize = 64 * 1024;
 const MAX_OWNER_FIRST_REQUEST_SIZE: usize = 8 * 1024;
@@ -24,6 +47,15 @@ const MAX_OWNER_REQUEST_SIZE: usize = 96 * 1024;
 const MAX_OWNER_INPUT_SIZE: usize = 64 * 1024;
 const MAX_UNIX_SOCKET_PATH_LEN: usize = 100;
 const SUBSCRIBER_CHANNEL_CAPACITY: usize = 64;
+
+#[cfg(windows)]
+type OwnerListener = TcpListener;
+#[cfg(unix)]
+type OwnerListener = UnixListener;
+#[cfg(windows)]
+type OwnerStream = TcpStream;
+#[cfg(unix)]
+type OwnerStream = UnixStream;
 
 #[derive(Debug, Default)]
 struct Args {
@@ -96,16 +128,21 @@ struct Response<'a> {
         serialize_with = "serialize_base64_bytes"
     )]
     output: Vec<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    title: Option<String>,
 }
 
 #[derive(Default)]
 struct Shared {
     output: Vec<u8>,
+    title: Option<String>,
+    title_parser: TitleParserState,
     subscribers: Vec<Subscriber>,
     next_subscriber_id: u64,
     attached: bool,
     exited: bool,
     reader_done: bool,
+    stopping: bool,
     exit_code: i32,
 }
 
@@ -181,12 +218,9 @@ fn run_owner(args: Args) -> Result<()> {
     if let Some(socket_dir) = &paths.socket_dir {
         create_private_dir(socket_dir).context("create fallback socket dir")?;
     }
-    let _ = fs::remove_file(&paths.socket);
     let mut cleanup = OwnerCleanup::new(paths.clone());
 
-    let listener = UnixListener::bind(&paths.socket)
-        .with_context(|| format!("listen on {}", paths.socket.display()))?;
-    listener.set_nonblocking(true)?;
+    let (listener, listener_addr) = bind_owner_listener(&paths)?;
 
     let pty_system = native_pty_system();
     let pair = pty_system
@@ -221,7 +255,7 @@ fn run_owner(args: Args) -> Result<()> {
         &paths,
         &OwnerState {
             session: &args.session,
-            addr: format!("unix://{}", paths.socket.display()),
+            addr: listener_addr,
             token: &token,
             cwd: &cwd_string,
             pid: std::process::id(),
@@ -235,12 +269,24 @@ fn run_owner(args: Args) -> Result<()> {
     }));
 
     let reader_shared = Arc::clone(&shared);
+    let reader_writer = Arc::clone(&writer);
     thread::spawn(move || {
         let mut buf = [0_u8; 32 * 1024];
+        let mut terminal_response_state = TerminalResponseState::default();
         loop {
             match reader.read(&mut buf) {
                 Ok(0) | Err(_) => break,
-                Ok(n) => broadcast(&reader_shared, &buf[..n]),
+                Ok(n) => {
+                    let chunk = &buf[..n];
+                    if let Some(response) =
+                        terminal_response_for_output(&mut terminal_response_state, chunk)
+                        && let Ok(mut writer) = reader_writer.lock()
+                    {
+                        let _ = writer.write_all(response);
+                        let _ = writer.flush();
+                    }
+                    broadcast(&reader_shared, chunk);
+                }
             }
         }
         mark_reader_done(&reader_shared);
@@ -283,7 +329,7 @@ fn run_owner(args: Args) -> Result<()> {
 }
 
 fn handle_conn(
-    stream: UnixStream,
+    stream: OwnerStream,
     token: &str,
     shared: Arc<Mutex<Shared>>,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
@@ -305,6 +351,7 @@ fn handle_conn(
                 error: Some("invalid pty owner token".to_string()),
                 exit_code: None,
                 output: Vec::new(),
+                title: None,
             },
         )?;
         return Ok(());
@@ -312,11 +359,18 @@ fn handle_conn(
 
     match first.kind.as_str() {
         "status" => {
-            let output = shared.lock().expect("shared poisoned").output.clone();
-            write_response(&mut response_stream, ok_with_output(output))?;
+            let (output, title) = {
+                let shared = shared.lock().expect("shared poisoned");
+                (shared.output.clone(), shared.title.clone())
+            };
+            write_response(
+                &mut response_stream,
+                ok_with_output_and_title(output, title),
+            )?;
         }
         "stop" => {
             write_response(&mut response_stream, ok())?;
+            mark_stopping(&shared);
             let _ = killer.kill();
         }
         "input" => {
@@ -352,6 +406,7 @@ fn handle_conn(
                     error: Some("unknown pty owner request".to_string()),
                     exit_code: None,
                     output: Vec::new(),
+                    title: None,
                 },
             )?;
         }
@@ -360,8 +415,8 @@ fn handle_conn(
 }
 
 fn handle_attach(
-    mut stream: UnixStream,
-    mut reader: BufReader<UnixStream>,
+    mut stream: OwnerStream,
+    mut reader: BufReader<OwnerStream>,
     token: &str,
     first: Request,
     runtime: AttachRuntime,
@@ -379,6 +434,7 @@ fn handle_attach(
                     error: Some("pty owner already has an active attachment".to_string()),
                     exit_code: None,
                     output: Vec::new(),
+                    title: None,
                 },
             )?;
             return Ok(());
@@ -448,6 +504,7 @@ fn handle_attach(
                 resize_pty(&runtime.master, req.cols, req.rows);
             }
             "stop" => {
+                mark_stopping(&runtime.shared);
                 let _ = killer.kill();
             }
             _ => {}
@@ -503,6 +560,10 @@ fn broadcast(shared: &Arc<Mutex<Shared>>, data: &[u8]) {
     let chunk = data.to_vec();
     let subscribers = {
         let mut shared = shared.lock().expect("shared poisoned");
+        let title = update_terminal_title(&mut shared.title_parser, data);
+        if title.is_some() {
+            shared.title = title;
+        }
         shared.output.extend_from_slice(data);
         if shared.output.len() > MAX_OUTPUT_REPLAY {
             let extra = shared.output.len() - MAX_OUTPUT_REPLAY;
@@ -528,6 +589,124 @@ fn broadcast(shared: &Arc<Mutex<Shared>>, data: &[u8]) {
     }
 }
 
+#[derive(Debug, Default)]
+struct TitleParserState {
+    pending: Vec<u8>,
+}
+
+const TITLE_PENDING_LIMIT: usize = 4096;
+
+fn update_terminal_title(state: &mut TitleParserState, data: &[u8]) -> Option<String> {
+    if data.is_empty() && state.pending.is_empty() {
+        return None;
+    }
+
+    let mut buf = Vec::with_capacity(state.pending.len() + data.len());
+    buf.extend_from_slice(&state.pending);
+    buf.extend_from_slice(data);
+
+    let (title, consumed) = parse_terminal_title(&buf);
+    if consumed < buf.len() {
+        state.pending = buf[consumed..].to_vec();
+        if state.pending.len() > TITLE_PENDING_LIMIT {
+            state
+                .pending
+                .drain(0..state.pending.len() - TITLE_PENDING_LIMIT);
+        }
+    } else {
+        state.pending.clear();
+    }
+    title
+}
+
+fn parse_terminal_title(data: &[u8]) -> (Option<String>, usize) {
+    let mut title = None;
+    let mut consumed = 0;
+    let mut i = 0;
+    while i < data.len() {
+        if data[i] == 0x1b && i + 1 >= data.len() {
+            return (title, i);
+        }
+        if data[i] != 0x1b || data[i + 1] != b']' {
+            consumed = i + 1;
+            i += 1;
+            continue;
+        }
+
+        let seq_start = i;
+        let payload_start = i + 2;
+        let mut terminator_start = None;
+        let mut terminator_end = None;
+        let mut j = payload_start;
+        while j < data.len() {
+            if data[j] == 0x07 {
+                terminator_start = Some(j);
+                terminator_end = Some(j + 1);
+                break;
+            }
+            if data[j] == 0x1b && j + 1 < data.len() && data[j + 1] == b'\\' {
+                terminator_start = Some(j);
+                terminator_end = Some(j + 2);
+                break;
+            }
+            j += 1;
+        }
+
+        let Some(term_start) = terminator_start else {
+            return (title, seq_start);
+        };
+        let term_end = terminator_end.expect("terminal title terminator end");
+        if let Some((code, value)) = split_osc_payload(&data[payload_start..term_start])
+            && matches!(code, "0" | "1" | "2")
+        {
+            title = Some(value.trim().to_string());
+        }
+        consumed = term_end;
+        i = term_end;
+    }
+    (title, consumed)
+}
+
+fn split_osc_payload(payload: &[u8]) -> Option<(&str, String)> {
+    let semicolon = payload.iter().position(|byte| *byte == b';')?;
+    let code = std::str::from_utf8(&payload[..semicolon]).ok()?;
+    let value = String::from_utf8_lossy(&payload[semicolon + 1..]).to_string();
+    Some((code, value))
+}
+
+#[derive(Default)]
+struct TerminalResponseState {
+    #[cfg(windows)]
+    pending: Vec<u8>,
+}
+
+#[cfg(windows)]
+fn terminal_response_for_output(
+    state: &mut TerminalResponseState,
+    data: &[u8],
+) -> Option<&'static [u8]> {
+    let mut combined = Vec::with_capacity(state.pending.len() + data.len());
+    combined.extend_from_slice(&state.pending);
+    combined.extend_from_slice(data);
+
+    state.pending.clear();
+    let pending_start = combined.len().saturating_sub(3);
+    state.pending.extend_from_slice(&combined[pending_start..]);
+
+    if combined.windows(4).any(|window| window == b"\x1b[6n") {
+        return Some(b"\x1b[1;1R");
+    }
+    None
+}
+
+#[cfg(not(windows))]
+fn terminal_response_for_output(
+    _state: &mut TerminalResponseState,
+    _data: &[u8],
+) -> Option<&'static [u8]> {
+    None
+}
+
 fn new_subscriber_channel() -> (mpsc::SyncSender<Vec<u8>>, mpsc::Receiver<Vec<u8>>) {
     mpsc::sync_channel(SUBSCRIBER_CHANNEL_CAPACITY)
 }
@@ -541,7 +720,16 @@ fn add_subscriber(shared: &mut Shared, tx: mpsc::SyncSender<Vec<u8>>) -> u64 {
 
 fn owner_complete(shared: &Arc<Mutex<Shared>>) -> bool {
     let shared = shared.lock().expect("shared poisoned");
-    shared.exited && shared.reader_done
+    shared.stopping || (shared.exited && shared.reader_done)
+}
+
+fn mark_stopping(shared: &Arc<Mutex<Shared>>) {
+    let subscribers = {
+        let mut shared = shared.lock().expect("shared poisoned");
+        shared.stopping = true;
+        std::mem::take(&mut shared.subscribers)
+    };
+    drop(subscribers);
 }
 
 fn mark_child_exited(shared: &Arc<Mutex<Shared>>, exit_code: i32) {
@@ -578,16 +766,22 @@ fn ok<'a>() -> Response<'a> {
         error: None,
         exit_code: None,
         output: Vec::new(),
+        title: None,
     }
 }
 
 fn ok_with_output<'a>(output: Vec<u8>) -> Response<'a> {
+    ok_with_output_and_title(output, None)
+}
+
+fn ok_with_output_and_title<'a>(output: Vec<u8>, title: Option<String>) -> Response<'a> {
     Response {
         kind: "output",
         ok: true,
         error: None,
         exit_code: None,
         output,
+        title,
     }
 }
 
@@ -598,38 +792,234 @@ fn exit<'a>(exit_code: i32) -> Response<'a> {
         error: None,
         exit_code: Some(exit_code),
         output: Vec::new(),
+        title: None,
     }
 }
 
-fn write_response(stream: &mut UnixStream, response: Response<'_>) -> Result<()> {
+fn write_response(stream: &mut OwnerStream, response: Response<'_>) -> Result<()> {
     serde_json::to_writer(&mut *stream, &response)?;
     stream.write_all(b"\n")?;
     stream.flush()?;
     Ok(())
 }
 
+#[cfg(unix)]
+fn bind_owner_listener(paths: &SessionPaths) -> Result<(OwnerListener, String)> {
+    let _ = fs::remove_file(&paths.socket);
+    let listener = UnixListener::bind(&paths.socket)
+        .with_context(|| format!("listen on {}", paths.socket.display()))?;
+    listener.set_nonblocking(true)?;
+    Ok((listener, format!("unix://{}", paths.socket.display())))
+}
+
+#[cfg(windows)]
+fn bind_owner_listener(_paths: &SessionPaths) -> Result<(OwnerListener, String)> {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).context("listen on tcp loopback")?;
+    listener.set_nonblocking(true)?;
+    let addr = listener.local_addr().context("read tcp listener address")?;
+    Ok((listener, format!("tcp://{addr}")))
+}
+
 fn write_state(paths: &SessionPaths, state: &OwnerState<'_>) -> Result<()> {
     let data = serde_json::to_vec_pretty(state)?;
     let tmp = paths.state_path.with_extension("json.tmp");
     {
-        let mut file = OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .mode(0o600)
-            .open(&tmp)?;
+        let mut file = private_state_file(&tmp)?;
         file.write_all(&data)?;
         file.sync_all()?;
     }
     fs::rename(tmp, &paths.state_path)?;
+    #[cfg(unix)]
     fs::set_permissions(&paths.state_path, fs::Permissions::from_mode(0o600))?;
     Ok(())
 }
 
+#[cfg(unix)]
+fn private_state_file(path: &Path) -> Result<fs::File> {
+    Ok(OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .mode(0o600)
+        .open(path)?)
+}
+
+#[cfg(windows)]
+fn private_state_file(path: &Path) -> Result<fs::File> {
+    // The session directory is created with a protected inheritable DACL, so
+    // files created inside it inherit the same current-user-only access. Calling
+    // SetFileSecurityW again for this long state-file path fails on Windows.
+    Ok(OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(path)?)
+}
+
 fn create_private_dir(path: &Path) -> Result<()> {
     fs::create_dir_all(path)?;
+    #[cfg(unix)]
     fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+    #[cfg(windows)]
+    restrict_windows_acl(path, true).with_context(|| {
+        format!(
+            "restrict permissions on pty owner state directory {}",
+            path.display()
+        )
+    })?;
     Ok(())
+}
+
+#[cfg(windows)]
+fn restrict_windows_acl(path: &Path, directory: bool) -> Result<()> {
+    let current_user_sid = current_user_sid_string()?;
+    let sddl = private_windows_sddl(&current_user_sid, directory);
+    let sddl_wide = wide_null(&sddl);
+    let path_wide = wide_path_null(path);
+    let mut descriptor: PSECURITY_DESCRIPTOR = ptr::null_mut();
+
+    // SAFETY: `sddl_wide` and `path_wide` are nul-terminated UTF-16 buffers
+    // that live for the duration of the FFI calls. Windows allocates the
+    // descriptor for the SDDL conversion, and we release it with LocalFree.
+    unsafe {
+        if ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            sddl_wide.as_ptr(),
+            SDDL_REVISION_1,
+            &mut descriptor,
+            ptr::null_mut(),
+        ) == 0
+        {
+            bail!(
+                "build private security descriptor for {}: windows error {}",
+                path.display(),
+                GetLastError()
+            );
+        }
+
+        let security_info = DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION;
+        let ok = SetFileSecurityW(path_wide.as_ptr(), security_info, descriptor);
+        let err = GetLastError();
+        let _ = LocalFree(descriptor as _);
+        if ok == 0 {
+            bail!(
+                "apply private security descriptor to {}: windows error {}",
+                path.display(),
+                err
+            );
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(windows)]
+fn private_windows_sddl(current_user_sid: &str, directory: bool) -> String {
+    let inheritance = if directory { "OICI" } else { "" };
+    format!("D:P(A;{inheritance};FA;;;{current_user_sid})")
+}
+
+#[cfg(windows)]
+fn current_user_sid_string() -> Result<String> {
+    let mut token = ptr::null_mut();
+    // SAFETY: GetCurrentProcess returns a pseudo-handle. OpenProcessToken writes
+    // a real token handle into `token`, which we close before returning.
+    unsafe {
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
+            bail!("open process token: windows error {}", GetLastError());
+        }
+    }
+    let _guard = HandleGuard(token);
+
+    let mut needed = 0;
+    // SAFETY: First call asks Windows for the required buffer size.
+    unsafe {
+        let _ = GetTokenInformation(token, TokenUser, ptr::null_mut(), 0, &mut needed);
+    }
+    if needed == 0 {
+        // SAFETY: GetLastError reads thread-local Windows error state.
+        unsafe {
+            bail!(
+                "query current user token size: windows error {}",
+                GetLastError()
+            );
+        }
+    }
+
+    let mut buffer = vec![0_u8; needed as usize];
+    // SAFETY: `buffer` is sized from the previous GetTokenInformation call and
+    // is valid for writes of `needed` bytes.
+    unsafe {
+        if GetTokenInformation(
+            token,
+            TokenUser,
+            buffer.as_mut_ptr().cast(),
+            needed,
+            &mut needed,
+        ) == 0
+        {
+            bail!("query current user token: windows error {}", GetLastError());
+        }
+
+        let user = &*(buffer.as_ptr().cast::<TOKEN_USER>());
+        let mut sid_ptr = ptr::null_mut();
+        if ConvertSidToStringSidW(user.User.Sid, &mut sid_ptr) == 0 {
+            bail!("convert current user SID: windows error {}", GetLastError());
+        }
+        let sid = wide_ptr_to_string(sid_ptr);
+        let _ = LocalFree(sid_ptr as _);
+        Ok(sid)
+    }
+}
+
+#[cfg(windows)]
+struct HandleGuard(windows_sys::Win32::Foundation::HANDLE);
+
+#[cfg(windows)]
+impl Drop for HandleGuard {
+    fn drop(&mut self) {
+        // SAFETY: HandleGuard owns this handle after successful OpenProcessToken.
+        unsafe {
+            let _ = CloseHandle(self.0);
+        }
+    }
+}
+
+#[cfg(windows)]
+fn wide_null(value: &str) -> Vec<u16> {
+    value.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+#[cfg(windows)]
+fn wide_path_null(path: &Path) -> Vec<u16> {
+    windows_acl_path(path)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect()
+}
+
+#[cfg(windows)]
+fn windows_acl_path(path: &Path) -> OsString {
+    let raw = path.as_os_str().to_string_lossy();
+    if raw.starts_with(r"\\?\") || raw.starts_with(r"\??\") {
+        return path.as_os_str().to_os_string();
+    }
+    if let Some(unc) = raw.strip_prefix(r"\\") {
+        return OsString::from(format!(r"\\?\UNC\{unc}"));
+    }
+    if raw.len() >= 3 && raw.as_bytes()[1] == b':' && raw.as_bytes()[2] == b'\\' {
+        return OsString::from(format!(r"\\?\{raw}"));
+    }
+    path.as_os_str().to_os_string()
+}
+
+#[cfg(windows)]
+unsafe fn wide_ptr_to_string(ptr: windows_sys::core::PWSTR) -> String {
+    let mut len = 0;
+    while unsafe { *ptr.add(len) } != 0 {
+        len += 1;
+    }
+    let slice = unsafe { std::slice::from_raw_parts(ptr, len) };
+    String::from_utf16_lossy(slice)
 }
 
 impl OwnerCleanup {
@@ -676,7 +1066,7 @@ impl Drop for ActiveAttachment {
 
 fn session_paths(root: &Path, session: &str) -> Result<SessionPaths> {
     validate_session_name(session)?;
-    let dir = root.join(session);
+    let dir = root.join(session_dir_name(session));
     let mut socket = root.join(format!("sock-{}", socket_hash(session)));
     let mut socket_dir = None;
     if socket.to_string_lossy().len() > MAX_UNIX_SOCKET_PATH_LEN {
@@ -694,6 +1084,14 @@ fn session_paths(root: &Path, session: &str) -> Result<SessionPaths> {
         socket,
         socket_dir,
     })
+}
+
+fn session_dir_name(session: &str) -> String {
+    if session.contains(['<', '>', ':', '"', '|', '?', '*']) {
+        format!("session-{}", socket_hash(session))
+    } else {
+        session.to_string()
+    }
 }
 
 fn ensure_socket_path_fits(socket: &Path) -> Result<()> {
@@ -872,6 +1270,15 @@ mod tests {
     }
 
     #[test]
+    fn paths_hash_filesystem_hostile_sessions() {
+        let paths = session_paths(Path::new("/tmp/root"), "ws-1:codex").unwrap();
+        let dir = Path::new("/tmp/root").join("session-8dc56ff7cc3fbfcb");
+
+        assert_eq!(paths.dir, dir);
+        assert_eq!(paths.state_path, dir.join("owner.json"));
+    }
+
+    #[test]
     fn paths_use_private_temp_socket_dir_for_long_roots() {
         let root = PathBuf::from("/tmp").join("x".repeat(MAX_UNIX_SOCKET_PATH_LEN));
 
@@ -892,6 +1299,59 @@ mod tests {
         assert!(paths.socket.to_string_lossy().len() <= MAX_UNIX_SOCKET_PATH_LEN);
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn owner_listener_uses_tcp_loopback_on_windows() {
+        let root = env::temp_dir().join(format!("mm-pty-listener-test-{}", new_token()));
+        let paths = session_paths(&root, "middleman-abc123").unwrap();
+        create_private_dir(&paths.dir).unwrap();
+
+        let (_listener, addr) = bind_owner_listener(&paths).unwrap();
+
+        assert!(addr.starts_with("tcp://127.0.0.1:"));
+        assert!(!paths.socket.exists());
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_acl_paths_use_extended_length_prefix() {
+        let path = Path::new(r"C:\tmp")
+            .join("long-owner-root-".repeat(8))
+            .join("middleman-abc123")
+            .join("owner.json.tmp");
+
+        assert_eq!(
+            windows_acl_path(&path).to_string_lossy(),
+            format!(r"\\?\{}", path.display())
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn conpty_cursor_position_requests_get_default_response() {
+        let mut state = TerminalResponseState::default();
+        assert_eq!(
+            terminal_response_for_output(&mut state, b"\x1b[6n"),
+            Some(&b"\x1b[1;1R"[..])
+        );
+        assert_eq!(terminal_response_for_output(&mut state, b"ready"), None);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn conpty_cursor_position_requests_can_span_reads() {
+        let mut state = TerminalResponseState::default();
+        assert_eq!(terminal_response_for_output(&mut state, b"abc\x1b"), None);
+        assert_eq!(terminal_response_for_output(&mut state, b"[6"), None);
+        assert_eq!(
+            terminal_response_for_output(&mut state, b"nxyz"),
+            Some(&b"\x1b[1;1R"[..])
+        );
+    }
+
+    #[cfg(unix)]
     #[test]
     fn state_files_are_private() {
         let root = Path::new("/tmp").join(format!("mm-pty-test-{}", new_token()));
@@ -1020,5 +1480,37 @@ mod tests {
             .map(|subscriber| subscriber.id)
             .collect();
         assert_eq!(remaining_ids, vec![2]);
+    }
+
+    #[test]
+    fn terminal_title_parser_updates_from_osc_sequences() {
+        let mut state = TitleParserState::default();
+
+        assert_eq!(
+            update_terminal_title(&mut state, b"before\x1b]0;busy title\x07after"),
+            Some("busy title".to_string())
+        );
+    }
+
+    #[test]
+    fn terminal_title_parser_handles_split_st_sequences() {
+        let mut state = TitleParserState::default();
+
+        assert_eq!(update_terminal_title(&mut state, b"\x1b]2;split"), None);
+        assert_eq!(
+            update_terminal_title(&mut state, b" title\x1b\\tail"),
+            Some("split title".to_string())
+        );
+    }
+
+    #[test]
+    fn terminal_title_parser_handles_split_escape_prefix() {
+        let mut state = TitleParserState::default();
+
+        assert_eq!(update_terminal_title(&mut state, b"\x1b"), None);
+        assert_eq!(
+            update_terminal_title(&mut state, b"]0;edge title\x07"),
+            Some("edge title".to_string())
+        );
     }
 }

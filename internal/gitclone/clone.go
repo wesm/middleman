@@ -383,8 +383,13 @@ func remoteURLHost(remoteURL string) string {
 	if remoteURL == "" {
 		return ""
 	}
-	if u, err := url.Parse(remoteURL); err == nil && u.Host != "" {
-		return u.Host
+	if isLocalRemoteURL(remoteURL) {
+		return ""
+	}
+	if u, err := url.Parse(remoteURL); err == nil {
+		if u.Host != "" {
+			return u.Host
+		}
 	}
 	prefix, _, ok := strings.Cut(remoteURL, ":")
 	if !ok || strings.Contains(prefix, "/") {
@@ -399,6 +404,9 @@ func remoteURLHost(remoteURL string) string {
 func remoteURLRepoPath(remoteURL string) string {
 	remoteURL = strings.TrimSpace(remoteURL)
 	if remoteURL == "" {
+		return ""
+	}
+	if isLocalRemoteURL(remoteURL) {
 		return ""
 	}
 	var repoPath string
@@ -417,6 +425,27 @@ func remoteURLRepoPath(remoteURL string) string {
 		return ""
 	}
 	return repoPath
+}
+
+func isLocalRemoteURL(remoteURL string) bool {
+	if filepath.VolumeName(remoteURL) != "" || isWindowsDrivePath(remoteURL) {
+		return true
+	}
+	if u, err := url.Parse(remoteURL); err == nil && strings.EqualFold(u.Scheme, "file") {
+		return true
+	}
+	return false
+}
+
+func isWindowsDrivePath(value string) bool {
+	if len(value) < 3 || value[1] != ':' {
+		return false
+	}
+	drive := value[0]
+	if (drive < 'A' || drive > 'Z') && (drive < 'a' || drive > 'z') {
+		return false
+	}
+	return value[2] == '\\' || value[2] == '/'
 }
 
 func normalizeCloneHost(host string) string {

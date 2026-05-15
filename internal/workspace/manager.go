@@ -22,6 +22,7 @@ import (
 	"github.com/wesm/middleman/internal/gitclone"
 	"github.com/wesm/middleman/internal/gitenv"
 	"github.com/wesm/middleman/internal/procutil"
+	"github.com/wesm/middleman/internal/workspace/localruntime"
 )
 
 // Manager owns middleman's persisted workspace lifecycle.
@@ -87,7 +88,7 @@ var (
 	ErrWorkspaceInvalidState = errors.New("workspace invalid state")
 )
 
-type TmuxPaneSnapshot struct {
+type TerminalPaneSnapshot struct {
 	Title  string
 	Output string
 }
@@ -1393,6 +1394,30 @@ func (m *Manager) StopStoredRuntimeTmuxSession(
 	return false, nil
 }
 
+// StopStoredRuntimeTmuxSessionByKey cleans up a persisted runtime tmux session
+// addressed by the public localruntime session key.
+func (m *Manager) StopStoredRuntimeTmuxSessionByKey(
+	ctx context.Context,
+	workspaceID string,
+	sessionKey string,
+) (bool, error) {
+	if sessionKey == "" {
+		return false, nil
+	}
+	stored, err := m.db.ListWorkspaceTmuxSessions(ctx, workspaceID)
+	if err != nil {
+		return false, err
+	}
+	for _, storedSession := range stored {
+		if localruntime.SessionKey(workspaceID, storedSession.TargetKey) == sessionKey {
+			return m.StopStoredRuntimeTmuxSession(
+				ctx, workspaceID, storedSession.TargetKey,
+			)
+		}
+	}
+	return false, nil
+}
+
 // TmuxSessionsForWorkspace returns the persisted workspace tmux
 // session plus stored per-agent sessions. Runtime tmux sessions are
 // stored rather than discovered by naming convention so restart
@@ -1433,33 +1458,35 @@ func (m *Manager) TmuxPaneTitle(
 }
 
 // TerminalPaneSnapshot returns recent terminal output for the backend
-// that owns the workspace's primary terminal. Runtime sessions remain
-// tmux-backed and should use TmuxPaneSnapshot directly.
+// that owns the workspace's primary terminal.
 func (m *Manager) TerminalPaneSnapshot(
 	ctx context.Context, ws *db.Workspace,
 	session string,
-) (TmuxPaneSnapshot, error) {
+) (TerminalPaneSnapshot, error) {
 	if ws != nil && session == ws.TmuxSession && m.UsesPtyOwnerForWorkspace(ws) {
 		if m.ptyOwner == nil {
-			return TmuxPaneSnapshot{}, fmt.Errorf("pty owner backend unavailable")
+			return TerminalPaneSnapshot{}, fmt.Errorf("pty owner backend unavailable")
 		}
-		output, err := m.ptyOwner.Snapshot(ctx, session)
+		status, err := m.ptyOwner.Snapshot(ctx, session)
 		if err != nil {
-			return TmuxPaneSnapshot{}, err
+			return TerminalPaneSnapshot{}, err
 		}
-		return TmuxPaneSnapshot{Output: string(output)}, nil
+		return TerminalPaneSnapshot{
+			Title:  status.Title,
+			Output: string(status.Output),
+		}, nil
 	}
-	return m.TmuxPaneSnapshot(ctx, session)
+	return m.tmuxPaneSnapshot(ctx, session)
 }
 
-// TmuxPaneSnapshot returns the active pane title and recent pane
+// tmuxPaneSnapshot returns the active pane title and recent pane
 // output for passive activity detection.
-func (m *Manager) TmuxPaneSnapshot(
+func (m *Manager) tmuxPaneSnapshot(
 	ctx context.Context, session string,
-) (TmuxPaneSnapshot, error) {
+) (TerminalPaneSnapshot, error) {
 	title, err := m.tmuxPaneTitle(ctx, session)
 	if err != nil {
-		return TmuxPaneSnapshot{}, err
+		return TerminalPaneSnapshot{}, err
 	}
 
 	cmd := m.tmuxExec(
@@ -1477,11 +1504,11 @@ func (m *Manager) TmuxPaneSnapshot(
 		if msg == "" {
 			msg = strings.TrimSpace(stdout.String())
 		}
-		return TmuxPaneSnapshot{}, fmt.Errorf(
+		return TerminalPaneSnapshot{}, fmt.Errorf(
 			"tmux capture-pane: %w: %s", err, msg,
 		)
 	}
-	return TmuxPaneSnapshot{
+	return TerminalPaneSnapshot{
 		Title:  title,
 		Output: stdout.String(),
 	}, nil

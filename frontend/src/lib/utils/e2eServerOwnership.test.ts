@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import os from "node:os";
@@ -10,6 +17,77 @@ import * as e2eServerModule from "../../../tests/e2e-full/support/e2eServer";
 const { stopE2EServer } = e2eServerModule;
 
 const originalEnv = { ...process.env };
+
+function writeFakeBun(
+  binDir: string,
+  frontendDir: string,
+  body: string,
+  windowsBody?: string,
+): void {
+  if (process.platform === "win32") {
+    const bunPath = path.join(binDir, "bun.exe");
+    try {
+      linkSync(process.execPath, bunPath);
+    } catch {
+      copyFileSync(process.execPath, bunPath);
+    }
+    writeFileSync(path.join(frontendDir, "run"), windowsBody ?? body, { flag: "wx" });
+    return;
+  }
+  writeFileSync(path.join(binDir, "bun"), body, { mode: 0o755, flag: "wx" });
+}
+
+function prependExecutablePath(binDir: string): () => void {
+  const previousPATH = process.env.PATH;
+  const previousPath = process.env.Path;
+  const currentPath = previousPATH ?? previousPath ?? "";
+  const nextPath = `${binDir}${path.delimiter}${currentPath}`;
+
+  process.env.PATH = nextPath;
+  if (process.platform === "win32") {
+    process.env.Path = nextPath;
+  }
+
+  return () => {
+    if (previousPATH === undefined) {
+      delete process.env.PATH;
+    } else {
+      process.env.PATH = previousPATH;
+    }
+    if (process.platform === "win32") {
+      if (previousPath === undefined) {
+        delete process.env.Path;
+      } else {
+        process.env.Path = previousPath;
+      }
+    }
+  };
+}
+
+function clearExecutablePath(): () => void {
+  const previousPATH = process.env.PATH;
+  const previousPath = process.env.Path;
+
+  process.env.PATH = "";
+  if (process.platform === "win32") {
+    process.env.Path = "";
+  }
+
+  return () => {
+    if (previousPATH === undefined) {
+      delete process.env.PATH;
+    } else {
+      process.env.PATH = previousPATH;
+    }
+    if (process.platform === "win32") {
+      if (previousPath === undefined) {
+        delete process.env.Path;
+      } else {
+        process.env.Path = previousPath;
+      }
+    }
+  };
+}
 
 async function fileExists(filePath: string): Promise<boolean> {
   try {
@@ -48,9 +126,10 @@ describe("waitForServerInfo", () => {
 
     const dir = mkdtempSync(path.join(os.tmpdir(), "e2e-server-test-"));
     const infoFile = path.join(dir, "server-info.json");
-    const readyAt = Date.now() + 150;
+    let requestCount = 0;
     const server = createServer((_req, res) => {
-      if (Date.now() < readyAt) {
+      requestCount += 1;
+      if (requestCount === 1) {
         res.writeHead(503, { "content-type": "text/plain" });
         res.end("not ready");
         return;
@@ -81,11 +160,10 @@ describe("waitForServerInfo", () => {
       }),
     );
 
-    const startedAt = Date.now();
     const info = await waitForServerInfo(infoFile, { exitCode: null });
 
     expect(info.base_url).toBe(`http://127.0.0.1:${port}`);
-    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(100);
+    expect(requestCount).toBeGreaterThanOrEqual(2);
 
     await new Promise<void>((resolve, reject) => {
       server.close((error) => {
@@ -189,10 +267,11 @@ describe("ensureEmbeddedFrontend", () => {
     mkdirSync(frontendDist, { recursive: true });
     mkdirSync(embeddedDist, { recursive: true });
 
-    writeFileSync(
-      path.join(binDir, "bun"),
+    writeFakeBun(
+      binDir,
+      frontendDir,
       "#!/usr/bin/env bash\nset -euo pipefail\nmkdir -p dist\nprintf '<html><body>rebuilt</body></html>' > dist/index.html\n",
-      { mode: 0o755 },
+      "const { mkdirSync, writeFileSync } = require('node:fs');\nmkdirSync('dist', { recursive: true });\nwriteFileSync('dist/index.html', '<html><body>rebuilt</body></html>');\n",
     );
 
     const frontendIndex = path.join(frontendDist, "index.html");
@@ -208,17 +287,12 @@ describe("ensureEmbeddedFrontend", () => {
     utimesSync(embeddedIndex, oldTime, oldTime);
     utimesSync(sourceFile, newTime, newTime);
 
-    const previousPath = process.env.PATH;
-    process.env.PATH = `${binDir}${path.delimiter}${previousPath ?? ""}`;
+    const restorePath = prependExecutablePath(binDir);
     try {
       await ensureEmbeddedFrontend(dir);
       await expect(readFile(embeddedIndex, "utf8")).resolves.toContain("<body>rebuilt</body>");
     } finally {
-      if (previousPath === undefined) {
-        delete process.env.PATH;
-      } else {
-        process.env.PATH = previousPath;
-      }
+      restorePath();
     }
   });
 
@@ -248,10 +322,11 @@ describe("ensureEmbeddedFrontend", () => {
 
     // Fake bun that fails the build (mimics a real build error). The
     // existing dist must not be silently reused in this case.
-    writeFileSync(
-      path.join(binDir, "bun"),
+    writeFakeBun(
+      binDir,
+      frontendDir,
       "#!/usr/bin/env bash\necho 'simulated build error' >&2\nexit 1\n",
-      { mode: 0o755 },
+      "console.error('simulated build error');\nprocess.exit(1);\n",
     );
 
     const frontendIndex = path.join(frontendDist, "index.html");
@@ -267,18 +342,13 @@ describe("ensureEmbeddedFrontend", () => {
     utimesSync(embeddedIndex, oldTime, oldTime);
     utimesSync(sourceFile, newTime, newTime);
 
-    const previousPath = process.env.PATH;
-    process.env.PATH = `${binDir}${path.delimiter}${previousPath ?? ""}`;
+    const restorePath = prependExecutablePath(binDir);
     try {
       await expect(ensureEmbeddedFrontend(dir)).rejects.toThrow(
         /frontend build failed/,
       );
     } finally {
-      if (previousPath === undefined) {
-        delete process.env.PATH;
-      } else {
-        process.env.PATH = previousPath;
-      }
+      restorePath();
     }
   });
 
@@ -318,19 +388,14 @@ describe("ensureEmbeddedFrontend", () => {
     // Empty PATH so the spawned `bun` triggers ENOENT (missing tool).
     // No embedded index exists yet, so the fallback path must still
     // copy the (stale) frontend dist into the embedded location.
-    const previousPath = process.env.PATH;
-    process.env.PATH = "";
+    const restorePath = clearExecutablePath();
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       await ensureEmbeddedFrontend(dir);
       await expect(readFile(embeddedIndex, "utf8")).resolves.toContain("<body>existing dist</body>");
       expect(warnSpy).toHaveBeenCalled();
     } finally {
-      if (previousPath === undefined) {
-        delete process.env.PATH;
-      } else {
-        process.env.PATH = previousPath;
-      }
+      restorePath();
     }
   });
 });
