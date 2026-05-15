@@ -43,6 +43,18 @@ test.describe("PR detail branch info", () => {
     )).toBe(true);
   });
 
+  test("reveals current approvers from full-stack review events", async ({ page }) => {
+    const trigger = page.getByRole("button", { name: "APPROVED (2)" });
+    await expect(trigger).toBeVisible();
+
+    await trigger.click();
+
+    const popup = page.locator(".approval-popup");
+    await expect(popup).toContainText("alice");
+    await expect(popup).toContainText("bob");
+    await expect(popup).not.toContainText("carol");
+  });
+
   test("summarizes changed lines by category in the popover", async ({ page }) => {
     await page.route("**/api/v1/pulls/github/acme/widgets/1/files", async (route) => {
       await route.fulfill({

@@ -20,6 +20,7 @@
   import ApproveWorkflowsButton from "./ApproveWorkflowsButton.svelte";
   import MergeModal from "./MergeModal.svelte";
   import ReadyForReviewButton from "./ReadyForReviewButton.svelte";
+  import ReviewDecisionChip from "./ReviewDecisionChip.svelte";
   import {
     runOpenMerge,
     type PRDetailActionInput,
@@ -126,7 +127,6 @@
   const hasActiveTimelineFilters = $derived(
     activePRTimelineFilterCount(timelineFilter) > 0,
   );
-
   async function editTimelineComment(
     event: { PlatformID: number | null },
     body: string,
@@ -429,12 +429,6 @@
     { value: "awaiting_merge", label: "Awaiting Merge" },
   ];
 
-  function reviewColor(decision: string): string {
-    if (decision === "APPROVED") return "chip--green";
-    if (decision === "CHANGES_REQUESTED") return "chip--red";
-    return "chip--muted";
-  }
-
   function onKanbanChange(value: string): void {
     if (stalePR) return;
     void detailStore.updateKanbanState(owner, name, number, value as KanbanStatus);
@@ -542,11 +536,11 @@
     }
   }
 
-  function onActionMenuDocumentMousedown(e: MouseEvent): void {
-    if (!actionMenuOpen) return;
+  function onDocumentMousedown(e: MouseEvent): void {
     const target = e.target as Node;
-    if (actionMenuWrapEl?.contains(target)) return;
-    closeActionMenu();
+    if (actionMenuOpen && !actionMenuWrapEl?.contains(target)) {
+      closeActionMenu();
+    }
   }
 
   async function createWorkspace(): Promise<void> {
@@ -603,7 +597,7 @@
 </script>
 
 <svelte:window onkeydown={onActionMenuKeydown} />
-<svelte:document onmousedown={onActionMenuDocumentMousedown} />
+<svelte:document onmousedown={onDocumentMousedown} />
 
 {#if detailStore.isDetailLoading() && (detailStore.getDetail() === null || stalePR)}
   <div class="state-center"><p class="state-msg">Loading…</p></div>
@@ -797,9 +791,10 @@
           showPanel={false}
         />
         {#if pr.ReviewDecision}
-          <Chip class={reviewColor(pr.ReviewDecision)}>
-            {pr.ReviewDecision.replace(/_/g, " ")}
-          </Chip>
+          <ReviewDecisionChip
+            decision={pr.ReviewDecision}
+            events={detail.events}
+          />
         {/if}
         {#if pr.Additions > 0 || pr.Deletions > 0}
           <DiffSummaryChip

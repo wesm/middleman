@@ -378,6 +378,44 @@ func TestUpsertMREventsUpdatesExistingEventBody(t *testing.T) {
 	assert.Equal("edited body", events[0].Body)
 }
 
+func TestUpsertMREventsUpdatesExistingReviewState(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	mrID := insertTestMR(t, d, repoID, 1, "dismissed review", base)
+	platformID := int64(202)
+
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: mrID,
+		PlatformID:     &platformID,
+		EventType:      "review",
+		Author:         "carol",
+		Summary:        "APPROVED",
+		CreatedAt:      base,
+		DedupeKey:      "review-202",
+	}}))
+
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: mrID,
+		PlatformID:     &platformID,
+		EventType:      "review",
+		Author:         "carol",
+		Summary:        "DISMISSED",
+		CreatedAt:      base.Add(time.Hour),
+		DedupeKey:      "review-202",
+	}}))
+
+	events, err := d.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("DISMISSED", events[0].Summary)
+	assert.Equal(base.Add(time.Hour), events[0].CreatedAt)
+}
+
 func TestUpsertIssueEventsUpdatesExistingEventBody(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
