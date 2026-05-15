@@ -33,7 +33,7 @@ func NewSessionPaths(root, session string) (SessionPaths, error) {
 	if err := validateSessionName(session); err != nil {
 		return SessionPaths{}, err
 	}
-	dir := filepath.Join(root, session)
+	dir := filepath.Join(root, sessionDirName(session))
 	socket := filepath.Join(root, "sock-"+sessionSocketHash(session))
 	socketDir := ""
 	if len(socket) > maxUnixSocketPathLen {
@@ -51,6 +51,13 @@ func NewSessionPaths(root, session string) (SessionPaths, error) {
 }
 
 const maxUnixSocketPathLen = 100
+
+func sessionDirName(session string) string {
+	if strings.ContainsAny(session, `<>:"|?*`) {
+		return "session-" + sessionSocketHash(session)
+	}
+	return session
+}
 
 func sessionSocketHash(session string) string {
 	sum := sha256.Sum256([]byte(session))

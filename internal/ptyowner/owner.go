@@ -29,10 +29,11 @@ const (
 )
 
 type Options struct {
-	Root    string
-	Session string
-	Cwd     string
-	Command []string
+	Root         string
+	Session      string
+	Cwd          string
+	Command      []string
+	StripEnvVars []string
 }
 
 type owner struct {
@@ -43,6 +44,8 @@ type owner struct {
 
 	mu           sync.Mutex
 	outputBuffer []byte
+	title        string
+	titleParser  terminalTitleParser
 	subscribers  map[chan []byte]struct{}
 	exitCode     int
 	exited       bool
@@ -75,7 +78,7 @@ func RunOwner(ctx context.Context, opts Options) error {
 
 	cmd := p.Command(command[0], command[1:]...)
 	cmd.Dir = opts.Cwd
-	cmd.Env = sessionEnvironment(os.Environ(), nil)
+	cmd.Env = sessionEnvironment(os.Environ(), opts.StripEnvVars)
 	configureOwnerCommand(cmd)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start pty command: %w", err)
@@ -203,8 +206,10 @@ func (o *owner) handleConn(conn net.Conn) {
 
 	switch first.Type {
 	case RequestStatus:
+		status := o.snapshotStatus()
 		_ = enc.Encode(Response{
-			Type: ResponseOK, OK: true, Output: o.snapshotOutput(),
+			Type: ResponseOK, OK: true, Output: status.Output,
+			Title: status.Title,
 		})
 	case RequestStop:
 		_ = enc.Encode(Response{Type: ResponseOK, OK: true})
@@ -383,6 +388,9 @@ func (o *owner) broadcast(data []byte) {
 	chunk := append([]byte(nil), data...)
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	if title, ok := o.titleParser.Update(chunk); ok {
+		o.title = title
+	}
 	o.outputBuffer = append(o.outputBuffer, chunk...)
 	if extra := len(o.outputBuffer) - maxOutputReplay; extra > 0 {
 		o.outputBuffer = append([]byte(nil), o.outputBuffer[extra:]...)
@@ -420,10 +428,13 @@ func (o *owner) subscribe() (<-chan []byte, func()) {
 	}
 }
 
-func (o *owner) snapshotOutput() []byte {
+func (o *owner) snapshotStatus() Status {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	return append([]byte(nil), o.outputBuffer...)
+	return Status{
+		Output: append([]byte(nil), o.outputBuffer...),
+		Title:  o.title,
+	}
 }
 
 func (o *owner) currentExitCode() int {
@@ -522,4 +533,76 @@ func waitExitCode(waitErr error) int {
 		return exitErr.ExitCode()
 	}
 	return -1
+}
+
+type terminalTitleParser struct {
+	pending []byte
+}
+
+const terminalTitlePendingLimit = 4096
+
+func (p *terminalTitleParser) Update(data []byte) (string, bool) {
+	if len(data) == 0 && len(p.pending) == 0 {
+		return "", false
+	}
+	buf := append(append([]byte(nil), p.pending...), data...)
+	title, ok, consumed := parseTerminalTitle(buf)
+	if consumed < len(buf) {
+		p.pending = append([]byte(nil), buf[consumed:]...)
+		if len(p.pending) > terminalTitlePendingLimit {
+			p.pending = append(
+				[]byte(nil),
+				p.pending[len(p.pending)-terminalTitlePendingLimit:]...,
+			)
+		}
+	} else {
+		p.pending = nil
+	}
+	return title, ok
+}
+
+func parseTerminalTitle(data []byte) (string, bool, int) {
+	const esc = byte(0x1b)
+	var title string
+	ok := false
+	consumed := 0
+	for i := 0; i < len(data); i++ {
+		if data[i] == esc && i+1 >= len(data) {
+			return title, ok, i
+		}
+		if data[i] != esc || data[i+1] != ']' {
+			consumed = i + 1
+			continue
+		}
+
+		seqStart := i
+		payloadStart := i + 2
+		terminatorStart := -1
+		terminatorEnd := -1
+		for j := payloadStart; j < len(data); j++ {
+			if data[j] == 0x07 {
+				terminatorStart = j
+				terminatorEnd = j + 1
+				break
+			}
+			if data[j] == esc && j+1 < len(data) && data[j+1] == '\\' {
+				terminatorStart = j
+				terminatorEnd = j + 2
+				break
+			}
+		}
+		if terminatorStart == -1 {
+			return title, ok, seqStart
+		}
+
+		payload := string(data[payloadStart:terminatorStart])
+		code, value, found := strings.Cut(payload, ";")
+		if found && (code == "0" || code == "1" || code == "2") {
+			title = strings.TrimSpace(value)
+			ok = true
+		}
+		consumed = terminatorEnd
+		i = terminatorEnd - 1
+	}
+	return title, ok, consumed
 }

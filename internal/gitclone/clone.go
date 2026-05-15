@@ -383,8 +383,16 @@ func remoteURLHost(remoteURL string) string {
 	if remoteURL == "" {
 		return ""
 	}
-	if u, err := url.Parse(remoteURL); err == nil && u.Host != "" {
-		return u.Host
+	if u, err := url.Parse(remoteURL); err == nil {
+		if u.Host != "" {
+			return u.Host
+		}
+		if u.Scheme != "" {
+			return ""
+		}
+	}
+	if filepath.VolumeName(remoteURL) != "" {
+		return ""
 	}
 	prefix, _, ok := strings.Cut(remoteURL, ":")
 	if !ok || strings.Contains(prefix, "/") {
@@ -402,8 +410,13 @@ func remoteURLRepoPath(remoteURL string) string {
 		return ""
 	}
 	var repoPath string
-	if u, err := url.Parse(remoteURL); err == nil && u.Host != "" {
+	if u, err := url.Parse(remoteURL); err == nil && (u.Host != "" || u.Scheme != "") {
+		if strings.EqualFold(u.Scheme, "file") {
+			return ""
+		}
 		repoPath = u.Path
+	} else if filepath.VolumeName(remoteURL) != "" {
+		return ""
 	} else {
 		prefix, path, ok := strings.Cut(remoteURL, ":")
 		if !ok || strings.Contains(prefix, "/") {

@@ -28,6 +28,27 @@ func TestValidateRemoteURLHostAcceptsLocalPath(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestValidateRemoteURLHostAcceptsFileURL(t *testing.T) {
+	err := validateRemoteURLHost("github.com", "file:///C:/tmp/acme/widget.git")
+
+	require.NoError(t, err)
+}
+
+func TestValidateRemoteURLIdentityAcceptsFileURL(t *testing.T) {
+	err := validateRemoteURLIdentity(
+		"github.com", "acme", "widget",
+		"file:///C:/Users/RUNNER~1/AppData/Local/Temp/Test/remote/widget",
+	)
+
+	require.NoError(t, err)
+}
+
+func TestValidateRemoteURLHostAcceptsWindowsLocalPath(t *testing.T) {
+	err := validateRemoteURLHost("github.com", `C:\tmp\acme\widget.git`)
+
+	require.NoError(t, err)
+}
+
 func TestClonePathIncludesHost(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

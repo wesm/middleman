@@ -2,21 +2,21 @@ package localruntime
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
 	"github.com/creack/pty/v2"
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	ptyownerruntime "github.com/wesm/middleman/internal/ptyowner/runtime"
 )
 
 func requirePTYAvailable(t *testing.T) {
@@ -102,6 +102,17 @@ func TestManagerLaunchConcurrentStartsOneProcess(t *testing.T) {
 		return strings.Count(string(data), "\n") == 1
 	}, 2*time.Second, 20*time.Millisecond)
 	assert.Len(mgr.ListSessions("ws-1"), 1)
+}
+
+func TestSessionKeyIsFilesystemSafe(t *testing.T) {
+	key := sessionKey("ws:alpha", "foo:bar/baz")
+
+	assert := Assert.New(t)
+	assert.NotContains(key, ":")
+	assert.NotContains(key, "/")
+	assert.NotContains(key, `\\`)
+	assert.Equal(key, sessionKey("ws:alpha", "foo:bar/baz"))
+	assert.NotEqual(key, sessionKey("ws:alpha", "foo:bar/qux"))
 }
 
 func TestManagerLaunchUnavailableTarget(t *testing.T) {
@@ -423,6 +434,47 @@ func TestManagerLaunchCommandFallsBackWhenTmuxUnavailable(t *testing.T) {
 	assert.Empty(launch.TmuxSession)
 }
 
+func TestManagerLaunchUsesPtyOwnerWhenConfigured(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+	backend := newFakeRuntimePtyOwner()
+	agent := helperTarget("codex", "exit")
+	mgr := NewManager(Options{
+		Targets:         []LaunchTarget{agent},
+		PtyOwnerRuntime: backend,
+	})
+	t.Cleanup(mgr.Shutdown)
+
+	info, err := mgr.Launch(ctx, "ws-1", t.TempDir(), "codex")
+	require.NoError(err)
+
+	assert.Equal(SessionStatusRunning, info.Status)
+	assert.Equal(info.Key, backend.startedSession)
+	assert.NotContains(backend.startedSession, ":")
+	assert.Equal(agent.Command, backend.startedCommand)
+	assert.Len(mgr.ListSessions("ws-1"), 1)
+}
+
+func TestManagerLaunchPassesStripEnvVarsToPtyOwner(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+	backend := newFakeRuntimePtyOwner()
+	agent := helperTarget("codex", "exit")
+	mgr := NewManager(Options{
+		Targets:         []LaunchTarget{agent},
+		PtyOwnerRuntime: backend,
+		StripEnvVars:    []string{"WORKSPACE_TOKEN", "WORKSPACE_TOKEN"},
+	})
+	t.Cleanup(mgr.Shutdown)
+
+	_, err := mgr.Launch(ctx, "ws-1", t.TempDir(), "codex")
+	require.NoError(err)
+
+	assert.Equal([]string{"WORKSPACE_TOKEN"}, backend.startedStripEnvVars)
+}
+
 func TestManagerLaunchCommandDoesNotWrapWhenConfigDisabled(t *testing.T) {
 	assert := Assert.New(t)
 	agent := helperTarget("codex", "sleep")
@@ -599,12 +651,12 @@ func TestManagerShutdownTerminatesPTYManagedSessions(t *testing.T) {
 		pid = s.cmd.Process.Pid
 		return pid > 0
 	}, 2*time.Second, 20*time.Millisecond)
-	require.NoError(syscall.Kill(pid, 0), "helper should be alive")
+	require.True(processAlive(pid), "helper should be alive")
 
 	mgr.Shutdown()
 
 	assert.Eventually(func() bool {
-		return errors.Is(syscall.Kill(pid, 0), syscall.ESRCH)
+		return !processAlive(pid)
 	}, 5*time.Second, 25*time.Millisecond)
 	assert.Empty(mgr.ListSessions("ws-1"))
 }
@@ -659,7 +711,7 @@ func TestManagerLaunchRejectsWhileWorkspaceStopping(t *testing.T) {
 		}
 		for line := range strings.SplitSeq(strings.TrimSpace(string(data)), "\n") {
 			pid, _ := strconv.Atoi(line)
-			if pid > 0 && syscall.Kill(pid, 0) == nil {
+			if processAlive(pid) {
 				return false
 			}
 		}
@@ -785,14 +837,13 @@ func TestManagerStopKillsDescendantProcesses(t *testing.T) {
 		return parentPID > 0 && childPID > 0
 	}, 5*time.Second, 25*time.Millisecond, "helper should record both pids")
 
-	require.NoError(syscall.Kill(parentPID, 0), "parent should be alive")
-	require.NoError(syscall.Kill(childPID, 0), "child should be alive")
+	require.True(processAlive(parentPID), "parent should be alive")
+	require.True(processAlive(childPID), "child should be alive")
 
 	require.NoError(mgr.Stop(ctx, "ws-1", session.Key))
 
 	assert.Eventually(func() bool {
-		return errors.Is(syscall.Kill(parentPID, 0), syscall.ESRCH) &&
-			errors.Is(syscall.Kill(childPID, 0), syscall.ESRCH)
+		return !processAlive(parentPID) && !processAlive(childPID)
 	}, 5*time.Second, 25*time.Millisecond,
 		"descendant child should die with the session leader")
 }
@@ -1104,6 +1155,69 @@ drain:
 	assert.True(attach.SessionOutputClosed(),
 		"after drainOutput's closeSubscribers, the bridge must see "+
 			"the session as output-closed and emit the exit frame")
+}
+
+type fakeRuntimePtyOwner struct {
+	startedSession      string
+	startedCwd          string
+	startedCommand      []string
+	startedStripEnvVars []string
+	startedPTY          *fakeRuntimePTY
+	stoppedSession      string
+}
+
+func newFakeRuntimePtyOwner() *fakeRuntimePtyOwner {
+	return &fakeRuntimePtyOwner{}
+}
+
+func (f *fakeRuntimePtyOwner) Start(
+	_ context.Context,
+	session string,
+	cwd string,
+	command []string,
+	stripEnvVars []string,
+) (ptyownerruntime.PTY, error) {
+	f.startedSession = session
+	f.startedCwd = cwd
+	f.startedCommand = slices.Clone(command)
+	f.startedStripEnvVars = slices.Clone(stripEnvVars)
+	f.startedPTY = &fakeRuntimePTY{
+		output: make(chan []byte, 64),
+		done:   make(chan struct{}),
+	}
+	return f.startedPTY, nil
+}
+
+func (f *fakeRuntimePtyOwner) Stop(_ context.Context, session string) error {
+	f.stoppedSession = session
+	if f.startedPTY != nil {
+		f.startedPTY.Close()
+	}
+	return nil
+}
+
+type fakeRuntimePTY struct {
+	output chan []byte
+	done   chan struct{}
+}
+
+func (f *fakeRuntimePTY) Output() <-chan []byte { return f.output }
+
+func (f *fakeRuntimePTY) Done() <-chan struct{} { return f.done }
+
+func (f *fakeRuntimePTY) Write([]byte) error { return nil }
+
+func (f *fakeRuntimePTY) Resize(int, int) error { return nil }
+
+func (f *fakeRuntimePTY) ExitCode() int { return 0 }
+
+func (f *fakeRuntimePTY) Close() {
+	select {
+	case <-f.done:
+	default:
+		close(f.output)
+		close(f.done)
+	}
 }
 
 func TestManagerShellConcurrentStartsOneProcess(t *testing.T) {

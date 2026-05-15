@@ -819,6 +819,31 @@ func TestManagerEnsureTerminalUsesPtyOwnerWhenConfigured(t *testing.T) {
 	assert.True(os.IsNotExist(err))
 }
 
+func TestManagerTerminalPaneSnapshotIncludesPtyOwnerTitle(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	owner := &fakePtyOwnerClient{
+		SnapshotOutput: []byte("recent output"),
+		SnapshotTitle:  "⠴ t3code-b5014b03",
+	}
+	mgr := NewManager(nil, t.TempDir())
+	mgr.SetPtyOwnerClient(owner)
+	ws := &db.Workspace{
+		ID:              "ws-1",
+		TmuxSession:     "middleman-ws-1",
+		TerminalBackend: TerminalBackendPtyOwner,
+	}
+
+	snapshot, err := mgr.TerminalPaneSnapshot(
+		context.Background(), ws, ws.TmuxSession,
+	)
+
+	require.NoError(err)
+	assert.Equal("⠴ t3code-b5014b03", snapshot.Title)
+	assert.Equal("recent output", snapshot.Output)
+}
+
 func TestManagerCleanupTerminalUsesPtyOwnerForBaseSession(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -2247,9 +2272,11 @@ type fakePtyOwnerCall struct {
 }
 
 type fakePtyOwnerClient struct {
-	Calls         []fakePtyOwnerCall
-	StateExists   bool
-	StateSessions map[string]bool
+	Calls          []fakePtyOwnerCall
+	StateExists    bool
+	StateSessions  map[string]bool
+	SnapshotOutput []byte
+	SnapshotTitle  string
 }
 
 func (f *fakePtyOwnerClient) HasState(session string) bool {
@@ -2289,6 +2316,9 @@ func (f *fakePtyOwnerClient) Stop(
 func (f *fakePtyOwnerClient) Snapshot(
 	context.Context,
 	string,
-) ([]byte, error) {
-	return nil, nil
+) (ptyowner.Status, error) {
+	return ptyowner.Status{
+		Output: f.SnapshotOutput,
+		Title:  f.SnapshotTitle,
+	}, nil
 }

@@ -23,7 +23,7 @@ type PtyOwnerClient interface {
 		rows int,
 	) (*ptyowner.Attachment, error)
 	Stop(ctx context.Context, session string) error
-	Snapshot(ctx context.Context, session string) ([]byte, error)
+	Snapshot(ctx context.Context, session string) (ptyowner.Status, error)
 }
 
 func (m *Manager) SetPtyOwnerClient(client PtyOwnerClient) {

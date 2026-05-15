@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,7 @@ import (
 	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/ptyowner"
+	ptyownerruntime "github.com/wesm/middleman/internal/ptyowner/runtime"
 	"github.com/wesm/middleman/internal/workspace"
 	"github.com/wesm/middleman/internal/workspace/localruntime"
 )
@@ -438,7 +440,7 @@ func newServer(
 			ManagerPath: options.PtyOwnerManagerPath,
 			InProcess:   options.PtyOwnerInProcess,
 		}
-		if !tmuxAvailable {
+		if preferPtyOwnerForWorkspaces(runtime.GOOS, tmuxAvailable, options) {
 			s.workspaces.SetPtyOwnerClient(ptyOwnerClient)
 		} else {
 			s.workspaces.SetPtyOwnerFallbackClient(ptyOwnerClient)
@@ -462,6 +464,10 @@ func newServer(
 		if cfg != nil {
 			agents = cfg.Agents
 		}
+		var runtimePtyOwner ptyownerruntime.Owner
+		if !tmuxAvailable {
+			runtimePtyOwner = ptyownerruntime.New(ptyOwnerClient, nil)
+		}
 		s.runtime = localruntime.NewManager(localruntime.Options{
 			Targets: localruntime.ResolveLaunchTargets(
 				agents, tmuxCmd, nil,
@@ -472,6 +478,7 @@ func newServer(
 			StripEnvVars:            cfg.TokenEnvNames(),
 			ShellCommand:            cfg.ShellCommand(),
 			OnSessionExit:           s.handleRuntimeSessionExit,
+			PtyOwnerRuntime:         runtimePtyOwner,
 		})
 		if err := s.restoreRuntimeTmuxSessions(context.Background()); err != nil {
 			slog.Warn("restore runtime tmux sessions", "err", err)
@@ -626,6 +633,19 @@ func (s *Server) handleRuntimeSessionExit(info localruntime.SessionInfo) {
 			)
 		}
 	})
+}
+
+func preferPtyOwnerForWorkspaces(
+	runtimeGOOS string,
+	tmuxAvailable bool,
+	options ServerOptions,
+) bool {
+	if !tmuxAvailable {
+		return true
+	}
+	return runtimeGOOS == "windows" &&
+		(options.PtyOwnerManagerPath != "" || options.PtyOwnerExePath != "" ||
+			options.PtyOwnerInProcess)
 }
 
 func tmuxCommandAvailable(command []string) bool {

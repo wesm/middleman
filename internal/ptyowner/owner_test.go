@@ -98,6 +98,31 @@ func TestOwnerStopWhileRunOwnerReturns(t *testing.T) {
 	}
 }
 
+func TestTerminalTitleParserTracksOSCSequences(t *testing.T) {
+	assert := Assert.New(t)
+	var parser terminalTitleParser
+
+	title, ok := parser.Update([]byte("before\x1b]0;busy title\x07after"))
+	assert.True(ok)
+	assert.Equal("busy title", title)
+
+	title, ok = parser.Update([]byte("\x1b]2;split"))
+	assert.False(ok)
+	assert.Empty(title)
+
+	title, ok = parser.Update([]byte(" title\x1b\\tail"))
+	assert.True(ok)
+	assert.Equal("split title", title)
+
+	title, ok = parser.Update([]byte("\x1b"))
+	assert.False(ok)
+	assert.Empty(title)
+
+	title, ok = parser.Update([]byte("]0;edge title\x07"))
+	assert.True(ok)
+	assert.Equal("edge title", title)
+}
+
 func TestOwnerRejectsOversizedUnauthenticatedRequest(t *testing.T) {
 	require := require.New(t)
 	if runtime.GOOS == "windows" {
@@ -157,6 +182,20 @@ func TestOwnerHelperEnvironmentStripsCredentials(t *testing.T) {
 		"MIDDLEMAN_GITHUB_TOKEN=secret-1",
 		"GITHUB_TOKEN=secret-2",
 		"GH_TOKEN_WORK=secret-3",
+		"KEEP=value",
+	})
+
+	require.ElementsMatch(t, []string{
+		"PATH=/usr/bin",
+		"KEEP=value",
+	}, out)
+}
+
+func TestClientOwnerHelperEnvironmentStripsConfiguredVariables(t *testing.T) {
+	client := Client{StripEnvVars: []string{"WORKSPACE_TOKEN"}}
+	out := client.ownerHelperEnvironment([]string{
+		"PATH=/usr/bin",
+		"WORKSPACE_TOKEN=secret",
 		"KEEP=value",
 	})
 

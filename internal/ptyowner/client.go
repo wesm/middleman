@@ -17,12 +17,13 @@ import (
 )
 
 type Client struct {
-	Root        string
-	ExePath     string
-	ExeArgs     []string
-	ManagerPath string
-	Command     []string
-	InProcess   bool
+	Root         string
+	ExePath      string
+	ExeArgs      []string
+	ManagerPath  string
+	Command      []string
+	StripEnvVars []string
+	InProcess    bool
 }
 
 const (
@@ -91,17 +92,18 @@ func (c *Client) Ensure(ctx context.Context, session, cwd string) error {
 	if c.InProcess {
 		go func() {
 			_ = RunOwner(context.Background(), Options{
-				Root:    c.Root,
-				Session: session,
-				Cwd:     cwd,
-				Command: command,
+				Root:         c.Root,
+				Session:      session,
+				Cwd:          cwd,
+				Command:      command,
+				StripEnvVars: c.StripEnvVars,
 			})
 		}()
 		return c.waitReady(ctx, session)
 	}
 	exe, args := c.ownerCommand(exe, session, cwd, string(commandJSON))
 	cmd := exec.Command(exe, args...)
-	cmd.Env = ownerHelperEnvironment(os.Environ())
+	cmd.Env = c.ownerHelperEnvironment(os.Environ())
 	detachCommand(cmd)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start pty owner: %w", err)
@@ -231,10 +233,10 @@ func (c *Client) Ping(ctx context.Context, session string) error {
 	return nil
 }
 
-func (c *Client) Snapshot(ctx context.Context, session string) ([]byte, error) {
+func (c *Client) Snapshot(ctx context.Context, session string) (Status, error) {
 	conn, state, err := c.connect(ctx, session)
 	if err != nil {
-		return nil, err
+		return Status{}, err
 	}
 	defer conn.Close()
 	clearDeadline := applyRPCDeadline(ctx, conn)
@@ -242,16 +244,19 @@ func (c *Client) Snapshot(ctx context.Context, session string) ([]byte, error) {
 	enc := json.NewEncoder(conn)
 	dec := json.NewDecoder(conn)
 	if err := enc.Encode(Request{Type: RequestStatus, Token: state.Token}); err != nil {
-		return nil, err
+		return Status{}, err
 	}
 	var resp Response
 	if err := dec.Decode(&resp); err != nil {
-		return nil, err
+		return Status{}, err
 	}
 	if !resp.OK {
-		return nil, errors.New(resp.Error)
+		return Status{}, errors.New(resp.Error)
 	}
-	return append([]byte(nil), resp.Output...), nil
+	return Status{
+		Output: append([]byte(nil), resp.Output...),
+		Title:  resp.Title,
+	}, nil
 }
 
 func (c *Client) Attach(
@@ -387,6 +392,10 @@ func isStaleOwnerConnection(err error) bool {
 
 func ownerHelperEnvironment(env []string) []string {
 	return sessionEnvironment(env, nil)
+}
+
+func (c Client) ownerHelperEnvironment(env []string) []string {
+	return sessionEnvironment(env, c.StripEnvVars)
 }
 
 func applyRPCDeadline(ctx context.Context, conn net.Conn) func() {
