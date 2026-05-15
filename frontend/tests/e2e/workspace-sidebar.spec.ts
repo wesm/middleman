@@ -999,6 +999,51 @@ test.describe("terminal state icons", () => {
       await expect(page).toHaveURL(/\/pulls$/);
     },
   );
+
+  test(
+    "successful DELETE after A→B→A still navigates away from the deleted workspace",
+    async ({ page }) => {
+      await setupTerminalMocks(page);
+
+      await page.route(
+        (url) =>
+          url.pathname === "/api/v1/workspaces/ws-123",
+        async (route) => {
+          if (route.request().method() !== "DELETE") {
+            await route.fallback();
+            return;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          await route.fulfill({ status: 204 });
+        },
+      );
+
+      await page.goto("/terminal/ws-123");
+
+      await page
+        .locator(".header-bar")
+        .getByRole("button", { name: "Delete" })
+        .click();
+
+      // Round-trip back to the same workspace before the 204 lands.
+      // The generation token has advanced, but the workspace the
+      // user is looking at has just been destroyed on the server —
+      // we must still navigate away rather than leave them staring
+      // at a dead workspace.
+      await page.evaluate(() => {
+        history.pushState(null, "", "/workspaces");
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      });
+      await page.evaluate(() => {
+        history.pushState(null, "", "/terminal/ws-123");
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      });
+
+      await expect(page).toHaveURL(/\/workspaces$/, {
+        timeout: 2000,
+      });
+    },
+  );
 });
 
 test.describe("workspace launch home", () => {

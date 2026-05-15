@@ -801,17 +801,15 @@
         params: { path: { id: targetId } },
       },
     );
-    // The user can navigate away while the request is in flight;
-    // settling state for a workspace they're no longer viewing
-    // would open a stale prompt or yank them out of their new
-    // context. The generation check also covers an A→B→A round
-    // trip where the id alone would compare equal.
-    if (
-      targetId !== workspaceId ||
-      targetGen !== workspaceGen
-    )
-      return;
+    // Different workspace now: the user has moved on and nothing
+    // about this response applies.
+    if (targetId !== workspaceId) return;
     if (response.status === 409) {
+      // A 409 that lands after the user briefly left and returned
+      // to the same workspace would feel like an unrequested
+      // prompt; suppress it on a generation mismatch and let the
+      // user retry if they want.
+      if (targetGen !== workspaceGen) return;
       previouslyFocusedEl = triggerEl;
       forcePromptForId = targetId;
       forcePromptMessage =
@@ -820,12 +818,17 @@
       return;
     }
     if (!response.ok && response.status !== 204) {
+      if (targetGen !== workspaceGen) return;
       actionError = apiErrorMessage(
         error,
         `Delete failed (${response.status})`,
       );
       return;
     }
+    // Successful delete: the server destroyed this workspace and
+    // the user is still looking at it. Navigate away even after
+    // an A→B→A round trip — otherwise they'd be staring at a
+    // workspace that no longer exists.
     navigate("/workspaces");
   }
 
@@ -847,15 +850,12 @@
         },
       );
       // The force-delete on the server is destructive and runs to
-      // completion either way; once the user has moved on we just
-      // drop the response on the floor so navigate() doesn't pull
-      // them away from their new workspace.
-      if (
-        targetId !== workspaceId ||
-        targetGen !== workspaceGen
-      )
-        return;
+      // completion either way; once the user has moved to a
+      // different workspace we just drop the response on the
+      // floor so navigate() doesn't pull them away.
+      if (targetId !== workspaceId) return;
       if (!response.ok && response.status !== 204) {
+        if (targetGen !== workspaceGen) return;
         actionError = apiErrorMessage(
           error,
           `Delete failed (${response.status})`,
@@ -864,6 +864,10 @@
         forcePromptForId = null;
         return;
       }
+      // Successful force-delete on the workspace the user is
+      // viewing — navigate away even after an A→B→A round trip
+      // so we don't leave them on a workspace the server just
+      // destroyed.
       forcePromptMessage = null;
       forcePromptForId = null;
       navigate("/workspaces");
