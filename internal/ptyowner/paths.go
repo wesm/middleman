@@ -1,6 +1,8 @@
 package ptyowner
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,6 +15,8 @@ type SessionPaths struct {
 	Root      string
 	Session   string
 	Dir       string
+	Socket    string
+	SocketDir string
 	StatePath string
 }
 
@@ -30,12 +34,27 @@ func NewSessionPaths(root, session string) (SessionPaths, error) {
 		return SessionPaths{}, err
 	}
 	dir := filepath.Join(root, session)
+	socket := filepath.Join(root, "sock-"+sessionSocketHash(session))
+	socketDir := ""
+	if len(socket) > maxUnixSocketPathLen {
+		socketDir = filepath.Join(os.TempDir(), "middleman-pty-"+sessionSocketHash(root+"-"+session))
+		socket = filepath.Join(socketDir, "sock")
+	}
 	return SessionPaths{
 		Root:      root,
 		Session:   session,
 		Dir:       dir,
+		Socket:    socket,
+		SocketDir: socketDir,
 		StatePath: filepath.Join(dir, "owner.json"),
 	}, nil
+}
+
+const maxUnixSocketPathLen = 100
+
+func sessionSocketHash(session string) string {
+	sum := sha256.Sum256([]byte(session))
+	return hex.EncodeToString(sum[:])[:16]
 }
 
 func validateSessionName(session string) error {
@@ -66,7 +85,7 @@ func readState(paths SessionPaths) (ownerState, error) {
 }
 
 func writeState(paths SessionPaths, state ownerState) error {
-	if err := os.MkdirAll(paths.Dir, 0o700); err != nil {
+	if err := createPrivateDir(paths.Dir); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(state, "", "  ")
@@ -87,4 +106,27 @@ func writeState(paths SessionPaths, state ownerState) error {
 		return err
 	}
 	return os.Rename(tmpPath, paths.StatePath)
+}
+
+func createPrivateDir(path string) error {
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(path, 0o700); err != nil {
+		return err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s is not a directory", path)
+	}
+	return nil
+}
+
+func removeSocketDir(paths SessionPaths) {
+	if paths.SocketDir != "" {
+		_ = os.RemoveAll(paths.SocketDir)
+	}
 }

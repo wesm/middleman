@@ -17,11 +17,12 @@ import (
 )
 
 type Client struct {
-	Root      string
-	ExePath   string
-	ExeArgs   []string
-	Command   []string
-	InProcess bool
+	Root        string
+	ExePath     string
+	ExeArgs     []string
+	ManagerPath string
+	Command     []string
+	InProcess   bool
 }
 
 const (
@@ -70,6 +71,7 @@ func (c *Client) Ensure(ctx context.Context, session, cwd string) error {
 		return err
 	}
 	_ = os.RemoveAll(paths.Dir)
+	removeSocketDir(paths)
 
 	exe := c.ExePath
 	if exe == "" {
@@ -97,14 +99,7 @@ func (c *Client) Ensure(ctx context.Context, session, cwd string) error {
 		}()
 		return c.waitReady(ctx, session)
 	}
-	args := append([]string(nil), c.ExeArgs...)
-	args = append(args,
-		"pty-owner",
-		"-root", c.Root,
-		"-session", session,
-		"-cwd", cwd,
-		"-command-json", string(commandJSON),
-	)
+	exe, args := c.ownerCommand(exe, session, cwd, string(commandJSON))
 	cmd := exec.Command(exe, args...)
 	cmd.Env = ownerHelperEnvironment(os.Environ())
 	detachCommand(cmd)
@@ -162,6 +157,28 @@ func staleStartLock(path string) bool {
 		return false
 	}
 	return time.Since(info.ModTime()) > startLockStaleAfter
+}
+
+func (c *Client) ownerCommand(
+	defaultExe string,
+	session string,
+	cwd string,
+	commandJSON string,
+) (string, []string) {
+	exe := defaultExe
+	args := append([]string(nil), c.ExeArgs...)
+	if c.ManagerPath == "" {
+		args = append(args, "pty-owner")
+	} else {
+		exe = c.ManagerPath
+	}
+	args = append(args,
+		"-root", c.Root,
+		"-session", session,
+		"-cwd", cwd,
+		"-command-json", commandJSON,
+	)
+	return exe, args
 }
 
 func (c *Client) waitReady(ctx context.Context, session string) error {
@@ -324,7 +341,9 @@ func (c *Client) Stop(ctx context.Context, session string) error {
 	conn, state, err := c.connect(ctx, session)
 	if err != nil {
 		if isAbsentOwner(err) {
+			_ = os.Remove(paths.Socket)
 			_ = os.RemoveAll(paths.Dir)
+			removeSocketDir(paths)
 			return nil
 		}
 		return err
@@ -430,11 +449,30 @@ func (c *Client) connect(
 		return nil, ownerState{}, err
 	}
 	var dialer net.Dialer
-	conn, err := dialer.DialContext(ctx, "tcp", state.Addr)
+	network, addr, err := ownerDialTarget(state.Addr)
+	if err != nil {
+		return nil, ownerState{}, err
+	}
+	conn, err := dialer.DialContext(ctx, network, addr)
 	if err != nil {
 		return nil, ownerState{}, err
 	}
 	return conn, state, nil
+}
+
+func ownerDialTarget(raw string) (string, string, error) {
+	network := "tcp"
+	addr := raw
+	if socket, ok := strings.CutPrefix(raw, "unix://"); ok {
+		network = "unix"
+		addr = socket
+	} else if tcpAddr, ok := strings.CutPrefix(raw, "tcp://"); ok {
+		addr = tcpAddr
+	} else if strings.Contains(raw, "://") {
+		scheme, _, _ := strings.Cut(raw, "://")
+		return "", "", fmt.Errorf("unsupported pty owner address scheme %q", scheme)
+	}
+	return network, addr, nil
 }
 
 func (a *Attachment) Write(data []byte) error {

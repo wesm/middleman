@@ -24,7 +24,7 @@ DEV_LOG_DIR ?= tmp/logs
 DEV_BACKEND_LOG ?= $(DEV_LOG_DIR)/backend-dev.log
 
 .PHONY: ensure-embed-dir ensure-tmp-dir check-air air-install build build-release install \
-        frontend-deps frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
+        rust-pty-manager rust-test frontend-deps frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
         dev test test-short test-integration test-e2e test-e2e-roborev test-gitlab-container gitlab-fixture-bake vet lint nilaway testify-helper-check \
         frontend-api-client-check font-size-token-check huma-route-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help
 
@@ -49,6 +49,12 @@ build: frontend
 # Build with optimizations (release)
 build-release: frontend
 	go build -ldflags="$(LDFLAGS_RELEASE)" -trimpath -o $(BINARY) ./cmd/middleman
+
+rust-pty-manager:
+	cargo build -p middleman-pty-manager
+
+rust-test:
+	cargo test -p middleman-pty-manager
 
 # Install to ~/.local/bin, $GOBIN, or $GOPATH/bin
 install: build-release
