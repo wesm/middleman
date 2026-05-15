@@ -1569,7 +1569,11 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			                                  AND source.platform_id IS NOT NULL
 			                                  AND target.platform_id = source.platform_id
 			                             THEN 0
-			                             ELSE 1
+			                             WHEN target.platform_external_id <> ''
+			                                  AND source.platform_external_id <> ''
+			                                  AND target.platform_external_id = source.platform_external_id
+			                             THEN 1
+			                             ELSE 2
 			                         END,
 			                         target.id
 			                 ) AS target_rank
@@ -1613,7 +1617,11 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			                                  AND source.platform_id IS NOT NULL
 			                                  AND target.platform_id = source.platform_id
 			                             THEN 0
-			                             ELSE 1
+			                             WHEN target.platform_external_id <> ''
+			                                  AND source.platform_external_id <> ''
+			                                  AND target.platform_external_id = source.platform_external_id
+			                             THEN 1
+			                             ELSE 2
 			                         END,
 			                         target.id
 			                 ) AS target_rank
