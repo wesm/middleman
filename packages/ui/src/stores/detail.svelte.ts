@@ -91,11 +91,17 @@ export function createDetailStore(
   let storeError = $state<string | null>(null);
   let detailLoaded = $state(false);
   let syncGeneration = 0;
-  // Tracks whether the local PR body has been edited since the last
-  // server confirmation. While set, background sync paths preserve
-  // the local body when applying refreshed server data, so a poll
-  // can't clobber a pending optimistic checkbox/reorder edit.
-  let unsavedLocalBody = false;
+  // Tracks the PR (if any) whose local body has been edited since
+  // the last server confirmation. While set, background sync paths
+  // preserve the local body when applying refreshed server data for
+  // THIS specific PR — a poll on a different PR is unaffected, and
+  // navigating away doesn't strand the flag on the wrong target.
+  type UnsavedTarget = {
+    owner: string;
+    name: string;
+    number: number;
+  };
+  let unsavedLocalBody = $state<UnsavedTarget | null>(null);
   let activeLoad: {
     key: string;
     promise: Promise<void> | null;
@@ -188,6 +194,13 @@ export function createDetailStore(
     if (!unsavedLocalBody) return next;
     if (!detail) return next;
     if (
+      unsavedLocalBody.owner !== next.repo_owner ||
+      unsavedLocalBody.name !== next.repo_name ||
+      unsavedLocalBody.number !== next.merge_request?.Number
+    ) {
+      return next;
+    }
+    if (
       detail.repo_owner !== next.repo_owner ||
       detail.repo_name !== next.repo_name ||
       detail.merge_request?.Number !==
@@ -205,7 +218,7 @@ export function createDetailStore(
   }
 
   function hasUnsavedLocalBody(): boolean {
-    return unsavedLocalBody;
+    return unsavedLocalBody !== null;
   }
 
   function currentDetailRef(
@@ -319,7 +332,7 @@ export function createDetailStore(
     syncing = false;
     storeError = null;
     detailLoaded = false;
-    unsavedLocalBody = false;
+    unsavedLocalBody = null;
   }
 
   async function loadDetail(
@@ -650,7 +663,14 @@ export function createDetailStore(
       // Apply server-canonical response.
       if (data && isDetailShowing(owner, name, number)) {
         detail = data as PullDetail;
-        unsavedLocalBody = false;
+        if (
+          unsavedLocalBody &&
+          unsavedLocalBody.owner === owner &&
+          unsavedLocalBody.name === name &&
+          unsavedLocalBody.number === number
+        ) {
+          unsavedLocalBody = null;
+        }
       }
     } catch (err) {
       storeError =
@@ -689,7 +709,7 @@ export function createDetailStore(
     body: string,
   ): void {
     if (!detail || !isDetailShowing(owner, name, number)) return;
-    unsavedLocalBody = true;
+    unsavedLocalBody = { owner, name, number };
     detail = {
       ...detail,
       merge_request: { ...detail.merge_request, Body: body },
@@ -699,14 +719,23 @@ export function createDetailStore(
   // Fire-and-forget PATCH for the PR body. Does NOT apply an optimistic
   // update or revert on failure — the caller already owns local state.
   // On error, storeError is set so the surface can surface a banner.
+  //
+  // The caller passes the full route ref so the PATCH always targets
+  // the captured PR even if the user has since navigated away. Only
+  // the response is gated on the currently displayed detail.
   async function savePRBodyInBackground(
     owner: string,
     name: string,
     number: number,
     body: string,
+    routeRef: {
+      provider: string;
+      platformHost?: string | undefined;
+      repoPath: string;
+    },
   ): Promise<void> {
-    if (!isDetailShowing(owner, name, number)) return;
-    const ref = currentDetailRef(owner, name, number);
+    const ref = detailRequestRef(owner, name, number, routeRef);
+    let succeeded = false;
     try {
       const { data, error: requestError } =
         await apiClient.PATCH(
@@ -726,11 +755,10 @@ export function createDetailStore(
           ),
         );
       }
+      succeeded = true;
       // Apply server-canonical response only when the user is still
       // looking at the same PR AND hasn't toggled again since this
-      // request was sent (server body matches what we sent). When it
-      // does match, the local edit has been confirmed by the server
-      // so the unsaved-body flag clears.
+      // request was sent (server body matches what we sent).
       if (
         data &&
         isDetailShowing(owner, name, number) &&
@@ -738,11 +766,22 @@ export function createDetailStore(
         detail.merge_request.Body === body
       ) {
         detail = data as PullDetail;
-        unsavedLocalBody = false;
       }
     } catch (err) {
       storeError =
         err instanceof Error ? err.message : String(err);
+    }
+    // On a successful save, the captured target is now in sync with
+    // the server. Clear the unsaved flag if it pointed here, even
+    // when the user has since navigated away.
+    if (
+      succeeded &&
+      unsavedLocalBody &&
+      unsavedLocalBody.owner === owner &&
+      unsavedLocalBody.name === name &&
+      unsavedLocalBody.number === number
+    ) {
+      unsavedLocalBody = null;
     }
     refreshPullsIfActive().catch(() => {});
   }

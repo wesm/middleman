@@ -53,6 +53,38 @@ describe("listTaskItems", () => {
       { index: 1, checked: true, line: 1 },
     ]);
   });
+
+  it("skips task-shaped lines inside indented code blocks", () => {
+    // Top-level indented (4-space) code block. Marked treats this
+    // as a code block, so the inner `- [ ]` is plain text, not a
+    // task. listTaskItems must agree.
+    const src = [
+      "    - [ ] in indented code block",
+      "    - [x] still in code block",
+      "",
+      "- [ ] real task",
+    ].join("\n");
+    expect(listTaskItems(src)).toEqual([
+      { index: 0, checked: false, line: 3 },
+    ]);
+  });
+
+  it("treats tab-indented task-shaped lines at top level as code", () => {
+    const src = "\t- [ ] tab indented\n- [ ] real task";
+    expect(listTaskItems(src)).toEqual([
+      { index: 0, checked: false, line: 1 },
+    ]);
+  });
+
+  it("keeps nested task items inside a list (not as code blocks)", () => {
+    // The 4-space indent here is continuation of the list, NOT
+    // a code block — list context preserves the nesting rules.
+    const src = "- [ ] outer\n    - [ ] inner";
+    expect(listTaskItems(src)).toEqual([
+      { index: 0, checked: false, line: 0 },
+      { index: 1, checked: false, line: 1 },
+    ]);
+  });
 });
 
 describe("toggleTaskListItem", () => {
@@ -114,6 +146,20 @@ describe("toggleTaskListItem", () => {
   it("supports ordered-list task markers", () => {
     expect(toggleTaskListItem("1. [ ] step one", 0)).toBe(
       "1. [x] step one",
+    );
+  });
+
+  it("does not flip task-shaped lines inside indented code blocks", () => {
+    const src = [
+      "    - [ ] in indented code block",
+      "- [ ] real task",
+    ].join("\n");
+    // Index 0 is the real task on line 1, not the code-block line.
+    expect(toggleTaskListItem(src, 0)).toBe(
+      [
+        "    - [ ] in indented code block",
+        "- [x] real task",
+      ].join("\n"),
     );
   });
 
@@ -230,6 +276,21 @@ describe("moveTaskListItem", () => {
         "- [ ] outer first",
         "  - [ ] inner a",
         "  - [ ] inner b",
+      ].join("\n"),
+    );
+  });
+
+  it("does not see indented-code task-shaped lines as targets", () => {
+    const src = [
+      "    - [ ] in indented code block",
+      "- [ ] real first",
+      "- [ ] real second",
+    ].join("\n");
+    expect(moveTaskListItem(src, 0, 1)).toBe(
+      [
+        "    - [ ] in indented code block",
+        "- [ ] real second",
+        "- [ ] real first",
       ].join("\n"),
     );
   });

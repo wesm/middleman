@@ -595,13 +595,19 @@
     name: string;
     number: number;
     body: string;
+    provider: string;
+    platformHost?: string | undefined;
+    repoPath: string;
   };
   let bodySaveTimeout: ReturnType<typeof setTimeout> | null = null;
   let pendingBodySave: PendingBodySave | null = null;
   const BODY_SAVE_DEBOUNCE_MS = 400;
 
   function scheduleBodySave(body: string): void {
-    pendingBodySave = { owner, name, number, body };
+    pendingBodySave = {
+      owner, name, number, body,
+      provider, platformHost, repoPath,
+    };
     if (bodySaveTimeout !== null) clearTimeout(bodySaveTimeout);
     bodySaveTimeout = setTimeout(() => {
       flushBodySave();
@@ -618,6 +624,11 @@
     if (target === null) return;
     void detailStore.savePRBodyInBackground(
       target.owner, target.name, target.number, target.body,
+      {
+        provider: target.provider,
+        platformHost: target.platformHost,
+        repoPath: target.repoPath,
+      },
     );
   }
 

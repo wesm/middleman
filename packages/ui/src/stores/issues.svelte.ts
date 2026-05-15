@@ -96,11 +96,17 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   let detailSyncing = $state(false);
   let detailError = $state<string | null>(null);
   let issueDetailLoaded = $state(false);
-  // Tracks whether the local issue body has been edited since the
-  // last server confirmation. While set, background sync paths
-  // preserve the local body so a poll can't revert a pending
-  // optimistic checkbox/reorder edit.
-  let unsavedLocalBody = false;
+  // Tracks the issue (if any) whose local body has been edited since
+  // the last server confirmation. While set, background sync paths
+  // preserve the local body for THIS specific issue — a poll on a
+  // different issue is unaffected, and navigating away doesn't
+  // strand the flag on the wrong target.
+  type UnsavedIssueTarget = {
+    owner: string;
+    name: string;
+    number: number;
+  };
+  let unsavedLocalBody = $state<UnsavedIssueTarget | null>(null);
   let detailPollHandle: ReturnType<typeof setInterval> | null = null;
   let issueSyncGeneration = 0;
   let activeDetailLoad: {
@@ -246,6 +252,13 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     if (!unsavedLocalBody) return next;
     if (!issueDetail) return next;
     if (
+      unsavedLocalBody.owner !== next.repo_owner ||
+      unsavedLocalBody.name !== next.repo_name ||
+      unsavedLocalBody.number !== next.issue?.Number
+    ) {
+      return next;
+    }
+    if (
       issueDetail.repo_owner !== next.repo_owner ||
       issueDetail.repo_name !== next.repo_name ||
       issueDetail.issue?.Number !== next.issue?.Number
@@ -259,7 +272,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   }
 
   function hasUnsavedLocalBody(): boolean {
-    return unsavedLocalBody;
+    return unsavedLocalBody !== null;
   }
 
   function currentIssuePlatformHost(
@@ -565,7 +578,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     detailSyncing = false;
     detailError = null;
     issueDetailLoaded = false;
-    unsavedLocalBody = false;
+    unsavedLocalBody = null;
   }
 
   async function submitIssueComment(
@@ -666,7 +679,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     ) {
       return;
     }
-    unsavedLocalBody = true;
+    unsavedLocalBody = { owner, name, number };
     issueDetail = {
       ...issueDetail,
       issue: { ...issueDetail.issue, Body: body },
@@ -676,21 +689,23 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   // Fire-and-forget PATCH for the issue body. Does NOT apply an
   // optimistic update or revert on failure — the caller already owns
   // local state. On error, detailError surfaces a banner.
+  //
+  // The caller passes the full route ref so the PATCH always targets
+  // the captured issue even if the user has since navigated away.
+  // Only the response is gated on the currently displayed detail.
   async function saveIssueBodyInBackground(
     owner: string,
     name: string,
     number: number,
     body: string,
+    routeRef: {
+      provider: string;
+      platformHost?: string | undefined;
+      repoPath: string;
+    },
   ): Promise<void> {
-    if (!issueDetail) return;
-    if (
-      issueDetail.repo_owner !== owner ||
-      issueDetail.repo_name !== name ||
-      issueDetail.issue.Number !== number
-    ) {
-      return;
-    }
-    const ref = currentIssueDetailRef(owner, name, number);
+    const ref = issueDetailRequestRef(owner, name, number, routeRef);
+    let succeeded = false;
     try {
       const { data, error: requestError } =
         await apiClient.PATCH(
@@ -710,10 +725,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           apiErrorMessage(requestError, "failed to update issue"),
         );
       }
+      succeeded = true;
       // Only adopt the server-canonical issue when the user is still
       // viewing the same issue AND no newer toggle has shifted the
-      // local body away from what we just persisted. When it does
-      // match, the local edit has been confirmed so the flag clears.
+      // local body away from what we just persisted.
       if (
         data &&
         issueDetail &&
@@ -723,11 +738,22 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         issueDetail.issue.Body === body
       ) {
         issueDetail = data as IssueDetail;
-        unsavedLocalBody = false;
       }
     } catch (err) {
       detailError =
         err instanceof Error ? err.message : String(err);
+    }
+    // On a successful save, the captured target is now in sync with
+    // the server. Clear the unsaved flag if it pointed here, even
+    // when the user has since navigated away.
+    if (
+      succeeded &&
+      unsavedLocalBody &&
+      unsavedLocalBody.owner === owner &&
+      unsavedLocalBody.name === name &&
+      unsavedLocalBody.number === number
+    ) {
+      unsavedLocalBody = null;
     }
     refreshIssuesIfActive().catch(() => {});
   }

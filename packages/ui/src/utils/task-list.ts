@@ -9,6 +9,7 @@
 // inside a fenced code block is ignored so `[ ]` shown in code samples
 // doesn't shift indices.
 const TASK_LINE = /^([\t ]*(?:[-*+]|\d+\.)[\t ]+\[)([ xX])(\])/;
+const BULLET_LINE = /^[\t ]*(?:[-*+]|\d+\.)[\t ]+/;
 const FENCE_LINE = /^[\t ]*(```|~~~)/;
 
 export interface TaskItem {
@@ -20,34 +21,100 @@ export interface TaskItem {
   line: number;
 }
 
-export function listTaskItems(source: string): TaskItem[] {
-  if (!source) return [];
-  const out: TaskItem[] = [];
-  let inFence = false;
-  let count = 0;
-  const lines = source.split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!;
-    if (FENCE_LINE.test(line)) {
-      inFence = !inFence;
-      continue;
-    }
-    if (inFence) continue;
-    const m = line.match(TASK_LINE);
-    if (!m) continue;
-    out.push({
-      index: count++,
-      checked: m[2] !== " ",
-      line: i,
-    });
-  }
-  return out;
-}
-
 function leadingWhitespaceCount(line: string): number {
   let i = 0;
   while (i < line.length && (line[i] === " " || line[i] === "\t")) i++;
   return i;
+}
+
+// CommonMark indented code block start: 4+ leading spaces or a leading
+// tab, at a position where a code block can begin (i.e. outside a list
+// context). Inside a list, the same indentation continues the list
+// item rather than starting a code block.
+function isIndentedCodeStart(line: string): boolean {
+  if (line.startsWith("\t")) return true;
+  if (line.startsWith("    ")) return true;
+  return false;
+}
+
+type TaskLineVisitor = (
+  match: RegExpMatchArray,
+  lineIndex: number,
+  taskIndex: number,
+) => void;
+
+// Walks `lines` and invokes `visitor` for every task-list line that
+// the markdown renderer would treat as such. Skips lines inside
+// fenced code blocks and top-level indented code blocks. List
+// context is tracked so an indented task line under a parent bullet
+// is recognized as a nested task rather than a code-block line.
+function walkTaskLines(lines: string[], visitor: TaskLineVisitor): void {
+  let inFence = false;
+  let listIndent: number | null = null;
+  let taskIndex = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (FENCE_LINE.test(line)) {
+      inFence = !inFence;
+      // A fenced block at the same indent as the list bullet ends
+      // the list — Markdown treats the fence as block-level content.
+      if (!inFence && listIndent !== null
+        && leadingWhitespaceCount(line) <= listIndent) {
+        listIndent = null;
+      }
+      continue;
+    }
+    if (inFence) continue;
+    if (line.trim() === "") continue;
+
+    const indent = leadingWhitespaceCount(line);
+    // Outside a list, a 4-space (or tab) indent opens a code block:
+    // any task-shaped line in it is plain code, not a task.
+    if (listIndent === null && isIndentedCodeStart(line)) continue;
+
+    // Dedent out of the list when a non-blank line sits at or below
+    // the list bullet indent and isn't itself a bullet at that level.
+    if (
+      listIndent !== null &&
+      indent < listIndent
+    ) {
+      listIndent = null;
+    }
+
+    const taskMatch = line.match(TASK_LINE);
+    if (taskMatch) {
+      visitor(taskMatch, i, taskIndex++);
+      if (listIndent === null || indent < listIndent) {
+        listIndent = indent;
+      }
+      continue;
+    }
+
+    // Non-task bullet still establishes/preserves list context so
+    // a subsequent indented task line is recognized as nested.
+    if (BULLET_LINE.test(line)) {
+      if (listIndent === null) listIndent = indent;
+      continue;
+    }
+
+    // Non-bullet line at or below list indent terminates the list.
+    if (listIndent !== null && indent <= listIndent) {
+      listIndent = null;
+    }
+  }
+}
+
+export function listTaskItems(source: string): TaskItem[] {
+  if (!source) return [];
+  const out: TaskItem[] = [];
+  walkTaskLines(source.split("\n"), (m, lineIndex, taskIndex) => {
+    out.push({
+      index: taskIndex,
+      checked: m[2] !== " ",
+      line: lineIndex,
+    });
+  });
+  return out;
 }
 
 // A task block spans the task line plus any immediately-following
@@ -85,16 +152,9 @@ export function moveTaskListItem(
   if (fromIndex < 0 || toIndex < 0) return source;
   const lines = source.split("\n");
   const taskLines: number[] = [];
-  let inFence = false;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!;
-    if (FENCE_LINE.test(line)) {
-      inFence = !inFence;
-      continue;
-    }
-    if (inFence) continue;
-    if (TASK_LINE.test(line)) taskLines.push(i);
-  }
+  walkTaskLines(lines, (_m, lineIndex) => {
+    taskLines.push(lineIndex);
+  });
   if (fromIndex >= taskLines.length) return source;
   if (toIndex >= taskLines.length) return source;
   const fromStart = taskLines[fromIndex]!;
@@ -132,25 +192,18 @@ export function toggleTaskListItem(source: string, index: number): string {
   if (!source) return source;
   if (index < 0) return source;
   const lines = source.split("\n");
-  let inFence = false;
-  let count = 0;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!;
-    if (FENCE_LINE.test(line)) {
-      inFence = !inFence;
-      continue;
-    }
-    if (inFence) continue;
-    const m = line.match(TASK_LINE);
-    if (!m) continue;
-    if (count === index) {
-      const prefix = m[1]!;
-      const ch = m[2]!;
-      const next = ch === " " ? "x" : " ";
-      lines[i] = `${prefix}${next}${line.slice(prefix.length + 1)}`;
-      return lines.join("\n");
-    }
-    count++;
-  }
-  return source;
+  let result = source;
+  let mutated = false;
+  walkTaskLines(lines, (m, lineIndex, taskIndex) => {
+    if (mutated) return;
+    if (taskIndex !== index) return;
+    const prefix = m[1]!;
+    const ch = m[2]!;
+    const next = ch === " " ? "x" : " ";
+    const original = lines[lineIndex]!;
+    lines[lineIndex] = `${prefix}${next}${original.slice(prefix.length + 1)}`;
+    result = lines.join("\n");
+    mutated = true;
+  });
+  return result;
 }
