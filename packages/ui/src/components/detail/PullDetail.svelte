@@ -277,6 +277,13 @@
     titleDraft = "";
   }
 
+  function handleStarClick(): void {
+    if (stalePR) return;
+    const mr = currentPR();
+    if (!mr) return;
+    void detailStore.toggleDetailPRStar(owner, name, number, mr.Starred);
+  }
+
   async function saveTitle(): Promise<void> {
     if (stalePR) return;
     if (!currentCapabilities().state_mutation) return;
@@ -709,10 +716,7 @@
               <button
                 class="star-btn"
                 disabled={stalePR}
-                onclick={() => {
-                  if (stalePR) return;
-                  void detailStore.toggleDetailPRStar(owner, name, number, pr.Starred);
-                }}
+                onclick={handleStarClick}
                 title={pr.Starred ? "Unstar" : "Star"}
               >
                 {#if pr.Starred}

@@ -695,6 +695,10 @@ test.describe("PR detail stale-action gating", () => {
     // PR A is still on screen because B is held.
     await expect(page.locator(".detail-title")).toContainText(prA.Title);
 
+    const starBtn = page.locator(".pull-detail button.star-btn");
+    await expect(starBtn).toBeDisabled();
+    await starBtn.click({ force: true }).catch(() => {});
+
     // Close button must be disabled — clicking it must not fire
     // POST /github-state for PR B.
     const closeBtn = page.locator(".btn--close").first();
