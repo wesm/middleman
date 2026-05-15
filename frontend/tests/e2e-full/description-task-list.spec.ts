@@ -120,7 +120,7 @@ test.describe.serial("PR description task list", () => {
     const cb0Initial = await cb0.isChecked();
     const cb1Initial = await cb1.isChecked();
 
-    let patchCount = 0;
+    let patchRequests = 0;
     let releaseFirstPatch: () => void = () => undefined;
     const firstPatchHeld = new Promise<void>((resolve) => {
       releaseFirstPatch = resolve;
@@ -131,12 +131,25 @@ test.describe.serial("PR description task list", () => {
         await route.fallback();
         return;
       }
-      patchCount++;
-      if (patchCount === 1) {
+      patchRequests++;
+      if (patchRequests === 1) {
         await firstPatchHeld;
       }
       await route.continue();
     });
+    // Separate counter for completed responses — route.continue()
+    // returns before the server replies, so request counts alone
+    // can't tell us a PATCH has actually persisted.
+    let patchResponses = 0;
+    const onResponse = (resp: import("@playwright/test").Response) => {
+      if (
+        resp.request().method() === "PATCH"
+        && patchRoute.test(resp.url())
+      ) {
+        patchResponses++;
+      }
+    };
+    page.on("response", onResponse);
 
     // Toggle the first checkbox; debounce fires and starts PATCH A
     // (which the route intercept holds).
@@ -145,7 +158,7 @@ test.describe.serial("PR description task list", () => {
     // Wait past the 400ms debounce so PATCH A has been dispatched
     // and is now blocked on firstPatchHeld.
     await expect
-      .poll(() => patchCount, { timeout: 3_000 })
+      .poll(() => patchRequests, { timeout: 3_000 })
       .toBe(1);
 
     // Toggle the second checkbox while PATCH A is in flight. Its
@@ -156,16 +169,22 @@ test.describe.serial("PR description task list", () => {
     // Give the debounce a chance to fire and queue PATCH B. The
     // queue must hold it back until A returns.
     await page.waitForTimeout(800);
-    expect(patchCount).toBe(1);
+    expect(patchRequests).toBe(1);
+    expect(patchResponses).toBe(0);
 
     // Release PATCH A. The queue then drains and fires PATCH B
-    // with the latest body (both toggles).
+    // with the latest body (both toggles). Wait for BOTH PATCH
+    // responses to come back from the server before reloading,
+    // otherwise the reload could race the second save and see
+    // stale data.
     releaseFirstPatch();
-    await expect.poll(() => patchCount, { timeout: 5_000 }).toBe(2);
+    await expect.poll(() => patchResponses, { timeout: 5_000 }).toBe(2);
+    expect(patchRequests).toBe(2);
 
     // Reload and confirm BOTH toggles persisted server-side. If
     // serialization regressed (PATCH A overwrote B's body via an
     // out-of-order response), the second checkbox would revert.
+    page.off("response", onResponse);
     await page.unroute(patchRoute);
     await page.reload();
     const reloadedBody = page.locator(".body-section .markdown-body");
