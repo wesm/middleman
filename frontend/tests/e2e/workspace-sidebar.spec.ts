@@ -158,6 +158,10 @@ async function setupTerminalMocks(
       status: number;
       body?: unknown;
     }>;
+    workspaceDeleteResponses?: Array<{
+      status: number;
+      body?: unknown;
+    }>;
     workspaceRetryResponse?: {
       status: number;
       body?: unknown;
@@ -171,6 +175,9 @@ async function setupTerminalMocks(
   const rrStatus = opts?.roborevStatus ?? roborevStatus;
   const detailResponses = [
     ...(opts?.workspaceDetailResponses ?? []),
+  ];
+  const deleteResponses = [
+    ...(opts?.workspaceDeleteResponses ?? []),
   ];
   const runtime = JSON.parse(
     JSON.stringify(opts?.runtime ?? workspaceRuntime),
@@ -247,6 +254,15 @@ async function setupTerminalMocks(
         return;
       }
       // DELETE
+      const nextDelete = deleteResponses.shift();
+      if (nextDelete) {
+        await route.fulfill({
+          status: nextDelete.status,
+          contentType: "application/json",
+          body: JSON.stringify(nextDelete.body ?? {}),
+        });
+        return;
+      }
       await route.fulfill({ status: 204 });
     },
   );
@@ -621,6 +637,102 @@ test.describe("terminal state icons", () => {
         .click();
 
       await expect(page).toHaveURL(/\/workspaces$/);
+    },
+  );
+
+  test(
+    "force-delete prompt confirms and retries delete with force=true",
+    async ({ page }) => {
+      const deleteRequests: string[] = [];
+      page.on("request", (req) => {
+        if (
+          req.method() === "DELETE" &&
+          req.url().includes("/api/v1/workspaces/ws-123")
+        ) {
+          deleteRequests.push(req.url());
+        }
+      });
+
+      await setupTerminalMocks(page, {
+        workspaceDeleteResponses: [
+          {
+            status: 409,
+            body: {
+              detail: "Worktree has uncommitted changes.",
+            },
+          },
+          { status: 204 },
+        ],
+      });
+
+      await page.goto("/terminal/ws-123");
+
+      await page
+        .locator(".header-bar")
+        .getByRole("button", { name: "Delete" })
+        .click();
+
+      const dialog = page.getByRole("dialog", {
+        name: "Force delete workspace?",
+      });
+      await expect(dialog).toBeVisible();
+      await expect(dialog).toContainText(
+        "Worktree has uncommitted changes.",
+      );
+
+      await dialog
+        .getByRole("button", { name: "Force delete" })
+        .click();
+
+      await expect(page).toHaveURL(/\/workspaces$/);
+      expect(deleteRequests).toHaveLength(2);
+      expect(deleteRequests[1]).toContain("force=true");
+    },
+  );
+
+  test(
+    "force-delete prompt cancel keeps the workspace and the modal closes",
+    async ({ page }) => {
+      const deleteRequests: string[] = [];
+      page.on("request", (req) => {
+        if (
+          req.method() === "DELETE" &&
+          req.url().includes("/api/v1/workspaces/ws-123")
+        ) {
+          deleteRequests.push(req.url());
+        }
+      });
+
+      await setupTerminalMocks(page, {
+        workspaceDeleteResponses: [
+          {
+            status: 409,
+            body: {
+              detail: "Worktree has uncommitted changes.",
+            },
+          },
+        ],
+      });
+
+      await page.goto("/terminal/ws-123");
+
+      await page
+        .locator(".header-bar")
+        .getByRole("button", { name: "Delete" })
+        .click();
+
+      const dialog = page.getByRole("dialog", {
+        name: "Force delete workspace?",
+      });
+      await expect(dialog).toBeVisible();
+
+      await dialog
+        .getByRole("button", { name: "Cancel" })
+        .click();
+
+      await expect(dialog).toBeHidden();
+      await expect(page).not.toHaveURL(/\/workspaces$/);
+      expect(deleteRequests).toHaveLength(1);
     },
   );
 });
