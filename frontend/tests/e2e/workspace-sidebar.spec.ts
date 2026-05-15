@@ -958,6 +958,47 @@ test.describe("terminal state icons", () => {
       ).toBeHidden();
     },
   );
+
+  test(
+    "in-flight successful DELETE does not yank the user off the route they chose",
+    async ({ page }) => {
+      await setupTerminalMocks(page);
+
+      await page.route(
+        (url) =>
+          url.pathname === "/api/v1/workspaces/ws-123",
+        async (route) => {
+          if (route.request().method() !== "DELETE") {
+            await route.fallback();
+            return;
+          }
+          // Delay long enough for the user to navigate away
+          // before the 204 lands.
+          await new Promise((resolve) => setTimeout(resolve, 400));
+          await route.fulfill({ status: 204 });
+        },
+      );
+
+      await page.goto("/terminal/ws-123");
+
+      await page
+        .locator(".header-bar")
+        .getByRole("button", { name: "Delete" })
+        .click();
+
+      // Without the post-await guard in handleDelete, the stale
+      // 204 would call navigate("/workspaces") and the user would
+      // be yanked away from /pulls.
+      await page.evaluate(() => {
+        history.pushState(null, "", "/pulls");
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      });
+
+      await page.waitForTimeout(700);
+
+      await expect(page).toHaveURL(/\/pulls$/);
+    },
+  );
 });
 
 test.describe("workspace launch home", () => {
