@@ -113,6 +113,12 @@
   let forcePromptForId = $state<string | null>(null);
   let forceDeleting = $state(false);
   let cancelForceBtnEl = $state<HTMLButtonElement | null>(null);
+  // Bumps on every workspace route change. Async delete callbacks
+  // capture this at request time and bail out if it has moved on,
+  // covering the case where the user leaves and returns to the same
+  // workspace before an in-flight response settles — an id check
+  // alone would let a stale 409 reopen the prompt.
+  let workspaceGen = 0;
   let runtimeError = $state<string | null>(null);
   let pollTimer = $state<ReturnType<
     typeof setInterval
@@ -779,6 +785,7 @@
     if (actionsBlocked) return;
     actionError = null;
     const targetId = workspaceId;
+    const targetGen = workspaceGen;
     // Capture the trigger synchronously: the click handler runs
     // before `inert` is applied to .terminal-view, so this is the
     // last point we can read the originating focused element. By
@@ -797,8 +804,13 @@
     // The user can navigate away while the request is in flight;
     // settling state for a workspace they're no longer viewing
     // would open a stale prompt or yank them out of their new
-    // context.
-    if (targetId !== workspaceId) return;
+    // context. The generation check also covers an A→B→A round
+    // trip where the id alone would compare equal.
+    if (
+      targetId !== workspaceId ||
+      targetGen !== workspaceGen
+    )
+      return;
     if (response.status === 409) {
       previouslyFocusedEl = triggerEl;
       forcePromptForId = targetId;
@@ -821,6 +833,7 @@
     if (forceDeleting) return;
     const targetId = forcePromptForId;
     if (targetId === null) return;
+    const targetGen = workspaceGen;
     forceDeleting = true;
     actionError = null;
     try {
@@ -837,7 +850,11 @@
       // completion either way; once the user has moved on we just
       // drop the response on the floor so navigate() doesn't pull
       // them away from their new workspace.
-      if (targetId !== workspaceId) return;
+      if (
+        targetId !== workspaceId ||
+        targetGen !== workspaceGen
+      )
+        return;
       if (!response.ok && response.status !== 204) {
         actionError = apiErrorMessage(
           error,
@@ -955,9 +972,12 @@
     // A 409 force-delete prompt is bound to the workspace that
     // produced it. Dismiss it on any route change so the user
     // can't confirm a destructive action targeting a workspace
-    // they're no longer looking at.
+    // they're no longer looking at. Bumping the generation token
+    // also invalidates any in-flight DELETE callback that captured
+    // the previous value.
     forcePromptMessage = null;
     forcePromptForId = null;
+    workspaceGen += 1;
     tmuxTerminalMounted = restoredTab === "tmux";
     mountedSessionKeys = restoredTab.startsWith("session:")
       ? [restoredTab.slice("session:".length)]

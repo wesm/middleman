@@ -899,6 +899,65 @@ test.describe("terminal state icons", () => {
       ).toBeHidden();
     },
   );
+
+  test(
+    "stale 409 does not reopen the prompt after the user leaves and returns to the same workspace",
+    async ({ page }) => {
+      await setupTerminalMocks(page);
+
+      await page.route(
+        (url) =>
+          url.pathname === "/api/v1/workspaces/ws-123",
+        async (route) => {
+          if (route.request().method() !== "DELETE") {
+            await route.fallback();
+            return;
+          }
+          // Hold the response long enough for the test to navigate
+          // away and back before it lands.
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          await route.fulfill({
+            status: 409,
+            contentType: "application/json",
+            body: JSON.stringify({
+              detail: "Worktree has uncommitted changes.",
+            }),
+          });
+        },
+      );
+
+      await page.goto("/terminal/ws-123");
+
+      await page
+        .locator(".header-bar")
+        .getByRole("button", { name: "Delete" })
+        .click();
+
+      // A round-trip back to the same workspace would defeat an
+      // id-only guard: the captured targetId matches the current
+      // workspaceId, but the prompt should still not reappear
+      // because the user has explicitly left and returned. Two
+      // separate evaluate calls mirror real user clicks — each
+      // pops an event-loop turn so Svelte's effects flush between
+      // them and the generation counter advances.
+      await page.evaluate(() => {
+        history.pushState(null, "", "/workspaces");
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      });
+      await page.evaluate(() => {
+        history.pushState(null, "", "/terminal/ws-123");
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      });
+
+      await page.waitForTimeout(800);
+
+      await expect(
+        page.getByRole("dialog", {
+          name: "Force delete workspace?",
+        }),
+      ).toBeHidden();
+    },
+  );
 });
 
 test.describe("workspace launch home", () => {
