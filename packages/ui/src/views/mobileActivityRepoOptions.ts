@@ -23,5 +23,10 @@ export function buildMobileActivityRepoOptions(
     seen.add(value);
     options.push({ value, label: value });
   }
-  return options;
+  return options.sort((left, right) =>
+    left.label.localeCompare(right.label, undefined, {
+      sensitivity: "base",
+      numeric: true,
+    }),
+  );
 }

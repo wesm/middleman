@@ -121,8 +121,6 @@
     return result;
   });
 
-  const activeThreadCount = $derived(groups.length);
-  const eventCount = $derived(displayItems.length);
   const visibleGroups = $derived(groups.slice(0, 30));
 
   function applyFilters(): void {
@@ -308,16 +306,6 @@
       >Hide bots</button>
     </div>
 
-    <section class="mobile-activity-summary" aria-label="Activity summary">
-      <div class="mobile-activity-metric">
-        <strong>{activeThreadCount}</strong>
-        <span>active threads</span>
-      </div>
-      <div class="mobile-activity-metric">
-        <strong>{eventCount}</strong>
-        <span>events</span>
-      </div>
-    </section>
 
     {#if activity.getActivityError()}
       <div class="mobile-activity-error">{activity.getActivityError()}</div>
@@ -544,39 +532,6 @@
     border-color: transparent;
   }
 
-  .mobile-activity-summary {
-    display: grid;
-    grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
-    gap: var(--mobile-space-sm);
-    margin: var(--mobile-space-2xs) 0 var(--mobile-space-md);
-  }
-
-  .mobile-activity-metric {
-    min-height: calc(var(--mobile-hit-target) * 2);
-    padding: var(--mobile-space-md);
-    border: thin solid var(--border-default);
-    border-radius: var(--mobile-radius-md);
-    background: linear-gradient(
-      145deg,
-      color-mix(in srgb, var(--accent-blue) 17%, transparent),
-      color-mix(in srgb, var(--bg-surface) 82%, transparent)
-    );
-  }
-
-  .mobile-activity-metric strong {
-    display: block;
-    color: var(--text-primary);
-    font-size: var(--font-size-mobile-metric);
-    line-height: 1;
-    letter-spacing: -0.04em;
-  }
-
-  .mobile-activity-metric span {
-    display: block;
-    margin-top: var(--mobile-space-2xs);
-    color: var(--text-muted);
-    font-size: var(--font-size-mobile-sm);
-  }
 
   .mobile-activity-card-list {
     display: grid;

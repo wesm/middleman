@@ -21,8 +21,22 @@ describe("buildMobileActivityRepoOptions", () => {
     ]);
 
     expect(options).toEqual([
-      { value: "github.com/acme/widgets", label: "github.com/acme/widgets" },
       { value: "ghe.example.com/acme/widgets", label: "ghe.example.com/acme/widgets" },
+      { value: "github.com/acme/widgets", label: "github.com/acme/widgets" },
+    ]);
+  });
+
+  it("sorts concrete repo options by label", () => {
+    const options = buildMobileActivityRepoOptions([
+      { ...baseRepo, platform_host: "github.com", repo_path: "zeta/widgets" },
+      { ...baseRepo, platform_host: "github.com", repo_path: "acme/widgets" },
+      { ...baseRepo, platform_host: "ghe.example.com", repo_path: "acme/api" },
+    ]);
+
+    expect(options.map((option) => option.label)).toEqual([
+      "ghe.example.com/acme/api",
+      "github.com/acme/widgets",
+      "github.com/zeta/widgets",
     ]);
   });
 
