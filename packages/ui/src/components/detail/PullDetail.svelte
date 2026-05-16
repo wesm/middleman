@@ -1250,6 +1250,9 @@
           </div>
         {/if}
         {#if labelPickerOpen}
+          {#if labelPickerLaunchedFromActionMenu}
+            <div class="label-editor-backdrop" aria-hidden="true"></div>
+          {/if}
           <div class="label-editor-popover" style={labelPickerStyle}>
             <LabelPicker
               catalogLabels={labelCatalog}
@@ -1797,6 +1800,13 @@
   .label-editor-popover {
     position: fixed;
     z-index: 60;
+  }
+
+  .label-editor-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    background: rgba(128, 128, 128, 0.3);
   }
 
   .detail-header {
