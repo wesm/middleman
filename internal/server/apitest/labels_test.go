@@ -193,3 +193,23 @@ func TestAPISetIssueLabelsRejectsLabelsOutsideCatalog(t *testing.T) {
 	})
 	require.Equal(http.StatusBadRequest, rr.Code)
 }
+
+func TestAPISetPullLabelsRejectsMissingLabelsField(t *testing.T) {
+	require := require.New(t)
+	srv, database, _, _ := setupLabelTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+	seedRepoLabelCatalog(t, database, "acme", "widget")
+
+	rr := doLabelAPIRequest(t, srv, http.MethodPut, "/api/v1/pulls/github/acme/widget/1/labels", map[string]any{})
+	require.Equal(http.StatusUnprocessableEntity, rr.Code)
+}
+
+func TestAPISetPullLabelsRejectsNullLabels(t *testing.T) {
+	require := require.New(t)
+	srv, database, _, _ := setupLabelTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+	seedRepoLabelCatalog(t, database, "acme", "widget")
+
+	rr := doLabelAPIRequest(t, srv, http.MethodPut, "/api/v1/pulls/github/acme/widget/1/labels", map[string]any{"labels": nil})
+	require.Equal(http.StatusBadRequest, rr.Code)
+}

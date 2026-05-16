@@ -39,6 +39,7 @@
   import Chip from "../shared/Chip.svelte";
   import GitHubLabels from "../shared/GitHubLabels.svelte";
   import LabelPicker from "./LabelPicker.svelte";
+  import { nextCatalogLabelNames } from "./labelSelection.js";
   import DiffFilesLayout from "../diff/DiffFilesLayout.svelte";
   import CIStatus from "./CIStatus.svelte";
   import DiffSummaryChip from "./DiffSummaryChip.svelte";
@@ -589,10 +590,7 @@
     if (pendingLabel !== null) return;
     pendingLabel = labelName;
     labelPickerError = null;
-    const currentNames = labels.map((label) => label.name);
-    const nextNames = currentNames.includes(labelName)
-      ? currentNames.filter((name) => name !== labelName)
-      : [...currentNames, labelName];
+    const nextNames = nextCatalogLabelNames(labels, labelCatalog, labelName);
     try {
       await detailStore.setPullLabels(owner, name, number, nextNames);
     } catch (err) {

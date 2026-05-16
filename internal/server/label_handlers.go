@@ -33,7 +33,7 @@ type setIssueLabelsInput struct {
 }
 
 type setLabelsRequest struct {
-	Labels []string `json:"labels"`
+	Labels *[]string `json:"labels" required:"true"`
 }
 
 type repoLabelsResponse struct {
@@ -47,6 +47,13 @@ type repoLabelsResponse struct {
 
 type itemLabelsResponse struct {
 	Labels []db.Label `json:"labels"`
+}
+
+func (r setLabelsRequest) labelNames() []string {
+	if r.Labels == nil {
+		return nil
+	}
+	return *r.Labels
 }
 
 func (s *Server) listRepoLabels(
@@ -95,7 +102,7 @@ func (s *Server) setPullLabels(
 		input.PlatformHost,
 		input.Owner,
 		input.Name,
-		input.Body.Labels,
+		input.Body.labelNames(),
 	)
 	if err != nil {
 		return nil, err
@@ -139,7 +146,7 @@ func (s *Server) setIssueLabels(
 		input.PlatformHost,
 		input.Owner,
 		input.Name,
-		input.Body.Labels,
+		input.Body.labelNames(),
 	)
 	if err != nil {
 		return nil, err
@@ -191,6 +198,9 @@ func (s *Server) resolveRequestedLabelNames(
 	}
 	if !capabilityEnabled(caps, capabilityLabelMutation) {
 		return nil, nil, unsupportedCapabilityProblem(*repo, capabilityLabelMutation)
+	}
+	if names == nil {
+		return nil, nil, huma.Error400BadRequest("labels must be an array")
 	}
 
 	catalog, freshness, err := s.db.ListRepoLabelCatalog(ctx, repo.ID)

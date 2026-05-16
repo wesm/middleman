@@ -18,6 +18,7 @@
   import Chip from "../shared/Chip.svelte";
   import GitHubLabels from "../shared/GitHubLabels.svelte";
   import LabelPicker from "./LabelPicker.svelte";
+  import { nextCatalogLabelNames } from "./labelSelection.js";
   import CopyItemNumber from "./CopyItemNumber.svelte";
   import MonitorUpIcon from "@lucide/svelte/icons/monitor-up";
   import PackagePlusIcon from "@lucide/svelte/icons/package-plus";
@@ -201,10 +202,7 @@
     const currentLabels = issues.getIssueDetail()?.issue.labels ?? [];
     pendingLabel = labelName;
     labelPickerError = null;
-    const currentNames = currentLabels.map((label) => label.name);
-    const nextNames = currentNames.includes(labelName)
-      ? currentNames.filter((name) => name !== labelName)
-      : [...currentNames, labelName];
+    const nextNames = nextCatalogLabelNames(currentLabels, labelCatalog, labelName);
     try {
       await issues.setIssueLabels(owner, name, number, nextNames);
     } catch (err) {
