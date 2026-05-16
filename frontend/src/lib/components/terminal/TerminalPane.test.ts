@@ -198,7 +198,7 @@ describe("TerminalPane", () => {
     expect(xtermInstances[0]!.clearTextureAtlas).not.toHaveBeenCalled();
   });
 
-  it("resizes without rebuilding the WebGL atlas after container resize", async () => {
+  it("repaints after container resize without rebuilding the WebGL atlas", async () => {
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
 
     await waitFor(() => expect(resizeObserverCallbacks).toHaveLength(1));
@@ -213,7 +213,7 @@ describe("TerminalPane", () => {
 
     expect(fitAddon.fit).toHaveBeenCalled();
     expect(terminal.clearTextureAtlas).not.toHaveBeenCalled();
-    expect(terminal.refresh).not.toHaveBeenCalled();
+    expect(terminal.refresh).toHaveBeenCalledWith(0, 23);
     expect(mockSockets[0]!.sent).toContain(
       JSON.stringify({ type: "resize", cols: 80, rows: 24 }),
     );

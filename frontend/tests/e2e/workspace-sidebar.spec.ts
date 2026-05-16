@@ -1246,6 +1246,7 @@ test.describe("workspace launch home", () => {
             value: recordedSockets,
           },
         );
+        const NativeWebSocket = window.WebSocket;
 
         class MockTerminalWebSocket extends EventTarget {
           static CONNECTING = 0;
@@ -1262,11 +1263,17 @@ test.describe("workspace launch home", () => {
           protocol = "";
           readyState = MockTerminalWebSocket.OPEN;
           readonly url: string;
-          private readonly record: RecordedSocket;
+          private readonly record?: RecordedSocket;
 
-          constructor(url: string | URL) {
+          constructor(
+            url: string | URL,
+            protocols?: string | string[],
+          ) {
             super();
             this.url = String(url);
+            if (!this.url.includes("/ws/v1/workspaces/")) {
+              return new NativeWebSocket(url, protocols);
+            }
             this.record = { url: this.url, sent: [] };
             recordedSockets.push(this.record);
             queueMicrotask(() => {
@@ -1284,6 +1291,7 @@ test.describe("workspace launch home", () => {
           }
 
           send(data: unknown): void {
+            if (!this.record) return;
             if (typeof data === "string") {
               this.record.sent.push(data);
               return;

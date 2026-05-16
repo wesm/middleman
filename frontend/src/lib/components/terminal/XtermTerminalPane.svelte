@@ -188,6 +188,7 @@
     if (!fitAddon || !terminal) return;
 
     fitAddon.fit();
+    terminal.refresh(0, Math.max(0, terminal.rows - 1));
     sendResize(terminal.cols, terminal.rows);
   }
 
