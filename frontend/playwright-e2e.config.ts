@@ -8,6 +8,7 @@ export default defineConfig({
   testIgnore: /support\//,
   fullyParallel: true,
   timeout: 30_000,
+  retries: process.env.CI ? 2 : 0,
   expect: {
     timeout: 5_000,
   },

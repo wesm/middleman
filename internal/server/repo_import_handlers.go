@@ -267,6 +267,18 @@ func buildRepoPreviewRows(
 	owner, pattern string,
 	host string,
 ) ([]repoPreviewRow, error) {
+	if !repoImportPatternHasGlob(pattern) {
+		repo, err := client.GetRepository(ctx, owner, pattern)
+		if err == nil {
+			if repo.GetArchived() {
+				return []repoPreviewRow{}, nil
+			}
+			return []repoPreviewRow{
+				buildRepoPreviewRow(repo, owner, host, exactConfigured),
+			}, nil
+		}
+	}
+
 	repos, err := client.ListRepositoriesByOwner(ctx, owner)
 	if err != nil {
 		return nil, fmt.Errorf(
@@ -289,12 +301,6 @@ func buildRepoPreviewRows(
 		}
 		rows = append(rows, buildRepoPreviewRow(repo, owner, host, exactConfigured))
 	}
-	if len(rows) == 0 && !repoImportPatternHasGlob(pattern) {
-		repo, err := client.GetRepository(ctx, owner, pattern)
-		if err == nil && !repo.GetArchived() {
-			rows = append(rows, buildRepoPreviewRow(repo, owner, host, exactConfigured))
-		}
-	}
 	return rows, nil
 }
 
@@ -306,6 +312,26 @@ func buildPlatformRepoPreviewRows(
 	exactConfigured map[string]struct{},
 	owner, pattern string,
 ) ([]repoPreviewRow, error) {
+	if !repoImportPatternHasGlob(pattern) {
+		repo, err := reader.GetRepository(ctx, platform.RepoRef{
+			Platform: provider,
+			Host:     host,
+			Owner:    owner,
+			Name:     pattern,
+			RepoPath: owner + "/" + pattern,
+		})
+		if err == nil {
+			if repo.Archived {
+				return []repoPreviewRow{}, nil
+			}
+			return []repoPreviewRow{
+				buildPlatformRepoPreviewRow(
+					repo, provider, host, owner, exactConfigured,
+				),
+			}, nil
+		}
+	}
+
 	repos, err := reader.ListRepositories(ctx, owner, platform.RepositoryListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf(
@@ -332,20 +358,6 @@ func buildPlatformRepoPreviewRows(
 		rows = append(rows, buildPlatformRepoPreviewRow(
 			repo, provider, host, owner, exactConfigured,
 		))
-	}
-	if len(rows) == 0 && !repoImportPatternHasGlob(pattern) {
-		repo, err := reader.GetRepository(ctx, platform.RepoRef{
-			Platform: provider,
-			Host:     host,
-			Owner:    owner,
-			Name:     pattern,
-			RepoPath: owner + "/" + pattern,
-		})
-		if err == nil && !repo.Archived {
-			rows = append(rows, buildPlatformRepoPreviewRow(
-				repo, provider, host, owner, exactConfigured,
-			))
-		}
 	}
 	return rows, nil
 }
