@@ -312,8 +312,7 @@
   function onDocumentMousedown(e: MouseEvent): void {
     if (!labelPickerOpen) return;
     const target = e.target as Node;
-    const picker = document.querySelector(".label-editor-popover");
-    if (!picker?.contains(target) && !labelPickerAnchor?.contains(target)) {
+    if (!labelPickerPopover?.contains(target) && !labelPickerAnchor?.contains(target)) {
       closeLabelPicker();
     }
   }

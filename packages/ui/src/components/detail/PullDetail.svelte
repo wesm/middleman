@@ -735,8 +735,7 @@
       closeActionMenu();
     }
     if (labelPickerOpen) {
-      const picker = document.querySelector(".label-editor-popover");
-      if (!picker?.contains(target) && !labelPickerAnchor?.contains(target)) {
+      if (!labelPickerPopover?.contains(target) && !labelPickerAnchor?.contains(target)) {
         closeLabelPicker();
       }
     }
