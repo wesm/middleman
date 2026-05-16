@@ -18,6 +18,7 @@
   import Chip from "../shared/Chip.svelte";
   import GitHubLabels from "../shared/GitHubLabels.svelte";
   import LabelPicker from "./LabelPicker.svelte";
+  import { loadLabelCatalogWithRefresh } from "./labelCatalogRefresh.js";
   import { nextCatalogLabelNames } from "./labelSelection.js";
   import CopyItemNumber from "./CopyItemNumber.svelte";
   import MonitorUpIcon from "@lucide/svelte/icons/monitor-up";
@@ -182,18 +183,31 @@
     labelPickerError = null;
     labelCatalogSyncing = true;
     try {
-      const { data, error } = await client.GET(
-        providerRepoPath(routeRef, "/labels"),
-        { params: { path: providerRouteParams(routeRef) } },
-      );
-      if (error) {
-        throw new Error(error.detail ?? error.title ?? "failed to load labels");
-      }
-      labelCatalog = (data?.labels ?? []) as Label[];
+      await loadLabelCatalogWithRefresh({
+        isActive: () => labelPickerOpen,
+        loadOnce: async () => {
+          const { data, error } = await client.GET(
+            providerRepoPath(routeRef, "/labels"),
+            { params: { path: providerRouteParams(routeRef) } },
+          );
+          if (error) {
+            throw new Error(error.detail ?? error.title ?? "failed to load labels");
+          }
+          return {
+            labels: (data?.labels ?? []) as Label[],
+            stale: data?.stale ?? false,
+            syncing: data?.syncing ?? false,
+          };
+        },
+        onUpdate: (catalog) => {
+          labelCatalog = catalog.labels;
+          labelCatalogSyncing = Boolean(catalog.stale || catalog.syncing);
+        },
+      });
     } catch (err) {
       labelPickerError = err instanceof Error ? err.message : String(err);
     } finally {
-      labelCatalogSyncing = false;
+      if (labelPickerOpen) labelCatalogSyncing = false;
     }
   }
 
