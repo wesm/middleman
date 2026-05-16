@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
   import { providerItemPath, providerRepoPath, providerRouteParams } from "../../api/provider-routes.js";
   import type { Label, ProviderCapabilities } from "../../api/types.js";
   import {
@@ -25,12 +25,15 @@
     type OpenLabelPickerDetail,
   } from "./labelPickerCommand.js";
   import { nextCatalogLabelNames } from "./labelSelection.js";
+  import { floatingPopoverStyle } from "../shared/floatingPosition.js";
   import CopyItemNumber from "./CopyItemNumber.svelte";
   import MonitorUpIcon from "@lucide/svelte/icons/monitor-up";
   import PackagePlusIcon from "@lucide/svelte/icons/package-plus";
   import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
   import TagsIcon from "@lucide/svelte/icons/tags";
   import XIcon from "@lucide/svelte/icons/x";
+
+  const CLEAR_LABELS_PENDING = "__clear-label-selection__";
 
   const { issues, activity } = getStores();
   const client = getClient();
@@ -191,11 +194,29 @@
   let labelCatalogSyncing = $state(false);
   let labelPickerError = $state<string | null>(null);
   let pendingLabel = $state<string | null>(null);
+  let labelPickerAnchor = $state<HTMLDivElement>();
+  let labelPickerPopover = $state<HTMLDivElement>();
+  let labelPickerStyle = $state("");
 
   function closeLabelPicker(): void {
     labelPickerOpen = false;
     labelPickerError = null;
     pendingLabel = null;
+  }
+
+  function positionLabelPicker(): void {
+    if (!labelPickerAnchor) return;
+    const popoverHeight = labelPickerPopover?.getBoundingClientRect().height;
+    labelPickerStyle = floatingPopoverStyle({
+      trigger: labelPickerAnchor.getBoundingClientRect(),
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      ...(popoverHeight !== undefined ? { popoverHeight } : {}),
+      align: "end",
+      edgeGap: 12,
+      maxWidth: 360,
+      constrainWidth: true,
+    });
   }
 
   function onOpenLabelPickerCommand(event: Event): void {
@@ -209,6 +230,8 @@
     labelPickerOpen = true;
     labelPickerError = null;
     labelCatalogSyncing = true;
+    await tick();
+    positionLabelPicker();
     try {
       await loadLabelCatalogWithRefresh({
         isActive: () => labelPickerOpen,
@@ -229,6 +252,9 @@
         onUpdate: (catalog) => {
           labelCatalog = catalog.labels;
           labelCatalogSyncing = Boolean(catalog.stale || catalog.syncing);
+          void tick().then(() => {
+            if (labelPickerOpen) positionLabelPicker();
+          });
         },
       });
     } catch (err) {
@@ -237,6 +263,21 @@
       if (labelPickerOpen) labelCatalogSyncing = false;
     }
   }
+
+  $effect(() => {
+    if (!labelPickerOpen) return;
+
+    function updatePosition(): void {
+      positionLabelPicker();
+    }
+
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  });
 
   async function toggleLabel(labelName: string): Promise<void> {
     if (pendingLabel !== null) return;
@@ -250,6 +291,29 @@
       labelPickerError = err instanceof Error ? err.message : String(err);
     } finally {
       pendingLabel = null;
+    }
+  }
+
+  async function clearLabels(): Promise<void> {
+    if (pendingLabel !== null) return;
+    const currentLabels = issues.getIssueDetail()?.issue.labels ?? [];
+    if (currentLabels.length === 0) return;
+    pendingLabel = CLEAR_LABELS_PENDING;
+    labelPickerError = null;
+    try {
+      await issues.setIssueLabels(owner, name, number, []);
+    } catch (err) {
+      labelPickerError = err instanceof Error ? err.message : String(err);
+    } finally {
+      pendingLabel = null;
+    }
+  }
+
+  function onDocumentMousedown(e: MouseEvent): void {
+    if (!labelPickerOpen) return;
+    const target = e.target as Node;
+    if (!labelPickerPopover?.contains(target) && !labelPickerAnchor?.contains(target)) {
+      closeLabelPicker();
     }
   }
 
@@ -716,6 +780,8 @@
   });
 </script>
 
+<svelte:document onmousedown={onDocumentMousedown} />
+
 {#if issues.isIssueDetailLoading() && (issues.getIssueDetail() === null || (staleIssue && hideStaleWhileLoading))}
   <div class="state-center"><p class="state-msg">Loading...</p></div>
 {:else if issues.getIssueDetailError() !== null && (issues.getIssueDetail() === null || (staleIssue && hideStaleWhileLoading))}
@@ -788,7 +854,7 @@
             <GitHubLabels {labels} mode="full" />
           {/if}
           {#if capabilities.read_labels && capabilities.label_mutation}
-            <div class="label-editor-anchor">
+            <div class="label-editor-anchor" bind:this={labelPickerAnchor}>
               <ActionButton
                 label="Labels"
                 shortLabel="Labels"
@@ -798,10 +864,10 @@
                 disabled={staleIssue}
                 onclick={openLabelPicker}
               >
-                <TagsIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                <TagsIcon size="16" aria-hidden="true" />
               </ActionButton>
               {#if labelPickerOpen}
-                <div class="label-editor-popover">
+                <div class="label-editor-popover" style={labelPickerStyle} bind:this={labelPickerPopover}>
                   <LabelPicker
                     catalogLabels={labelCatalog}
                     selectedLabels={labels}
@@ -809,6 +875,7 @@
                     {pendingLabel}
                     error={labelPickerError}
                     ontoggle={toggleLabel}
+                    onclear={clearLabels}
                     onclose={closeLabelPicker}
                   />
                 </div>
@@ -1164,6 +1231,7 @@
   }
 
   .issue-detail-content {
+    container: issue-detail / inline-size;
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -1177,10 +1245,8 @@
   }
 
   .label-editor-popover {
-    position: absolute;
+    position: fixed;
     z-index: 20;
-    top: calc(100% + 4px);
-    left: 0;
   }
 
   .detail-header {

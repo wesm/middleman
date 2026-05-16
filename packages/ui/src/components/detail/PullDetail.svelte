@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
   import type {
     DiffFile,
     KanbanStatus,
@@ -46,6 +46,7 @@
     type OpenLabelPickerDetail,
   } from "./labelPickerCommand.js";
   import { nextCatalogLabelNames } from "./labelSelection.js";
+  import { floatingPopoverStyle } from "../shared/floatingPosition.js";
   import DiffFilesLayout from "../diff/DiffFilesLayout.svelte";
   import CIStatus from "./CIStatus.svelte";
   import DiffSummaryChip from "./DiffSummaryChip.svelte";
@@ -65,6 +66,8 @@
     savePRTimelineFilter,
     type PRTimelineFilterState,
   } from "./prTimelineFilter.js";
+
+  const CLEAR_LABELS_PENDING = "__clear-label-selection__";
 
   const { detail: detailStore, pulls, activity } = getStores();
   const client = getClient();
@@ -609,6 +612,10 @@
   let labelCatalogSyncing = $state(false);
   let labelPickerError = $state<string | null>(null);
   let pendingLabel = $state<string | null>(null);
+  let labelPickerAnchor = $state<HTMLDivElement>();
+  let labelPickerPopover = $state<HTMLDivElement>();
+  let labelPickerLaunchedFromActionMenu = $state(false);
+  let labelPickerStyle = $state("");
 
   const workspace = $derived(detailStore.getDetail()?.workspace);
   let wsCreating = $state(false);
@@ -624,6 +631,42 @@
     labelPickerOpen = false;
     labelPickerError = null;
     pendingLabel = null;
+    labelPickerLaunchedFromActionMenu = false;
+  }
+
+  function positionLabelPicker(): void {
+    if (labelPickerLaunchedFromActionMenu) {
+      labelPickerStyle = [
+        "left: 50%",
+        "top: 50%",
+        "width: min(360px, calc(100dvw - 24px))",
+        "transform: translate(-50%, -50%)",
+        "--label-picker-max-height: min(560px, calc(100dvh - 48px))",
+      ].join("; ");
+      return;
+    }
+
+    if (!labelPickerAnchor) return;
+    const popoverHeight = labelPickerPopover?.getBoundingClientRect().height;
+    labelPickerStyle = floatingPopoverStyle({
+      trigger: labelPickerAnchor.getBoundingClientRect(),
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      ...(popoverHeight !== undefined ? { popoverHeight } : {}),
+      align: "end",
+      edgeGap: 12,
+      maxWidth: 360,
+      constrainWidth: true,
+    });
+  }
+
+  function visibleLabelPickerAnchor(): HTMLDivElement | undefined {
+    const anchors = Array.from(document.querySelectorAll<HTMLDivElement>(".label-editor-anchor"));
+    return anchors.find((anchor) => {
+      const rect = anchor.getBoundingClientRect();
+      const style = getComputedStyle(anchor);
+      return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+    }) ?? anchors[0];
   }
 
   function onOpenLabelPickerCommand(event: Event): void {
@@ -633,10 +676,18 @@
     }
   }
 
-  async function openLabelPicker(): Promise<void> {
+  async function openLabelPicker(event?: MouseEvent): Promise<void> {
+    labelPickerAnchor = (event?.currentTarget as HTMLElement | null)?.closest<HTMLDivElement>(".label-editor-anchor")
+      ?? visibleLabelPickerAnchor();
+    labelPickerLaunchedFromActionMenu = Boolean(labelPickerAnchor?.closest(".actions-menu-popover"));
+    if (labelPickerLaunchedFromActionMenu) {
+      closeActionMenu();
+    }
     labelPickerOpen = true;
     labelPickerError = null;
     labelCatalogSyncing = true;
+    await tick();
+    positionLabelPicker();
     try {
       await loadLabelCatalogWithRefresh({
         isActive: () => labelPickerOpen,
@@ -657,6 +708,9 @@
         onUpdate: (catalog) => {
           labelCatalog = catalog.labels;
           labelCatalogSyncing = Boolean(catalog.stale || catalog.syncing);
+          void tick().then(() => {
+            if (labelPickerOpen) positionLabelPicker();
+          });
         },
       });
     } catch (err) {
@@ -666,6 +720,21 @@
     }
   }
 
+  $effect(() => {
+    if (!labelPickerOpen) return;
+
+    function updatePosition(): void {
+      positionLabelPicker();
+    }
+
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  });
+
   async function toggleLabel(labelName: string): Promise<void> {
     if (pendingLabel !== null) return;
     pendingLabel = labelName;
@@ -673,6 +742,19 @@
     const nextNames = nextCatalogLabelNames(labels, labelCatalog, labelName);
     try {
       await detailStore.setPullLabels(owner, name, number, nextNames);
+    } catch (err) {
+      labelPickerError = err instanceof Error ? err.message : String(err);
+    } finally {
+      pendingLabel = null;
+    }
+  }
+
+  async function clearLabels(): Promise<void> {
+    if (pendingLabel !== null || labels.length === 0) return;
+    pendingLabel = CLEAR_LABELS_PENDING;
+    labelPickerError = null;
+    try {
+      await detailStore.setPullLabels(owner, name, number, []);
     } catch (err) {
       labelPickerError = err instanceof Error ? err.message : String(err);
     } finally {
@@ -690,6 +772,11 @@
     const target = e.target as Node;
     if (actionMenuOpen && !actionMenuWrapEl?.contains(target)) {
       closeActionMenu();
+    }
+    if (labelPickerOpen) {
+      if (!labelPickerPopover?.contains(target) && !labelPickerAnchor?.contains(target)) {
+        closeLabelPicker();
+      }
     }
   }
 
@@ -1015,7 +1102,26 @@
         <DiffFilesLayout {provider} {platformHost} {owner} {name} {repoPath} {number} />
       {:else}
         <div class="pull-detail">
-          <div class="pull-detail-content">
+          <div
+            class="pull-detail-content"
+            class:pull-detail-content--has-compact-actions={pr.State !== "merged" && !stalePR}
+          >
+            {#snippet labelActionButton()}
+              <div class="label-editor-anchor">
+                <ActionButton
+                  label="Labels"
+                  shortLabel="Labels"
+                  size="sm"
+                  surface="soft"
+                  tone="neutral"
+                  disabled={stalePR}
+                  onclick={openLabelPicker}
+                >
+                  <TagsIcon size="16" aria-hidden="true" />
+                </ActionButton>
+              </div>
+            {/snippet}
+
       {#if detailStore.isStaleRefreshing()}
         <div class="refresh-banner">
           <span class="sync-dot"></span>
@@ -1106,7 +1212,7 @@
         <span class="meta-sep">·</span>
         <span class="meta-item">{timeAgo(pr.CreatedAt)}</span>
         {#if pr.HeadBranch}
-          <span class="meta-sep">·</span>
+          <span class="meta-sep meta-sep--branch">·</span>
           <span class="meta-branch">
             <svg class="branch-icon" width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
               <path d="M11.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122V6c0 .73-.593 1.322-1.325 1.322H9.457A4.377 4.377 0 006.5 8.579V11.128a2.251 2.251 0 11-1.5 0V4.872a2.251 2.251 0 111.5 0v1.836A5.877 5.877 0 0111.175 5.5h.075V5.372A2.25 2.25 0 019.5 3.25zM4.75 12a.75.75 0 100 1.5.75.75 0 000-1.5zM4 3.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0z"/>
@@ -1127,7 +1233,7 @@
           </span>
         {/if}
         {#if detailStore.isDetailSyncing()}
-          <span class="meta-sep">·</span>
+          <span class="meta-sep meta-sep--sync">·</span>
           <span class="sync-indicator" title="Syncing from GitHub">
             <svg class="sync-spinner" width="12" height="12" viewBox="0 0 16 16" fill="none">
               <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" stroke-dasharray="28" stroke-dashoffset="8" stroke-linecap="round"/>
@@ -1187,31 +1293,25 @@
           <GitHubLabels {labels} mode="full" />
         {/if}
         {#if capabilities.read_labels && capabilities.label_mutation}
-          <div class="label-editor-anchor">
-            <ActionButton
-              label="Labels"
-              shortLabel="Labels"
-              size="sm"
-              surface="soft"
-              tone="neutral"
-              disabled={stalePR}
-              onclick={openLabelPicker}
-            >
-              <TagsIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-            </ActionButton>
-            {#if labelPickerOpen}
-              <div class="label-editor-popover">
-                <LabelPicker
-                  catalogLabels={labelCatalog}
-                  selectedLabels={labels}
-                  syncing={labelCatalogSyncing}
-                  {pendingLabel}
-                  error={labelPickerError}
-                  ontoggle={toggleLabel}
-                  onclose={closeLabelPicker}
-                />
-              </div>
-            {/if}
+          <div class="label-editor-anchor--inline">
+            {@render labelActionButton()}
+          </div>
+        {/if}
+        {#if labelPickerOpen}
+          {#if labelPickerLaunchedFromActionMenu}
+            <div class="label-editor-backdrop" aria-hidden="true"></div>
+          {/if}
+          <div class="label-editor-popover" style={labelPickerStyle} bind:this={labelPickerPopover}>
+            <LabelPicker
+              catalogLabels={labelCatalog}
+              selectedLabels={labels}
+              syncing={labelCatalogSyncing}
+              {pendingLabel}
+              error={labelPickerError}
+              ontoggle={toggleLabel}
+              onclear={clearLabels}
+              onclose={closeLabelPicker}
+            />
           </div>
         {/if}
       </div>
@@ -1364,11 +1464,53 @@
         {/if}
       {/snippet}
 
+      {#snippet workspaceActionButton()}
+        {#if workspace}
+          <ActionButton
+            class="btn--workspace"
+            disabled={stalePR}
+            onclick={() => {
+              if (stalePR) return;
+              closeActionMenu();
+              navigate(`/terminal/${workspace.id}`);
+            }}
+            tone="info"
+            surface="soft"
+            size="sm"
+            label="Open Workspace"
+            shortLabel="Workspace"
+          >
+            <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+          </ActionButton>
+        {:else}
+          <ActionButton
+            class="btn--workspace"
+            disabled={wsCreating || stalePR}
+            onclick={() => void createWorkspace()}
+            tone="info"
+            surface="soft"
+            size="sm"
+            label={wsCreating ? "Creating..." : "Create Workspace"}
+            shortLabel={wsCreating ? "Creating..." : "Create Workspace"}
+          >
+            <PackagePlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+          </ActionButton>
+        {/if}
+      {/snippet}
+
       <!-- Approve / Merge / Close / Reopen actions -->
       {#if pr.State !== "merged" && !stalePR}
         <div class="primary-actions-wrap">
           <div class="actions-row actions-row--primary">
             {@render primaryActionButtons()}
+            {#if !hideWorkspaceAction}
+              <div class="primary-workspace-action">
+                {@render workspaceActionButton()}
+                {#if wsError}
+                  <span class="action-error action-error--workspace-compact">{wsError}</span>
+                {/if}
+              </div>
+            {/if}
           </div>
           <div class="actions-menu-wrap" bind:this={actionMenuWrapEl}>
             <button
@@ -1384,6 +1526,19 @@
             {#if actionMenuOpen}
               <div class="actions-menu-popover">
                 {@render primaryActionButtons()}
+                {#if capabilities.read_labels && capabilities.label_mutation}
+                  <div class="actions-menu-popover__item actions-menu-popover__item--labels">
+                    {@render labelActionButton()}
+                  </div>
+                {/if}
+                {#if !hideWorkspaceAction}
+                  <div class="actions-menu-popover__item">
+                    {@render workspaceActionButton()}
+                  </div>
+                  {#if wsError}
+                    <span class="action-error">{wsError}</span>
+                  {/if}
+                {/if}
               </div>
             {/if}
           </div>
@@ -1396,36 +1551,7 @@
       {#if !hideWorkspaceAction}
         <!-- Workspace actions -->
         <div class="actions-row actions-row--workspace">
-          {#if workspace}
-            <ActionButton
-              class="btn--workspace"
-              disabled={stalePR}
-              onclick={() => {
-                if (stalePR) return;
-                navigate(`/terminal/${workspace.id}`);
-              }}
-              tone="info"
-              surface="soft"
-              size="sm"
-              label="Open Workspace"
-              shortLabel="Workspace"
-            >
-              <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-            </ActionButton>
-          {:else}
-            <ActionButton
-              class="btn--workspace"
-              disabled={wsCreating || stalePR}
-              onclick={() => void createWorkspace()}
-              tone="info"
-              surface="soft"
-              size="sm"
-              label={wsCreating ? "Creating..." : "Create Workspace"}
-              shortLabel={wsCreating ? "Creating..." : "Create Workspace"}
-            >
-              <PackagePlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-            </ActionButton>
-          {/if}
+          {@render workspaceActionButton()}
           {#if wsError}
             <span class="action-error">{wsError}</span>
           {/if}
@@ -1723,10 +1849,15 @@
   }
 
   .label-editor-popover {
-    position: absolute;
-    z-index: 20;
-    top: calc(100% + 4px);
-    left: 0;
+    position: fixed;
+    z-index: 60;
+  }
+
+  .label-editor-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    background: rgba(128, 128, 128, 0.3);
   }
 
   .detail-header {
@@ -2036,6 +2167,11 @@
     max-width: 100%;
   }
 
+  .primary-workspace-action {
+    display: none;
+    min-width: 0;
+  }
+
   .actions-row :global(.action-button__label),
   .actions-row :global(.action-button__short-label) {
     min-width: 0;
@@ -2096,6 +2232,19 @@
     justify-content: flex-start;
   }
 
+  .actions-menu-popover__item {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .actions-menu-popover__item--labels {
+    position: relative;
+  }
+
+  .actions-menu-popover__item .label-editor-anchor {
+    width: 100%;
+  }
+
   .actions-menu-popover :global(.approve-section),
   .actions-menu-popover :global(.ready-section),
   .actions-menu-popover :global(.workflow-approval-section) {
@@ -2108,6 +2257,16 @@
 
   .actions-menu-popover :global(.action-button__short-label) {
     display: none;
+  }
+
+  @media (max-width: 640px) {
+    .primary-workspace-action {
+      display: block;
+    }
+
+    .pull-detail-content--has-compact-actions .actions-row.actions-row--workspace {
+      display: none;
+    }
   }
 
   @container pull-detail (max-width: 520px) {
@@ -2123,12 +2282,17 @@
   }
 
   @container pull-detail (max-width: 340px) {
-    .actions-row--primary {
+    .pull-detail-content .primary-actions-wrap .actions-row--primary {
       display: none;
     }
 
-    .actions-menu-wrap {
+    .pull-detail-content .primary-actions-wrap .actions-menu-wrap {
       display: block;
+    }
+
+    .pull-detail-content--has-compact-actions .label-editor-anchor--inline,
+    .pull-detail-content--has-compact-actions .actions-row.actions-row--workspace {
+      display: none;
     }
   }
 
@@ -2138,6 +2302,11 @@
   }
 
   .action-error--state {
+    display: block;
+    margin-top: 6px;
+  }
+
+  .action-error--workspace-compact {
     display: block;
     margin-top: 6px;
   }
@@ -2436,14 +2605,31 @@
     .edit-body-btn,
     .star-btn,
     .gh-link,
-    .copy-icon-btn,
-    .meta-row :global(.copy-number-btn) {
+    .copy-icon-btn {
       min-width: var(--detail-mobile-hit-target);
       min-height: var(--detail-mobile-hit-target);
       justify-content: center;
       padding: var(--detail-mobile-space-xs);
       margin-top: 0;
       font-size: var(--font-size-mobile-sm);
+    }
+
+    .pull-detail-content .meta-row :global(.copy-number-btn) {
+      min-width: 0;
+      min-height: 0;
+      padding: 0;
+      border-radius: 3px;
+      font-size: var(--font-size-mobile-sm);
+      line-height: 1.35;
+    }
+
+    @media (max-width: 480px) {
+      .pull-detail-content .meta-row :global(.copy-number-btn) {
+        min-width: max(44px, var(--detail-mobile-hit-target));
+        min-height: max(44px, var(--detail-mobile-hit-target));
+        padding: var(--detail-mobile-space-xs);
+        border-radius: var(--radius-sm);
+      }
     }
 
     .meta-row,
@@ -2468,6 +2654,11 @@
     .detail-tab {
       font-size: var(--font-size-mobile-sm);
       line-height: 1.35;
+    }
+
+    .meta-sep--branch,
+    .meta-sep--sync {
+      display: none;
     }
 
     .inset-box,

@@ -3,6 +3,7 @@
   import ArrowUpDownIcon from "@lucide/svelte/icons/arrow-up-down";
   import EllipsisIcon from "@lucide/svelte/icons/ellipsis";
   import { tick } from "svelte";
+  import { floatingPopoverStyle } from "./floatingPosition.js";
 
   interface FilterDropdownItem {
     id: string;
@@ -106,29 +107,14 @@
   function positionDropdown(): void {
     if (!buttonRef || !dropdownRef) return;
 
-    const trigger = buttonRef.getBoundingClientRect();
-    const dropdownWidth = dropdownRef.offsetWidth;
-    const gap = 4;
-    const viewportPadding = 8;
-    let left = align === "end"
-      ? trigger.right - dropdownWidth
-      : trigger.left;
-    left = Math.min(
-      Math.max(viewportPadding, left),
-      Math.max(viewportPadding, window.innerWidth - dropdownWidth - viewportPadding),
-    );
-
-    const dropdownHeight = dropdownRef.offsetHeight;
-    const below = trigger.bottom + gap;
-    const above = trigger.top - dropdownHeight - gap;
-    const top = below + dropdownHeight > window.innerHeight - viewportPadding
-      ? Math.max(viewportPadding, above)
-      : below;
-
-    dropdownStyle = [
-      `left: ${left}px`,
-      `top: ${top}px`,
-    ].join("; ");
+    dropdownStyle = floatingPopoverStyle({
+      trigger: buttonRef.getBoundingClientRect(),
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      popoverWidth: dropdownRef.offsetWidth,
+      popoverHeight: dropdownRef.offsetHeight,
+      align,
+    });
   }
 
   async function openDropdown(): Promise<void> {

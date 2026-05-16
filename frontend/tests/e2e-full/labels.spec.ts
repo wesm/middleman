@@ -57,12 +57,41 @@ test.describe("label editing", () => {
         response.request().method() === "PUT"
         && response.url() === `${baseURL}/api/v1/pulls/github/acme/widgets/1/labels`,
       );
-      await page.getByRole("menuitemcheckbox", { name: /bug/i }).click();
+      await page.getByRole("button", { name: "Clear selected labels" }).click();
       expect((await updateResponse).status()).toBe(200);
 
       await expect(page.locator(".pull-detail .label-editor-row")).toHaveCount(0);
-      await expect(page.locator(".pull-detail .chips-row").getByRole("button", { name: "Labels" })).toBeVisible();
+      await expect(page.locator(".pull-detail .chips-row").getByRole("button", { name: "Labels", exact: true })).toBeVisible();
       await expect(page.locator(".pull-detail .label-editor-empty")).toHaveCount(0);
+    } finally {
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("issue detail clears labels through the picker", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    try {
+      isolatedServer = await startIsolatedE2EServer();
+      const baseURL = isolatedServer.info.base_url;
+
+      await page.goto(`${baseURL}/issues/github/acme/widgets/10`);
+      await expect(page.locator(".issue-detail")).toBeVisible();
+      await expect(page.locator(".issue-detail .meta-row .label-pill", { hasText: "bug" })).toBeVisible();
+
+      await page.getByRole("button", { name: "Labels" }).click();
+      await expect(page.getByRole("dialog", { name: "Edit labels" })).toBeVisible();
+
+      const updateResponse = page.waitForResponse((response) =>
+        response.request().method() === "PUT"
+        && response.url() === `${baseURL}/api/v1/issues/github/acme/widgets/10/labels`,
+      );
+      await page.getByRole("button", { name: "Clear selected labels" }).click();
+      expect((await updateResponse).status()).toBe(200);
+
+      await expect(page.locator(".issue-detail .meta-row .label-pill")).toHaveCount(0);
+      await expect(page.locator(".issue-detail .meta-row").getByRole("button", { name: "Labels", exact: true })).toBeVisible();
+      await page.reload();
+      await expect(page.locator(".issue-detail .meta-row .label-pill")).toHaveCount(0);
     } finally {
       await isolatedServer?.stop();
     }
