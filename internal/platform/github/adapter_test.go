@@ -41,24 +41,22 @@ func TestNormalizePullRequestMatchesPersistedDBFields(t *testing.T) {
 	closedAt := updatedAt.Add(time.Hour)
 	headSHA := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	baseSHA := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-	mergeableState := "dirty"
 
 	pr, err := NormalizePullRequest(testRepoRef(), &gh.PullRequest{
-		ID:             new(int64(1001)),
-		Number:         new(42),
-		HTMLURL:        new("https://github.com/owner/repo/pull/42"),
-		Title:          new("My PR"),
-		User:           &gh.User{Login: new("alice"), Name: new("Alice A.")},
-		State:          new("closed"),
-		Merged:         new(true),
-		Draft:          new(true),
-		Body:           new("description"),
-		Additions:      new(10),
-		Deletions:      new(5),
-		MergeableState: &mergeableState,
-		CreatedAt:      ghTimestamp(createdAt),
-		UpdatedAt:      ghTimestamp(updatedAt),
-		ClosedAt:       ghTimestamp(closedAt),
+		ID:        new(int64(1001)),
+		Number:    new(42),
+		HTMLURL:   new("https://github.com/owner/repo/pull/42"),
+		Title:     new("My PR"),
+		User:      &gh.User{Login: new("alice"), Name: new("Alice A.")},
+		State:     new("closed"),
+		Merged:    new(true),
+		Draft:     new(true),
+		Body:      new("description"),
+		Additions: new(10),
+		Deletions: new(5),
+		CreatedAt: ghTimestamp(createdAt),
+		UpdatedAt: ghTimestamp(updatedAt),
+		ClosedAt:  ghTimestamp(closedAt),
 		Head: &gh.PullRequestBranch{
 			Ref: new("feature"),
 			SHA: &headSHA,
@@ -90,7 +88,6 @@ func TestNormalizePullRequestMatchesPersistedDBFields(t *testing.T) {
 	assert.Equal(baseSHA, pr.BaseSHA)
 	assert.Equal(10, pr.Additions)
 	assert.Equal(5, pr.Deletions)
-	assert.Equal("dirty", pr.MergeableState)
 	assert.Equal(createdAt, pr.CreatedAt)
 	assert.Equal(updatedAt, pr.UpdatedAt)
 	assert.Equal(updatedAt, pr.LastActivityAt)

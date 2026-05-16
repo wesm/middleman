@@ -253,10 +253,8 @@ func (c *Client) ListOpenMergeRequests(
 		return nil, err
 	}
 	state := "opened"
-	recheck := true
 	opt := &gitlab.ListProjectMergeRequestsOptions{
-		State:                  &state,
-		WithMergeStatusRecheck: &recheck,
+		State: &state,
 		ListOptions: gitlab.ListOptions{
 			Page:    1,
 			PerPage: defaultPageSize,

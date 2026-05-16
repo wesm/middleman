@@ -81,7 +81,6 @@ type MergeRequest struct {
 	CommentCount       int
 	ReviewDecision     string
 	CIStatus           string
-	MergeableState     string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 	LastActivityAt     time.Time

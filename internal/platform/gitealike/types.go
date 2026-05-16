@@ -87,25 +87,24 @@ type LabelDTO struct {
 }
 
 type PullRequestDTO struct {
-	ID        int64
-	Index     int
-	HTMLURL   string
-	Title     string
-	User      UserDTO
-	State     string
-	Draft     bool
-	IsLocked  bool
-	Body      string
-	Head      BranchDTO
-	Base      BranchDTO
-	Labels    []LabelDTO
-	Comments  int
-	Mergeable bool
-	Created   time.Time
-	Updated   time.Time
-	Merged    bool
-	MergedAt  *time.Time
-	Closed    *time.Time
+	ID       int64
+	Index    int
+	HTMLURL  string
+	Title    string
+	User     UserDTO
+	State    string
+	Draft    bool
+	IsLocked bool
+	Body     string
+	Head     BranchDTO
+	Base     BranchDTO
+	Labels   []LabelDTO
+	Comments int
+	Created  time.Time
+	Updated  time.Time
+	Merged   bool
+	MergedAt *time.Time
+	Closed   *time.Time
 }
 
 type IssueDTO struct {

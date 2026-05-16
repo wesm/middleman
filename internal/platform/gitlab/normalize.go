@@ -139,7 +139,7 @@ func normalizeMergeRequest(
 		BaseBranch:         mr.TargetBranch,
 		HeadSHA:            mr.SHA,
 		CommentCount:       int(mr.UserNotesCount),
-		MergeableState:     normalizeMergeableState(mr.DetailedMergeStatus, mr.HasConflicts),
+		ReviewDecision:     mr.DetailedMergeStatus,
 		CIStatus:           pipelineStatusFromInfo(pipeline),
 		CreatedAt:          timeValue(mr.CreatedAt),
 		UpdatedAt:          timeValue(mr.UpdatedAt),
@@ -155,37 +155,6 @@ func normalizeMergeRequest(
 		out.ClosedAt = &t
 	}
 	return out
-}
-
-func normalizeMergeableState(detailedStatus string, hasConflicts bool) string {
-	if hasConflicts {
-		return "dirty"
-	}
-	switch strings.ToLower(strings.TrimSpace(detailedStatus)) {
-	case "":
-		return ""
-	case "mergeable":
-		return "clean"
-	case "conflict":
-		return "dirty"
-	case "checking", "unchecked", "approvals_syncing", "preparing":
-		return "unknown"
-	case "need_rebase":
-		return "behind"
-	case "ci_must_pass", "ci_still_running", "status_checks_must_pass",
-		"security_policy_pipeline_check":
-		return "unstable"
-	case "draft_status":
-		return "draft"
-	case "commits_status", "discussions_not_resolved",
-		"jira_association_missing", "merge_request_blocked",
-		"merge_time", "not_approved", "not_open", "requested_changes",
-		"security_policy_violations", "locked_paths", "locked_lfs_files",
-		"title_regex":
-		return "blocked"
-	default:
-		return "unknown"
-	}
 }
 
 func NormalizeIssue(repo platform.RepoRef, issue *gitlab.Issue) platform.Issue {

@@ -2654,7 +2654,7 @@ func (s *Syncer) indexUpsertMergeRequest(
 	if existing != nil {
 		normalized.Additions = existing.Additions
 		normalized.Deletions = existing.Deletions
-		preserveMergeableStateIfOmitted(normalized, existing)
+		normalized.MergeableState = existing.MergeableState
 	}
 
 	if normalized.Author != "" &&
@@ -2727,7 +2727,7 @@ func (s *Syncer) indexUpsertMR(
 	if existing != nil {
 		normalized.Additions = existing.Additions
 		normalized.Deletions = existing.Deletions
-		preserveMergeableStateIfOmitted(normalized, existing)
+		normalized.MergeableState = existing.MergeableState
 	}
 
 	if normalized.Author != "" &&
@@ -3557,16 +3557,6 @@ func (s *Syncer) fetchMRDetail(
 		return calls, fmt.Errorf("normalize full PR #%d: %w", number, err)
 	}
 
-	existing, err := s.db.GetMergeRequestByRepoIDAndNumber(
-		ctx, repoID, number,
-	)
-	if err != nil {
-		return calls, fmt.Errorf(
-			"get existing MR #%d: %w", number, err,
-		)
-	}
-	preserveMergeableStateIfOmitted(normalized, existing)
-
 	if normalized.Author != "" &&
 		normalized.AuthorDisplayName == "" {
 		host := repo.PlatformHost
@@ -3705,16 +3695,6 @@ func (s *Syncer) fetchProviderMRDetail(
 	}
 
 	normalized := platform.DBMergeRequest(repoID, mr)
-	existing, err := s.db.GetMergeRequestByRepoIDAndNumber(
-		ctx, repoID, number,
-	)
-	if err != nil {
-		return calls, fmt.Errorf(
-			"get existing MR #%d: %w", number, err,
-		)
-	}
-	preserveMergeableStateIfOmitted(normalized, existing)
-
 	mrID, err := s.db.UpsertMergeRequest(ctx, normalized)
 	if err != nil {
 		return calls, fmt.Errorf(
@@ -5325,7 +5305,6 @@ func (s *Syncer) syncMRForRepo(
 	if existing != nil {
 		normalized.CommentCount = existing.CommentCount
 		normalized.ReviewDecision = existing.ReviewDecision
-		preserveMergeableStateIfOmitted(normalized, existing)
 		// CI is tied to the head SHA. If the head moved we must clear the
 		// previous values; otherwise a failed CI refresh would leave stale
 		// checks attached to the new commit.
@@ -5428,19 +5407,6 @@ func (s *Syncer) syncMRForRepo(
 		return diffErr
 	}
 	return nil
-}
-
-func preserveMergeableStateIfOmitted(
-	normalized *db.MergeRequest,
-	existing *db.MergeRequest,
-) {
-	if normalized == nil || existing == nil {
-		return
-	}
-	if normalized.MergeableState == "" ||
-		(normalized.MergeableState == "unknown" && existing.MergeableState != "") {
-		normalized.MergeableState = existing.MergeableState
-	}
 }
 
 // syncMRDiff fetches the bare clone and computes diff SHAs for a single PR.

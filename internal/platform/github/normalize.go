@@ -34,7 +34,6 @@ func NormalizePullRequest(repo platform.RepoRef, ghPR *gh.PullRequest) (platform
 		Additions:          ghPR.GetAdditions(),
 		Deletions:          ghPR.GetDeletions(),
 		CommentCount:       ghPR.GetComments(),
-		MergeableState:     ghPR.GetMergeableState(),
 	}
 	if ghPR.GetMerged() {
 		mr.State = "merged"

@@ -1143,113 +1143,6 @@ func TestAPISyncPRIncludesWorkflowApproval(t *testing.T) {
 	assert.Equal(int64(1), resp.JSON200.WorkflowApproval.Count)
 }
 
-func TestAPISyncPRPersistsMergeableState(t *testing.T) {
-	require := require.New(t)
-	assert := Assert.New(t)
-	now := time.Now().UTC().Truncate(time.Second)
-	mergeableState := "dirty"
-	mock := &mockGH{
-		getPullRequestFn: func(_ context.Context, _ string, _ string, number int) (*gh.PullRequest, error) {
-			id := int64(1001)
-			sha := "abc123"
-			state := "open"
-			title := "Conflicted PR"
-			url := "https://github.com/acme/widget/pull/1"
-			updatedAt := gh.Timestamp{Time: now}
-			createdAt := gh.Timestamp{Time: now}
-			return &gh.PullRequest{
-				ID:             &id,
-				Number:         &number,
-				State:          &state,
-				Title:          &title,
-				HTMLURL:        &url,
-				UpdatedAt:      &updatedAt,
-				CreatedAt:      &createdAt,
-				MergeableState: &mergeableState,
-				Head:           &gh.PullRequestBranch{SHA: &sha, Ref: new("feature")},
-				Base:           &gh.PullRequestBranch{Ref: new("main")},
-			}, nil
-		},
-	}
-
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
-	client := setupTestClient(t, srv)
-
-	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(
-		t.Context(), "gh", "acme", "widget", 1,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
-	require.NotNil(resp.JSON200)
-	assert.Equal("dirty", resp.JSON200.MergeRequest.MergeableState)
-
-	stored, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
-	require.NoError(err)
-	require.NotNil(stored)
-	assert.Equal("dirty", stored.MergeableState)
-}
-
-func TestAPISyncPRPreservesMergeableStateWhenRefreshHasNoAnswer(t *testing.T) {
-	tests := []struct {
-		name  string
-		state *string
-	}{
-		{name: "omitted", state: nil},
-		{name: "unknown", state: new("unknown")},
-	}
-	now := time.Now().UTC().Truncate(time.Second)
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			require := require.New(t)
-			assert := Assert.New(t)
-			mock := &mockGH{
-				getPullRequestFn: func(_ context.Context, _ string, _ string, number int) (*gh.PullRequest, error) {
-					id := int64(1001)
-					sha := "abc123"
-					state := "open"
-					title := "Conflicted PR"
-					url := "https://github.com/acme/widget/pull/1"
-					updatedAt := gh.Timestamp{Time: now}
-					createdAt := gh.Timestamp{Time: now}
-					return &gh.PullRequest{
-						ID:             &id,
-						Number:         &number,
-						State:          &state,
-						Title:          &title,
-						HTMLURL:        &url,
-						UpdatedAt:      &updatedAt,
-						CreatedAt:      &createdAt,
-						MergeableState: tt.state,
-						Head:           &gh.PullRequestBranch{SHA: &sha, Ref: new("feature")},
-						Base:           &gh.PullRequestBranch{Ref: new("main")},
-					}, nil
-				},
-			}
-
-			srv, database := setupTestServerWithMock(t, mock)
-			seedPR(t, database, "acme", "widget", 1, func(pr *db.MergeRequest) {
-				pr.MergeableState = "dirty"
-			})
-			client := setupTestClient(t, srv)
-
-			resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(
-				t.Context(), "gh", "acme", "widget", 1,
-			)
-			require.NoError(err)
-			require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
-			require.NotNil(resp.JSON200)
-			assert.Equal("dirty", resp.JSON200.MergeRequest.MergeableState)
-
-			stored, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
-			require.NoError(err)
-			require.NotNil(stored)
-			assert.Equal("dirty", stored.MergeableState)
-		})
-	}
-}
-
 func TestAPIApproveWorkflows(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -2361,7 +2254,6 @@ func TestAPIGitLabConfiguredRepoSyncThroughProviderRegistry(t *testing.T) {
 			BaseBranch:         "main",
 			HeadSHA:            "abc123",
 			BaseSHA:            "def456",
-			MergeableState:     "dirty",
 			CreatedAt:          now,
 			UpdatedAt:          now,
 			LastActivityAt:     now,
@@ -2437,7 +2329,6 @@ func TestAPIGitLabConfiguredRepoSyncThroughProviderRegistry(t *testing.T) {
 	assert.Equal("group/subgroup", (*pullsResp.JSON200)[0].RepoOwner)
 	assert.Equal("project", (*pullsResp.JSON200)[0].RepoName)
 	assert.Equal("GitLab provider MR", (*pullsResp.JSON200)[0].Title)
-	assert.Equal("dirty", (*pullsResp.JSON200)[0].MergeableState)
 }
 
 func TestGitLabSyncCoversRepositoryItemsEventsOverviewAndCI(t *testing.T) {
@@ -8940,17 +8831,16 @@ func TestAPIGitealikeMergeConflictReturnsConflict(t *testing.T) {
 			Updated:       base,
 		},
 		pulls: []gitealike.PullRequestDTO{{
-			ID:        201,
-			Index:     7,
-			HTMLURL:   "https://gitea.test/tea/kettle/pulls/7",
-			Title:     "Add kettle",
-			User:      gitealike.UserDTO{UserName: "alice"},
-			State:     "open",
-			Head:      gitealike.BranchDTO{Ref: "feature", SHA: "abc123"},
-			Base:      gitealike.BranchDTO{Ref: "main", SHA: "def456"},
-			Mergeable: false,
-			Created:   base,
-			Updated:   base,
+			ID:      201,
+			Index:   7,
+			HTMLURL: "https://gitea.test/tea/kettle/pulls/7",
+			Title:   "Add kettle",
+			User:    gitealike.UserDTO{UserName: "alice"},
+			State:   "open",
+			Head:    gitealike.BranchDTO{Ref: "feature", SHA: "abc123"},
+			Base:    gitealike.BranchDTO{Ref: "main", SHA: "def456"},
+			Created: base,
+			Updated: base,
 		}},
 	}
 	provider := gitealike.NewProvider(
@@ -8992,7 +8882,6 @@ func TestAPIGitealikeMergeConflictReturnsConflict(t *testing.T) {
 	})
 	require.NoError(err)
 	require.NotNil(repo)
-	assert.Equal("dirty", requireMR(t, database, repo.ID, 7).MergeableState)
 	transport.pulls[0].Title = "Refreshed kettle after conflict"
 
 	resp, err := client.HTTP.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithResponse(

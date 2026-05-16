@@ -39,7 +39,6 @@ func TestClientLooksUpProjectByRawPathAndUsesNumericIDAfterLookup(t *testing.T) 
 			}`)
 		case "/api/v4/projects/42/merge_requests":
 			assert.Equal("opened", r.URL.Query().Get("state"))
-			assert.Equal("true", r.URL.Query().Get("with_merge_status_recheck"))
 			writeJSON(w, `[{"id": 1001, "iid": 7, "project_id": 42, "title": "Use ids", "state": "opened"}]`)
 		default:
 			http.NotFound(w, r)
@@ -289,7 +288,6 @@ func TestReadClientFetchesMergeRequestsIssuesEventsReleasesTagsAndPipelines(t *t
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.EscapedPath() {
 		case "/api/v4/projects/42/merge_requests":
-			assert.Equal("true", r.URL.Query().Get("with_merge_status_recheck"))
 			if r.URL.Query().Get("page") == "2" {
 				writeJSON(w, `[]`)
 				return

@@ -49,7 +49,6 @@ func DBMergeRequest(repoID int64, mr MergeRequest) *db.MergeRequest {
 		CommentCount:       mr.CommentCount,
 		ReviewDecision:     mr.ReviewDecision,
 		CIStatus:           mr.CIStatus,
-		MergeableState:     mr.MergeableState,
 		CreatedAt:          mr.CreatedAt,
 		UpdatedAt:          mr.UpdatedAt,
 		LastActivityAt:     mr.LastActivityAt,
