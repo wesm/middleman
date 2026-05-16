@@ -254,4 +254,46 @@ describe("PullDetail approvals", () => {
       },
     );
   });
+
+  it("does not describe GitHub unstable mergeability as required checks", () => {
+    const detail = pullDetail();
+    detail.merge_request.MergeableState = "unstable";
+    detail.merge_request.CIStatus = "failure";
+    detail.merge_request.CIChecksJSON = JSON.stringify([
+      {
+        name: "e2e",
+        status: "completed",
+        conclusion: "failure",
+        url: "https://example.com/e2e",
+        app: "GitHub Actions",
+      },
+    ]);
+
+    renderPullDetail(detail);
+
+    expect(screen.queryByText(/required status checks/i)).toBeNull();
+  });
+
+  it("shows required CI and branch freshness warnings independently", () => {
+    const detail = pullDetail();
+    detail.merge_request.MergeableState = "behind";
+    detail.merge_request.CIStatus = "failure";
+    detail.merge_request.CIChecksJSON = JSON.stringify([
+      {
+        name: "build",
+        status: "completed",
+        conclusion: "failure",
+        url: "https://example.com/build",
+        app: "GitHub Actions",
+        required: true,
+      },
+    ]);
+
+    renderPullDetail(detail);
+
+    expect(screen.getByText("Required status checks have not passed.")).not.toBeNull();
+    expect(
+      screen.getByText("This branch is behind the base branch and may need to be updated."),
+    ).not.toBeNull();
+  });
 });

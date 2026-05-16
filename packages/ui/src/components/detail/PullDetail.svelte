@@ -166,6 +166,46 @@
       return false;
     }
   }
+
+  function requiredStatusChecksHaveNotPassed(checksJSON: string): boolean {
+    if (!checksJSON) return false;
+    try {
+      const checks = JSON.parse(checksJSON) as Array<{
+        required?: boolean;
+        status?: string;
+        conclusion?: string;
+      }>;
+      return checks.some((check) =>
+        check.required === true &&
+        (
+          check.status !== "completed" ||
+          !["success", "neutral", "skipped"].includes(check.conclusion ?? "")
+        ),
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  function hasWarningLines(
+    prState: string,
+    mergeableState: string,
+    checksJSON: string,
+    warnings: readonly string[] | null | undefined,
+  ): boolean {
+    return (
+      (
+        prState === "open" &&
+        (
+          mergeableState === "dirty" ||
+          mergeableState === "blocked" ||
+          mergeableState === "behind" ||
+          requiredStatusChecksHaveNotPassed(checksJSON)
+        )
+      ) ||
+      (warnings?.length ?? 0) > 0
+    );
+  }
   async function editTimelineComment(
     event: { PlatformID: number | null },
     body: string,
@@ -1327,33 +1367,46 @@
       {/if}
 
 
-      <!-- Mergeable state warnings -->
-      {#if !stalePR && pr.State === "open" && pr.MergeableState === "dirty"}
-        <div class="merge-warning merge-warning--conflict">
-          <span>This branch has conflicts that must be resolved before merging.</span>
-          <a href={pr.URL} target="_blank" rel="noopener noreferrer">View on GitHub</a>
+      <!-- Pull request warnings -->
+      {#if !stalePR && hasWarningLines(pr.State, pr.MergeableState, pr.CIChecksJSON, detail.warnings)}
+        <div class="merge-warnings" aria-label="Pull request warnings">
+          {#if pr.State === "open" && pr.MergeableState === "dirty"}
+            <div class="merge-warning-line merge-warning-line--conflict">
+              <span>This branch has conflicts that must be resolved before merging.</span>
+              <a href={pr.URL} target="_blank" rel="noopener noreferrer">View on GitHub</a>
+            </div>
+          {/if}
+          {#if pr.State === "open" && pr.MergeableState === "blocked"}
+            <div class="merge-warning-line">
+              <span>Branch protection rules may prevent this merge.</span>
+            </div>
+          {/if}
+          {#if pr.State === "open" && pr.MergeableState === "behind"}
+            <div class="merge-warning-line">
+              <span>This branch is behind the base branch and may need to be updated.</span>
+            </div>
+          {/if}
+          {#if pr.State === "open" && requiredStatusChecksHaveNotPassed(pr.CIChecksJSON)}
+            <div class="merge-warning-line">
+              <span>Required status checks have not passed.</span>
+            </div>
+          {/if}
+          {#if detail.warnings && detail.warnings.length > 0}
+            {#each detail.warnings as warning (warning)}
+              <div class="merge-warning-line">
+                <span>{warning}</span>
+              </div>
+            {/each}
+          {/if}
         </div>
-      {:else if !stalePR && pr.State === "open" && pr.MergeableState === "blocked"}
-        <div class="merge-warning merge-warning--info">
-          <span>Branch protection rules may prevent this merge.</span>
+      {:else if stalePR && detail.warnings && detail.warnings.length > 0}
+        <div class="merge-warnings" aria-label="Pull request warnings">
+          {#each detail.warnings as warning (warning)}
+            <div class="merge-warning-line">
+              <span>{warning}</span>
+            </div>
+          {/each}
         </div>
-      {:else if !stalePR && pr.State === "open" && pr.MergeableState === "behind"}
-        <div class="merge-warning merge-warning--info">
-          <span>This branch is behind the base branch and may need to be updated.</span>
-        </div>
-      {:else if !stalePR && pr.State === "open" && pr.MergeableState === "unstable"}
-        <div class="merge-warning merge-warning--info">
-          <span>Required status checks have not passed.</span>
-        </div>
-      {/if}
-
-      <!-- Diff sync warnings (stale or unavailable diff data) -->
-      {#if detail.warnings && detail.warnings.length > 0}
-        {#each detail.warnings as warning (warning)}
-          <div class="merge-warning merge-warning--info">
-            <span>{warning}</span>
-          </div>
-        {/each}
       {/if}
 
       {#snippet primaryActionButtons()}
@@ -2403,31 +2456,33 @@
     line-height: 1.6;
   }
 
-  .merge-warning {
+  .merge-warnings {
     font-size: var(--font-size-sm);
     padding: 8px 12px;
     border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+    color: var(--text-secondary);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .merge-warning-line {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
   }
 
-  .merge-warning a {
+  .merge-warning-line a {
     color: inherit;
     text-decoration: underline;
     white-space: nowrap;
     flex-shrink: 0;
   }
 
-  .merge-warning--conflict {
-    background: color-mix(in srgb, var(--accent-amber) 12%, transparent);
+  .merge-warning-line--conflict {
     color: var(--accent-amber);
-  }
-
-  .merge-warning--info {
-    background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
-    color: var(--text-secondary);
   }
 
   .files-stat {
@@ -2647,7 +2702,7 @@
     .section-title,
     .section-title-inline,
     .files-stat,
-    .merge-warning,
+    .merge-warnings,
     .action-error,
     .refresh-banner,
     .loading-placeholder,

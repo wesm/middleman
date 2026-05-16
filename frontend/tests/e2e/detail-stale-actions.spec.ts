@@ -382,6 +382,108 @@ test.describe("PR detail merge modal route reset", () => {
     ).toHaveCount(0);
   });
 
+  test("non-required failed checks do not show required-check warnings", async ({ page }) => {
+    await mockApi(page);
+    await mockSettings(page);
+
+    const nonRequiredFailurePR = {
+      ...prA,
+      Number: 101,
+      URL: "https://github.com/acme/widgets/pull/101",
+      Title: "Non-required failing check",
+      MergeableState: "unstable",
+      CIStatus: "failure",
+      CIChecksJSON: JSON.stringify([
+        {
+          name: "e2e",
+          status: "completed",
+          conclusion: "failure",
+          url: "https://example.com/e2e",
+          app: "GitHub Actions",
+        },
+      ]),
+    };
+
+    await page.route(
+      pullDetailApiPath(nonRequiredFailurePR),
+      async (route) => {
+        if (route.request().method() === "GET") {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(detailEnvelopePR(nonRequiredFailurePR)),
+          });
+          return;
+        }
+        await route.fallback();
+      },
+    );
+
+    await page.goto(
+      `/pulls/github/${nonRequiredFailurePR.repo_owner}/${nonRequiredFailurePR.repo_name}/${nonRequiredFailurePR.Number}`,
+    );
+
+    await expect(page.locator(".detail-title")).toContainText(
+      nonRequiredFailurePR.Title,
+    );
+    await expect(
+      page.getByText("Required status checks have not passed."),
+    ).toHaveCount(0);
+  });
+
+  test("warning lines show required checks and branch freshness independently", async ({ page }) => {
+    await mockApi(page);
+    await mockSettings(page);
+
+    const requiredBehindPR = {
+      ...prA,
+      Number: 102,
+      URL: "https://github.com/acme/widgets/pull/102",
+      Title: "Required check and behind branch",
+      MergeableState: "behind",
+      CIStatus: "failure",
+      CIChecksJSON: JSON.stringify([
+        {
+          name: "build",
+          status: "completed",
+          conclusion: "failure",
+          url: "https://example.com/build",
+          app: "GitHub Actions",
+          required: true,
+        },
+      ]),
+    };
+
+    await page.route(
+      pullDetailApiPath(requiredBehindPR),
+      async (route) => {
+        if (route.request().method() === "GET") {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(detailEnvelopePR(requiredBehindPR)),
+          });
+          return;
+        }
+        await route.fallback();
+      },
+    );
+
+    await page.goto(
+      `/pulls/github/${requiredBehindPR.repo_owner}/${requiredBehindPR.repo_name}/${requiredBehindPR.Number}`,
+    );
+
+    await expect(page.locator(".detail-title")).toContainText(
+      requiredBehindPR.Title,
+    );
+    await expect(
+      page.getByText("Required status checks have not passed."),
+    ).toBeVisible();
+    await expect(
+      page.getByText("This branch is behind the base branch and may need to be updated."),
+    ).toBeVisible();
+  });
+
   test("merge modal closes when the route changes and does not reopen for the new PR", async ({ page }) => {
     await mockApi(page);
     await mockSettings(page);

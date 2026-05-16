@@ -57,6 +57,7 @@ export interface CICheck {
   conclusion: string;
   url: string;
   app: string;
+  required?: boolean;
   duration_seconds?: number;
 }
 
