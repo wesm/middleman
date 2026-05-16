@@ -306,16 +306,15 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     return undefined;
   }
 
-  function isIssueDetailShowing(
-    owner: string,
-    name: string,
-    number: number,
-  ): boolean {
+  function isIssueDetailShowingRef(ref: IssueDetailRequestRef): boolean {
     return (
       issueDetail !== null &&
-      issueDetail.repo_owner === owner &&
-      issueDetail.repo_name === name &&
-      issueDetail.issue.Number === number
+      issueDetail.repo_owner === ref.owner &&
+      issueDetail.repo_name === ref.name &&
+      issueDetail.issue.Number === ref.number &&
+      issueDetail.repo?.provider === ref.provider &&
+      issueDetail.repo?.platform_host === ref.platformHost &&
+      issueDetail.repo?.repo_path === ref.repoPath
     );
   }
 
@@ -626,7 +625,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       throw new Error(message);
     }
     const nextLabels = (data?.labels ?? []) as Label[];
-    if (isIssueDetailShowing(owner, name, number) && issueDetail) {
+    if (isIssueDetailShowingRef(ref) && issueDetail) {
       issueDetail = {
         ...issueDetail,
         issue: {

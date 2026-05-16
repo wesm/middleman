@@ -20,7 +20,31 @@ import (
 )
 
 type labelAPIResponse struct {
-	Labels []db.Label `json:"labels"`
+	Labels  []db.Label `json:"labels"`
+	Stale   bool       `json:"stale"`
+	Syncing bool       `json:"syncing"`
+}
+
+type blockingLabelClient struct {
+	*testutil.FixtureClient
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (c *blockingLabelClient) ListRepoLabels(
+	ctx context.Context, owner, repo string,
+) ([]*gh.Label, error) {
+	select {
+	case <-c.entered:
+	default:
+		close(c.entered)
+	}
+	select {
+	case <-c.release:
+		return c.FixtureClient.ListRepoLabels(ctx, owner, repo)
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 func setupLabelTestServer(t *testing.T) (*server.Server, *db.DB, *testutil.FixtureClient, *ghclient.Syncer) {
@@ -102,15 +126,71 @@ func TestAPIListRepoLabelsRefreshesStaleCatalogFromProvider(t *testing.T) {
 	require := require.New(t)
 	srv, database, _, _ := setupLabelTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
+	repo, err := database.GetRepoByOwnerName(t.Context(), "acme", "widget")
+	require.NoError(err)
+	require.NotNil(repo)
 
 	rr := doLabelAPIRequest(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget/labels", nil)
 	require.Equal(http.StatusOK, rr.Code)
 
-	var body labelAPIResponse
-	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
-	require.Len(body.Labels, 2)
-	require.Equal("bug", body.Labels[0].Name)
-	require.Equal("triage", body.Labels[1].Name)
+	require.Eventually(func() bool {
+		labels, _, err := database.ListRepoLabelCatalog(t.Context(), repo.ID)
+		return err == nil && len(labels) == 2 && labels[0].Name == "bug" && labels[1].Name == "triage"
+	}, time.Second, 10*time.Millisecond)
+}
+
+func TestAPIListRepoLabelsReturnsCachedCatalogWhileRefreshRuns(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	baseClient := testutil.NewFixtureClient().(*testutil.FixtureClient)
+	baseClient.Labels["acme/widget"] = []*gh.Label{
+		{Name: new("bug"), Description: new("Something is broken"), Color: new("d73a4a"), Default: new(true)},
+		{Name: new("triage"), Description: new("Needs review"), Color: new("fbca04")},
+	}
+	client := &blockingLabelClient{
+		FixtureClient: baseClient,
+		entered:       make(chan struct{}),
+		release:       make(chan struct{}),
+	}
+	defer close(client.release)
+	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": client}, database, nil, defaultTestRepos, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		require.NoError(srv.Shutdown(ctx))
+	})
+	seedPR(t, database, "acme", "widget", 1)
+	seedRepoLabelCatalog(t, database, "acme", "widget")
+
+	type result struct {
+		rr *httptest.ResponseRecorder
+	}
+	resultCh := make(chan result, 1)
+	go func() {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/repo/github/acme/widget/labels", nil)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		resultCh <- result{rr: rr}
+	}()
+	select {
+	case <-client.entered:
+	case <-time.After(250 * time.Millisecond):
+		require.Fail("label catalog refresh did not start")
+	}
+
+	select {
+	case got := <-resultCh:
+		require.Equal(http.StatusOK, got.rr.Code)
+		var body labelAPIResponse
+		require.NoError(json.Unmarshal(got.rr.Body.Bytes(), &body))
+		require.True(body.Syncing)
+		require.True(body.Stale)
+		require.Len(body.Labels, 2)
+	case <-time.After(250 * time.Millisecond):
+		require.Fail("GET /labels blocked on provider refresh")
+	}
 }
 
 func TestAPIListRepoLabelsReturnsCachedCatalog(t *testing.T) {

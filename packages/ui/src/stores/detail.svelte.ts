@@ -229,6 +229,18 @@ export function createDetailStore(
     return unsavedLocalBody !== null;
   }
 
+  function isDetailShowingRef(ref: DetailRequestRef): boolean {
+    return (
+      detail !== null &&
+      detail.repo_owner === ref.owner &&
+      detail.repo_name === ref.name &&
+      detail.merge_request.Number === ref.number &&
+      detail.repo?.provider === ref.provider &&
+      detail.repo?.platform_host === ref.platformHost &&
+      detail.repo?.repo_path === ref.repoPath
+    );
+  }
+
   function currentDetailRef(
     owner: string,
     name: string,
@@ -647,7 +659,7 @@ export function createDetailStore(
       throw new Error(message);
     }
     const nextLabels = (data?.labels ?? []) as Label[];
-    if (isDetailShowing(owner, name, number) && detail) {
+    if (isDetailShowingRef(ref) && detail) {
       detail = {
         ...detail,
         merge_request: {
