@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 )
+
+const mergeableCaptureMaxBodyBytes = 1 << 20
 
 type MergeableCache struct {
 	mu        sync.Mutex
@@ -81,21 +84,66 @@ func (t *MergeableCaptureTransport) RoundTrip(req *http.Request) (*http.Response
 		base = http.DefaultTransport
 	}
 	resp, err := base.RoundTrip(req)
-	if err != nil || resp == nil || resp.Body == nil || t.Cache == nil {
+	if err != nil || resp == nil || resp.Body == nil || t.Cache == nil || !shouldCaptureMergeable(req, resp) {
 		return resp, err
 	}
 
-	data, readErr := io.ReadAll(resp.Body)
-	closeErr := resp.Body.Close()
-	resp.Body = io.NopCloser(bytes.NewReader(data))
+	data, readErr := io.ReadAll(io.LimitReader(resp.Body, mergeableCaptureMaxBodyBytes+1))
 	if readErr != nil {
 		return resp, readErr
 	}
+
+	if len(data) > mergeableCaptureMaxBodyBytes {
+		resp.Body = &readCloser{
+			Reader: io.MultiReader(bytes.NewReader(data), resp.Body),
+			close:  resp.Body.Close,
+		}
+		return resp, nil
+	}
+
+	closeErr := resp.Body.Close()
+	resp.Body = io.NopCloser(bytes.NewReader(data))
 	if closeErr != nil {
 		return resp, closeErr
 	}
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		t.Cache.CapturePullRequestJSON(data)
-	}
+	t.Cache.CapturePullRequestJSON(data)
 	return resp, nil
+}
+
+func shouldCaptureMergeable(req *http.Request, resp *http.Response) bool {
+	if req == nil || req.URL == nil || req.Method != http.MethodGet || resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return false
+	}
+	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
+	if !strings.Contains(contentType, "application/json") {
+		return false
+	}
+	return isPullRequestAPIPath(req.URL.Path)
+}
+
+func isPullRequestAPIPath(path string) bool {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	for i := 0; i+3 < len(parts); i++ {
+		if parts[i] != "repos" {
+			continue
+		}
+		pullsIndex := i + 3
+		if parts[pullsIndex] != "pulls" {
+			return false
+		}
+		return len(parts) == pullsIndex+1 || len(parts) == pullsIndex+2
+	}
+	return false
+}
+
+type readCloser struct {
+	io.Reader
+	close func() error
+}
+
+func (r *readCloser) Close() error {
+	if r.close == nil {
+		return nil
+	}
+	return r.close()
 }
