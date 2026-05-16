@@ -41,11 +41,44 @@ func TestMergeableCaptureTransportOnlyCapturesPullRequestJSON(t *testing.T) {
 	assert.False(*mergeable)
 }
 
+func TestMergeableCacheOnlyReturnsMatchingHeadAndBase(t *testing.T) {
+	assert := Assert.New(t)
+	require := Require.New(t)
+	cache := NewMergeableCache()
+	cache.CapturePullRequestJSON([]byte(`{
+		"html_url":"https://gitea.test/owner/repo/pulls/1",
+		"mergeable":false,
+		"head":{"sha":"head-a"},
+		"base":{"sha":"base-a"}
+	}`))
+
+	mergeable, ok := cache.MergeableForPullRequest(
+		"https://gitea.test/owner/repo/pulls/1",
+		"head-a",
+		"base-a",
+	)
+	require.True(ok)
+	require.NotNil(mergeable)
+	assert.False(*mergeable)
+
+	_, ok = cache.MergeableForPullRequest("https://gitea.test/owner/repo/pulls/1", "head-b", "base-a")
+	assert.False(ok)
+	_, ok = cache.MergeableForPullRequest("https://gitea.test/owner/repo/pulls/1", "head-a", "base-b")
+	assert.False(ok)
+	_, ok = cache.MergeableForPullRequest("https://gitea.test/owner/repo/pulls/1", "", "base-a")
+	assert.False(ok)
+}
+
 func TestMergeableCaptureTransportCapturesMutationPullRequestJSON(t *testing.T) {
 	assert := Assert.New(t)
 	require := Require.New(t)
 	cache := NewMergeableCache()
-	body := []byte(`{"html_url":"https://gitea.test/owner/repo/pulls/1","mergeable":true}`)
+	body := []byte(`{
+		"html_url":"https://gitea.test/owner/repo/pulls/1",
+		"mergeable":true,
+		"head":{"sha":"head-a"},
+		"base":{"sha":"base-a"}
+	}`)
 	transport := &MergeableCaptureTransport{
 		Cache: cache,
 		Base: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
@@ -63,7 +96,7 @@ func TestMergeableCaptureTransportCapturesMutationPullRequestJSON(t *testing.T) 
 	require.NoError(err)
 	require.NoError(resp.Body.Close())
 
-	mergeable, ok := cache.MergeableForHTMLURL("https://gitea.test/owner/repo/pulls/1")
+	mergeable, ok := cache.MergeableForPullRequest("https://gitea.test/owner/repo/pulls/1", "head-a", "base-a")
 	require.True(ok)
 	require.NotNil(mergeable)
 	assert.True(*mergeable)
@@ -73,7 +106,12 @@ func TestMergeableCaptureTransportFindsPullRequestAPIUnderSubpath(t *testing.T) 
 	assert := Assert.New(t)
 	require := Require.New(t)
 	cache := NewMergeableCache()
-	body := []byte(`{"html_url":"https://gitea.test/owner/repo/pulls/1","mergeable":false}`)
+	body := []byte(`{
+		"html_url":"https://gitea.test/owner/repo/pulls/1",
+		"mergeable":false,
+		"head":{"sha":"head-a"},
+		"base":{"sha":"base-a"}
+	}`)
 	transport := &MergeableCaptureTransport{
 		Cache: cache,
 		Base: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
@@ -91,7 +129,7 @@ func TestMergeableCaptureTransportFindsPullRequestAPIUnderSubpath(t *testing.T) 
 	require.NoError(err)
 	require.NoError(resp.Body.Close())
 
-	mergeable, ok := cache.MergeableForHTMLURL("https://gitea.test/owner/repo/pulls/1")
+	mergeable, ok := cache.MergeableForPullRequest("https://gitea.test/owner/repo/pulls/1", "head-a", "base-a")
 	require.True(ok)
 	require.NotNil(mergeable)
 	assert.False(*mergeable)

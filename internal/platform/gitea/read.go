@@ -185,8 +185,19 @@ func (t *transport) mergeableForPullRequest(pr *giteasdk.PullRequest) *bool {
 	if pr == nil {
 		return nil
 	}
-	mergeable, _ := t.mergeability.MergeableForHTMLURL(pr.HTMLURL)
+	mergeable, _ := t.mergeability.MergeableForPullRequest(
+		pr.HTMLURL,
+		prBranchSHA(pr.Head),
+		prBranchSHA(pr.Base),
+	)
 	return mergeable
+}
+
+func prBranchSHA(branch *giteasdk.PRBranchInfo) string {
+	if branch == nil {
+		return ""
+	}
+	return branch.Sha
 }
 
 func (t *transport) ListPullRequestComments(

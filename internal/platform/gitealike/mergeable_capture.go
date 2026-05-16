@@ -13,11 +13,11 @@ const mergeableCaptureMaxBodyBytes = 1 << 20
 
 type MergeableCache struct {
 	mu        sync.Mutex
-	byHTMLURL map[string]*bool
+	byHTMLURL map[string]mergeableCacheEntry
 }
 
 func NewMergeableCache() *MergeableCache {
-	return &MergeableCache{byHTMLURL: make(map[string]*bool)}
+	return &MergeableCache{byHTMLURL: make(map[string]mergeableCacheEntry)}
 }
 
 func (c *MergeableCache) CapturePullRequestJSON(data []byte) {
@@ -43,12 +43,29 @@ func (c *MergeableCache) MergeableForHTMLURL(htmlURL string) (*bool, bool) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	mergeable, ok := c.byHTMLURL[htmlURL]
-	if mergeable == nil {
+	entry, ok := c.byHTMLURL[htmlURL]
+	if entry.mergeable == nil {
 		return nil, ok
 	}
-	value := *mergeable
+	value := *entry.mergeable
 	return &value, ok
+}
+
+func (c *MergeableCache) MergeableForPullRequest(htmlURL, headSHA, baseSHA string) (*bool, bool) {
+	if c == nil || htmlURL == "" {
+		return nil, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry, ok := c.byHTMLURL[htmlURL]
+	if !ok || !entry.matches(headSHA, baseSHA) {
+		return nil, false
+	}
+	if entry.mergeable == nil {
+		return nil, true
+	}
+	value := *entry.mergeable
+	return &value, true
 }
 
 func (c *MergeableCache) capturePullRequest(item map[string]json.RawMessage) {
@@ -68,9 +85,37 @@ func (c *MergeableCache) capturePullRequest(item map[string]json.RawMessage) {
 		}
 	}
 
+	headSHA := pullRequestBranchSHA(item["head"])
+	baseSHA := pullRequestBranchSHA(item["base"])
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.byHTMLURL[htmlURL] = mergeable
+	c.byHTMLURL[htmlURL] = mergeableCacheEntry{
+		mergeable: mergeable,
+		headSHA:   headSHA,
+		baseSHA:   baseSHA,
+	}
+}
+
+func pullRequestBranchSHA(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var branch struct {
+		SHA string `json:"sha"`
+	}
+	_ = json.Unmarshal(raw, &branch)
+	return branch.SHA
+}
+
+type mergeableCacheEntry struct {
+	mergeable *bool
+	headSHA   string
+	baseSHA   string
+}
+
+func (e mergeableCacheEntry) matches(headSHA, baseSHA string) bool {
+	return e.headSHA != "" && headSHA != "" && e.headSHA == headSHA &&
+		e.baseSHA != "" && baseSHA != "" && e.baseSHA == baseSHA
 }
 
 type MergeableCaptureTransport struct {
