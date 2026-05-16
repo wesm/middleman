@@ -69,6 +69,23 @@ test.describe("focus mode", () => {
     await expect(page.locator(".label-picker")).toBeHidden();
   });
 
+  test("PR focus route keeps workspace inside the mid-narrow action grid", async ({ page }) => {
+    await page.setViewportSize({ width: 560, height: 720 });
+    await page.goto("/focus/pulls/github/acme/widgets/1");
+    await page.locator(".focus-layout .pull-detail").waitFor({ state: "visible", timeout: 10_000 });
+
+    await expect(page.locator(".actions-menu-trigger")).toBeHidden();
+    await expect(page.locator(".actions-row--primary .primary-workspace-action .btn--workspace")).toBeVisible();
+    await expect(page.locator(".actions-row--workspace")).toBeHidden();
+
+    const copyNumberHeight = await page.locator(".meta-row .copy-number-btn").evaluate((node) =>
+      node.getBoundingClientRect().height,
+    );
+    expect(copyNumberHeight).toBeLessThan(28);
+    await expect(page.locator(".meta-sep--branch")).toBeHidden();
+    await expect(page.locator(".meta-sep--sync")).toBeHidden();
+  });
+
   test("browser back/forward works between focus routes", async ({ page }) => {
     await page.goto("/focus/pulls/github/acme/widgets/1");
     await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });

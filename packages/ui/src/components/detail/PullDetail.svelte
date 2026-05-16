@@ -1158,7 +1158,7 @@
         <span class="meta-sep">·</span>
         <span class="meta-item">{timeAgo(pr.CreatedAt)}</span>
         {#if pr.HeadBranch}
-          <span class="meta-sep">·</span>
+          <span class="meta-sep meta-sep--branch">·</span>
           <span class="meta-branch">
             <svg class="branch-icon" width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
               <path d="M11.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122V6c0 .73-.593 1.322-1.325 1.322H9.457A4.377 4.377 0 006.5 8.579V11.128a2.251 2.251 0 11-1.5 0V4.872a2.251 2.251 0 111.5 0v1.836A5.877 5.877 0 0111.175 5.5h.075V5.372A2.25 2.25 0 019.5 3.25zM4.75 12a.75.75 0 100 1.5.75.75 0 000-1.5zM4 3.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0z"/>
@@ -1179,7 +1179,7 @@
           </span>
         {/if}
         {#if detailStore.isDetailSyncing()}
-          <span class="meta-sep">·</span>
+          <span class="meta-sep meta-sep--sync">·</span>
           <span class="sync-indicator" title="Syncing from GitHub">
             <svg class="sync-spinner" width="12" height="12" viewBox="0 0 16 16" fill="none">
               <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" stroke-dasharray="28" stroke-dashoffset="8" stroke-linecap="round"/>
@@ -1446,6 +1446,11 @@
         <div class="primary-actions-wrap">
           <div class="actions-row actions-row--primary">
             {@render primaryActionButtons()}
+            {#if !hideWorkspaceAction}
+              <div class="primary-workspace-action">
+                {@render workspaceActionButton()}
+              </div>
+            {/if}
           </div>
           <div class="actions-menu-wrap" bind:this={actionMenuWrapEl}>
             <button
@@ -2095,6 +2100,11 @@
     max-width: 100%;
   }
 
+  .primary-workspace-action {
+    display: none;
+    min-width: 0;
+  }
+
   .actions-row :global(.action-button__label),
   .actions-row :global(.action-button__short-label) {
     min-width: 0;
@@ -2180,6 +2190,16 @@
 
   .actions-menu-popover :global(.action-button__short-label) {
     display: none;
+  }
+
+  @media (max-width: 640px) {
+    .primary-workspace-action {
+      display: block;
+    }
+
+    .pull-detail-content .actions-row.actions-row--workspace {
+      display: none;
+    }
   }
 
   @container pull-detail (max-width: 520px) {
@@ -2513,14 +2533,22 @@
     .edit-body-btn,
     .star-btn,
     .gh-link,
-    .copy-icon-btn,
-    .meta-row :global(.copy-number-btn) {
+    .copy-icon-btn {
       min-width: var(--detail-mobile-hit-target);
       min-height: var(--detail-mobile-hit-target);
       justify-content: center;
       padding: var(--detail-mobile-space-xs);
       margin-top: 0;
       font-size: var(--font-size-mobile-sm);
+    }
+
+    .pull-detail-content .meta-row :global(.copy-number-btn) {
+      min-width: 0;
+      min-height: 0;
+      padding: 0;
+      border-radius: 3px;
+      font-size: var(--font-size-mobile-sm);
+      line-height: 1.35;
     }
 
     .meta-row,
@@ -2545,6 +2573,11 @@
     .detail-tab {
       font-size: var(--font-size-mobile-sm);
       line-height: 1.35;
+    }
+
+    .meta-sep--branch,
+    .meta-sep--sync {
+      display: none;
     }
 
     .inset-box,
