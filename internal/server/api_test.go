@@ -7728,6 +7728,132 @@ func TestE2EGraphQLBulkSyncPersistsWorkflowApproval(t *testing.T) {
 	assert.Equal(int64(1), resp.JSON200.WorkflowApproval.Count)
 }
 
+// TestE2EGraphQLBulkSyncPersistsWorkflowApprovalForForkPR pins the
+// fork-fallback matching path through the GraphQL bulk sync. The
+// workflow run mock returns an empty PullRequests array (mirroring
+// what GitHub returns for fork-triggered runs) and identifies the PR
+// only by head repository full name and head branch. The GraphQL
+// adapter never populates Head.Repo.FullName, so this exercises
+// ParseHeadRepoFullName against the persisted clone URL; a regression
+// removing that fallback would leave the Approve workflows button
+// hidden for every fork PR synced through bulk.
+func TestE2EGraphQLBulkSyncPersistsWorkflowApprovalForForkPR(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+
+	now := time.Date(2026, 4, 14, 10, 0, 0, 0, time.UTC)
+	nowRFC3339 := now.Format(time.RFC3339)
+	const prNumber = 174
+	const prID int64 = 174000
+	const headSHA = "abc123"
+	const forkFullName = "ericdill/widget"
+	const headRef = "feature/fork-pr"
+
+	gqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if bytes.Contains(body, []byte("pullRequests")) {
+			resp := `{"data":{"repository":{"pullRequests":{"nodes":[{
+				"databaseId":174000,
+				"number":174,
+				"title":"Fork PR awaiting workflow approval",
+				"state":"OPEN",
+				"isDraft":false,
+				"body":"",
+				"url":"https://github.com/acme/widget/pull/174",
+				"author":{"login":"ericdill"},
+				"createdAt":"` + nowRFC3339 + `",
+				"updatedAt":"` + nowRFC3339 + `",
+				"mergedAt":null,
+				"closedAt":null,
+				"additions":1,
+				"deletions":0,
+				"mergeable":"MERGEABLE",
+				"reviewDecision":"",
+				"headRefName":"` + headRef + `",
+				"baseRefName":"main",
+				"headRefOid":"` + headSHA + `",
+				"baseRefOid":"def456",
+				"headRepository":{"url":"https://github.com/` + forkFullName + `"},
+				"labels":{"nodes":[]},
+				"comments":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
+				"reviews":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
+				"allCommits":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
+				"lastCommit":{"nodes":[]},
+				"timelineItems":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}
+			}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`
+			_, _ = w.Write([]byte(resp))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"repository":{"issues":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
+	}))
+	defer gqlSrv.Close()
+
+	prTime := gh.Timestamp{Time: now}
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+			return []*gh.PullRequest{{
+				ID:        new(prID),
+				Number:    new(prNumber),
+				Title:     new("Fork PR awaiting workflow approval"),
+				State:     new("open"),
+				HTMLURL:   new("https://github.com/acme/widget/pull/174"),
+				User:      &gh.User{Login: new("ericdill")},
+				CreatedAt: &prTime,
+				UpdatedAt: &prTime,
+				Head:      &gh.PullRequestBranch{Ref: new(headRef), SHA: new(headSHA)},
+				Base:      &gh.PullRequestBranch{Ref: new("main")},
+			}}, nil
+		},
+		listOpenIssuesFn: func(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: http.StatusNotModified},
+			}
+		},
+		listWorkflowRunsForHeadFn: func(_ context.Context, _, _, sha string) ([]*gh.WorkflowRun, error) {
+			require.Equal(headSHA, sha)
+			// Fork-triggered runs return an empty PullRequests array.
+			// The matcher must fall back to HeadRepository.FullName +
+			// HeadBranch, identifying the PR via its persisted clone
+			// URL.
+			fullName := forkFullName
+			branch := headRef
+			return []*gh.WorkflowRun{{
+				ID:             new(int64(7778)),
+				HeadSHA:        new(headSHA),
+				Event:          new("pull_request"),
+				PullRequests:   nil,
+				HeadRepository: &gh.Repository{FullName: &fullName},
+				HeadBranch:     &branch,
+			}}, nil
+		},
+	}
+
+	srv, _ := setupTestServerWithMock(t, mock)
+	gqlClient := githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client())
+	srv.syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+		"github.com": ghclient.NewGraphQLFetcherWithClient(gqlClient, nil),
+	})
+	client := setupTestClient(t, srv)
+
+	srv.syncer.RunOnce(ctx)
+
+	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+		ctx, "gh", "acme", "widget", int64(prNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.WorkflowApproval)
+	assert.True(resp.JSON200.WorkflowApproval.Checked,
+		"GraphQL bulk path should persist a workflow approval snapshot")
+	assert.True(resp.JSON200.WorkflowApproval.Required,
+		"fork PR must match via HeadRepository.FullName + HeadBranch fallback")
+	assert.Equal(int64(1), resp.JSON200.WorkflowApproval.Count)
+}
+
 func TestE2EGraphQLBulkSyncKeepsNewestCICheckBySuiteCreatedAt(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
