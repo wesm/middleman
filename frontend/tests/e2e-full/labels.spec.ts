@@ -22,8 +22,12 @@ test.describe("label editing", () => {
 
       await page.getByRole("button", { name: "Labels" }).click();
       await expect(page.getByRole("dialog", { name: "Edit labels" })).toBeVisible();
+      await expect(page.getByLabel("Filter labels")).toBeFocused();
       await expect(page.getByRole("menuitemcheckbox", { name: /bug/i })).toHaveAttribute("aria-checked", "true");
       await expect(page.getByRole("menuitemcheckbox", { name: /triage/i })).toHaveAttribute("aria-checked", "false");
+      await page.keyboard.type("tri");
+      await expect(page.getByRole("menuitemcheckbox", { name: /bug/i })).toHaveCount(0);
+      await expect(page.getByRole("menuitemcheckbox", { name: /triage/i })).toBeVisible();
 
       const updateResponse = page.waitForResponse((response) =>
         response.request().method() === "PUT"
@@ -80,6 +84,7 @@ test.describe("label editing", () => {
 
       await page.getByRole("button", { name: "Labels" }).click();
       await expect(page.getByRole("dialog", { name: "Edit labels" })).toBeVisible();
+      await expect(page.getByLabel("Filter labels")).toBeFocused();
 
       const updateResponse = page.waitForResponse((response) =>
         response.request().method() === "PUT"

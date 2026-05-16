@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import CheckIcon from "@lucide/svelte/icons/check";
   import EraserIcon from "@lucide/svelte/icons/eraser";
   import XIcon from "@lucide/svelte/icons/x";
@@ -10,6 +11,7 @@
     syncing?: boolean;
     pendingLabel?: string | null;
     error?: string | null;
+    autofocusFilter?: boolean;
     ontoggle: (name: string) => void | Promise<void>;
     onclear?: () => void | Promise<void>;
     onclose: () => void;
@@ -21,12 +23,18 @@
     syncing = false,
     pendingLabel = null,
     error = null,
+    autofocusFilter = false,
     ontoggle,
     onclear = undefined,
     onclose,
   }: Props = $props();
 
   let query = $state("");
+  let filterInput: HTMLInputElement | undefined = $state();
+
+  onMount(() => {
+    if (autofocusFilter) filterInput?.focus();
+  });
 
   const selectedNames = $derived(new Set(selectedLabels.map((label) => label.name)));
   const filteredLabels = $derived.by(() => {
@@ -80,7 +88,13 @@
 
   <label class="label-picker__filter">
     <span class="label-picker__sr-only">Filter labels</span>
-    <input bind:value={query} type="search" placeholder="Filter labels" aria-label="Filter labels" />
+    <input
+      bind:this={filterInput}
+      bind:value={query}
+      type="search"
+      placeholder="Filter labels"
+      aria-label="Filter labels"
+    />
   </label>
 
   {#if error}
