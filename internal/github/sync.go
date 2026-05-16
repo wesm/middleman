@@ -4195,7 +4195,11 @@ func (s *Syncer) RefreshMRCIStatusOnProvider(
 		return nil
 	}
 	if repoPlatform(repo) == platform.KindGitHub {
-		return s.refreshCIStatus(ctx, repo, repoID, number, headSHA)
+		ciStatus, ciChecksJSON, err := s.fetchGitHubCIStatus(ctx, repo, number, headSHA)
+		if err != nil {
+			return err
+		}
+		return s.db.UpdateMRCIStatusForHead(ctx, repoID, number, headSHA, ciStatus, ciChecksJSON)
 	}
 
 	ciReader, err := s.ciReaderFor(repo)
@@ -4218,7 +4222,7 @@ func (s *Syncer) RefreshMRCIStatusOnProvider(
 	}
 	ciJSON, _ := json.Marshal(dbChecks)
 	ciStatus := deriveCIStatusFromChecks(dbChecks)
-	if err := s.db.UpdateMRCIStatus(ctx, repoID, number, ciStatus, string(ciJSON)); err != nil {
+	if err := s.db.UpdateMRCIStatusForHead(ctx, repoID, number, headSHA, ciStatus, string(ciJSON)); err != nil {
 		return fmt.Errorf("update CI status for MR #%d: %w", number, err)
 	}
 	return nil
@@ -4236,15 +4240,28 @@ func (s *Syncer) refreshCIStatus(
 	number int,
 	headSHA string,
 ) error {
+	ciStatus, ciChecksJSON, err := s.fetchGitHubCIStatus(ctx, repo, number, headSHA)
+	if err != nil {
+		return err
+	}
+	return s.db.UpdateMRCIStatus(ctx, repoID, number, ciStatus, ciChecksJSON)
+}
+
+func (s *Syncer) fetchGitHubCIStatus(
+	ctx context.Context,
+	repo RepoRef,
+	number int,
+	headSHA string,
+) (string, string, error) {
 	if headSHA == "" {
-		return nil
+		return "", "", nil
 	}
 
 	// Fetch both sources. On failure, skip the DB write to preserve
 	// existing data rather than wiping it with empty values.
 	client, err := s.clientFor(repo)
 	if err != nil {
-		return fmt.Errorf("resolve client for %s/%s: %w", repo.Owner, repo.Name, err)
+		return "", "", fmt.Errorf("resolve client for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
 	checkRuns, err := client.ListCheckRunsForRef(ctx, repo.Owner, repo.Name, headSHA)
 	if err != nil {
@@ -4253,7 +4270,7 @@ func (s *Syncer) refreshCIStatus(
 			"number", number,
 			"err", err,
 		)
-		return nil
+		return "", "", nil
 	}
 
 	combined, err := client.GetCombinedStatus(ctx, repo.Owner, repo.Name, headSHA)
@@ -4263,13 +4280,10 @@ func (s *Syncer) refreshCIStatus(
 			"number", number,
 			"err", err,
 		)
-		return nil
+		return "", "", nil
 	}
 
-	ciStatus := DeriveOverallCIStatus(checkRuns, combined)
-	ciChecksJSON := NormalizeCIChecks(checkRuns, combined)
-
-	return s.db.UpdateMRCIStatus(ctx, repoID, number, ciStatus, ciChecksJSON)
+	return DeriveOverallCIStatus(checkRuns, combined), NormalizeCIChecks(checkRuns, combined), nil
 }
 
 // ciHasPending parses the CI checks JSON and returns true if any

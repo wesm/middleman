@@ -2675,6 +2675,29 @@ func (d *DB) UpdateMRCIStatus(
 	return nil
 }
 
+// UpdateMRCIStatusForHead writes CI status and check runs JSON only when the
+// merge request still points at the head SHA that was refreshed.
+func (d *DB) UpdateMRCIStatusForHead(
+	ctx context.Context,
+	repoID int64,
+	number int,
+	headSHA string,
+	ciStatus string,
+	ciChecksJSON string,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_merge_requests
+		SET ci_status = ?, ci_checks_json = ?
+		WHERE repo_id = ? AND number = ? AND platform_head_sha = ?`,
+		ciStatus, ciChecksJSON,
+		repoID, number, headSHA,
+	)
+	if err != nil {
+		return fmt.Errorf("update mr ci status for head: %w", err)
+	}
+	return nil
+}
+
 // ClearMRCI resets ci_status, ci_checks_json, and ci_had_pending for a
 // merge request. UpsertMergeRequest preserves ci_had_pending across
 // upserts, so callers that observe a head SHA change need this to drop

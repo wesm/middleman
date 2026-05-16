@@ -2773,6 +2773,41 @@ func TestGetDiffSHAsByRepoIDScopesDuplicateProviderRepos(t *testing.T) {
 	assert.Equal("github-diff-head", githubSHAs.DiffHeadSHA)
 }
 
+func TestUpdateMRCIStatusForHeadSkipsStaleHead(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "o", "r")
+	now := baseTime()
+	_, err := d.UpsertMergeRequest(ctx, &MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      1001,
+		Number:          7,
+		Title:           "ci guarded",
+		State:           "open",
+		PlatformHeadSHA: "new-head",
+		CIStatus:        "pending",
+		CIChecksJSON:    `[{"name":"old","status":"in_progress"}]`,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+	})
+	require.NoError(err)
+
+	require.NoError(d.UpdateMRCIStatusForHead(ctx, repoID, 7, "old-head", "success", `[]`))
+	stale, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(stale)
+	assert.Equal("pending", stale.CIStatus)
+
+	require.NoError(d.UpdateMRCIStatusForHead(ctx, repoID, 7, "new-head", "success", `[]`))
+	fresh, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(fresh)
+	assert.Equal("success", fresh.CIStatus)
+}
+
 func TestGetPreviouslyOpenPRNumbers(t *testing.T) {
 	d := openTestDB(t)
 

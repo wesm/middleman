@@ -93,6 +93,59 @@ describe("provider-aware detail API routes", () => {
     });
   });
 
+  it("serializes overlapping pending PR CI refreshes", async () => {
+    const detail = {
+      repo_owner: "acme",
+      repo_name: "widgets",
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "widgets",
+        repo_path: "acme/widgets",
+      },
+      merge_request: { Number: 1 },
+      events: [],
+    };
+    let resolvePost!: () => void;
+    const postDone = new Promise<void>((resolve) => {
+      resolvePost = resolve;
+    });
+    const client = {
+      GET: vi.fn(async () => ({ data: detail })),
+      POST: vi.fn(async () => {
+        await postDone;
+        return { data: detail };
+      }),
+      PUT: vi.fn(),
+      DELETE: vi.fn(),
+    } as unknown as MiddlemanClient;
+    const store = createDetailStore({ client });
+
+    await store.loadDetail("acme", "widgets", 1, {
+      sync: false,
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widgets",
+    } as never);
+
+    const first = store.refreshPendingCI("acme", "widgets", 1, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widgets",
+    });
+    const second = store.refreshPendingCI("acme", "widgets", 1, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widgets",
+    });
+    await Promise.resolve();
+
+    expect(client.POST).toHaveBeenCalledTimes(1);
+    resolvePost();
+    await Promise.all([first, second]);
+  });
+
   it("promotes pending workflow approval checks to foreground PR sync", async () => {
     const pendingDetail = {
       repo_owner: "acme",

@@ -126,6 +126,10 @@ export function createDetailStore(
     syncMode: DetailSyncMode;
     workflowApprovalSync: boolean;
   } | null = null;
+  let activeCIRefresh: {
+    key: string;
+    promise: Promise<void>;
+  } | null = null;
 
   // Per-PR monotonic counters for kanban updates.
   const kanbanSeqByPR = new Map<string, number>();
@@ -555,34 +559,45 @@ export function createDetailStore(
   ): Promise<void> {
     if (!isDetailShowing(owner, name, number)) return;
     const ref = detailRequestRef(owner, name, number, identity);
+    const key = prKey(ref);
+    if (activeCIRefresh?.key === key) {
+      return activeCIRefresh.promise;
+    }
     const gen = syncGeneration;
-    syncing = true;
-    try {
-      const { data, error: requestError } = await apiClient.POST(
-        providerItemPath("pulls", ref, "/ci-refresh"),
-        {
-          params: {
-            path: { ...providerRouteParams(ref), number: ref.number },
+    const promise = (async () => {
+      syncing = true;
+      try {
+        const { data, error: requestError } = await apiClient.POST(
+          providerItemPath("pulls", ref, "/ci-refresh"),
+          {
+            params: {
+              path: { ...providerRouteParams(ref), number: ref.number },
+            },
           },
-        },
-      );
-      if (gen !== syncGeneration) return;
-      if (requestError) return;
-      if (data) {
-        storeError = null;
-        detail = withPreservedLocalBody({
-          ...data,
-          events: data.events ?? [],
-        } as PullDetail);
-        detailLoaded = data.detail_loaded ?? detailLoaded;
+        );
+        if (gen !== syncGeneration) return;
+        if (requestError) return;
+        if (data) {
+          storeError = null;
+          detail = withPreservedLocalBody({
+            ...data,
+            events: data.events ?? [],
+          } as PullDetail);
+          detailLoaded = data.detail_loaded ?? detailLoaded;
+        }
+      } finally {
+        if (gen === syncGeneration) syncing = false;
+        void syncDep?.refreshSyncStatus?.();
       }
-    } finally {
-      if (gen === syncGeneration) syncing = false;
-      void syncDep?.refreshSyncStatus?.();
-    }
-    if (gen === syncGeneration) {
-      await refreshPullsIfActive();
-    }
+      if (gen === syncGeneration) {
+        await refreshPullsIfActive();
+      }
+    })();
+    activeCIRefresh = { key, promise };
+    promise.finally(() => {
+      if (activeCIRefresh?.promise === promise) activeCIRefresh = null;
+    });
+    return promise;
   }
 
   async function updateKanbanState(
