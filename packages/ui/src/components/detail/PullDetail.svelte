@@ -91,6 +91,11 @@
     ready_for_review: true,
     issue_mutation: true,
     label_mutation: false,
+    review_draft_mutation: false,
+    review_thread_resolution: false,
+    read_review_threads: false,
+    native_multiline_ranges: false,
+    supported_review_actions: [],
   };
 
   function currentCapabilities(): ProviderCapabilities {
@@ -1164,7 +1169,16 @@
         </div>
       {/if}
       {#if !hideTabs && activeTab === "files"}
-        <DiffFilesLayout {provider} {platformHost} {owner} {name} {repoPath} {number} />
+        <DiffFilesLayout
+          {provider}
+          {platformHost}
+          {owner}
+          {name}
+          {repoPath}
+          {number}
+          diffHeadSHA={detail.diff_head_sha}
+          {capabilities}
+        />
       {:else}
         <div class="pull-detail">
           <div
@@ -1842,6 +1856,8 @@
             repoOwner={owner}
             repoName={name}
             {repoPath}
+            {number}
+            canResolveReviewThreads={capabilities.review_thread_resolution}
             filtered={hasActiveTimelineFilters}
             showCommitDetails={timelineFilter.showCommitDetails}
             onEditComment={capabilities.comment_mutation && !stalePR

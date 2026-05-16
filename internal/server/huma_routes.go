@@ -103,6 +103,69 @@ type editCommentInput struct {
 
 type editCommentOutput = bodyOutput[db.MREvent]
 
+type getDiffReviewDraftOutput = bodyOutput[diffReviewDraftResponse]
+
+type createDiffReviewDraftCommentInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Body         struct {
+		Body  string              `json:"body"`
+		Range diffReviewLineRange `json:"range"`
+	}
+}
+
+type createDiffReviewDraftCommentOutput = createdOutput[diffReviewDraftComment]
+
+type editDiffReviewDraftCommentInput struct {
+	Provider       string `path:"provider"`
+	PlatformHost   string
+	Owner          string `path:"owner"`
+	Name           string `path:"name"`
+	Number         int    `path:"number"`
+	DraftCommentID string `path:"draft_comment_id"`
+	Body           struct {
+		Body  string              `json:"body"`
+		Range diffReviewLineRange `json:"range"`
+	}
+}
+
+type editDiffReviewDraftCommentOutput = bodyOutput[diffReviewDraftComment]
+
+type deleteDiffReviewDraftCommentInput struct {
+	Provider       string `path:"provider"`
+	PlatformHost   string
+	Owner          string `path:"owner"`
+	Name           string `path:"name"`
+	Number         int    `path:"number"`
+	DraftCommentID string `path:"draft_comment_id"`
+}
+
+type publishDiffReviewDraftInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Body         struct {
+		Body   string `json:"body,omitempty"`
+		Action string `json:"action"`
+	}
+}
+
+type discardDiffReviewDraftInput = repoNumberInput
+
+type resolveDiffReviewThreadInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	ThreadID     string `path:"thread_id"`
+}
+
 type listIssuesInput struct {
 	Repo    string `query:"repo"`
 	State   string `query:"state"`
@@ -280,8 +343,6 @@ type listRepoSummariesOutput = bodyOutput[[]repoSummaryResponse]
 type acceptedOutput = acceptedStatusOutput
 
 type syncPROutput = bodyOutput[mergeRequestDetailResponse]
-
-type syncPRCIOutput = bodyOutput[mergeRequestDetailResponse]
 
 type syncIssueOutput = bodyOutput[issueDetailResponse]
 
@@ -600,6 +661,22 @@ func (s *Server) registerProviderRepoAPI(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "edit-pr-comment-on-host", Method: http.MethodPatch, Path: hostPullPath + "/comments/{comment_id}", DefaultStatus: http.StatusOK}, s.editCommentOnHost)
 	huma.Register(api, huma.Operation{OperationID: "set-pr-labels", Method: http.MethodPut, Path: pullPath + "/labels", DefaultStatus: http.StatusOK}, s.setPullLabels)
 	huma.Register(api, huma.Operation{OperationID: "set-pr-labels-on-host", Method: http.MethodPut, Path: hostPullPath + "/labels", DefaultStatus: http.StatusOK}, s.setPullLabelsOnHost)
+	huma.Register(api, huma.Operation{OperationID: "get-pr-review-draft", Method: http.MethodGet, Path: pullPath + "/review-draft", DefaultStatus: http.StatusOK}, s.getDiffReviewDraft)
+	huma.Register(api, huma.Operation{OperationID: "get-pr-review-draft-on-host", Method: http.MethodGet, Path: hostPullPath + "/review-draft", DefaultStatus: http.StatusOK}, s.getDiffReviewDraftOnHost)
+	huma.Register(api, huma.Operation{OperationID: "create-pr-review-draft-comment", Method: http.MethodPost, Path: pullPath + "/review-draft/comments", DefaultStatus: http.StatusCreated}, s.createDiffReviewDraftComment)
+	huma.Register(api, huma.Operation{OperationID: "create-pr-review-draft-comment-on-host", Method: http.MethodPost, Path: hostPullPath + "/review-draft/comments", DefaultStatus: http.StatusCreated}, s.createDiffReviewDraftCommentOnHost)
+	huma.Register(api, huma.Operation{OperationID: "edit-pr-review-draft-comment", Method: http.MethodPatch, Path: pullPath + "/review-draft/comments/{draft_comment_id}", DefaultStatus: http.StatusOK}, s.editDiffReviewDraftComment)
+	huma.Register(api, huma.Operation{OperationID: "edit-pr-review-draft-comment-on-host", Method: http.MethodPatch, Path: hostPullPath + "/review-draft/comments/{draft_comment_id}", DefaultStatus: http.StatusOK}, s.editDiffReviewDraftCommentOnHost)
+	huma.Register(api, huma.Operation{OperationID: "delete-pr-review-draft-comment", Method: http.MethodDelete, Path: pullPath + "/review-draft/comments/{draft_comment_id}", DefaultStatus: http.StatusOK}, s.deleteDiffReviewDraftComment)
+	huma.Register(api, huma.Operation{OperationID: "delete-pr-review-draft-comment-on-host", Method: http.MethodDelete, Path: hostPullPath + "/review-draft/comments/{draft_comment_id}", DefaultStatus: http.StatusOK}, s.deleteDiffReviewDraftCommentOnHost)
+	huma.Register(api, huma.Operation{OperationID: "publish-pr-review-draft", Method: http.MethodPost, Path: pullPath + "/review-draft/publish", DefaultStatus: http.StatusOK}, s.publishDiffReviewDraft)
+	huma.Register(api, huma.Operation{OperationID: "publish-pr-review-draft-on-host", Method: http.MethodPost, Path: hostPullPath + "/review-draft/publish", DefaultStatus: http.StatusOK}, s.publishDiffReviewDraftOnHost)
+	huma.Register(api, huma.Operation{OperationID: "discard-pr-review-draft", Method: http.MethodDelete, Path: pullPath + "/review-draft", DefaultStatus: http.StatusOK}, s.discardDiffReviewDraft)
+	huma.Register(api, huma.Operation{OperationID: "discard-pr-review-draft-on-host", Method: http.MethodDelete, Path: hostPullPath + "/review-draft", DefaultStatus: http.StatusOK}, s.discardDiffReviewDraftOnHost)
+	huma.Register(api, huma.Operation{OperationID: "resolve-pr-review-thread", Method: http.MethodPost, Path: pullPath + "/review-threads/{thread_id}/resolve", DefaultStatus: http.StatusOK}, s.resolveDiffReviewThread)
+	huma.Register(api, huma.Operation{OperationID: "resolve-pr-review-thread-on-host", Method: http.MethodPost, Path: hostPullPath + "/review-threads/{thread_id}/resolve", DefaultStatus: http.StatusOK}, s.resolveDiffReviewThreadOnHost)
+	huma.Register(api, huma.Operation{OperationID: "unresolve-pr-review-thread", Method: http.MethodPost, Path: pullPath + "/review-threads/{thread_id}/unresolve", DefaultStatus: http.StatusOK}, s.unresolveDiffReviewThread)
+	huma.Register(api, huma.Operation{OperationID: "unresolve-pr-review-thread-on-host", Method: http.MethodPost, Path: hostPullPath + "/review-threads/{thread_id}/unresolve", DefaultStatus: http.StatusOK}, s.unresolveDiffReviewThreadOnHost)
 
 	huma.Register(api, huma.Operation{OperationID: "create-issue", Method: http.MethodPost, Path: issueRepoPath, DefaultStatus: http.StatusCreated}, s.createIssue)
 	huma.Register(api, huma.Operation{OperationID: "create-issue-on-host", Method: http.MethodPost, Path: hostIssueRepoPath, DefaultStatus: http.StatusCreated}, s.createIssueOnHost)
@@ -633,8 +710,6 @@ func (s *Server) registerProviderRepoAPI(api huma.API) {
 	huma.Post(api, hostPullPath+"/merge", s.mergePROnHost)
 	huma.Post(api, pullPath+"/sync", s.syncPR)
 	huma.Post(api, hostPullPath+"/sync", s.syncPROnHost)
-	huma.Post(api, pullPath+"/ci-refresh", s.syncPRCI)
-	huma.Post(api, hostPullPath+"/ci-refresh", s.syncPRCIOnHost)
 	huma.Register(api, huma.Operation{OperationID: "enqueue-pr-sync", Method: http.MethodPost, Path: pullPath + "/sync/async", DefaultStatus: http.StatusAccepted}, s.enqueuePRSync)
 	huma.Register(api, huma.Operation{OperationID: "enqueue-pr-sync-on-host", Method: http.MethodPost, Path: hostPullPath + "/sync/async", DefaultStatus: http.StatusAccepted}, s.enqueuePRSyncOnHost)
 	huma.Post(api, issuePath+"/sync", s.syncIssue)
@@ -777,6 +852,12 @@ func (s *Server) buildPullDetailResponse(
 	if events == nil {
 		events = []db.MREvent{}
 	}
+	eventResponses, err := s.mergeRequestEventResponses(ctx, mr.ID, events)
+	if err != nil {
+		return mergeRequestDetailResponse{}, huma.Error500InternalServerError(
+			"attach review thread metadata failed",
+		)
+	}
 
 	dbLinks, err := s.db.GetWorktreeLinksForMR(ctx, mr.ID)
 	if err != nil {
@@ -793,7 +874,7 @@ func (s *Server) buildPullDetailResponse(
 	}
 	resp := mergeRequestDetailResponse{
 		MergeRequest:     mr,
-		Events:           events,
+		Events:           eventResponses,
 		Repo:             s.repoRefFromRepo(*repo),
 		RepoOwner:        repo.Owner,
 		RepoName:         repo.Name,
@@ -2266,57 +2347,6 @@ func (s *Server) getRateLimits(
 	return &rateLimitsOutput{
 		Body: rateLimitsResponse{Hosts: hosts},
 	}, nil
-}
-
-func (s *Server) syncPRCI(ctx context.Context, input *repoNumberInput) (*syncPRCIOutput, error) {
-	repo, err := s.lookupRepoByProviderRoute(
-		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
-	)
-	if err != nil {
-		return nil, providerRouteLookupError(err)
-	}
-
-	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
-	if err != nil {
-		return nil, huma.Error500InternalServerError("get pull request: " + err.Error())
-	}
-	if mr == nil {
-		return nil, huma.Error404NotFound("pull request not found")
-	}
-	warnings, err := s.syncer.RefreshMRCIStatusOnProvider(
-		ctx,
-		ghclient.RepoRef{
-			Platform:           repoProviderKind(*repo),
-			Owner:              repo.Owner,
-			Name:               repo.Name,
-			PlatformHost:       repoProviderHost(*repo),
-			RepoPath:           repo.RepoPath,
-			PlatformExternalID: repo.PlatformRepoID,
-			WebURL:             repo.WebURL,
-			CloneURL:           repo.CloneURL,
-			DefaultBranch:      repo.DefaultBranch,
-		},
-		repo.ID,
-		input.Number,
-		mr.PlatformHeadSHA,
-	)
-	if err != nil {
-		return nil, huma.Error502BadGateway("refresh PR CI: " + err.Error())
-	}
-
-	mr, err = s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
-	if err != nil {
-		return nil, huma.Error500InternalServerError("get pull request: " + err.Error())
-	}
-	if mr == nil {
-		return nil, huma.Error404NotFound("pull request not found after CI refresh")
-	}
-	body, err := s.buildPullDetailResponse(ctx, mr, workflowDBOnly)
-	if err != nil {
-		return nil, err
-	}
-	body.Warnings = append(body.Warnings, warnings...)
-	return &syncPRCIOutput{Body: body}, nil
 }
 
 func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROutput, error) {

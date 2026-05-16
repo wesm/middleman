@@ -45,6 +45,11 @@ export const defaultProviderCapabilities: ProviderCapabilities = {
   ready_for_review: true,
   issue_mutation: true,
   label_mutation: false,
+  review_draft_mutation: false,
+  review_thread_resolution: false,
+  read_review_threads: false,
+  native_multiline_ranges: false,
+  supported_review_actions: [],
 };
 
 export function repoKey(summary: {
