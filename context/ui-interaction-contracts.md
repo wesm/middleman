@@ -74,6 +74,19 @@ Not every visibility control means "remove this entity entirely."
 - Empty states should make it clear when filters, not missing data, are hiding
   results.
 
+## Label Editing
+
+Desktop label editing should reuse existing detail header/meta/chip rows. Do not
+add an empty `No labels` row or otherwise consume vertical space when no labels
+are assigned; show the compact `Labels` action inline with existing metadata.
+
+The picker opens only for the currently visible PR/issue detail. Compare
+provider, platform host, repo path, owner, name, and number before opening or
+applying mutation responses. While catalogs are stale or syncing, keep refreshing
+non-blockingly. Before sending a replacement label set, filter assigned labels to
+labels present in the current catalog so historical labels do not block edits.
+Command palette label actions target only the current detail item.
+
 ## Testing Expectations
 
 Behavior contracts should usually be tested where the user would notice the

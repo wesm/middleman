@@ -87,6 +87,20 @@ registry helpers return typed errors for missing providers or capabilities.
   external ids should be persisted when available instead of reconstructed from
   host/owner/name.
 
+## Label Catalogs And Mutations
+
+Label picker data comes from a cached repo catalog, not from labels currently
+assigned to visible items. Catalog refresh marks which labels are currently
+selectable while preserving historical assigned labels until item sync removes
+them. Stale `GET repo labels` responses should return cached labels immediately
+and enqueue a deduped background refresh with `syncing=true`; catalog errors are
+repo metadata and must not fail normal PR/issue sync.
+
+Label mutations replace the full desired label name set. Server handlers must
+check `read_labels` and `label_mutation`, reject missing/null/empty/duplicate or
+non-catalog names, call the provider mutator first, then persist the returned
+provider labels to SQLite so the next sync does not revert the edit.
+
 ## GitLab Shape
 
 GitLab API calls address projects by numeric id or URL-escaped path with

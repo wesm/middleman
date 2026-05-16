@@ -70,6 +70,18 @@ Rules:
 - Do not fake GitHub behavior for another provider. Add provider-specific
   normalization or explicit unsupported-capability handling instead.
 
+## Label Capabilities
+
+Repository label editing is provider-neutral:
+
+- `LabelReader` lists the repo label catalog; `LabelMutator` replaces the full
+  label set on a merge request or issue and returns provider-normalized labels.
+- `read_labels` and `label_mutation` must be true only when the provider
+  implements the matching interfaces. Do not expose editable UI or mutation
+  routes from fallback/default capabilities.
+- GitHub PR labels use issue-label APIs, but that mapping belongs behind the
+  provider implementation, not in server handlers or frontend code.
+
 ## Route Model
 
 Repo-scoped REST routes are provider-aware. The default-host route shape omits
