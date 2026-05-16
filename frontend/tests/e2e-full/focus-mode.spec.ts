@@ -21,6 +21,26 @@ test.describe("focus mode", () => {
     await expect(page.locator(".status-bar")).not.toBeAttached();
   });
 
+  test("narrow PR focus route shows actions only inside the actions menu", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 720 });
+    await page.goto("/focus/pulls/github/acme/widgets/1");
+    await page.locator(".focus-layout .pull-detail").waitFor({ state: "visible", timeout: 10_000 });
+
+    await expect(page.locator(".actions-row--primary")).toBeHidden();
+    await expect(page.locator(".label-editor-anchor--inline")).toBeHidden();
+    await expect(page.locator(".actions-row--workspace")).toBeHidden();
+    await expect(page.locator(".actions-menu-trigger")).toBeVisible();
+
+    await page.locator(".actions-menu-trigger").click();
+
+    await expect(page.locator(".actions-row--primary .btn--approve")).toBeHidden();
+    await expect(page.locator(".actions-menu-popover .btn--approve")).toBeVisible();
+    await expect(page.locator(".actions-menu-popover .btn--merge")).toBeVisible();
+    await expect(page.locator(".actions-menu-popover .btn--close")).toBeVisible();
+    await expect(page.locator(".actions-menu-popover").getByRole("button", { name: "Labels" })).toBeVisible();
+    await expect(page.locator(".actions-menu-popover .btn--workspace")).toBeVisible();
+  });
+
   test("browser back/forward works between focus routes", async ({ page }) => {
     await page.goto("/focus/pulls/github/acme/widgets/1");
     await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });

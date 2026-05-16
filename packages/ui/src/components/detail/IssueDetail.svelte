@@ -847,7 +847,7 @@
                 disabled={staleIssue}
                 onclick={openLabelPicker}
               >
-                <TagsIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                <TagsIcon size="16" aria-hidden="true" />
               </ActionButton>
               {#if labelPickerOpen}
                 <div class="label-editor-popover" style={labelPickerStyle}>

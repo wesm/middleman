@@ -1024,6 +1024,36 @@
       {:else}
         <div class="pull-detail">
           <div class="pull-detail-content">
+            {#snippet labelActionButton()}
+              <div class="label-editor-anchor" bind:this={labelPickerAnchor}>
+                <ActionButton
+                  label="Labels"
+                  shortLabel="Labels"
+                  size="sm"
+                  surface="soft"
+                  tone="neutral"
+                  disabled={stalePR}
+                  onclick={openLabelPicker}
+                >
+                  <TagsIcon size="16" aria-hidden="true" />
+                </ActionButton>
+                {#if labelPickerOpen}
+                  <div class="label-editor-popover" style={labelPickerStyle}>
+                    <LabelPicker
+                      catalogLabels={labelCatalog}
+                      selectedLabels={labels}
+                      syncing={labelCatalogSyncing}
+                      {pendingLabel}
+                      error={labelPickerError}
+                      ontoggle={toggleLabel}
+                      onclear={clearLabels}
+                      onclose={closeLabelPicker}
+                    />
+                  </div>
+                {/if}
+              </div>
+            {/snippet}
+
       {#if detailStore.isStaleRefreshing()}
         <div class="refresh-banner">
           <span class="sync-dot"></span>
@@ -1195,32 +1225,8 @@
           <GitHubLabels {labels} mode="full" />
         {/if}
         {#if capabilities.read_labels && capabilities.label_mutation}
-          <div class="label-editor-anchor" bind:this={labelPickerAnchor}>
-            <ActionButton
-              label="Labels"
-              shortLabel="Labels"
-              size="sm"
-              surface="soft"
-              tone="neutral"
-              disabled={stalePR}
-              onclick={openLabelPicker}
-            >
-              <TagsIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-            </ActionButton>
-            {#if labelPickerOpen}
-              <div class="label-editor-popover" style={labelPickerStyle}>
-                <LabelPicker
-                  catalogLabels={labelCatalog}
-                  selectedLabels={labels}
-                  syncing={labelCatalogSyncing}
-                  {pendingLabel}
-                  error={labelPickerError}
-                  ontoggle={toggleLabel}
-                  onclear={clearLabels}
-                  onclose={closeLabelPicker}
-                />
-              </div>
-            {/if}
+          <div class="label-editor-anchor--inline">
+            {@render labelActionButton()}
           </div>
         {/if}
       </div>
@@ -1373,6 +1379,40 @@
         {/if}
       {/snippet}
 
+      {#snippet workspaceActionButton()}
+        {#if workspace}
+          <ActionButton
+            class="btn--workspace"
+            disabled={stalePR}
+            onclick={() => {
+              if (stalePR) return;
+              closeActionMenu();
+              navigate(`/terminal/${workspace.id}`);
+            }}
+            tone="info"
+            surface="soft"
+            size="sm"
+            label="Open Workspace"
+            shortLabel="Workspace"
+          >
+            <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+          </ActionButton>
+        {:else}
+          <ActionButton
+            class="btn--workspace"
+            disabled={wsCreating || stalePR}
+            onclick={() => void createWorkspace()}
+            tone="info"
+            surface="soft"
+            size="sm"
+            label={wsCreating ? "Creating..." : "Create Workspace"}
+            shortLabel={wsCreating ? "Creating..." : "Create Workspace"}
+          >
+            <PackagePlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+          </ActionButton>
+        {/if}
+      {/snippet}
+
       <!-- Approve / Merge / Close / Reopen actions -->
       {#if pr.State !== "merged" && !stalePR}
         <div class="primary-actions-wrap">
@@ -1393,6 +1433,19 @@
             {#if actionMenuOpen}
               <div class="actions-menu-popover">
                 {@render primaryActionButtons()}
+                {#if capabilities.read_labels && capabilities.label_mutation}
+                  <div class="actions-menu-popover__item actions-menu-popover__item--labels">
+                    {@render labelActionButton()}
+                  </div>
+                {/if}
+                {#if !hideWorkspaceAction}
+                  <div class="actions-menu-popover__item">
+                    {@render workspaceActionButton()}
+                  </div>
+                  {#if wsError}
+                    <span class="action-error">{wsError}</span>
+                  {/if}
+                {/if}
               </div>
             {/if}
           </div>
@@ -1405,36 +1458,7 @@
       {#if !hideWorkspaceAction}
         <!-- Workspace actions -->
         <div class="actions-row actions-row--workspace">
-          {#if workspace}
-            <ActionButton
-              class="btn--workspace"
-              disabled={stalePR}
-              onclick={() => {
-                if (stalePR) return;
-                navigate(`/terminal/${workspace.id}`);
-              }}
-              tone="info"
-              surface="soft"
-              size="sm"
-              label="Open Workspace"
-              shortLabel="Workspace"
-            >
-              <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-            </ActionButton>
-          {:else}
-            <ActionButton
-              class="btn--workspace"
-              disabled={wsCreating || stalePR}
-              onclick={() => void createWorkspace()}
-              tone="info"
-              surface="soft"
-              size="sm"
-              label={wsCreating ? "Creating..." : "Create Workspace"}
-              shortLabel={wsCreating ? "Creating..." : "Create Workspace"}
-            >
-              <PackagePlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-            </ActionButton>
-          {/if}
+          {@render workspaceActionButton()}
           {#if wsError}
             <span class="action-error">{wsError}</span>
           {/if}
@@ -2103,6 +2127,19 @@
     justify-content: flex-start;
   }
 
+  .actions-menu-popover__item {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .actions-menu-popover__item--labels {
+    position: relative;
+  }
+
+  .actions-menu-popover__item .label-editor-anchor {
+    width: 100%;
+  }
+
   .actions-menu-popover :global(.approve-section),
   .actions-menu-popover :global(.ready-section),
   .actions-menu-popover :global(.workflow-approval-section) {
@@ -2130,12 +2167,17 @@
   }
 
   @container pull-detail (max-width: 340px) {
-    .actions-row--primary {
+    .pull-detail-content .primary-actions-wrap .actions-row--primary {
       display: none;
     }
 
-    .actions-menu-wrap {
+    .pull-detail-content .primary-actions-wrap .actions-menu-wrap {
       display: block;
+    }
+
+    .pull-detail-content .label-editor-anchor--inline,
+    .pull-detail-content .actions-row.actions-row--workspace {
+      display: none;
     }
   }
 
