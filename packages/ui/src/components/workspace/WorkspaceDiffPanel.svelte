@@ -40,6 +40,7 @@
   const maxFileListWidth = 520;
   const minDiffPaneWidth = 320;
   const resizeHandleWidth = 4;
+  const compactLayoutWidth = 720;
   let fileListResizeStartWidth = 0;
 
   let base = $state<WorkspaceDiffBase>("head");
@@ -68,6 +69,7 @@
 
   function layoutMaxFileListWidth(): number {
     if (workspaceDiffLayoutWidth <= 0) return maxFileListWidth;
+    if (workspaceDiffLayoutWidth <= compactLayoutWidth) return maxFileListWidth;
     return Math.max(
       0,
       workspaceDiffLayoutWidth - minDiffPaneWidth - resizeHandleWidth,
@@ -102,7 +104,9 @@
   function updateWorkspaceDiffLayoutWidth(width: number): void {
     if (!Number.isFinite(width) || width <= 0) return;
     workspaceDiffLayoutWidth = Math.round(width);
-    fileListWidth = clampFileListWidth(fileListWidth);
+    if (workspaceDiffLayoutWidth > compactLayoutWidth) {
+      fileListWidth = clampFileListWidth(fileListWidth);
+    }
   }
 
   $effect(() => {
@@ -242,6 +246,7 @@
   .workspace-diff {
     display: flex;
     flex-direction: column;
+    container-type: inline-size;
     height: 100%;
     min-width: 0;
     overflow: hidden;
@@ -351,7 +356,7 @@
     overflow: hidden;
   }
 
-  @media (max-width: 720px) {
+  @container (max-width: 720px) {
     .workspace-diff-layout {
       flex-direction: column;
     }

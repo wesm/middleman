@@ -264,6 +264,29 @@ test.describe("workspace tab persistence", () => {
       expect(toolbarMetrics.scrollWidth).toBeLessThanOrEqual(
         toolbarMetrics.clientWidth,
       );
+      await page.setViewportSize({ width: 760, height: 720 });
+      const compactDiffMetrics = await page
+        .locator(".right-sidebar .workspace-diff-layout")
+        .evaluate((layout) => {
+          const sidebar = layout.querySelector<HTMLElement>(
+            ".workspace-diff-sidebar",
+          );
+          const handle = layout.querySelector<HTMLElement>(
+            ".workspace-diff-resize-handle",
+          );
+          return {
+            direction: getComputedStyle(layout).flexDirection,
+            handleDisplay: handle ? getComputedStyle(handle).display : "",
+            layoutWidth: layout.getBoundingClientRect().width,
+            sidebarWidth: sidebar?.getBoundingClientRect().width ?? 0,
+          };
+        });
+      expect(compactDiffMetrics.direction).toBe("column");
+      expect(compactDiffMetrics.handleDisplay).toBe("none");
+      expect(compactDiffMetrics.sidebarWidth).toBeGreaterThanOrEqual(
+        compactDiffMetrics.layoutWidth - 1,
+      );
+      await page.setViewportSize({ width: 1100, height: 720 });
       await diffToolbar.locator(".compact-more-btn").click();
       const compactMenu = page.locator(".right-sidebar .compact-menu");
       await expect(compactMenu).toBeVisible();
