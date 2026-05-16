@@ -274,6 +274,7 @@ func TestClientReadsOpenPullRequestsIssuesAndCIChecks(t *testing.T) {
 			assert.Equal("100", r.URL.Query().Get("limit"))
 			assert.NoError(json.NewEncoder(w).Encode([]map[string]any{{
 				"id": 11, "number": 3, "url": "https://gitea.test/owner/repo/pulls/3",
+				"html_url": "https://gitea.test/owner/repo/pulls/3", "mergeable": false,
 				"title": "review me", "state": "open", "user": map[string]any{"login": "alice"},
 				"head": map[string]any{"ref": "feature", "sha": "abc"},
 				"base": map[string]any{"ref": "main", "sha": "def"},
@@ -322,6 +323,7 @@ func TestClientReadsOpenPullRequestsIssuesAndCIChecks(t *testing.T) {
 	assert.True(sawStatuses)
 	assert.True(sawActions)
 	assert.Len(mrs, 1)
+	assert.Equal("dirty", mrs[0].MergeableState)
 	assert.Len(issues, 1)
 	assert.Len(checks, 2)
 }

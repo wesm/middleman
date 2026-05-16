@@ -109,7 +109,8 @@ func TestNormalizeMergeRequestUsesIIDAndPipelineStatus(t *testing.T) {
 	assert.Equal("main", mr.BaseBranch)
 	assert.Equal("abc123", mr.HeadSHA)
 	assert.Equal(4, mr.CommentCount)
-	assert.Equal("mergeable", mr.ReviewDecision)
+	assert.Empty(mr.ReviewDecision)
+	assert.Equal("clean", mr.MergeableState)
 	assert.Equal("pending", mr.CIStatus)
 	assert.Equal(createdAt, mr.CreatedAt)
 	assert.Equal(updatedAt, mr.LastActivityAt)
@@ -117,6 +118,43 @@ func TestNormalizeMergeRequestUsesIIDAndPipelineStatus(t *testing.T) {
 	assert.Equal(mergedAt, *mr.MergedAt)
 	require.Len(t, mr.Labels, 1)
 	assert.Equal("bug", mr.Labels[0].Name)
+}
+
+func TestNormalizeMergeRequestMapsGitLabMergeability(t *testing.T) {
+	tests := []struct {
+		name           string
+		detailedStatus string
+		hasConflicts   bool
+		want           string
+	}{
+		{name: "mergeable", detailedStatus: "mergeable", want: "clean"},
+		{name: "conflict", detailedStatus: "conflict", want: "dirty"},
+		{name: "has conflicts", detailedStatus: "checking", hasConflicts: true, want: "dirty"},
+		{name: "checking", detailedStatus: "checking", want: "unknown"},
+		{name: "unchecked", detailedStatus: "unchecked", want: "unknown"},
+		{name: "needs rebase", detailedStatus: "need_rebase", want: "behind"},
+		{name: "ci must pass", detailedStatus: "ci_must_pass", want: "unstable"},
+		{name: "status checks", detailedStatus: "status_checks_must_pass", want: "unstable"},
+		{name: "not approved", detailedStatus: "not_approved", want: "blocked"},
+		{name: "discussions", detailedStatus: "discussions_not_resolved", want: "blocked"},
+		{name: "draft", detailedStatus: "draft_status", want: "draft"},
+		{name: "empty", detailedStatus: "", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mr := NormalizeMergeRequest(testGitLabRepoRef(), &gitlab.BasicMergeRequest{
+				ID:                  1001,
+				IID:                 7,
+				State:               "opened",
+				DetailedMergeStatus: tt.detailedStatus,
+				HasConflicts:        tt.hasConflicts,
+			}, nil)
+
+			assert.Equal(t, tt.want, mr.MergeableState)
+			assert.Empty(t, mr.ReviewDecision)
+		})
+	}
 }
 
 func TestNormalizeMergeRequestMapsGitLabStates(t *testing.T) {

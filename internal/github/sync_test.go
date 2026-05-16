@@ -1470,10 +1470,12 @@ func TestSyncPreservesMergeableState(t *testing.T) {
 	pr := buildOpenPR(1, now)
 	additions := 10
 	deletions := 5
+	baseSHA := "base123"
 	mergeableState := "dirty"
 	pr.Additions = &additions
 	pr.Deletions = &deletions
 	pr.MergeableState = &mergeableState
+	pr.Base.SHA = &baseSHA
 
 	mc := &mockClient{
 		openPRs:  []*gh.PullRequest{pr},
@@ -1499,10 +1501,12 @@ func TestSyncPreservesMergeableState(t *testing.T) {
 	listPR := buildOpenPR(1, now) // same UpdatedAt, no MergeableState set
 	listPR.Additions = nil
 	listPR.Deletions = nil
+	listPR.Base.SHA = &baseSHA
 	mc.openPRs = []*gh.PullRequest{listPR}
 	// Ensure full fetch would return empty MergeableState if it ran.
 	mc.getPullRequestFn = func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
 		p := buildOpenPR(1, now)
+		p.Base.SHA = &baseSHA
 		return p, nil
 	}
 
@@ -1512,6 +1516,113 @@ func TestSyncPreservesMergeableState(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(stored2)
 	assert.Equal("dirty", stored2.MergeableState, "MergeableState should be preserved when full fetch is skipped")
+}
+
+func TestIndexUpsertMergeRequestUpdatesKnownMergeableState(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
+	require.NoError(err)
+
+	baseMR := platform.MergeRequest{
+		PlatformID:     1001,
+		Number:         1,
+		URL:            "https://github.com/owner/repo/pull/1",
+		Title:          "Conflicted PR",
+		State:          "open",
+		HeadBranch:     "feature",
+		BaseBranch:     "main",
+		HeadSHA:        "abc123",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	}
+	_, err = d.UpsertMergeRequest(ctx, platform.DBMergeRequest(repoID, baseMR))
+	require.NoError(err)
+
+	syncer := NewSyncer(nil, d, nil, nil, time.Minute, nil, testBudget(500))
+	incoming := baseMR
+	incoming.MergeableState = "dirty"
+	err = syncer.indexUpsertMergeRequest(
+		ctx,
+		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
+		repoID,
+		incoming,
+	)
+	require.NoError(err)
+
+	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("dirty", stored.MergeableState)
+}
+
+func TestPreserveMergeableStateSkipsChangedOrUnknownHeadOrBase(t *testing.T) {
+	assert := Assert.New(t)
+	tests := []struct {
+		name       string
+		normalized db.MergeRequest
+		existing   db.MergeRequest
+	}{
+		{
+			name:       "head changed",
+			normalized: db.MergeRequest{PlatformHeadSHA: "new-head"},
+			existing:   db.MergeRequest{PlatformHeadSHA: "old-head", MergeableState: "dirty"},
+		},
+		{
+			name:       "base changed",
+			normalized: db.MergeRequest{PlatformHeadSHA: "same-head", PlatformBaseSHA: "new-base"},
+			existing:   db.MergeRequest{PlatformHeadSHA: "same-head", PlatformBaseSHA: "old-base", MergeableState: "dirty"},
+		},
+		{
+			name:       "refreshed head missing",
+			normalized: db.MergeRequest{PlatformBaseSHA: "same-base"},
+			existing:   db.MergeRequest{PlatformHeadSHA: "same-head", PlatformBaseSHA: "same-base", MergeableState: "dirty"},
+		},
+		{
+			name:       "existing head missing",
+			normalized: db.MergeRequest{PlatformHeadSHA: "same-head", PlatformBaseSHA: "same-base"},
+			existing:   db.MergeRequest{PlatformBaseSHA: "same-base", MergeableState: "dirty"},
+		},
+		{
+			name:       "refreshed base missing",
+			normalized: db.MergeRequest{PlatformHeadSHA: "same-head"},
+			existing:   db.MergeRequest{PlatformHeadSHA: "same-head", PlatformBaseSHA: "same-base", MergeableState: "dirty"},
+		},
+		{
+			name:       "existing base missing",
+			normalized: db.MergeRequest{PlatformHeadSHA: "same-head", PlatformBaseSHA: "same-base"},
+			existing:   db.MergeRequest{PlatformHeadSHA: "same-head", MergeableState: "dirty"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			preserveMergeableStateIfOmitted(&tt.normalized, &tt.existing)
+			assert.Empty(tt.normalized.MergeableState)
+		})
+	}
+}
+
+func TestPreserveMergeableStateKeepsOmittedStateForMatchingKnownIdentity(t *testing.T) {
+	assert := Assert.New(t)
+	normalized := db.MergeRequest{
+		PlatformHeadSHA: "same-head",
+		PlatformBaseSHA: "same-base",
+	}
+	existing := db.MergeRequest{
+		PlatformHeadSHA: "same-head",
+		PlatformBaseSHA: "same-base",
+		MergeableState:  "dirty",
+	}
+
+	preserveMergeableStateIfOmitted(&normalized, &existing)
+
+	assert.Equal("dirty", normalized.MergeableState)
 }
 
 func TestSyncTriggersFullFetchForUnknownMergeableState(t *testing.T) {
@@ -1577,10 +1688,12 @@ func TestSyncPreservesFieldsOnFullFetchFailure(t *testing.T) {
 	pr := buildOpenPR(1, now)
 	additions := 10
 	deletions := 5
+	baseSHA := "base123"
 	mergeableState := "dirty"
 	pr.Additions = &additions
 	pr.Deletions = &deletions
 	pr.MergeableState = &mergeableState
+	pr.Base.SHA = &baseSHA
 
 	mc := &mockClient{
 		openPRs:  []*gh.PullRequest{pr},
@@ -1601,6 +1714,7 @@ func TestSyncPreservesFieldsOnFullFetchFailure(t *testing.T) {
 	// fetch fails. Fields from the existing row should be preserved.
 	later := now.Add(time.Hour)
 	listPR := buildOpenPR(1, later)
+	listPR.Base.SHA = &baseSHA
 	mc.openPRs = []*gh.PullRequest{listPR}
 	mc.getPullRequestFn = func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
 		return nil, fmt.Errorf("transient network error")

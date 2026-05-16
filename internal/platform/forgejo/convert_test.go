@@ -38,16 +38,18 @@ func TestConvertForgejoSDKRecords(t *testing.T) {
 	assert.True(repo.Private)
 	assert.True(repo.Archived)
 
+	mergeable := true
 	pr := convertPullRequest(&forgejosdk.PullRequest{
-		ID:       3,
-		Index:    4,
-		Poster:   &forgejosdk.User{UserName: "alice", FullName: "Alice"},
-		Title:    "Add thing",
-		Body:     "body",
-		State:    forgejosdk.StateType("open"),
-		IsLocked: true,
-		Comments: 5,
-		HTMLURL:  "https://codeberg.org/forgejo/forgejo/pulls/4",
+		ID:        3,
+		Index:     4,
+		Poster:    &forgejosdk.User{UserName: "alice", FullName: "Alice"},
+		Title:     "Add thing",
+		Body:      "body",
+		State:     forgejosdk.StateType("open"),
+		IsLocked:  true,
+		Comments:  5,
+		Mergeable: true,
+		HTMLURL:   "https://codeberg.org/forgejo/forgejo/pulls/4",
 		Head: &forgejosdk.PRBranchInfo{
 			Ref:        "feature",
 			Sha:        "abc",
@@ -59,12 +61,14 @@ func TestConvertForgejoSDKRecords(t *testing.T) {
 		Updated: &updated,
 		Closed:  &closed,
 		Merged:  &closed,
-	})
+	}, &mergeable)
 	assert.Equal(4, pr.Index)
 	assert.Equal("alice", pr.User.UserName)
 	assert.Equal("open", pr.State)
 	assert.True(pr.IsLocked)
 	assert.False(pr.Draft)
+	assert.NotNil(pr.Mergeable)
+	assert.True(*pr.Mergeable)
 	assert.Equal("feature", pr.Head.Ref)
 	assert.Equal("abc", pr.Head.SHA)
 	assert.Equal("https://example/head.git", pr.Head.RepoCloneURL)
@@ -77,7 +81,7 @@ func TestConvertForgejoSDKRecords(t *testing.T) {
 		State:   forgejosdk.StateType("open"),
 		Created: &created,
 		Updated: &updated,
-	})
+	}, nil)
 	assert.True(draftPR.Draft)
 	assert.Equal("main", pr.Base.Ref)
 	assert.Equal("feature", pr.Labels[0].Name)

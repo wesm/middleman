@@ -30,29 +30,30 @@ func convertRepository(repo *forgejosdk.Repository) (gitealike.RepositoryDTO, er
 	}, nil
 }
 
-func convertPullRequest(pr *forgejosdk.PullRequest) gitealike.PullRequestDTO {
+func convertPullRequest(pr *forgejosdk.PullRequest, mergeable *bool) gitealike.PullRequestDTO {
 	if pr == nil {
 		return gitealike.PullRequestDTO{}
 	}
 	return gitealike.PullRequestDTO{
-		ID:       pr.ID,
-		Index:    int(pr.Index),
-		HTMLURL:  pr.HTMLURL,
-		Title:    pr.Title,
-		User:     convertUser(pr.Poster),
-		State:    string(pr.State),
-		Draft:    forgejoDraftFromTitle(pr.Title),
-		IsLocked: pr.IsLocked,
-		Body:     pr.Body,
-		Head:     convertBranch(pr.Head),
-		Base:     convertBranch(pr.Base),
-		Labels:   convertLabels(pr.Labels),
-		Comments: pr.Comments,
-		Created:  timeValue(pr.Created),
-		Updated:  timeValue(pr.Updated),
-		Merged:   pr.HasMerged,
-		MergedAt: timePtrValue(pr.Merged),
-		Closed:   timePtrValue(pr.Closed),
+		ID:        pr.ID,
+		Index:     int(pr.Index),
+		HTMLURL:   pr.HTMLURL,
+		Title:     pr.Title,
+		User:      convertUser(pr.Poster),
+		State:     string(pr.State),
+		Draft:     forgejoDraftFromTitle(pr.Title),
+		IsLocked:  pr.IsLocked,
+		Body:      pr.Body,
+		Head:      convertBranch(pr.Head),
+		Base:      convertBranch(pr.Base),
+		Labels:    convertLabels(pr.Labels),
+		Comments:  pr.Comments,
+		Mergeable: mergeable,
+		Created:   timeValue(pr.Created),
+		Updated:   timeValue(pr.Updated),
+		Merged:    pr.HasMerged,
+		MergedAt:  timePtrValue(pr.Merged),
+		Closed:    timePtrValue(pr.Closed),
 	}
 }
 
@@ -215,10 +216,17 @@ func convertRepositories(
 	return out, page, nil
 }
 
-func convertPullRequests(prs []*forgejosdk.PullRequest) []gitealike.PullRequestDTO {
+func convertPullRequests(
+	prs []*forgejosdk.PullRequest,
+	mergeableFor func(*forgejosdk.PullRequest) *bool,
+) []gitealike.PullRequestDTO {
 	out := make([]gitealike.PullRequestDTO, 0, len(prs))
 	for _, pr := range prs {
-		out = append(out, convertPullRequest(pr))
+		var mergeable *bool
+		if mergeableFor != nil {
+			mergeable = mergeableFor(pr)
+		}
+		out = append(out, convertPullRequest(pr, mergeable))
 	}
 	return out
 }

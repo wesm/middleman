@@ -52,6 +52,8 @@ func TestNormalizeMergeRequestIssueEventsAndArtifacts(t *testing.T) {
 	assert := Assert.New(t)
 	base := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	closed := base.Add(2 * time.Hour)
+	mergeable := true
+	unmergeable := false
 	repo := platform.RepoRef{
 		Platform: platform.KindGitea,
 		Host:     "gitea.com",
@@ -61,26 +63,28 @@ func TestNormalizeMergeRequestIssueEventsAndArtifacts(t *testing.T) {
 	}
 
 	pr := NormalizePullRequest(repo, PullRequestDTO{
-		ID:       100,
-		Index:    7,
-		HTMLURL:  "https://gitea.com/gitea/tea/pulls/7",
-		Title:    "Add tea",
-		User:     UserDTO{UserName: "alice", FullName: "Alice"},
-		State:    "closed",
-		Body:     "body",
-		Head:     BranchDTO{Ref: "feature", SHA: "abc123", RepoCloneURL: "https://example/head.git"},
-		Base:     BranchDTO{Ref: "main", SHA: "def456"},
-		Labels:   []LabelDTO{{ID: 1, Name: "kind/feature", Color: "00ff00", Description: "feature", IsDefault: true}},
-		Created:  base,
-		Updated:  base.Add(time.Hour),
-		Merged:   true,
-		MergedAt: &closed,
-		Closed:   &closed,
+		ID:        100,
+		Index:     7,
+		HTMLURL:   "https://gitea.com/gitea/tea/pulls/7",
+		Title:     "Add tea",
+		User:      UserDTO{UserName: "alice", FullName: "Alice"},
+		State:     "closed",
+		Body:      "body",
+		Head:      BranchDTO{Ref: "feature", SHA: "abc123", RepoCloneURL: "https://example/head.git"},
+		Base:      BranchDTO{Ref: "main", SHA: "def456"},
+		Labels:    []LabelDTO{{ID: 1, Name: "kind/feature", Color: "00ff00", Description: "feature", IsDefault: true}},
+		Created:   base,
+		Updated:   base.Add(time.Hour),
+		Mergeable: &mergeable,
+		Merged:    true,
+		MergedAt:  &closed,
+		Closed:    &closed,
 	})
 	assert.Equal("merged", pr.State)
 	assert.Equal(7, pr.Number)
 	assert.Equal("alice", pr.Author)
 	assert.Equal("Alice", pr.AuthorDisplayName)
+	assert.Equal("clean", pr.MergeableState)
 	assert.Equal("feature", pr.HeadBranch)
 	assert.Equal("abc123", pr.HeadSHA)
 	assert.False(pr.IsDraft)
@@ -110,6 +114,30 @@ func TestNormalizeMergeRequestIssueEventsAndArtifacts(t *testing.T) {
 	})
 	assert.False(lockedPR.IsDraft)
 	assert.True(lockedPR.IsLocked)
+
+	conflictedPR := NormalizePullRequest(repo, PullRequestDTO{
+		ID:        103,
+		Index:     10,
+		Title:     "Conflicted tea",
+		User:      UserDTO{UserName: "alice"},
+		State:     "open",
+		Mergeable: &unmergeable,
+		Created:   base,
+		Updated:   base,
+	})
+	assert.Equal("dirty", conflictedPR.MergeableState)
+
+	unknownMergeablePR := NormalizePullRequest(repo, PullRequestDTO{
+		ID:      104,
+		Index:   11,
+		Title:   "Unchecked tea",
+		User:    UserDTO{UserName: "alice"},
+		State:   "open",
+		Created: base,
+		Updated: base,
+	})
+	assert.Empty(unknownMergeablePR.MergeableState)
+
 	assert.Equal("main", pr.BaseBranch)
 	assert.Equal("def456", pr.BaseSHA)
 	assert.Equal("https://example/head.git", pr.HeadRepoCloneURL)

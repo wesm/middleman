@@ -477,17 +477,24 @@ func (m *Manager) gitWithInput(
 		"GIT_CONFIG_NOSYSTEM=1",
 		"GIT_CONFIG_GLOBAL="+os.DevNull,
 	)
+	configCount := 0
+	addGitConfig := func(key, value string) {
+		cmd.Env = append(cmd.Env,
+			fmt.Sprintf("GIT_CONFIG_KEY_%d=%s", configCount, key),
+			fmt.Sprintf("GIT_CONFIG_VALUE_%d=%s", configCount, value),
+		)
+		configCount++
+	}
+	addGitConfig("gc.auto", "0")
+	addGitConfig("maintenance.auto", "false")
 	if token := m.tokens[host]; token != "" {
 		// GitHub's smart HTTP endpoint requires Basic auth, not Bearer.
 		// Use "x-access-token" as the username with the token as password.
 		cred := base64.StdEncoding.EncodeToString(
 			[]byte("x-access-token:" + token))
-		cmd.Env = append(cmd.Env,
-			"GIT_CONFIG_COUNT=1",
-			"GIT_CONFIG_KEY_0=http.extraHeader",
-			"GIT_CONFIG_VALUE_0=Authorization: Basic "+cred,
-		)
+		addGitConfig("http.extraHeader", "Authorization: Basic "+cred)
 	}
+	cmd.Env = append(cmd.Env, fmt.Sprintf("GIT_CONFIG_COUNT=%d", configCount))
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := procutil.Output(ctx, cmd, "git subprocess capacity")

@@ -38,17 +38,19 @@ func TestConvertGiteaSDKRecords(t *testing.T) {
 	assert.True(repo.Private)
 	assert.True(repo.Archived)
 
+	mergeable := true
 	pr := convertPullRequest(&giteasdk.PullRequest{
-		ID:       3,
-		Index:    4,
-		Poster:   &giteasdk.User{UserName: "alice", FullName: "Alice"},
-		Title:    "Add thing",
-		Body:     "body",
-		State:    giteasdk.StateType("open"),
-		Draft:    true,
-		IsLocked: true,
-		Comments: 5,
-		HTMLURL:  "https://gitea.com/gitea/tea/pulls/4",
+		ID:        3,
+		Index:     4,
+		Poster:    &giteasdk.User{UserName: "alice", FullName: "Alice"},
+		Title:     "Add thing",
+		Body:      "body",
+		State:     giteasdk.StateType("open"),
+		Draft:     true,
+		IsLocked:  true,
+		Comments:  5,
+		Mergeable: true,
+		HTMLURL:   "https://gitea.com/gitea/tea/pulls/4",
 		Head: &giteasdk.PRBranchInfo{
 			Ref:        "feature",
 			Sha:        "abc",
@@ -60,12 +62,14 @@ func TestConvertGiteaSDKRecords(t *testing.T) {
 		Updated: &updated,
 		Closed:  &closed,
 		Merged:  &closed,
-	})
+	}, &mergeable)
 	assert.Equal(4, pr.Index)
 	assert.Equal("alice", pr.User.UserName)
 	assert.Equal("open", pr.State)
 	assert.True(pr.IsLocked)
 	assert.True(pr.Draft)
+	assert.NotNil(pr.Mergeable)
+	assert.True(*pr.Mergeable)
 	assert.Equal("feature", pr.Head.Ref)
 	assert.Equal("abc", pr.Head.SHA)
 	assert.Equal("https://example/head.git", pr.Head.RepoCloneURL)

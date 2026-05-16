@@ -31,3 +31,12 @@ func TestDBCIChecksComputesDurationFromProviderTimestamps(t *testing.T) {
 	assert.Equal(int64(90), *checks[0].DurationSeconds)
 	assert.Nil(checks[1].DurationSeconds)
 }
+
+func TestDBMergeRequestCarriesProviderMergeableState(t *testing.T) {
+	mr := DBMergeRequest(42, MergeRequest{
+		Number:         7,
+		MergeableState: "dirty",
+	})
+
+	assert.Equal(t, "dirty", mr.MergeableState)
+}
