@@ -1179,7 +1179,10 @@ func TestAPISyncPRPersistsMergeableState(t *testing.T) {
 	}
 
 	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
+	seedPR(t, database, "acme", "widget", 1, func(pr *db.MergeRequest) {
+		pr.UpdatedAt = now.Add(-time.Second)
+		pr.LastActivityAt = now.Add(-time.Second)
+	})
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(
