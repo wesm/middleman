@@ -51,7 +51,7 @@ func WorktreeDiffWhitespaceOnlyCount(
 		return 0, ok, err
 	}
 
-	count, err := worktreeWhitespaceOnlyCount(ctx, dir, baseRef, "")
+	count, err := worktreeWhitespaceOnlyCount(ctx, dir, baseRef, "", "")
 	return count, true, err
 }
 
@@ -79,7 +79,7 @@ func WorktreeDiffWhitespaceOnlyCountAgainstMergeTarget(
 		return 0, ok, err
 	}
 
-	count, err := worktreeWhitespaceOnlyCount(ctx, dir, baseRef, "")
+	count, err := worktreeWhitespaceOnlyCount(ctx, dir, baseRef, "", "")
 	return count, true, err
 }
 
@@ -89,42 +89,71 @@ func worktreeDiffFilesFromRef(
 	baseRef string,
 	hideWhitespace bool,
 ) ([]gitclone.DiffFile, bool, error) {
-	rawArgs := addWorktreeWhitespaceFlag([]string{
+	files, err := worktreeDiffFilesFromRefs(
+		ctx, dir, baseRef, "", hideWhitespace, true,
+	)
+	return files, err == nil, err
+}
+
+func WorktreeDiffFilesBetween(
+	ctx context.Context,
+	dir string,
+	fromRef string,
+	toRef string,
+	hideWhitespace bool,
+) ([]gitclone.DiffFile, bool, error) {
+	files, err := worktreeDiffFilesFromRefs(
+		ctx, dir, fromRef, toRef, hideWhitespace, false,
+	)
+	return files, err == nil, err
+}
+
+func worktreeDiffFilesFromRefs(
+	ctx context.Context,
+	dir string,
+	baseRef string,
+	headRef string,
+	hideWhitespace bool,
+	includeUntracked bool,
+) ([]gitclone.DiffFile, error) {
+	rawArgs := appendWorktreeHeadRef(addWorktreeWhitespaceFlag([]string{
 		"diff", "--raw", "-z", "-M", "-C", "--find-copies-harder",
 		baseRef,
-	}, hideWhitespace)
+	}, hideWhitespace), headRef)
 	rawOut, err := worktreeGitOutput(ctx, dir, rawArgs...)
 	if err != nil {
-		return nil, false, fmt.Errorf("git diff --raw: %w", err)
+		return nil, fmt.Errorf("git diff --raw: %w", err)
 	}
 	files := gitclone.ParseRawZ(rawOut)
 	if files == nil {
 		files = []gitclone.DiffFile{}
 	}
 	if hideWhitespace {
-		wsFiles, err := worktreeWhitespaceOnlyFiles(ctx, dir, baseRef, "")
+		wsFiles, err := worktreeWhitespaceOnlyFiles(ctx, dir, baseRef, headRef, "")
 		if err != nil {
-			return nil, false, fmt.Errorf("whitespace files: %w", err)
+			return nil, fmt.Errorf("whitespace files: %w", err)
 		}
 		files = filterWorktreeWhitespaceOnlyFiles(files, wsFiles)
 	}
 
-	numstatArgs := addWorktreeWhitespaceFlag([]string{
+	numstatArgs := appendWorktreeHeadRef(addWorktreeWhitespaceFlag([]string{
 		"diff", "--numstat", "-z", "-M", "-C", "--find-copies-harder",
 		baseRef,
-	}, hideWhitespace)
+	}, hideWhitespace), headRef)
 	numstatOut, err := worktreeGitOutput(ctx, dir, numstatArgs...)
 	if err != nil {
-		return nil, false, fmt.Errorf("git diff --numstat: %w", err)
+		return nil, fmt.Errorf("git diff --numstat: %w", err)
 	}
 	counts := parseWorktreeNumstatZ(numstatOut)
 	applyWorktreeNumstat(files, counts)
 	if hideWhitespace {
 		files = dropWhitespaceOnlyModifications(files, counts)
 	}
-	files = append(files, worktreeUntrackedFiles(ctx, dir, false, hideWhitespace)...)
+	if includeUntracked {
+		files = append(files, worktreeUntrackedFiles(ctx, dir, false, hideWhitespace)...)
+	}
 	markWorktreeGeneratedFiles(ctx, dir, files)
-	return files, true, nil
+	return files, nil
 }
 
 func WorktreeDiff(
@@ -194,6 +223,33 @@ func worktreeDiffFromRef(
 	return worktreeDiffFromRefPath(ctx, dir, baseRef, hideWhitespace, "")
 }
 
+func WorktreeDiffBetween(
+	ctx context.Context,
+	dir string,
+	fromRef string,
+	toRef string,
+	hideWhitespace bool,
+) (*gitclone.DiffResult, bool, error) {
+	result, err := worktreeDiffFromRefsPath(
+		ctx, dir, fromRef, toRef, hideWhitespace, "", false,
+	)
+	return result, err == nil, err
+}
+
+func WorktreeFileDiffBetween(
+	ctx context.Context,
+	dir string,
+	fromRef string,
+	toRef string,
+	hideWhitespace bool,
+	path string,
+) (*gitclone.DiffResult, bool, error) {
+	result, err := worktreeDiffFromRefsPath(
+		ctx, dir, fromRef, toRef, hideWhitespace, path, false,
+	)
+	return result, err == nil, err
+}
+
 func worktreeDiffFromRefPath(
 	ctx context.Context,
 	dir string,
@@ -201,44 +257,59 @@ func worktreeDiffFromRefPath(
 	hideWhitespace bool,
 	path string,
 ) (*gitclone.DiffResult, bool, error) {
+	result, err := worktreeDiffFromRefsPath(
+		ctx, dir, baseRef, "", hideWhitespace, path, true,
+	)
+	return result, err == nil, err
+}
+
+func worktreeDiffFromRefsPath(
+	ctx context.Context,
+	dir string,
+	baseRef string,
+	headRef string,
+	hideWhitespace bool,
+	path string,
+	includeUntracked bool,
+) (*gitclone.DiffResult, error) {
 	path, err := cleanWorktreeDiffPath(path)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
-	wsCount, err := worktreeWhitespaceOnlyCount(ctx, dir, baseRef, path)
+	wsCount, err := worktreeWhitespaceOnlyCount(ctx, dir, baseRef, headRef, path)
 	if err != nil {
-		return nil, false, fmt.Errorf("whitespace count: %w", err)
+		return nil, fmt.Errorf("whitespace count: %w", err)
 	}
 
-	rawArgs := addWorktreeWhitespaceFlag([]string{
+	rawArgs := appendWorktreeHeadRef(addWorktreeWhitespaceFlag([]string{
 		"diff", "--raw", "-z", "-M", "-C", "--find-copies-harder",
 		baseRef,
-	}, hideWhitespace)
+	}, hideWhitespace), headRef)
 	rawArgs = appendWorktreePathspec(rawArgs, path)
 	rawOut, err := worktreeGitOutput(ctx, dir, rawArgs...)
 	if err != nil {
-		return nil, false, fmt.Errorf("git diff --raw: %w", err)
+		return nil, fmt.Errorf("git diff --raw: %w", err)
 	}
 	files := gitclone.ParseRawZ(rawOut)
 
-	numstatArgs := addWorktreeWhitespaceFlag([]string{
+	numstatArgs := appendWorktreeHeadRef(addWorktreeWhitespaceFlag([]string{
 		"diff", "--numstat", "-z", "-M", "-C", "--find-copies-harder",
 		baseRef,
-	}, hideWhitespace)
+	}, hideWhitespace), headRef)
 	numstatArgs = appendWorktreePathspec(numstatArgs, path)
 	numstatOut, err := worktreeGitOutput(ctx, dir, numstatArgs...)
 	if err != nil {
-		return nil, false, fmt.Errorf("git diff --numstat: %w", err)
+		return nil, fmt.Errorf("git diff --numstat: %w", err)
 	}
 
-	patchArgs := addWorktreeWhitespaceFlag([]string{
+	patchArgs := appendWorktreeHeadRef(addWorktreeWhitespaceFlag([]string{
 		"diff", "-M", "-C", "--find-copies-harder", "-U3", baseRef,
-	}, hideWhitespace)
+	}, hideWhitespace), headRef)
 	patchArgs = appendWorktreePathspec(patchArgs, path)
 	patchOut, err := worktreeGitOutput(ctx, dir, patchArgs...)
 	if err != nil {
-		return nil, false, fmt.Errorf("git diff patch: %w", err)
+		return nil, fmt.Errorf("git diff patch: %w", err)
 	}
 	files = gitclone.ParsePatch(patchOut, files)
 	if files == nil {
@@ -251,26 +322,28 @@ func worktreeDiffFromRefPath(
 	}
 
 	if !hideWhitespace {
-		wsFiles, err := worktreeWhitespaceOnlyFiles(ctx, dir, baseRef, path)
+		wsFiles, err := worktreeWhitespaceOnlyFiles(ctx, dir, baseRef, headRef, path)
 		if err == nil {
 			for i := range files {
 				files[i].IsWhitespaceOnly = wsFiles[files[i].Path]
 			}
 		}
 	}
-	if path == "" {
+	if includeUntracked && path == "" {
 		files = append(files, worktreeUntrackedFiles(ctx, dir, true, hideWhitespace)...)
-	} else if file, ok := worktreeUntrackedFile(
-		ctx, dir, path, true, hideWhitespace,
-	); ok {
-		files = append(files, file)
+	} else if includeUntracked {
+		if file, ok := worktreeUntrackedFile(
+			ctx, dir, path, true, hideWhitespace,
+		); ok {
+			files = append(files, file)
+		}
 	}
 	markWorktreeGeneratedFiles(ctx, dir, files)
 
 	return &gitclone.DiffResult{
 		WhitespaceOnlyCount: wsCount,
 		Files:               files,
-	}, true, nil
+	}, nil
 }
 
 func markWorktreeGeneratedFiles(
@@ -368,6 +441,13 @@ func appendWorktreePathspec(args []string, path string) []string {
 		return args
 	}
 	return append(args, "--", path)
+}
+
+func appendWorktreeHeadRef(args []string, headRef string) []string {
+	if headRef == "" {
+		return args
+	}
+	return append(args, headRef)
 }
 
 func cleanWorktreeDiffPath(path string) (string, error) {
@@ -608,9 +688,9 @@ func parseWorktreeNumstatInt(value string) int {
 }
 
 func worktreeWhitespaceOnlyCount(
-	ctx context.Context, dir string, baseRef string, path string,
+	ctx context.Context, dir string, baseRef string, headRef string, path string,
 ) (int, error) {
-	files, err := worktreeWhitespaceOnlyFiles(ctx, dir, baseRef, path)
+	files, err := worktreeWhitespaceOnlyFiles(ctx, dir, baseRef, headRef, path)
 	if err != nil {
 		return 0, err
 	}
@@ -618,11 +698,11 @@ func worktreeWhitespaceOnlyCount(
 }
 
 func worktreeWhitespaceOnlyFiles(
-	ctx context.Context, dir string, baseRef string, path string,
+	ctx context.Context, dir string, baseRef string, headRef string, path string,
 ) (map[string]bool, error) {
-	allArgs := appendWorktreePathspec([]string{
+	allArgs := appendWorktreePathspec(appendWorktreeHeadRef([]string{
 		"diff", "--raw", "-z", "--no-renames", baseRef,
-	}, path)
+	}, headRef), path)
 	outAll, err := worktreeGitOutput(ctx, dir, allArgs...)
 	if err != nil {
 		return nil, err
@@ -631,8 +711,11 @@ func worktreeWhitespaceOnlyFiles(
 	allFiles := worktreeRawPaths(outAll)
 	result := make(map[string]bool)
 	for file := range allFiles {
-		outNoWhitespace, err := worktreeGitOutput(ctx, dir,
-			"diff", "--numstat", "-z", "--no-renames", "-w", baseRef, "--", file,
+		args := appendWorktreeHeadRef([]string{
+			"diff", "--numstat", "-z", "--no-renames", "-w", baseRef,
+		}, headRef)
+		outNoWhitespace, err := worktreeGitOutput(
+			ctx, dir, appendWorktreePathspec(args, file)...,
 		)
 		if err != nil {
 			return nil, err

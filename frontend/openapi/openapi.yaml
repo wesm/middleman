@@ -6801,6 +6801,29 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Get workspaces by ID
+  /workspaces/{id}/commits:
+    get:
+      operationId: get-workspaces-by-id-commits
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommitsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get workspaces by ID commits
   /workspaces/{id}/diff:
     get:
       operationId: get-workspaces-by-id-diff
@@ -6830,6 +6853,27 @@ paths:
           name: path
           schema:
             description: Optional file path to limit the returned patch
+            type: string
+        - description: Scope to a single commit SHA
+          explode: false
+          in: query
+          name: commit
+          schema:
+            description: Scope to a single commit SHA
+            type: string
+        - description: Start SHA for range diff (inclusive)
+          explode: false
+          in: query
+          name: from
+          schema:
+            description: Start SHA for range diff (inclusive)
+            type: string
+        - description: End SHA for range diff (inclusive)
+          explode: false
+          in: query
+          name: to
+          schema:
+            description: End SHA for range diff (inclusive)
             type: string
       responses:
         "200":
@@ -6867,6 +6911,27 @@ paths:
           name: whitespace
           schema:
             description: Set to hide to ignore whitespace-only changes
+            type: string
+        - description: Scope to a single commit SHA
+          explode: false
+          in: query
+          name: commit
+          schema:
+            description: Scope to a single commit SHA
+            type: string
+        - description: Start SHA for range diff (inclusive)
+          explode: false
+          in: query
+          name: from
+          schema:
+            description: Start SHA for range diff (inclusive)
+            type: string
+        - description: End SHA for range diff (inclusive)
+          explode: false
+          in: query
+          name: to
+          schema:
+            description: End SHA for range diff (inclusive)
             type: string
       responses:
         "200":

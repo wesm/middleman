@@ -141,7 +141,7 @@
       aria-label="Changed files"
       style:--diff-file-tree-width={`${fileTreeWidth}px`}
     >
-      <DiffSidebar />
+      <DiffSidebar showCommits={false} />
     </aside>
     <SplitResizeHandle
       class="files-resize-handle"

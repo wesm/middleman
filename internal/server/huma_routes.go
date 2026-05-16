@@ -330,6 +330,9 @@ type getWorkspaceFilesInput struct {
 	ID         string `path:"id"`
 	Base       string `query:"base"      doc:"Diff base: head, pushed, or merge-target"`
 	Whitespace string `query:"whitespace" doc:"Set to hide to ignore whitespace-only changes"`
+	Commit     string `query:"commit" doc:"Scope to a single commit SHA"`
+	From       string `query:"from"   doc:"Start SHA for range diff (inclusive)"`
+	To         string `query:"to"     doc:"End SHA for range diff (inclusive)"`
 }
 
 type getWorkspaceDiffInput struct {
@@ -337,6 +340,13 @@ type getWorkspaceDiffInput struct {
 	Base       string `query:"base"      doc:"Diff base: head, pushed, or merge-target"`
 	Whitespace string `query:"whitespace" doc:"Set to hide to ignore whitespace-only changes"`
 	Path       string `query:"path"      doc:"Optional file path to limit the returned patch"`
+	Commit     string `query:"commit" doc:"Scope to a single commit SHA"`
+	From       string `query:"from"   doc:"Start SHA for range diff (inclusive)"`
+	To         string `query:"to"     doc:"End SHA for range diff (inclusive)"`
+}
+
+type getWorkspaceCommitsInput struct {
+	ID string `path:"id"`
 }
 
 type retryWorkspaceInput struct {
@@ -374,6 +384,7 @@ type getWorkspaceOutput = bodyOutput[workspaceResponse]
 
 type getWorkspaceDiffOutput = bodyOutput[diffResponse]
 type getWorkspaceFilesOutput = bodyOutput[filesResponse]
+type getWorkspaceCommitsOutput = bodyOutput[commitsResponse]
 
 type getWorkspaceRuntimeOutput = bodyOutput[workspaceRuntimeResponse]
 
@@ -385,6 +396,8 @@ type workspaceDiffRequest struct {
 	Summary           *db.WorkspaceSummary
 	Base              workspace.WorktreeDiffBase
 	MergeTargetBranch string
+	FromSHA           string
+	ToSHA             string
 }
 
 type listActivityInput struct {
@@ -490,6 +503,7 @@ func (s *Server) registerAPI(api huma.API) {
 	}, s.createWorkspace)
 	huma.Get(api, "/workspaces", s.listWorkspaces)
 	huma.Get(api, "/workspaces/{id}", s.getWorkspace)
+	huma.Get(api, "/workspaces/{id}/commits", s.getWorkspaceCommits)
 	huma.Get(api, "/workspaces/{id}/diff", s.getWorkspaceDiff)
 	huma.Get(api, "/workspaces/{id}/files", s.getWorkspaceFiles)
 	huma.Register(api, huma.Operation{
@@ -3488,11 +3502,51 @@ func (s *Server) getWorkspace(
 	}, nil
 }
 
+func (s *Server) getWorkspaceCommits(
+	ctx context.Context, input *getWorkspaceCommitsInput,
+) (*getWorkspaceCommitsOutput, error) {
+	req, err := s.workspaceDiffRequest(ctx, input.ID, "")
+	if err != nil {
+		return nil, err
+	}
+
+	commits, ok, err := s.workspaceCommits(ctx, req)
+	if err != nil {
+		slog.Error(
+			"failed to list workspace commits",
+			"workspace_id", input.ID,
+			"err", err,
+		)
+		return nil, huma.Error502BadGateway("failed to list workspace commits")
+	}
+	if !ok {
+		return nil, huma.Error404NotFound(
+			"commits not available for this workspace",
+		)
+	}
+
+	resp := commitsResponse{Commits: make([]commitResponse, len(commits))}
+	for i, c := range commits {
+		resp.Commits[i] = commitResponse{
+			SHA:        c.SHA,
+			Message:    c.Message,
+			AuthorName: c.AuthorName,
+			AuthoredAt: c.AuthoredAt.UTC(),
+		}
+	}
+	return &getWorkspaceCommitsOutput{Body: resp}, nil
+}
+
 func (s *Server) getWorkspaceFiles(
 	ctx context.Context, input *getWorkspaceFilesInput,
 ) (*getWorkspaceFilesOutput, error) {
 	req, err := s.workspaceDiffRequest(ctx, input.ID, input.Base)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.applyWorkspaceDiffScope(
+		ctx, &req, input.Commit, input.From, input.To,
+	); err != nil {
 		return nil, err
 	}
 
@@ -3540,6 +3594,11 @@ func (s *Server) getWorkspaceDiff(
 ) (*getWorkspaceDiffOutput, error) {
 	req, err := s.workspaceDiffRequest(ctx, input.ID, input.Base)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.applyWorkspaceDiffScope(
+		ctx, &req, input.Commit, input.From, input.To,
+	); err != nil {
 		return nil, err
 	}
 
@@ -3621,11 +3680,125 @@ func (s *Server) workspaceDiffRequest(
 	}
 }
 
+func (s *Server) workspaceCommits(
+	ctx context.Context,
+	req workspaceDiffRequest,
+) ([]gitclone.Commit, bool, error) {
+	targetBranch, ok, err := s.workspaceMergeTargetBranch(ctx, req.Summary)
+	if err != nil || !ok {
+		return nil, ok, err
+	}
+	return workspace.WorktreeCommitsAgainstMergeTarget(
+		ctx,
+		req.Summary.WorktreePath,
+		targetBranch,
+	)
+}
+
+func (s *Server) applyWorkspaceDiffScope(
+	ctx context.Context,
+	req *workspaceDiffRequest,
+	commit string,
+	from string,
+	to string,
+) error {
+	hasCommit := commit != ""
+	hasFrom := from != ""
+	hasTo := to != ""
+
+	switch {
+	case !hasCommit && !hasFrom && !hasTo:
+		return nil
+
+	case hasCommit && !hasFrom && !hasTo:
+		if _, err := s.validateWorkspaceSHAs(ctx, *req, commit); err != nil {
+			return err
+		}
+		parent, err := workspace.WorktreeParentOf(
+			ctx, req.Summary.WorktreePath, commit,
+		)
+		if err != nil {
+			return huma.Error500InternalServerError(
+				"failed to resolve parent: " + err.Error(),
+			)
+		}
+		req.FromSHA = parent
+		req.ToSHA = commit
+		return nil
+
+	case !hasCommit && hasFrom && hasTo:
+		indexMap, err := s.validateWorkspaceSHAs(ctx, *req, from, to)
+		if err != nil {
+			return err
+		}
+		if indexMap[from] < indexMap[to] {
+			return huma.Error400BadRequest(
+				"invalid range: 'from' must be older than or equal to 'to'",
+			)
+		}
+		parent, err := workspace.WorktreeParentOf(
+			ctx, req.Summary.WorktreePath, from,
+		)
+		if err != nil {
+			return huma.Error500InternalServerError(
+				"failed to resolve parent: " + err.Error(),
+			)
+		}
+		req.FromSHA = parent
+		req.ToSHA = to
+		return nil
+
+	default:
+		return huma.Error400BadRequest(
+			"invalid scope: use 'commit' alone or 'from'+'to' together",
+		)
+	}
+}
+
+func (s *Server) validateWorkspaceSHAs(
+	ctx context.Context,
+	req workspaceDiffRequest,
+	shas ...string,
+) (map[string]int, error) {
+	commits, ok, err := s.workspaceCommits(ctx, req)
+	if err != nil {
+		return nil, huma.Error502BadGateway(
+			"failed to list workspace commits: " + err.Error(),
+		)
+	}
+	if !ok {
+		return nil, huma.Error404NotFound(
+			"commits not available for this workspace",
+		)
+	}
+	indexMap := make(map[string]int, len(commits))
+	for i, c := range commits {
+		indexMap[c.SHA] = i
+	}
+	for _, sha := range shas {
+		if _, ok := indexMap[sha]; !ok {
+			return nil, huma.Error400BadRequest(
+				"invalid scope: commit is not in this workspace branch",
+			)
+		}
+	}
+	return indexMap, nil
+}
+
 func (s *Server) workspaceDiffFiles(
 	ctx context.Context,
 	req workspaceDiffRequest,
 	hideWhitespace bool,
 ) ([]gitclone.DiffFile, bool, error) {
+	if req.FromSHA != "" && req.ToSHA != "" {
+		return workspace.WorktreeDiffFilesBetween(
+			ctx,
+			req.Summary.WorktreePath,
+			req.FromSHA,
+			req.ToSHA,
+			hideWhitespace,
+		)
+	}
 	if req.Base == workspace.WorktreeDiffBaseMergeTarget {
 		return workspace.WorktreeDiffFilesAgainstMergeTarget(
 			ctx,
@@ -3645,6 +3818,25 @@ func (s *Server) workspaceDiff(
 	hideWhitespace bool,
 	path string,
 ) (*gitclone.DiffResult, bool, error) {
+	if req.FromSHA != "" && req.ToSHA != "" {
+		if path != "" {
+			return workspace.WorktreeFileDiffBetween(
+				ctx,
+				req.Summary.WorktreePath,
+				req.FromSHA,
+				req.ToSHA,
+				hideWhitespace,
+				path,
+			)
+		}
+		return workspace.WorktreeDiffBetween(
+			ctx,
+			req.Summary.WorktreePath,
+			req.FromSHA,
+			req.ToSHA,
+			hideWhitespace,
+		)
+	}
 	if req.Base == workspace.WorktreeDiffBaseMergeTarget {
 		if path != "" {
 			return workspace.WorktreeFileDiffAgainstMergeTarget(
@@ -3676,6 +3868,19 @@ func (s *Server) workspaceDiffWhitespaceOnlyCount(
 	ctx context.Context,
 	req workspaceDiffRequest,
 ) (int, bool, error) {
+	if req.FromSHA != "" && req.ToSHA != "" {
+		result, ok, err := workspace.WorktreeDiffBetween(
+			ctx,
+			req.Summary.WorktreePath,
+			req.FromSHA,
+			req.ToSHA,
+			false,
+		)
+		if result == nil {
+			return 0, ok, err
+		}
+		return result.WhitespaceOnlyCount, ok, err
+	}
 	if req.Base == workspace.WorktreeDiffBaseMergeTarget {
 		return workspace.WorktreeDiffWhitespaceOnlyCountAgainstMergeTarget(
 			ctx,

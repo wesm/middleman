@@ -169,6 +169,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   let currentNumber = $state(0);
   let currentWorkspaceID = $state("");
   let currentWorkspaceBase = $state<WorkspaceDiffBase>("head");
+  let currentWorkspaceStacked = $state(false);
   let workspaceWhitespaceOnlyCount = $state(0);
   let currentProvider = $state("");
   let currentPlatformHost = $state<string | undefined>(undefined);
@@ -378,7 +379,11 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   }
 
   async function reloadWorkspaceDiffOnly(): Promise<void> {
-    await loadWorkspaceDiff(currentWorkspaceID, currentWorkspaceBase);
+    await loadWorkspaceDiff(
+      currentWorkspaceID,
+      currentWorkspaceBase,
+      currentWorkspaceStacked,
+    );
   }
 
   function toggleFileCollapsed(
@@ -476,16 +481,22 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   function workspaceDiffQuery(base: WorkspaceDiffBase): {
     base: WorkspaceDiffBase;
     whitespace?: string;
+    commit?: string;
+    from?: string;
+    to?: string;
   } {
     return {
       base,
-      ...(hideWhitespace && { whitespace: "hide" }),
+      ...diffQuery(),
     };
   }
 
   function workspaceFileDiffQuery(base: WorkspaceDiffBase, path: string): {
     base: WorkspaceDiffBase;
     whitespace?: string;
+    commit?: string;
+    from?: string;
+    to?: string;
     path: string;
   } {
     return {
@@ -668,12 +679,15 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   async function loadWorkspaceDiff(
     workspaceID: string,
     base: WorkspaceDiffBase,
+    stacked = false,
   ): Promise<void> {
     const workspaceChanged =
       workspaceID !== currentWorkspaceID ||
-      base !== currentWorkspaceBase;
+      base !== currentWorkspaceBase ||
+      stacked !== currentWorkspaceStacked;
     currentWorkspaceID = workspaceID;
     currentWorkspaceBase = base;
+    currentWorkspaceStacked = stacked;
     currentOwner = "";
     currentName = "";
     currentNumber = 0;
@@ -705,6 +719,31 @@ export function createDiffStore(opts?: DiffStoreOptions) {
       return;
     } finally {
       finishFilesLoad(filesAc);
+    }
+
+    if (stacked) {
+      try {
+        const { data, error, response } = await apiClient.GET(
+          "/workspaces/{id}/diff",
+          {
+            params: {
+              path: { id: workspaceID },
+              query: workspaceDiffQuery(base),
+            },
+            signal: diffAc.signal,
+          },
+        );
+        if (!diffLoadIsCurrent(diffAc)) return;
+        if (!data) {
+          throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
+        }
+        applyDiffResult(data);
+      } catch (_err) {
+        failDiffLoad(_err, diffAc, filesAc);
+      } finally {
+        finishDiffLoad(diffAc);
+      }
+      return;
     }
 
     const visibleFiles = getVisibleFileList()?.files ?? [];
@@ -798,6 +837,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     currentNumber = 0;
     currentWorkspaceID = "";
     currentWorkspaceBase = "head";
+    currentWorkspaceStacked = false;
     workspaceWhitespaceOnlyCount = 0;
     currentProvider = "";
     currentPlatformHost = undefined;
@@ -806,32 +846,62 @@ export function createDiffStore(opts?: DiffStoreOptions) {
 
   async function loadCommits(): Promise<void> {
     if (commits || commitsLoading) return;
-    if (!currentOwner || !currentName || !currentNumber) return;
+    if (!currentWorkspaceID && (!currentOwner || !currentName || !currentNumber)) {
+      return;
+    }
 
     commitsLoading = true;
     commitsError = null;
     const owner = currentOwner;
     const name = currentName;
     const number = currentNumber;
+    const workspaceID = currentWorkspaceID;
     const ref = currentRouteRef();
     try {
-      const { data, error, response } = await apiClient.GET(
-        providerItemPath("pulls", ref, "/commits"),
-        {
-          params: { path: { ...providerRouteParams(ref), number } },
-        },
-      );
-      if (currentOwner !== owner || currentName !== name || currentNumber !== number) return;
+      const { data, error, response } = workspaceID
+        ? await apiClient.GET(
+          "/workspaces/{id}/commits",
+          {
+            params: { path: { id: workspaceID } },
+          },
+        )
+        : await apiClient.GET(
+          providerItemPath("pulls", ref, "/commits"),
+          {
+            params: { path: { ...providerRouteParams(ref), number } },
+          },
+        );
+      if (
+        currentWorkspaceID !== workspaceID ||
+        currentOwner !== owner ||
+        currentName !== name ||
+        currentNumber !== number
+      ) return;
       if (!data) {
         throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
       }
-      if (currentOwner !== owner || currentName !== name || currentNumber !== number) return;
+      if (
+        currentWorkspaceID !== workspaceID ||
+        currentOwner !== owner ||
+        currentName !== name ||
+        currentNumber !== number
+      ) return;
       commits = data.commits ?? [];
     } catch (err) {
-      if (currentOwner !== owner || currentName !== name || currentNumber !== number) return;
+      if (
+        currentWorkspaceID !== workspaceID ||
+        currentOwner !== owner ||
+        currentName !== name ||
+        currentNumber !== number
+      ) return;
       commitsError = err instanceof Error ? err.message : String(err);
     } finally {
-      if (currentOwner === owner && currentName === name && currentNumber === number) {
+      if (
+        currentWorkspaceID === workspaceID &&
+        currentOwner === owner &&
+        currentName === name &&
+        currentNumber === number
+      ) {
         commitsLoading = false;
       }
     }
@@ -858,6 +928,12 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     clearFilePreviewCache();
     if (currentOwner && currentName && currentNumber) {
       void loadDiff(currentOwner, currentName, currentNumber, currentRouteRef());
+    } else if (currentWorkspaceID) {
+      void loadWorkspaceDiff(
+        currentWorkspaceID,
+        currentWorkspaceBase,
+        currentWorkspaceStacked,
+      );
     }
   }
 
@@ -871,6 +947,12 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     clearFilePreviewCache();
     if (currentOwner && currentName && currentNumber) {
       void loadDiff(currentOwner, currentName, currentNumber, currentRouteRef());
+    } else if (currentWorkspaceID) {
+      void loadWorkspaceDiff(
+        currentWorkspaceID,
+        currentWorkspaceBase,
+        currentWorkspaceStacked,
+      );
     }
   }
 
@@ -879,6 +961,12 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     clearFilePreviewCache();
     if (currentOwner && currentName && currentNumber) {
       void loadDiff(currentOwner, currentName, currentNumber, currentRouteRef());
+    } else if (currentWorkspaceID) {
+      void loadWorkspaceDiff(
+        currentWorkspaceID,
+        currentWorkspaceBase,
+        currentWorkspaceStacked,
+      );
     }
   }
 

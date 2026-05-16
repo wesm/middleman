@@ -63,6 +63,18 @@
     }
   }
 
+  function handleFileRowClick(path: string): void {
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed) return;
+    diff.requestScrollToFile(path);
+  }
+
+  function handleFileRowKeydown(event: KeyboardEvent, path: string): void {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    diff.requestScrollToFile(path);
+  }
+
   // Per-diff file filter input (shown when 10+ files in diff).
   let fileFilterText = $state("");
   // Reset filter whenever selected PR changes so stale filter text
@@ -113,16 +125,19 @@
         <div class="diff-dir-header">{group.dir}/</div>
       {/if}
       {#each group.files as f (f.path)}
-        <button
+        <div
           class="diff-file-row"
           class:diff-file-row--active={diff.getActiveFile() === f.path}
           class:diff-file-row--nested={!!group.dir}
-          onclick={() => diff.requestScrollToFile(f.path)}
+          role="button"
+          tabindex="0"
+          onclick={() => handleFileRowClick(f.path)}
+          onkeydown={(event) => handleFileRowKeydown(event, f.path)}
           title={f.path}
         >
           <span class="diff-file-status" style="color: {statusColor(f.status)}">{statusLetter(f.status)}</span>
           <span class="diff-file-name" class:diff-file-name--deleted={f.status === "deleted"}>{filename(f.path)}</span>
-        </button>
+        </div>
       {/each}
     {/each}
   {/if}
@@ -188,6 +203,7 @@
     text-align: left;
     color: var(--text-secondary);
     transition: background 0.15s ease;
+    cursor: pointer;
   }
 
   .diff-file-row--nested {
@@ -220,6 +236,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    user-select: text;
   }
 
   .diff-file-name--deleted {

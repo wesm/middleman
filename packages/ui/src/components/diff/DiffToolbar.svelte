@@ -5,13 +5,19 @@
     diffFileCategoryOptions,
     type DiffFileCategoryFilter,
   } from "../../utils/diff-categories.js";
+  import DiffScopePicker from "./DiffScopePicker.svelte";
 
   interface Props {
     compact?: boolean;
     showRichPreview?: boolean;
+    showScopePicker?: boolean;
   }
 
-  let { compact = false, showRichPreview = true }: Props = $props();
+  let {
+    compact = false,
+    showRichPreview = true,
+    showScopePicker = true,
+  }: Props = $props();
 
   const { diff } = getStores();
   const tabOptions = [1, 2, 4, 8] as const;
@@ -163,6 +169,9 @@
         {/each}
       </div>
     </div>
+  {/if}
+  {#if showScopePicker}
+    <DiffScopePicker />
   {/if}
   <div class="compact-menu-wrap" bind:this={compactMenuRef}>
     <button
