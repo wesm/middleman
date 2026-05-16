@@ -2308,6 +2308,16 @@
     width: 100%;
   }
 
+  .actions-menu-popover :global(.approve-section--open) {
+    gap: 8px;
+  }
+
+  .actions-menu-popover :global(.approve-popover) {
+    position: static;
+    width: 100%;
+    box-shadow: none;
+  }
+
   .actions-menu-popover :global(.approve-actions) {
     flex-wrap: wrap;
   }

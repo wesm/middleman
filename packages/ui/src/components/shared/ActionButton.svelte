@@ -14,6 +14,7 @@
     title?: string;
     label?: string;
     shortLabel?: string;
+    ariaExpanded?: boolean;
     class?: string;
     onclick?: (event: MouseEvent) => void;
     children?: Snippet;
@@ -29,6 +30,7 @@
     title = undefined,
     label = undefined,
     shortLabel = undefined,
+    ariaExpanded = undefined,
     class: className = "",
     onclick = undefined,
     children,
@@ -51,6 +53,7 @@
   class={classes}
   {disabled}
   {title}
+  aria-expanded={ariaExpanded}
   aria-label={label && shortLabel ? label : undefined}
   onclick={onclick}
 >
@@ -81,9 +84,24 @@
     padding: 6px 14px;
     border-radius: var(--radius-sm);
     cursor: pointer;
-    transition: opacity 0.1s, background 0.1s;
+    transition:
+      background-color 0.12s ease,
+      border-color 0.12s ease,
+      color 0.12s ease,
+      box-shadow 0.12s ease,
+      transform 0.08s ease,
+      opacity 0.1s ease;
     white-space: nowrap;
     line-height: 1;
+  }
+
+  .action-button:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 42%, transparent);
+  }
+
+  .action-button:active:not(:disabled) {
+    transform: translateY(1px);
   }
 
   .action-button:disabled {
@@ -139,6 +157,14 @@
     background: #176b2e;
     border-color: #176b2e;
   }
+  .action-button--solid.action-button--success:focus-visible {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-green) 48%, transparent);
+  }
+  .action-button--solid.action-button--success:active:not(:disabled),
+  .action-button--solid.action-button--success[aria-expanded="true"] {
+    background: #145c27;
+    border-color: #145c27;
+  }
 
   /* Success soft — approve */
   .action-button--soft.action-button--success {
@@ -148,6 +174,14 @@
   }
   .action-button--soft.action-button--success:hover:not(:disabled) {
     background: color-mix(in srgb, var(--accent-green) 20%, transparent);
+  }
+  .action-button--soft.action-button--success:focus-visible {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-green) 38%, transparent);
+  }
+  .action-button--soft.action-button--success:active:not(:disabled),
+  .action-button--soft.action-button--success[aria-expanded="true"] {
+    background: color-mix(in srgb, var(--accent-green) 26%, transparent);
+    border-color: color-mix(in srgb, var(--accent-green) 48%, transparent);
   }
 
   /* Info soft — ready for review */

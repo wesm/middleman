@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../packages/ui/src/context.js", () => ({
@@ -11,15 +17,28 @@ vi.mock("../../packages/ui/src/context.js", () => ({
 
 import ApproveButton from "../../packages/ui/src/components/detail/ApproveButton.svelte";
 
+const defaultProps = {
+  provider: "github",
+  platformHost: "github.com",
+  owner: "acme",
+  name: "widget",
+  repoPath: "acme/widget",
+  number: 1,
+};
+
+function renderApproveButton(overrides: Partial<typeof defaultProps> = {}) {
+  return render(ApproveButton, {
+    props: { ...defaultProps, ...overrides },
+  });
+}
+
 describe("ApproveButton tooltips", () => {
   afterEach(() => {
     cleanup();
   });
 
   it("collapsed button title describes opening the form, not submitting", () => {
-    render(ApproveButton, {
-      props: { provider: "github", platformHost: "github.com", owner: "acme", name: "widget", repoPath: "acme/widget", number: 1 },
-    });
+    renderApproveButton();
 
     const trigger = screen.getByRole("button", { name: /approve/i });
     expect(trigger.getAttribute("title")).toBe(
@@ -28,22 +47,49 @@ describe("ApproveButton tooltips", () => {
   });
 
   it("expanded submit button carries the actual submit-review tooltip", async () => {
-    render(ApproveButton, {
-      props: { provider: "github", platformHost: "github.com", owner: "acme", name: "widget", repoPath: "acme/widget", number: 1 },
-    });
+    renderApproveButton();
 
     await fireEvent.click(screen.getByRole("button", { name: /approve/i }));
 
-    const submit = screen.getByRole("button", { name: /^approve$/i });
+    const submit = screen.getByTitle(
+      "Submit an approving code review on this pull request",
+    );
     expect(submit.getAttribute("title")).toBe(
       "Submit an approving code review on this pull request",
     );
   });
 
-  it("collapses and clears the draft when the PR identity changes", async () => {
-    const { rerender } = render(ApproveButton, {
-      props: { provider: "github", platformHost: "github.com", owner: "acme", name: "widget", repoPath: "acme/widget", number: 1 },
+  it("keeps the approval trigger stable while opening the approval popover", async () => {
+    renderApproveButton();
+
+    const trigger = screen.getByRole("button", { name: /^approve$/i });
+    await fireEvent.click(trigger);
+
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(
+      screen.getByRole("dialog", { name: "Approve pull request" }),
+    ).toBeTruthy();
+
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole("textbox"));
     });
+  });
+
+  it("collapses the approval popover from cancel without removing the trigger", async () => {
+    renderApproveButton();
+
+    const trigger = screen.getByRole("button", { name: /^approve$/i });
+    await fireEvent.click(trigger);
+    await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(
+      screen.queryByRole("dialog", { name: "Approve pull request" }),
+    ).toBeNull();
+  });
+
+  it("collapses and clears the draft when the PR identity changes", async () => {
+    const { rerender } = renderApproveButton();
 
     await fireEvent.click(screen.getByRole("button", { name: /approve/i }));
     const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
