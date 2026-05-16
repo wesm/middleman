@@ -32,20 +32,10 @@ notice the regression:
 Regenerate OpenAPI and generated clients with `make api-generate` after Huma
 route or API type changes.
 
-When a handler has both default-host and `/host/{platform_host}` routes, do not
-add duplicate full-stack e2e tests solely to exercise both path forms if the
-host route is a generic wrapper that forwards the same fields to the same
-handler. Prefer:
-
-- one full-stack API/SQLite test for the behavior through the shared handler;
-- route helper or generated-client tests that prove callers select the host path
-  when a non-default `platform_host` is present;
-- existing generic host-route e2e coverage for path parsing, host lookup, nested
-  owners, and provider identity.
-
-Add a host-specific full-stack e2e test when a change touches custom host logic,
-route parsing/encoding, provider identity lookup, or a bug that generic host
-coverage would not catch.
+Do not duplicate full-stack e2e tests across default-host and
+`/host/{platform_host}` route forms when the host route is only a generic
+wrapper. Add host-specific e2e coverage only for custom host logic, route
+parsing, or provider identity changes.
 
 ## Race test runtime
 

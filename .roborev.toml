@@ -29,16 +29,10 @@ lacks browser testing infrastructure. middleman already has Playwright
 e2e coverage, and many required e2e tests here are API plus SQLite
 full-stack tests rather than purely browser concerns.
 
-Do not require endpoint-specific e2e tests for both default-host and
-`/host/{platform_host}` route forms when the host route is only a thin
-generic wrapper that copies path fields into the same handler and there
-is already coverage for that generic host-route mechanism. In those cases,
-use targeted unit/store tests for generated route selection plus one
-full-stack test for the behavior under the shared handler. Require a
-host-scoped full-stack e2e test only when the change adds custom host
-logic, changes route parsing/encoding, changes provider identity lookup,
-or exposes a regression that existing generic host-route tests would not
-catch.
+Do not require duplicate e2e coverage for default-host and
+`/host/{platform_host}` routes when the host route is only a generic
+wrapper. Require host-specific e2e only for custom host logic, route
+parsing, or provider identity changes.
 
 middleman targets Go 1.26, where the built-in new accepts expression
 operands such as new(expr). Do not flag new(expr) usage as invalid,
