@@ -1020,7 +1020,9 @@ test.describe("diff view", () => {
     await expect(page.locator(".scope-pill__label")).toHaveText("HEAD");
   });
 
-  test("commit range picker scopes the visible diff", async ({ page }) => {
+  test("commit range picker scopes single commits and ranges", async ({ page }) => {
+    const commitSHA = "abc1234567890123456789012345678901234567";
+    const olderSHA = "def1234567890123456789012345678901234567";
     const scopedDiff: DiffResult = {
       ...smallDiff,
       files: [
@@ -1031,23 +1033,48 @@ test.describe("diff view", () => {
         },
       ],
     };
+    const rangedDiff: DiffResult = {
+      ...smallDiff,
+      files: [
+        {
+          ...smallDiff.files[1]!,
+          path: "frontend/src/scoped.ts",
+          old_path: "frontend/src/scoped.ts",
+        },
+        {
+          ...smallDiff.files[2]!,
+          path: "frontend/src/ranged.ts",
+          old_path: "frontend/src/ranged.ts",
+        },
+      ],
+    };
+    const scopedRequests: string[] = [];
+    const fixtureFor = (url: URL): DiffResult => {
+      if (url.searchParams.has("from") && url.searchParams.has("to")) {
+        return rangedDiff;
+      }
+      if (url.searchParams.has("commit")) {
+        return scopedDiff;
+      }
+      return smallDiff;
+    };
 
     await page.route("**/api/v1/pulls/github/acme/widgets/1/files**", async (route) => {
       const url = new URL(route.request().url());
+      scopedRequests.push(url.toString());
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(
-          filesFromDiff(url.searchParams.has("commit") ? scopedDiff : smallDiff),
-        ),
+        body: JSON.stringify(filesFromDiff(fixtureFor(url))),
       });
     });
     await page.route("**/api/v1/pulls/github/acme/widgets/1/diff*", async (route) => {
       const url = new URL(route.request().url());
+      scopedRequests.push(url.toString());
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(url.searchParams.has("commit") ? scopedDiff : smallDiff),
+        body: JSON.stringify(fixtureFor(url)),
       });
     });
     await page.route("**/api/v1/pulls/github/acme/widgets/1/commits", async (route) => {
@@ -1056,8 +1083,8 @@ test.describe("diff view", () => {
         contentType: "application/json",
         body: JSON.stringify({
           commits: [
-            { sha: "abc1234567890123456789012345678901234567", message: "scoped commit", authored_at: "2026-04-01T00:00:00Z", author_name: "alice" },
-            { sha: "def1234567890123456789012345678901234567", message: "base commit", authored_at: "2026-03-31T00:00:00Z", author_name: "alice" },
+            { sha: commitSHA, message: "scoped commit", authored_at: "2026-04-01T00:00:00Z", author_name: "alice" },
+            { sha: olderSHA, message: "base commit", authored_at: "2026-03-31T00:00:00Z", author_name: "alice" },
           ],
         }),
       });
@@ -1068,12 +1095,25 @@ test.describe("diff view", () => {
     await expect(page.locator(".diff-file")).toHaveCount(4);
 
     await page.getByRole("button", { name: "Select commit range" }).click();
-    await page.locator(".commit-item").first().click();
+    const commitItems = page.locator(".commit-item");
+    await commitItems.first().click();
 
     await expect(page.locator(".scope-pill__label")).toHaveText("abc1234");
     await expect(page.locator(".diff-file")).toHaveCount(1);
     await expect(page.locator(".diff-file").first())
       .toHaveAttribute("data-file-path", "frontend/src/scoped.ts");
+
+    await commitItems.nth(1).click({ modifiers: ["Shift"] });
+
+    await expect(page.locator(".scope-pill__label")).toHaveText("def1234..abc1234");
+    await expect(page.locator(".diff-file")).toHaveCount(2);
+    await expect(page.locator('[data-file-path="frontend/src/ranged.ts"]'))
+      .toBeVisible();
+    expect(scopedRequests.some((requestURL) => {
+      const url = new URL(requestURL);
+      return url.searchParams.get("from") === olderSHA &&
+        url.searchParams.get("to") === commitSHA;
+    })).toBe(true);
   });
 });
 
