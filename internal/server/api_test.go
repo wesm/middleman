@@ -14267,6 +14267,19 @@ func TestWorkspaceDiffEndpointsAcceptCommitAndRangeScopesE2E(t *testing.T) {
 	require.NotNil(singleDiff.Files)
 	assertWorkspaceDiffPaths(t, *singleDiff.Files, []string{"local-two.go"})
 
+	rangeFiles := requestWorkspaceFilesQuery(
+		t,
+		srv,
+		ws.Id,
+		"base=head&from="+url.QueryEscape(older)+"&to="+url.QueryEscape(newest),
+	)
+	require.NotNil(rangeFiles.Files)
+	assertWorkspaceDiffPaths(
+		t,
+		*rangeFiles.Files,
+		[]string{"local-one.go", "local-two.go"},
+	)
+
 	rangeDiff := requestWorkspaceDiffQuery(
 		t,
 		srv,
