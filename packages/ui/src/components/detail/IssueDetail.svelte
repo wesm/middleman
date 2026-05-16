@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
   import { providerItemPath, providerRepoPath, providerRouteParams } from "../../api/provider-routes.js";
   import type { Label, ProviderCapabilities } from "../../api/types.js";
   import {
@@ -25,6 +25,7 @@
     type OpenLabelPickerDetail,
   } from "./labelPickerCommand.js";
   import { nextCatalogLabelNames } from "./labelSelection.js";
+  import { labelPickerPopoverStyle } from "./labelPickerPosition.js";
   import CopyItemNumber from "./CopyItemNumber.svelte";
   import MonitorUpIcon from "@lucide/svelte/icons/monitor-up";
   import PackagePlusIcon from "@lucide/svelte/icons/package-plus";
@@ -193,11 +194,21 @@
   let labelCatalogSyncing = $state(false);
   let labelPickerError = $state<string | null>(null);
   let pendingLabel = $state<string | null>(null);
+  let labelPickerAnchor = $state<HTMLDivElement>();
+  let labelPickerStyle = $state("");
 
   function closeLabelPicker(): void {
     labelPickerOpen = false;
     labelPickerError = null;
     pendingLabel = null;
+  }
+
+  function positionLabelPicker(): void {
+    if (!labelPickerAnchor) return;
+    labelPickerStyle = labelPickerPopoverStyle(
+      labelPickerAnchor.getBoundingClientRect(),
+      window.innerWidth,
+    );
   }
 
   function onOpenLabelPickerCommand(event: Event): void {
@@ -211,6 +222,8 @@
     labelPickerOpen = true;
     labelPickerError = null;
     labelCatalogSyncing = true;
+    await tick();
+    positionLabelPicker();
     try {
       await loadLabelCatalogWithRefresh({
         isActive: () => labelPickerOpen,
@@ -239,6 +252,21 @@
       if (labelPickerOpen) labelCatalogSyncing = false;
     }
   }
+
+  $effect(() => {
+    if (!labelPickerOpen) return;
+
+    function updatePosition(): void {
+      positionLabelPicker();
+    }
+
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  });
 
   async function toggleLabel(labelName: string): Promise<void> {
     if (pendingLabel !== null) return;
@@ -805,7 +833,7 @@
             <GitHubLabels {labels} mode="full" />
           {/if}
           {#if capabilities.read_labels && capabilities.label_mutation}
-            <div class="label-editor-anchor">
+            <div class="label-editor-anchor" bind:this={labelPickerAnchor}>
               <ActionButton
                 label="Labels"
                 shortLabel="Labels"
@@ -818,7 +846,7 @@
                 <TagsIcon size="14" strokeWidth="2.2" aria-hidden="true" />
               </ActionButton>
               {#if labelPickerOpen}
-                <div class="label-editor-popover">
+                <div class="label-editor-popover" style={labelPickerStyle}>
                   <LabelPicker
                     catalogLabels={labelCatalog}
                     selectedLabels={labels}
@@ -1182,6 +1210,7 @@
   }
 
   .issue-detail-content {
+    container: issue-detail / inline-size;
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -1195,10 +1224,8 @@
   }
 
   .label-editor-popover {
-    position: absolute;
+    position: fixed;
     z-index: 20;
-    top: calc(100% + 4px);
-    left: 0;
   }
 
   .detail-header {

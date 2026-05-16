@@ -121,7 +121,8 @@
 
 <style>
   .label-picker {
-    width: min(380px, calc(100vw - 32px));
+    width: 100%;
+    min-width: 0;
     max-height: min(390px, calc(100vh - 64px));
     display: flex;
     flex-direction: column;
