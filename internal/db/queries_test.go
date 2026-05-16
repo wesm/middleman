@@ -2807,6 +2807,13 @@ func TestUpdateMRCIStatusForHeadSkipsStaleHead(t *testing.T) {
 	require.NotNil(fresh)
 	assert.Equal("pending", fresh.CIStatus)
 	assert.True(fresh.CIHadPending)
+
+	require.NoError(d.UpdateMRCIStatusForHead(ctx, repoID, 7, "new-head", "success", `[]`, false))
+	done, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(done)
+	assert.Equal("success", done.CIStatus)
+	assert.True(done.CIHadPending)
 }
 
 func TestGetPreviouslyOpenPRNumbers(t *testing.T) {
