@@ -21,34 +21,21 @@ func NewMergeableCache() *MergeableCache {
 }
 
 func (c *MergeableCache) CapturePullRequestJSON(data []byte) {
-	if c == nil || len(bytes.TrimSpace(data)) == 0 {
+	data = bytes.TrimSpace(data)
+	if c == nil || len(data) == 0 {
 		return
 	}
-	var items []map[string]json.RawMessage
+	var items []mergeableCaptureItem
 	if err := json.Unmarshal(data, &items); err != nil {
-		var item map[string]json.RawMessage
+		var item mergeableCaptureItem
 		if err := json.Unmarshal(data, &item); err != nil {
 			return
 		}
-		items = []map[string]json.RawMessage{item}
+		items = []mergeableCaptureItem{item}
 	}
 	for _, item := range items {
 		c.capturePullRequest(item)
 	}
-}
-
-func (c *MergeableCache) MergeableForHTMLURL(htmlURL string) (*bool, bool) {
-	if c == nil || htmlURL == "" {
-		return nil, false
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	entry, ok := c.byHTMLURL[htmlURL]
-	if entry.mergeable == nil {
-		return nil, ok
-	}
-	value := *entry.mergeable
-	return &value, ok
 }
 
 func (c *MergeableCache) MergeableForPullRequest(htmlURL, headSHA, baseSHA string) (*bool, bool) {
@@ -68,43 +55,40 @@ func (c *MergeableCache) MergeableForPullRequest(htmlURL, headSHA, baseSHA strin
 	return &value, true
 }
 
-func (c *MergeableCache) capturePullRequest(item map[string]json.RawMessage) {
-	var htmlURL string
-	if raw := item["html_url"]; len(raw) > 0 {
-		_ = json.Unmarshal(raw, &htmlURL)
-	}
-	if htmlURL == "" {
+func (c *MergeableCache) capturePullRequest(item mergeableCaptureItem) {
+	if item.HTMLURL == "" {
 		return
 	}
 
-	var mergeable *bool
-	if raw, ok := item["mergeable"]; ok && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
-		var value bool
-		if err := json.Unmarshal(raw, &value); err == nil {
-			mergeable = &value
-		}
-	}
-
-	headSHA := pullRequestBranchSHA(item["head"])
-	baseSHA := pullRequestBranchSHA(item["base"])
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.byHTMLURL[htmlURL] = mergeableCacheEntry{
-		mergeable: mergeable,
-		headSHA:   headSHA,
-		baseSHA:   baseSHA,
+	c.byHTMLURL[item.HTMLURL] = mergeableCacheEntry{
+		mergeable: item.mergeableValue(),
+		headSHA:   item.Head.SHA,
+		baseSHA:   item.Base.SHA,
 	}
 }
 
-func pullRequestBranchSHA(raw json.RawMessage) string {
-	if len(raw) == 0 {
-		return ""
+type mergeableCaptureItem struct {
+	HTMLURL   string                 `json:"html_url"`
+	Mergeable json.RawMessage        `json:"mergeable"`
+	Head      mergeableCaptureBranch `json:"head"`
+	Base      mergeableCaptureBranch `json:"base"`
+}
+
+type mergeableCaptureBranch struct {
+	SHA string `json:"sha"`
+}
+
+func (item mergeableCaptureItem) mergeableValue() *bool {
+	if len(item.Mergeable) == 0 || bytes.Equal(bytes.TrimSpace(item.Mergeable), []byte("null")) {
+		return nil
 	}
-	var branch struct {
-		SHA string `json:"sha"`
+	var value bool
+	if err := json.Unmarshal(item.Mergeable, &value); err != nil {
+		return nil
 	}
-	_ = json.Unmarshal(raw, &branch)
-	return branch.SHA
+	return &value
 }
 
 type mergeableCacheEntry struct {
