@@ -70,20 +70,20 @@ test.describe("CI dropdown", () => {
       await expect(pendingChip).toBeVisible();
       await backgroundSync;
 
+      const firstRefresh = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return response.request().method() === "POST" &&
+          url.pathname === "/api/v1/pulls/github/acme/widgets/1/ci-refresh";
+      });
+      await pendingChip.click();
+      await firstRefresh;
+
       const successResponse = await page.request.post(
         `${server.info.base_url}/__e2e/pr-ci-state/success`,
       );
       expect(successResponse.ok()).toBe(true);
       await expect(successResponse.json()).resolves.toEqual({ status: "success" });
 
-      const syncRequest = page.waitForRequest((request) => {
-        const url = new URL(request.url());
-        return request.method() === "POST" &&
-          url.pathname === "/api/v1/pulls/github/acme/widgets/1/ci-refresh";
-      });
-      await pendingChip.click();
-
-      await syncRequest;
       await expect(
         page
           .locator(".pull-detail")
