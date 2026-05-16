@@ -229,7 +229,13 @@
   }
 
   async function openLabelPicker(event?: MouseEvent): Promise<void> {
-    labelPickerAutofocusFilter = event !== undefined && !window.matchMedia("(pointer: coarse)").matches;
+    labelPickerAnchor = (event?.currentTarget as HTMLElement | null)?.closest<HTMLDivElement>(".label-editor-anchor")
+      ?? labelPickerAnchor;
+    if (event !== undefined && labelPickerOpen) {
+      closeLabelPicker();
+      return;
+    }
+    labelPickerAutofocusFilter = event !== undefined && !(window.matchMedia?.("(pointer: coarse)").matches ?? false);
     labelPickerOpen = true;
     labelPickerError = null;
     labelCatalogSyncing = true;
