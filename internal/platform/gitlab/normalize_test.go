@@ -25,8 +25,13 @@ func TestNormalizeProjectPreservesGitLabIdentity(t *testing.T) {
 		HTTPURLToRepo:     "https://gitlab.example.com/Group/SubGroup/Project.git",
 		Visibility:        gitlab.PrivateVisibility,
 		Archived:          true,
-		CreatedAt:         &createdAt,
-		UpdatedAt:         &updatedAt,
+		Permissions: &gitlab.Permissions{
+			ProjectAccess: &gitlab.ProjectAccess{
+				AccessLevel: gitlab.ReporterPermissions,
+			},
+		},
+		CreatedAt: &createdAt,
+		UpdatedAt: &updatedAt,
 	})
 	require.NoError(t, err)
 
@@ -39,8 +44,29 @@ func TestNormalizeProjectPreservesGitLabIdentity(t *testing.T) {
 	assert.Equal("42", repo.Ref.PlatformExternalID)
 	assert.True(repo.Private)
 	assert.True(repo.Archived)
+	require.NotNil(t, repo.ViewerCanMerge)
+	assert.False(*repo.ViewerCanMerge)
 	assert.Equal(createdAt, repo.CreatedAt)
 	assert.Equal(updatedAt, repo.UpdatedAt)
+}
+
+func TestNormalizeProjectUsesHighestGitLabAccessForMergePermission(t *testing.T) {
+	repo, err := NormalizeProject("gitlab.example.com", &gitlab.Project{
+		ID:                42,
+		Path:              "project",
+		PathWithNamespace: "group/project",
+		Permissions: &gitlab.Permissions{
+			ProjectAccess: &gitlab.ProjectAccess{
+				AccessLevel: gitlab.ReporterPermissions,
+			},
+			GroupAccess: &gitlab.GroupAccess{
+				AccessLevel: gitlab.DeveloperPermissions,
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, repo.ViewerCanMerge)
+	assert.True(t, *repo.ViewerCanMerge)
 }
 
 func TestNormalizeProjectRejectsUnsafePathWithNamespace(t *testing.T) {

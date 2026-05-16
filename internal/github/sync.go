@@ -507,6 +507,7 @@ func (p gitHubClientProvider) GetRepository(
 	if repo.GetOwner().GetLogin() != "" {
 		owner = repo.GetOwner().GetLogin()
 	}
+	viewerCanMerge := gitHubViewerCanMerge(repo)
 	return platform.Repository{
 		Ref: platform.RepoRef{
 			Platform:           platform.KindGitHub,
@@ -525,10 +526,26 @@ func (p gitHubClientProvider) GetRepository(
 		Description:        repo.GetDescription(),
 		Private:            repo.GetPrivate(),
 		Archived:           repo.GetArchived(),
-		DefaultBranch:      repo.GetDefaultBranch(),
-		WebURL:             repo.GetHTMLURL(),
-		CloneURL:           repo.GetCloneURL(),
+		MergeSettings: &platform.RepositoryMergeSettings{
+			AllowSquashMerge: repo.GetAllowSquashMerge(),
+			AllowMergeCommit: repo.GetAllowMergeCommit(),
+			AllowRebaseMerge: repo.GetAllowRebaseMerge(),
+		},
+		ViewerCanMerge: viewerCanMerge,
+		DefaultBranch:  repo.GetDefaultBranch(),
+		WebURL:         repo.GetHTMLURL(),
+		CloneURL:       repo.GetCloneURL(),
 	}, nil
+}
+
+func gitHubViewerCanMerge(repo *gh.Repository) *bool {
+	if repo == nil || repo.Permissions == nil {
+		return nil
+	}
+	canMerge := repo.Permissions.GetPush() ||
+		repo.Permissions.GetMaintain() ||
+		repo.Permissions.GetAdmin()
+	return &canMerge
 }
 
 func (p gitHubClientProvider) ListRepositories(
@@ -2041,29 +2058,29 @@ dispatch:
 	})
 }
 
-func (s *Syncer) syncRepoIdentity(ctx context.Context, repo RepoRef) (db.RepoIdentity, error) {
+func (s *Syncer) syncRepoIdentity(ctx context.Context, repo RepoRef) (db.RepoIdentity, *platform.Repository, error) {
 	identity := platform.DBRepoIdentity(platformRepoRef(repo))
 	if identity.PlatformRepoID != "" {
-		return identity, nil
+		return identity, nil, nil
 	}
 	reader, err := s.clients.RepositoryReader(repoPlatform(repo), repoHost(repo))
 	if err != nil {
-		return db.RepoIdentity{}, err
+		return db.RepoIdentity{}, nil, err
 	}
 	resolved, err := reader.GetRepository(ctx, platformRepoRef(repo))
 	if err != nil {
-		return db.RepoIdentity{}, err
+		return db.RepoIdentity{}, nil, err
 	}
 	identity = platform.DBRepositoryIdentity(resolved)
 	if identity.PlatformRepoID == "" {
-		return db.RepoIdentity{}, fmt.Errorf("provider returned no repo id")
+		return db.RepoIdentity{}, nil, fmt.Errorf("provider returned no repo id")
 	}
-	return identity, nil
+	return identity, &resolved, nil
 }
 
 // syncRepo syncs one repository: open PRs, timeline events, and stale closures.
 func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
-	repoIdentity, err := s.syncRepoIdentity(ctx, repo)
+	repoIdentity, resolvedRepo, err := s.syncRepoIdentity(ctx, repo)
 	if err != nil {
 		return fmt.Errorf("resolve repo identity %s/%s: %w", repo.Owner, repo.Name, err)
 	}
@@ -2072,17 +2089,24 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		return fmt.Errorf("upsert repo %s/%s by provider id: %w", repo.Owner, repo.Name, err)
 	}
 
-	if client, ok := s.optionalGitHubClientFor(repo); ok {
+	if resolvedRepo != nil {
+		s.updateRepoSettingsFromProviderRepo(ctx, repoID, *resolvedRepo)
+	} else if client, ok := s.optionalGitHubClientFor(repo); ok {
 		ghRepo, err := client.GetRepository(ctx, repo.Owner, repo.Name)
 		if err != nil {
 			slog.Warn("get repo settings failed",
 				"repo", repo.Owner+"/"+repo.Name, "err", err,
 			)
 		} else {
+			viewerCanMerge := true
+			if canMerge := gitHubViewerCanMerge(ghRepo); canMerge != nil {
+				viewerCanMerge = *canMerge
+			}
 			_ = s.db.UpdateRepoSettings(ctx, repoID,
 				ghRepo.GetAllowSquashMerge(),
 				ghRepo.GetAllowMergeCommit(),
 				ghRepo.GetAllowRebaseMerge(),
+				viewerCanMerge,
 			)
 		}
 	}
@@ -2123,6 +2147,30 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 	}
 
 	return syncErr
+}
+
+func (s *Syncer) updateRepoSettingsFromProviderRepo(
+	ctx context.Context,
+	repoID int64,
+	repo platform.Repository,
+) {
+	if repo.MergeSettings != nil {
+		settings := repo.MergeSettings
+		viewerCanMerge := true
+		if repo.ViewerCanMerge != nil {
+			viewerCanMerge = *repo.ViewerCanMerge
+		}
+		_ = s.db.UpdateRepoSettings(ctx, repoID,
+			settings.AllowSquashMerge,
+			settings.AllowMergeCommit,
+			settings.AllowRebaseMerge,
+			viewerCanMerge,
+		)
+		return
+	}
+	if repo.ViewerCanMerge != nil {
+		_ = s.db.UpdateRepoViewerCanMerge(ctx, repoID, *repo.ViewerCanMerge)
+	}
 }
 
 func (s *Syncer) syncRepoLabelCatalog(ctx context.Context, repo RepoRef, repoID int64) {

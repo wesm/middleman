@@ -47,6 +47,7 @@ type Repo struct {
 	AllowSquashMerge         bool
 	AllowMergeCommit         bool
 	AllowRebaseMerge         bool
+	ViewerCanMerge           bool
 	BackfillPRPage           int
 	BackfillPRComplete       bool
 	BackfillPRCompletedAt    *time.Time

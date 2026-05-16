@@ -68,6 +68,11 @@ type RepositoryDTO struct {
 	Private       bool
 	Archived      bool
 	Description   string
+	AllowSquash   bool
+	AllowMerge    bool
+	AllowRebase   bool
+	CanPush       *bool
+	CanAdmin      *bool
 	Created       time.Time
 	Updated       time.Time
 }

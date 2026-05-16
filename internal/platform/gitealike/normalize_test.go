@@ -14,6 +14,8 @@ func TestNormalizeRepositoryMapsSharedDTO(t *testing.T) {
 	require := Require.New(t)
 	created := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	updated := created.Add(time.Hour)
+	canPush := false
+	canAdmin := false
 
 	repo, err := NormalizeRepository(platform.KindForgejo, "codeberg.org", RepositoryDTO{
 		ID:            42,
@@ -26,6 +28,11 @@ func TestNormalizeRepositoryMapsSharedDTO(t *testing.T) {
 		Private:       true,
 		Archived:      true,
 		Description:   "git forge",
+		AllowSquash:   true,
+		AllowMerge:    true,
+		AllowRebase:   true,
+		CanPush:       &canPush,
+		CanAdmin:      &canAdmin,
 		Created:       created,
 		Updated:       updated,
 	})
@@ -44,6 +51,12 @@ func TestNormalizeRepositoryMapsSharedDTO(t *testing.T) {
 	assert.Equal("git forge", repo.Description)
 	assert.True(repo.Private)
 	assert.True(repo.Archived)
+	require.NotNil(repo.MergeSettings)
+	assert.True(repo.MergeSettings.AllowSquashMerge)
+	assert.True(repo.MergeSettings.AllowMergeCommit)
+	assert.True(repo.MergeSettings.AllowRebaseMerge)
+	require.NotNil(repo.ViewerCanMerge)
+	assert.False(*repo.ViewerCanMerge)
 	assert.Equal(created, repo.CreatedAt)
 	assert.Equal(updated, repo.UpdatedAt)
 }

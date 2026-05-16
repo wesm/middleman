@@ -2212,6 +2212,8 @@ components:
           type: string
         PlatformHost:
           type: string
+        ViewerCanMerge:
+          type: boolean
         capabilities:
           $ref: "#/components/schemas/ProviderCapabilitiesResponse"
       required:
@@ -2226,6 +2228,7 @@ components:
         - AllowSquashMerge
         - AllowMergeCommit
         - AllowRebaseMerge
+        - ViewerCanMerge
         - BackfillPRPage
         - BackfillPRComplete
         - BackfillPRCompletedAt

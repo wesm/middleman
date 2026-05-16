@@ -2607,6 +2607,7 @@ export interface components {
             Owner: string;
             Platform: string;
             PlatformHost: string;
+            ViewerCanMerge: boolean;
             capabilities: components["schemas"]["ProviderCapabilitiesResponse"];
         };
         RepoSummaryAuthorResponse: {

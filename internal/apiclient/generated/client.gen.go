@@ -879,6 +879,7 @@ type RepoResponse struct {
 	Owner                    string                       `json:"Owner"`
 	Platform                 string                       `json:"Platform"`
 	PlatformHost             string                       `json:"PlatformHost"`
+	ViewerCanMerge           bool                         `json:"ViewerCanMerge"`
 	Capabilities             ProviderCapabilitiesResponse `json:"capabilities"`
 }
 

@@ -14,6 +14,11 @@ func convertRepository(repo *forgejosdk.Repository) (gitealike.RepositoryDTO, er
 	if repo == nil {
 		return gitealike.RepositoryDTO{}, fmt.Errorf("forgejo repository is nil")
 	}
+	var canPush, canAdmin *bool
+	if repo.Permissions != nil {
+		canPush = &repo.Permissions.Push
+		canAdmin = &repo.Permissions.Admin
+	}
 	return gitealike.RepositoryDTO{
 		ID:            repo.ID,
 		Owner:         convertUser(repo.Owner),
@@ -25,6 +30,11 @@ func convertRepository(repo *forgejosdk.Repository) (gitealike.RepositoryDTO, er
 		Private:       repo.Private,
 		Archived:      repo.Archived,
 		Description:   repo.Description,
+		AllowSquash:   repo.AllowSquash,
+		AllowMerge:    repo.AllowMerge,
+		AllowRebase:   repo.AllowRebase || repo.AllowRebaseMerge,
+		CanPush:       canPush,
+		CanAdmin:      canAdmin,
 		Created:       repo.Created,
 		Updated:       repo.Updated,
 	}, nil

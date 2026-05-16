@@ -2436,6 +2436,36 @@ func TestSyncRepoUsesProviderIDToPreserveRenamedRepo(t *testing.T) {
 	assert.Equal("new-group/new-project", repos[0].RepoPath)
 }
 
+func TestSyncRepoUpdatesViewerCanMergeWithoutMergeSettings(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		Owner:        "group",
+		Name:         "project",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NoError(d.UpdateRepoSettings(ctx, repoID, true, false, true, true))
+	syncer := &Syncer{db: d}
+	viewerCanMerge := false
+
+	syncer.updateRepoSettingsFromProviderRepo(ctx, repoID, platform.Repository{
+		ViewerCanMerge: &viewerCanMerge,
+	})
+
+	repos, err := d.ListRepos(ctx)
+	require.NoError(err)
+	require.Len(repos, 1)
+	assert.True(repos[0].AllowSquashMerge)
+	assert.False(repos[0].AllowMergeCommit)
+	assert.True(repos[0].AllowRebaseMerge)
+	assert.False(repos[0].ViewerCanMerge)
+}
+
 func TestSyncRepoUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()

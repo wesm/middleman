@@ -123,7 +123,15 @@ function pullDetail(): PullDetail {
   };
 }
 
-function renderPullDetail(detail: PullDetail) {
+function renderPullDetail(
+  detail: PullDetail,
+  repoSettings = {
+    AllowSquashMerge: false,
+    AllowMergeCommit: false,
+    AllowRebaseMerge: false,
+    ViewerCanMerge: true,
+  },
+) {
   const detailStore = {
     loadDetail: vi.fn(async () => undefined),
     startDetailPolling: vi.fn(),
@@ -156,11 +164,7 @@ function renderPullDetail(detail: PullDetail) {
         API_CLIENT_KEY,
         {
           GET: vi.fn(async () => ({
-            data: {
-              AllowSquashMerge: false,
-              AllowMergeCommit: false,
-              AllowRebaseMerge: false,
-            },
+            data: repoSettings,
           })),
         },
       ],
@@ -316,4 +320,22 @@ describe("PullDetail approvals", () => {
       }
     });
   }
+
+  it("does not render the merge button when repo permissions disallow merging", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+
+    renderPullDetail(detail, {
+      AllowSquashMerge: true,
+      AllowMergeCommit: true,
+      AllowRebaseMerge: true,
+      ViewerCanMerge: false,
+    });
+
+    await vi.waitFor(() => {
+      expect(
+        screen.queryByRole("button", { name: /merge/i }),
+      ).toBeNull();
+    });
+  });
 });

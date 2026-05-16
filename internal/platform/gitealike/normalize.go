@@ -42,12 +42,26 @@ func NormalizeRepository(
 		Description:        repo.Description,
 		Private:            repo.Private,
 		Archived:           repo.Archived,
-		DefaultBranch:      repo.DefaultBranch,
-		WebURL:             repo.HTMLURL,
-		CloneURL:           repo.CloneURL,
-		CreatedAt:          repo.Created.UTC(),
-		UpdatedAt:          repo.Updated.UTC(),
+		MergeSettings: &platform.RepositoryMergeSettings{
+			AllowSquashMerge: repo.AllowSquash,
+			AllowMergeCommit: repo.AllowMerge,
+			AllowRebaseMerge: repo.AllowRebase,
+		},
+		ViewerCanMerge: viewerCanMerge(repo.CanPush, repo.CanAdmin),
+		DefaultBranch:  repo.DefaultBranch,
+		WebURL:         repo.HTMLURL,
+		CloneURL:       repo.CloneURL,
+		CreatedAt:      repo.Created.UTC(),
+		UpdatedAt:      repo.Updated.UTC(),
 	}, nil
+}
+
+func viewerCanMerge(canPush, canAdmin *bool) *bool {
+	if canPush == nil && canAdmin == nil {
+		return nil
+	}
+	canMerge := (canPush != nil && *canPush) || (canAdmin != nil && *canAdmin)
+	return &canMerge
 }
 
 func NormalizePullRequest(repo platform.RepoRef, pr PullRequestDTO) platform.MergeRequest {
