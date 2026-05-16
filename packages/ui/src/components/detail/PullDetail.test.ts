@@ -237,9 +237,11 @@ describe("PullDetail approvals", () => {
       screen.getByRole("button", { name: /CI:\s*pending \(1\)/i }),
     );
 
+    expect(detailStore.refreshPendingCI).toHaveBeenCalledTimes(1);
+
     await vi.advanceTimersByTimeAsync(15_000);
 
-    expect(detailStore.refreshPendingCI).toHaveBeenCalledTimes(1);
+    expect(detailStore.refreshPendingCI).toHaveBeenCalledTimes(2);
     expect(detailStore.refreshPendingCI).toHaveBeenCalledWith(
       "acme",
       "widget",
