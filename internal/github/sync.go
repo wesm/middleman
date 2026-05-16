@@ -5437,13 +5437,13 @@ func preserveMergeableStateIfOmitted(
 	if normalized == nil || existing == nil {
 		return
 	}
-	if normalized.PlatformHeadSHA != "" &&
-		existing.PlatformHeadSHA != "" &&
+	if normalized.PlatformHeadSHA == "" ||
+		existing.PlatformHeadSHA == "" ||
 		normalized.PlatformHeadSHA != existing.PlatformHeadSHA {
 		return
 	}
-	if normalized.PlatformBaseSHA != "" &&
-		existing.PlatformBaseSHA != "" &&
+	if normalized.PlatformBaseSHA == "" ||
+		existing.PlatformBaseSHA == "" ||
 		normalized.PlatformBaseSHA != existing.PlatformBaseSHA {
 		return
 	}

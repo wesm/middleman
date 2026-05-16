@@ -1470,10 +1470,12 @@ func TestSyncPreservesMergeableState(t *testing.T) {
 	pr := buildOpenPR(1, now)
 	additions := 10
 	deletions := 5
+	baseSHA := "base123"
 	mergeableState := "dirty"
 	pr.Additions = &additions
 	pr.Deletions = &deletions
 	pr.MergeableState = &mergeableState
+	pr.Base.SHA = &baseSHA
 
 	mc := &mockClient{
 		openPRs:  []*gh.PullRequest{pr},
@@ -1499,10 +1501,12 @@ func TestSyncPreservesMergeableState(t *testing.T) {
 	listPR := buildOpenPR(1, now) // same UpdatedAt, no MergeableState set
 	listPR.Additions = nil
 	listPR.Deletions = nil
+	listPR.Base.SHA = &baseSHA
 	mc.openPRs = []*gh.PullRequest{listPR}
 	// Ensure full fetch would return empty MergeableState if it ran.
 	mc.getPullRequestFn = func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
 		p := buildOpenPR(1, now)
+		p.Base.SHA = &baseSHA
 		return p, nil
 	}
 
@@ -1557,7 +1561,7 @@ func TestIndexUpsertMergeRequestUpdatesKnownMergeableState(t *testing.T) {
 	assert.Equal("dirty", stored.MergeableState)
 }
 
-func TestPreserveMergeableStateSkipsChangedHeadOrBase(t *testing.T) {
+func TestPreserveMergeableStateSkipsChangedOrUnknownHeadOrBase(t *testing.T) {
 	assert := Assert.New(t)
 	tests := []struct {
 		name       string
@@ -1574,6 +1578,26 @@ func TestPreserveMergeableStateSkipsChangedHeadOrBase(t *testing.T) {
 			normalized: db.MergeRequest{PlatformHeadSHA: "same-head", PlatformBaseSHA: "new-base"},
 			existing:   db.MergeRequest{PlatformHeadSHA: "same-head", PlatformBaseSHA: "old-base", MergeableState: "dirty"},
 		},
+		{
+			name:       "refreshed head missing",
+			normalized: db.MergeRequest{PlatformBaseSHA: "same-base"},
+			existing:   db.MergeRequest{PlatformHeadSHA: "same-head", PlatformBaseSHA: "same-base", MergeableState: "dirty"},
+		},
+		{
+			name:       "existing head missing",
+			normalized: db.MergeRequest{PlatformHeadSHA: "same-head", PlatformBaseSHA: "same-base"},
+			existing:   db.MergeRequest{PlatformBaseSHA: "same-base", MergeableState: "dirty"},
+		},
+		{
+			name:       "refreshed base missing",
+			normalized: db.MergeRequest{PlatformHeadSHA: "same-head"},
+			existing:   db.MergeRequest{PlatformHeadSHA: "same-head", PlatformBaseSHA: "same-base", MergeableState: "dirty"},
+		},
+		{
+			name:       "existing base missing",
+			normalized: db.MergeRequest{PlatformHeadSHA: "same-head", PlatformBaseSHA: "same-base"},
+			existing:   db.MergeRequest{PlatformHeadSHA: "same-head", MergeableState: "dirty"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -1582,6 +1606,23 @@ func TestPreserveMergeableStateSkipsChangedHeadOrBase(t *testing.T) {
 			assert.Empty(tt.normalized.MergeableState)
 		})
 	}
+}
+
+func TestPreserveMergeableStateKeepsOmittedStateForMatchingKnownIdentity(t *testing.T) {
+	assert := Assert.New(t)
+	normalized := db.MergeRequest{
+		PlatformHeadSHA: "same-head",
+		PlatformBaseSHA: "same-base",
+	}
+	existing := db.MergeRequest{
+		PlatformHeadSHA: "same-head",
+		PlatformBaseSHA: "same-base",
+		MergeableState:  "dirty",
+	}
+
+	preserveMergeableStateIfOmitted(&normalized, &existing)
+
+	assert.Equal("dirty", normalized.MergeableState)
 }
 
 func TestSyncTriggersFullFetchForUnknownMergeableState(t *testing.T) {
@@ -1647,10 +1688,12 @@ func TestSyncPreservesFieldsOnFullFetchFailure(t *testing.T) {
 	pr := buildOpenPR(1, now)
 	additions := 10
 	deletions := 5
+	baseSHA := "base123"
 	mergeableState := "dirty"
 	pr.Additions = &additions
 	pr.Deletions = &deletions
 	pr.MergeableState = &mergeableState
+	pr.Base.SHA = &baseSHA
 
 	mc := &mockClient{
 		openPRs:  []*gh.PullRequest{pr},
@@ -1671,6 +1714,7 @@ func TestSyncPreservesFieldsOnFullFetchFailure(t *testing.T) {
 	// fetch fails. Fields from the existing row should be preserved.
 	later := now.Add(time.Hour)
 	listPR := buildOpenPR(1, later)
+	listPR.Base.SHA = &baseSHA
 	mc.openPRs = []*gh.PullRequest{listPR}
 	mc.getPullRequestFn = func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
 		return nil, fmt.Errorf("transient network error")

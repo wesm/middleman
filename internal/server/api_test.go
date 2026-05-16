@@ -710,6 +710,10 @@ func withSeedPRHeadSHA(headSHA string) seedPROpt {
 	return func(pr *db.MergeRequest) { pr.PlatformHeadSHA = headSHA }
 }
 
+func withSeedPRBaseSHA(baseSHA string) seedPROpt {
+	return func(pr *db.MergeRequest) { pr.PlatformBaseSHA = baseSHA }
+}
+
 func withSeedPRHeadRepoCloneURL(cloneURL string) seedPROpt {
 	return func(pr *db.MergeRequest) { pr.HeadRepoCloneURL = cloneURL }
 }
@@ -1210,6 +1214,7 @@ func TestAPISyncPRPreservesMergeableStateWhenRefreshHasNoAnswer(t *testing.T) {
 				getPullRequestFn: func(_ context.Context, _ string, _ string, number int) (*gh.PullRequest, error) {
 					id := int64(1001)
 					sha := "abc123"
+					baseSHA := "def456"
 					state := "open"
 					title := "Conflicted PR"
 					url := "https://github.com/acme/widget/pull/1"
@@ -1225,7 +1230,7 @@ func TestAPISyncPRPreservesMergeableStateWhenRefreshHasNoAnswer(t *testing.T) {
 						CreatedAt:      &createdAt,
 						MergeableState: tt.state,
 						Head:           &gh.PullRequestBranch{SHA: &sha, Ref: new("feature")},
-						Base:           &gh.PullRequestBranch{Ref: new("main")},
+						Base:           &gh.PullRequestBranch{Ref: new("main"), SHA: &baseSHA},
 					}, nil
 				},
 			}
@@ -1233,7 +1238,7 @@ func TestAPISyncPRPreservesMergeableStateWhenRefreshHasNoAnswer(t *testing.T) {
 			srv, database := setupTestServerWithMock(t, mock)
 			seedPR(t, database, "acme", "widget", 1, func(pr *db.MergeRequest) {
 				pr.MergeableState = "dirty"
-			})
+			}, withSeedPRHeadSHA("abc123"), withSeedPRBaseSHA("def456"))
 			client := setupTestClient(t, srv)
 
 			resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(
