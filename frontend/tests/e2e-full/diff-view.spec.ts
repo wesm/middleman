@@ -1048,7 +1048,7 @@ test.describe("diff view", () => {
         },
       ],
     };
-    const scopedRequests: string[] = [];
+    const scopedDiffRequests: string[] = [];
     const fixtureFor = (url: URL): DiffResult => {
       if (url.searchParams.has("from") && url.searchParams.has("to")) {
         return rangedDiff;
@@ -1061,7 +1061,6 @@ test.describe("diff view", () => {
 
     await page.route("**/api/v1/pulls/github/acme/widgets/1/files**", async (route) => {
       const url = new URL(route.request().url());
-      scopedRequests.push(url.toString());
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -1070,7 +1069,7 @@ test.describe("diff view", () => {
     });
     await page.route("**/api/v1/pulls/github/acme/widgets/1/diff*", async (route) => {
       const url = new URL(route.request().url());
-      scopedRequests.push(url.toString());
+      scopedDiffRequests.push(url.toString());
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -1109,7 +1108,7 @@ test.describe("diff view", () => {
     await expect(page.locator(".diff-file")).toHaveCount(2);
     await expect(page.locator('[data-file-path="frontend/src/ranged.ts"]'))
       .toBeVisible();
-    expect(scopedRequests.some((requestURL) => {
+    expect(scopedDiffRequests.some((requestURL) => {
       const url = new URL(requestURL);
       return url.searchParams.get("from") === olderSHA &&
         url.searchParams.get("to") === commitSHA;
