@@ -59,6 +59,7 @@ export function runAppStartup(deps: AppStartupDeps): () => void {
         );
         stores.settings.setTerminalRenderer(settings.terminal.renderer);
         stores.activity.hydrateDefaults(settings.activity);
+        stores.settings.setNotificationsEnabled(settings.notifications.enabled);
       }
     } catch (err) {
       if (cancelled) return;

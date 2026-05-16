@@ -22,6 +22,7 @@
     "./stores/issues": { "svelte": "./src/stores/issues.svelte.ts", "default": "./src/stores/issues.svelte.ts" },
     "./stores/detail": { "svelte": "./src/stores/detail.svelte.ts", "default": "./src/stores/detail.svelte.ts" },
     "./stores/activity": { "svelte": "./src/stores/activity.svelte.ts", "default": "./src/stores/activity.svelte.ts" },
+    "./stores/notifications": { "svelte": "./src/stores/notifications.svelte.ts", "default": "./src/stores/notifications.svelte.ts" },
     "./stores/sync": { "svelte": "./src/stores/sync.svelte.ts", "default": "./src/stores/sync.svelte.ts" },
     "./stores/diff": { "svelte": "./src/stores/diff.svelte.ts", "default": "./src/stores/diff.svelte.ts" },
     "./stores/grouping": { "svelte": "./src/stores/grouping.svelte.ts", "default": "./src/stores/grouping.svelte.ts" },

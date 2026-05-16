@@ -24,6 +24,9 @@ function normalizeSettings(data: SettingsResponse): Settings {
   return {
     ...data,
     repos: data.repos ?? [],
+    notifications: {
+      enabled: data.notifications?.enabled ?? false,
+    },
   } as Settings;
 }
 

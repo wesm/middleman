@@ -395,6 +395,32 @@ type listActivityInput struct {
 
 type listActivityOutput = bodyOutput[activityResponse]
 
+type listNotificationsInput struct {
+	State  string   `query:"state"`
+	Reason []string `query:"reason"`
+	Type   []string `query:"type"`
+	Repo   string   `query:"repo"`
+	Search string   `query:"q"`
+	Sort   string   `query:"sort"`
+	Limit  int      `query:"limit"`
+	Offset int      `query:"offset"`
+}
+
+type listNotificationsOutput struct {
+	Body notificationsResponse
+}
+
+type notificationBulkInput struct {
+	Body struct {
+		IDs      []int64 `json:"ids"`
+		MarkRead *bool   `json:"mark_read,omitempty"`
+	}
+}
+
+type notificationBulkOutput struct {
+	Body notificationBulkResponse
+}
+
 func apiConfig(basePath string) huma.Config {
 	config := huma.DefaultConfig("middleman API", "0.1.0")
 	config.OpenAPIPath = "/openapi"
@@ -414,6 +440,36 @@ func (s *Server) registerAPI(api huma.API) {
 	}, s.getVersion)
 
 	huma.Get(api, "/activity", s.listActivity)
+	huma.Register(api, huma.Operation{
+		OperationID:   "list-notifications",
+		Method:        http.MethodGet,
+		Path:          "/notifications",
+		DefaultStatus: http.StatusOK,
+	}, s.listNotifications)
+	huma.Register(api, huma.Operation{
+		OperationID:   "sync-notifications",
+		Method:        http.MethodPost,
+		Path:          "/notifications/sync",
+		DefaultStatus: http.StatusAccepted,
+	}, s.syncNotifications)
+	huma.Register(api, huma.Operation{
+		OperationID:   "mark-notifications-read",
+		Method:        http.MethodPost,
+		Path:          "/notifications/read",
+		DefaultStatus: http.StatusOK,
+	}, s.markNotificationsRead)
+	huma.Register(api, huma.Operation{
+		OperationID:   "mark-notifications-done",
+		Method:        http.MethodPost,
+		Path:          "/notifications/done",
+		DefaultStatus: http.StatusOK,
+	}, s.markNotificationsDone)
+	huma.Register(api, huma.Operation{
+		OperationID:   "mark-notifications-undone",
+		Method:        http.MethodPost,
+		Path:          "/notifications/undone",
+		DefaultStatus: http.StatusOK,
+	}, s.markNotificationsUndone)
 	huma.Get(api, "/pulls", s.listPulls)
 	huma.Get(api, "/issues", s.listIssues)
 	s.registerProviderRepoAPI(api)
@@ -1886,6 +1942,7 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 
 	now := s.now().UTC()
 	_ = s.db.UpdateMRState(ctx, repo.ID, input.Number, "merged", &now, &now)
+	s.markClosedLinkedNotificationsDone(ctx)
 
 	return &mergePROutput{
 		Body: mergePRBody{
@@ -2015,6 +2072,7 @@ func (s *Server) setPRGitHubState(
 						return nil, huma.Error502BadGateway("GitHub API error: " + normalizeErr.Error())
 					}
 					_, _ = s.db.UpsertMergeRequest(ctx, normalized)
+					s.markClosedLinkedNotificationsDone(ctx)
 					if ghPR.GetMerged() {
 						return nil, huma.Error409Conflict(
 							"cannot change state of a merged pull request",
@@ -2048,6 +2106,9 @@ func (s *Server) setPRGitHubState(
 		return nil, huma.Error500InternalServerError(
 			"update mr state: " + err.Error(),
 		)
+	}
+	if input.Body.State == "closed" {
+		s.markClosedLinkedNotificationsDone(ctx)
 	}
 
 	out := &githubStateOutput{}
@@ -2113,6 +2174,7 @@ func (s *Server) setIssueGitHubState(
 					return nil, huma.Error502BadGateway("GitHub API error: " + normalizeErr.Error())
 				}
 				_, _ = s.db.UpsertIssue(ctx, normalized)
+				s.markClosedLinkedNotificationsDone(ctx)
 				if ghIssue.GetState() == input.Body.State {
 					out := &githubStateOutput{}
 					out.Body.State = input.Body.State
@@ -2137,6 +2199,9 @@ func (s *Server) setIssueGitHubState(
 		return nil, huma.Error500InternalServerError(
 			"update issue state: " + err.Error(),
 		)
+	}
+	if input.Body.State == "closed" {
+		s.markClosedLinkedNotificationsDone(ctx)
 	}
 
 	out := &githubStateOutput{}
@@ -2190,6 +2255,13 @@ func (s *Server) listRepoSummaries(
 
 func (s *Server) triggerSync(ctx context.Context, _ *struct{}) (*acceptedOutput, error) {
 	s.syncer.TriggerRun(context.WithoutCancel(ctx))
+	if s.notificationsEnabled() {
+		s.runBackground(func(bgCtx context.Context) {
+			if err := s.syncer.RunNotificationSync(bgCtx); err != nil {
+				slog.Warn("notification sync failed", "err", err)
+			}
+		})
+	}
 	return &acceptedOutput{Status: http.StatusAccepted}, nil
 }
 

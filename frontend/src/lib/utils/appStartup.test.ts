@@ -9,6 +9,7 @@ function makeStores(): StoreInstances {
       setConfiguredRepos: vi.fn(),
       setTerminalFontFamily: vi.fn(),
       setTerminalRenderer: vi.fn(),
+      setNotificationsEnabled: vi.fn(),
     },
     activity: {
       hydrateDefaults: vi.fn(),
@@ -44,6 +45,9 @@ function makeSettings(): Settings {
     terminal: {
       font_family: "\"Fira Code\", monospace",
       renderer: "xterm",
+    },
+    notifications: {
+      enabled: true,
     },
     agents: [],
   };
@@ -84,6 +88,7 @@ describe("runAppStartup", () => {
     expect(stores.activity.hydrateDefaults).toHaveBeenCalledWith(
       settings.activity,
     );
+    expect(stores.settings.setNotificationsEnabled).toHaveBeenCalledWith(true);
     expect(onReady).toHaveBeenCalledTimes(1);
     expect(stores.sync.startPolling).toHaveBeenCalledTimes(1);
     expect(stores.pulls.loadPulls).toHaveBeenCalledTimes(1);

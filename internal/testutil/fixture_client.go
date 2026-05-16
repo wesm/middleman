@@ -39,6 +39,8 @@ type FixtureClient struct {
 	Tags                      map[string][]*gh.RepositoryTag
 	CombinedStatuses          map[string]*gh.CombinedStatus
 	CheckRuns                 map[string][]*gh.CheckRun
+	Notifications             []ghclient.NotificationThread
+	MarkReadNotifications     []string
 	ListRepositoriesByOwnerFn func(context.Context, string) ([]*gh.Repository, error)
 	mu                        sync.Mutex
 	nextID                    int64
@@ -60,6 +62,21 @@ func NewFixtureClient() ghclient.Client {
 		CheckRuns:        make(map[string][]*gh.CheckRun),
 		nextID:           10_000,
 	}
+}
+
+func (c *FixtureClient) ListNotifications(
+	_ context.Context, _ ghclient.NotificationListOptions,
+) ([]ghclient.NotificationThread, bool, error) {
+	out := make([]ghclient.NotificationThread, len(c.Notifications))
+	copy(out, c.Notifications)
+	return out, false, nil
+}
+
+func (c *FixtureClient) MarkNotificationThreadRead(
+	_ context.Context, threadID string,
+) error {
+	c.MarkReadNotifications = append(c.MarkReadNotifications, threadID)
+	return nil
 }
 
 func repoKey(owner, repo string) string {

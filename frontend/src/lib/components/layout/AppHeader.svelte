@@ -40,7 +40,7 @@
   );
 
   const stores = getStores();
-  const { sync } = stores;
+  const { sync, settings } = stores;
 
   async function handleSync(): Promise<void> {
     if (sync.getSyncState()?.running) return;
@@ -62,6 +62,7 @@
   function navigateTab(
     destination:
       | "activity"
+      | "inbox"
       | "repos"
       | "pulls"
       | "issues"
@@ -72,6 +73,7 @@
       | "design-system",
   ): void {
     if (destination === "activity") navigate("/");
+    else if (destination === "inbox") navigate("/inbox");
     else if (destination === "repos") navigate("/repos");
     else if (destination === "pulls" || destination === "issues") {
       navigate(routeForTab(destination));
@@ -118,6 +120,7 @@
         onchange={(e) => {
           const v = (e.target as HTMLSelectElement).value;
           if (v === "activity") navigate("/");
+          else if (v === "inbox" && settings.notificationsEnabled()) navigateTab("inbox");
           else if (v === "repos") navigateTab("repos");
           else if (v === "pulls") navigateTab("pulls");
           else if (v === "issues") navigateTab("issues");
@@ -129,6 +132,9 @@
         }}
       >
         <option value="activity">Activity</option>
+        {#if settings.notificationsEnabled()}
+          <option value="inbox">Inbox</option>
+        {/if}
         <option value="repos">Repos</option>
         <option value="pulls">PRs</option>
         <option value="issues">Issues</option>
@@ -150,6 +156,11 @@
         <button class="view-tab" class:active={getPage() === "activity"} onclick={() => { if (getPage() !== "activity") navigateTab("activity"); }}>
           Activity
         </button>
+        {#if settings.notificationsEnabled()}
+          <button class="view-tab" class:active={getPage() === "inbox"} onclick={() => navigateTab("inbox")}>
+            Inbox
+          </button>
+        {/if}
         <button class="view-tab" class:active={getPage() === "repos"} onclick={() => navigateTab("repos")}>
           Repos
         </button>

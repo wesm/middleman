@@ -50,6 +50,10 @@ func main() {
 		"default-platform-host", "github.com",
 		"default platform host for seeded config",
 	)
+	notificationsEnabled := flag.Bool(
+		"notifications-enabled", true,
+		"enable notification inbox APIs and UI for e2e tests",
+	)
 	serverInfoFile := flag.String(
 		"server-info-file", "",
 		"path to write discovered server port info as JSON",
@@ -69,6 +73,7 @@ func main() {
 		*roborev,
 		*serverInfoFile,
 		*defaultPlatformHost,
+		*notificationsEnabled,
 	); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
@@ -329,6 +334,7 @@ func run(
 	ctx context.Context,
 	port int,
 	roborevEndpoint, serverInfoFile, defaultPlatformHost string,
+	notificationsEnabled bool,
 ) error {
 	defaultPlatformHost = strings.TrimSpace(defaultPlatformHost)
 	if defaultPlatformHost == "" {
@@ -384,19 +390,21 @@ func run(
 	}
 
 	repos := []config.Repo{
-		{Owner: "acme", Name: "widgets"},
-		{Owner: "acme", Name: "tools"},
-		{Owner: "acme", Name: "archived"},
-		{Owner: "roborev-dev", Name: "*"},
+		{Platform: "github", Owner: "acme", Name: "widgets"},
+		{Platform: "github", Owner: "acme", Name: "tools"},
+		{Platform: "github", Owner: "acme", Name: "archived"},
+		{Platform: "github", Owner: "roborev-dev", Name: "*"},
 	}
 	if !strings.EqualFold(defaultPlatformHost, "github.com") {
 		repos = []config.Repo{
 			{
+				Platform:     "github",
 				Owner:        "enterprise",
 				Name:         "service",
 				PlatformHost: defaultPlatformHost,
 			},
 			{
+				Platform:     "github",
 				Owner:        "acme",
 				Name:         "widgets",
 				PlatformHost: "github.com",
@@ -417,6 +425,7 @@ func run(
 		},
 	}
 
+	cfg.Notifications.Enabled = &notificationsEnabled
 	cfg.Roborev.Endpoint = roborevEndpoint
 	cfgPath := filepath.Join(tmpDir, "config.toml")
 	if err := cfg.Save(cfgPath); err != nil {
@@ -693,6 +702,27 @@ func run(
 		},
 	)
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/notifications/add-synced" {
+			number := 6
+			fc.Notifications = append(fc.Notifications, ghclient.NotificationThread{
+				ID:            "notif-tools-synced-6",
+				RepoOwner:     "acme",
+				RepoName:      "tools",
+				SubjectType:   "Issue",
+				SubjectTitle:  "Synced tools notification",
+				WebURL:        "https://github.com/acme/tools/issues/6",
+				ItemNumber:    &number,
+				ItemType:      "issue",
+				ItemAuthor:    "dave",
+				Reason:        "mention",
+				Unread:        true,
+				Participating: true,
+				UpdatedAt:     time.Now().UTC(),
+			})
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if r.Method == http.MethodPost &&
 			r.URL.Path == "/__e2e/pr-diff-summary/advance-head" {
 			repo, err := database.GetRepoByOwnerName(
