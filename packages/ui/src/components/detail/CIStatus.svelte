@@ -1,4 +1,5 @@
 <script lang="ts">
+  import LoaderCircleIcon from "@lucide/svelte/icons/loader-circle";
   import type { CICheck } from "../../api/types.js";
   import Chip from "../shared/Chip.svelte";
 
@@ -98,9 +99,9 @@
     >
       <span class="ci-icon" style="color: {checkColor(check)}">
         {#if isRefreshingCheck(check)}
-          <svg class="sync-spinner" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" stroke-dasharray="28" stroke-dashoffset="8" stroke-linecap="round"/>
-          </svg>
+          <span class="sync-spinner" aria-hidden="true">
+            <LoaderCircleIcon size={14} strokeWidth={2} />
+          </span>
         {:else}
           {checkIcon(check)}
         {/if}
@@ -118,9 +119,9 @@
     <div class="ci-check ci-check--static">
       <span class="ci-icon" style="color: {checkColor(check)}">
         {#if isRefreshingCheck(check)}
-          <svg class="sync-spinner" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" stroke-dasharray="28" stroke-dashoffset="8" stroke-linecap="round"/>
-          </svg>
+          <span class="sync-spinner" aria-hidden="true">
+            <LoaderCircleIcon size={14} strokeWidth={2} />
+          </span>
         {:else}
           {checkIcon(check)}
         {/if}
@@ -159,9 +160,9 @@
         {#if !detailLoaded}
           {#if detailSyncing}
             <div class="loading-placeholder">
-              <svg class="sync-spinner" width="14" height="14" viewBox="0 0 16 16" fill="none">
-                <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" stroke-dasharray="28" stroke-dashoffset="8" stroke-linecap="round"/>
-              </svg>
+              <span class="sync-spinner" aria-hidden="true">
+                <LoaderCircleIcon size={14} strokeWidth={2} />
+              </span>
               Loading checks...
             </div>
           {:else}
@@ -310,6 +311,7 @@
   }
 
   .sync-spinner {
+    display: inline-flex;
     animation: spin 0.9s linear infinite;
   }
 
