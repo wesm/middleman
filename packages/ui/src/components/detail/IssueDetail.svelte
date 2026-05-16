@@ -859,6 +859,7 @@
           {#if capabilities.read_labels && capabilities.label_mutation}
             <div class="label-editor-anchor" bind:this={labelPickerAnchor}>
               <ActionButton
+                class="btn--labels"
                 label="Labels"
                 shortLabel="Labels"
                 size="sm"
@@ -1321,6 +1322,19 @@
   .meta-sep {
     font-size: var(--font-size-sm);
     color: var(--text-muted);
+  }
+
+  .meta-row :global(.btn--labels) {
+    min-height: 18px;
+    padding: 0 6px;
+    border-radius: 8px;
+    font-size: var(--font-size-2xs);
+    font-weight: 600;
+  }
+
+  .meta-row :global(.btn--labels svg) {
+    width: 12px;
+    height: 12px;
   }
 
   .sync-indicator {

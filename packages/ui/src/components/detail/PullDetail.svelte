@@ -1152,6 +1152,7 @@
             {#snippet labelActionButton()}
               <div class="label-editor-anchor">
                 <ActionButton
+                  class="btn--labels"
                   label="Labels"
                   shortLabel="Labels"
                   size="sm"
@@ -2153,6 +2154,19 @@
     flex-wrap: wrap;
     gap: 6px;
     min-width: 0;
+  }
+
+  .chips-row :global(.btn--labels) {
+    min-height: 22px;
+    padding: 0 8px;
+    border-radius: 8px;
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+  }
+
+  .chips-row :global(.btn--labels svg) {
+    width: 13px;
+    height: 13px;
   }
 
   :global(.kanban-select) {
