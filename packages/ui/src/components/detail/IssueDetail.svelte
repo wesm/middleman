@@ -782,6 +782,40 @@
         <Chip size="sm" class={`issue-state-chip chip--${issue.State}`}>
           {issue.State === "open" ? "Open" : "Closed"}
         </Chip>
+        {#if labels.length > 0 || (capabilities.read_labels && capabilities.label_mutation)}
+          <span class="meta-sep">·</span>
+          {#if labels.length > 0}
+            <GitHubLabels {labels} mode="full" />
+          {/if}
+          {#if capabilities.read_labels && capabilities.label_mutation}
+            <div class="label-editor-anchor">
+              <ActionButton
+                label="Labels"
+                shortLabel="Labels"
+                size="sm"
+                surface="soft"
+                tone="neutral"
+                disabled={staleIssue}
+                onclick={openLabelPicker}
+              >
+                <TagsIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+              </ActionButton>
+              {#if labelPickerOpen}
+                <div class="label-editor-popover">
+                  <LabelPicker
+                    catalogLabels={labelCatalog}
+                    selectedLabels={labels}
+                    syncing={labelCatalogSyncing}
+                    {pendingLabel}
+                    error={labelPickerError}
+                    ontoggle={toggleLabel}
+                    onclose={closeLabelPicker}
+                  />
+                </div>
+              {/if}
+            </div>
+          {/if}
+        {/if}
         {#if issues.isIssueDetailSyncing()}
           <span class="meta-sep">·</span>
           <span class="sync-indicator" title="Syncing from GitHub">
@@ -793,42 +827,6 @@
         {/if}
       </div>
 
-      <!-- Labels -->
-      <div class="label-editor-row">
-        {#if labels.length > 0}
-          <GitHubLabels {labels} mode="full" />
-        {:else}
-          <span class="label-editor-empty">No labels</span>
-        {/if}
-        {#if capabilities.read_labels && capabilities.label_mutation}
-          <div class="label-editor-anchor">
-            <ActionButton
-              label="Labels"
-              shortLabel="Labels"
-              size="sm"
-              surface="soft"
-              tone="neutral"
-              disabled={staleIssue}
-              onclick={openLabelPicker}
-            >
-              <TagsIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-            </ActionButton>
-            {#if labelPickerOpen}
-              <div class="label-editor-popover">
-                <LabelPicker
-                  catalogLabels={labelCatalog}
-                  selectedLabels={labels}
-                  syncing={labelCatalogSyncing}
-                  {pendingLabel}
-                  error={labelPickerError}
-                  ontoggle={toggleLabel}
-                  onclose={closeLabelPicker}
-                />
-              </div>
-            {/if}
-          </div>
-        {/if}
-      </div>
 
       <!-- Issue body -->
       {#if issue.Body}
@@ -1172,19 +1170,6 @@
     width: 100%;
     max-width: 800px;
     margin-inline: auto;
-  }
-
-  .label-editor-row {
-    display: flex;
-    align-items: flex-start;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .label-editor-empty {
-    color: var(--text-tertiary);
-    font-size: var(--font-size-sm);
-    line-height: 28px;
   }
 
   .label-editor-anchor {

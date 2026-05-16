@@ -18,7 +18,7 @@ test.describe("label editing", () => {
 
       await page.goto(`${baseURL}/pulls/github/acme/widgets/1`);
       await expect(page.locator(".pull-detail")).toBeVisible();
-      await expect(page.locator(".pull-detail .label-editor-row .label-pill", { hasText: "bug" })).toBeVisible();
+      await expect(page.locator(".pull-detail .chips-row .label-pill", { hasText: "bug" })).toBeVisible();
 
       await page.getByRole("button", { name: "Labels" }).click();
       await expect(page.getByRole("dialog", { name: "Edit labels" })).toBeVisible();
@@ -33,10 +33,36 @@ test.describe("label editing", () => {
       expect((await updateResponse).status()).toBe(200);
 
       await expect(page.getByRole("menuitemcheckbox", { name: /triage/i })).toHaveAttribute("aria-checked", "true");
-      await expect(page.locator(".pull-detail .label-editor-row .label-pill", { hasText: "triage" })).toBeVisible();
+      await expect(page.locator(".pull-detail .chips-row .label-pill", { hasText: "triage" })).toBeVisible();
 
       await page.reload();
-      await expect(page.locator(".pull-detail .label-editor-row .label-pill", { hasText: "triage" })).toBeVisible();
+      await expect(page.locator(".pull-detail .chips-row .label-pill", { hasText: "triage" })).toBeVisible();
+    } finally {
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("keeps label editing in the header when no labels are assigned", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    try {
+      isolatedServer = await startIsolatedE2EServer();
+      const baseURL = isolatedServer.info.base_url;
+
+      await page.goto(`${baseURL}/pulls/github/acme/widgets/1`);
+      await expect(page.locator(".pull-detail")).toBeVisible();
+      await page.getByRole("button", { name: "Labels" }).click();
+      await expect(page.getByRole("dialog", { name: "Edit labels" })).toBeVisible();
+
+      const updateResponse = page.waitForResponse((response) =>
+        response.request().method() === "PUT"
+        && response.url() === `${baseURL}/api/v1/pulls/github/acme/widgets/1/labels`,
+      );
+      await page.getByRole("menuitemcheckbox", { name: /bug/i }).click();
+      expect((await updateResponse).status()).toBe(200);
+
+      await expect(page.locator(".pull-detail .label-editor-row")).toHaveCount(0);
+      await expect(page.locator(".pull-detail .chips-row").getByRole("button", { name: "Labels" })).toBeVisible();
+      await expect(page.locator(".pull-detail .label-editor-empty")).toHaveCount(0);
     } finally {
       await isolatedServer?.stop();
     }
@@ -80,9 +106,9 @@ test.describe("label editing", () => {
       );
       await page.getByRole("menuitemcheckbox", { name: /docs/i }).click();
       expect((await pullUpdate).status()).toBe(200);
-      await expect(page.locator(".pull-detail .label-editor-row .label-pill", { hasText: "docs" })).toBeVisible();
+      await expect(page.locator(".pull-detail .chips-row .label-pill", { hasText: "docs" })).toBeVisible();
       await page.reload();
-      await expect(page.locator(".pull-detail .label-editor-row .label-pill", { hasText: "docs" })).toBeVisible();
+      await expect(page.locator(".pull-detail .chips-row .label-pill", { hasText: "docs" })).toBeVisible();
 
       await page.goto(`${baseURL}/issues/github/acme/widgets/10`);
       await expect(page.locator(".issue-detail")).toBeVisible();
@@ -94,9 +120,9 @@ test.describe("label editing", () => {
       );
       await page.getByRole("menuitemcheckbox", { name: /triage/i }).click();
       expect((await issueUpdate).status()).toBe(200);
-      await expect(page.locator(".issue-detail .label-editor-row .label-pill", { hasText: "triage" })).toBeVisible();
+      await expect(page.locator(".issue-detail .meta-row .label-pill", { hasText: "triage" })).toBeVisible();
       await page.reload();
-      await expect(page.locator(".issue-detail .label-editor-row .label-pill", { hasText: "triage" })).toBeVisible();
+      await expect(page.locator(".issue-detail .meta-row .label-pill", { hasText: "triage" })).toBeVisible();
     } finally {
       await isolatedServer?.stop();
     }

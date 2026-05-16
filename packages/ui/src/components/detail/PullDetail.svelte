@@ -1144,23 +1144,8 @@
           bind:expanded={ciExpanded}
           showButton={false}
         />
-      </div>
-
-      {#if !stalePR}
-        <SelectDropdown
-          class="kanban-select kanban-select--below-chips kanban-select--{pr.KanbanStatus.replace('_', '-')}"
-          value={pr.KanbanStatus}
-          options={kanbanOptions}
-          onchange={onKanbanChange}
-          title="Change workflow status"
-        />
-      {/if}
-
-      <div class="label-editor-row">
         {#if labels.length > 0}
           <GitHubLabels {labels} mode="full" />
-        {:else}
-          <span class="label-editor-empty">No labels</span>
         {/if}
         {#if capabilities.read_labels && capabilities.label_mutation}
           <div class="label-editor-anchor">
@@ -1191,6 +1176,17 @@
           </div>
         {/if}
       </div>
+
+      {#if !stalePR}
+        <SelectDropdown
+          class="kanban-select kanban-select--below-chips kanban-select--{pr.KanbanStatus.replace('_', '-')}"
+          value={pr.KanbanStatus}
+          options={kanbanOptions}
+          onchange={onKanbanChange}
+          title="Change workflow status"
+        />
+      {/if}
+
 
       <!-- Mergeable state warnings -->
       {#if !stalePR && pr.State === "open" && pr.MergeableState === "dirty"}
@@ -1681,19 +1677,6 @@
     width: 100%;
     max-width: 800px;
     margin-inline: auto;
-  }
-
-  .label-editor-row {
-    display: flex;
-    align-items: flex-start;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .label-editor-empty {
-    color: var(--text-tertiary);
-    font-size: var(--font-size-sm);
-    line-height: 28px;
   }
 
   .label-editor-anchor {
