@@ -196,12 +196,14 @@
   let pendingLabel = $state<string | null>(null);
   let labelPickerAnchor = $state<HTMLDivElement>();
   let labelPickerPopover = $state<HTMLDivElement>();
+  let labelPickerAutofocusFilter = $state(false);
   let labelPickerStyle = $state("");
 
   function closeLabelPicker(): void {
     labelPickerOpen = false;
     labelPickerError = null;
     pendingLabel = null;
+    labelPickerAutofocusFilter = false;
   }
 
   function positionLabelPicker(): void {
@@ -226,7 +228,8 @@
     }
   }
 
-  async function openLabelPicker(): Promise<void> {
+  async function openLabelPicker(event?: MouseEvent): Promise<void> {
+    labelPickerAutofocusFilter = event !== undefined && !window.matchMedia("(pointer: coarse)").matches;
     labelPickerOpen = true;
     labelPickerError = null;
     labelCatalogSyncing = true;
@@ -874,6 +877,7 @@
                     syncing={labelCatalogSyncing}
                     {pendingLabel}
                     error={labelPickerError}
+                    autofocusFilter={labelPickerAutofocusFilter}
                     ontoggle={toggleLabel}
                     onclear={clearLabels}
                     onclose={closeLabelPicker}

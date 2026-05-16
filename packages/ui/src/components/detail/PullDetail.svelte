@@ -615,6 +615,7 @@
   let labelPickerAnchor = $state<HTMLDivElement>();
   let labelPickerPopover = $state<HTMLDivElement>();
   let labelPickerLaunchedFromActionMenu = $state(false);
+  let labelPickerAutofocusFilter = $state(false);
   let labelPickerStyle = $state("");
 
   const workspace = $derived(detailStore.getDetail()?.workspace);
@@ -632,6 +633,7 @@
     labelPickerError = null;
     pendingLabel = null;
     labelPickerLaunchedFromActionMenu = false;
+    labelPickerAutofocusFilter = false;
   }
 
   function positionLabelPicker(): void {
@@ -680,6 +682,7 @@
     labelPickerAnchor = (event?.currentTarget as HTMLElement | null)?.closest<HTMLDivElement>(".label-editor-anchor")
       ?? visibleLabelPickerAnchor();
     labelPickerLaunchedFromActionMenu = Boolean(labelPickerAnchor?.closest(".actions-menu-popover"));
+    labelPickerAutofocusFilter = event !== undefined && !window.matchMedia("(pointer: coarse)").matches;
     if (labelPickerLaunchedFromActionMenu) {
       closeActionMenu();
     }
@@ -1308,6 +1311,7 @@
               syncing={labelCatalogSyncing}
               {pendingLabel}
               error={labelPickerError}
+              autofocusFilter={labelPickerAutofocusFilter}
               ontoggle={toggleLabel}
               onclear={clearLabels}
               onclose={closeLabelPicker}
