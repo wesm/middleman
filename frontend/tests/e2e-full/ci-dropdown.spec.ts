@@ -1,6 +1,108 @@
 import { expect, test } from "@playwright/test";
 
+import { startIsolatedE2EServer } from "./support/e2eServer";
+
 test.describe("CI dropdown", () => {
+  test("failed CI refresh preserves stored pending status", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      const seedResponse = await page.request.post(
+        `${server.info.base_url}/__e2e/pr-ci-state/pending`,
+      );
+      expect(seedResponse.ok()).toBe(true);
+
+      const failResponse = await page.request.post(
+        `${server.info.base_url}/__e2e/pr-ci-state/fail-refresh`,
+      );
+      expect(failResponse.ok()).toBe(true);
+
+      const refreshResponse = await page.request.post(
+        `${server.info.base_url}/api/v1/pulls/github/acme/widgets/1/ci-refresh`,
+        { data: {} },
+      );
+      expect(refreshResponse.ok()).toBe(true);
+      const refreshedDetail = await refreshResponse.json() as {
+        merge_request: { CIStatus: string; CIChecksJSON: string };
+      };
+      expect(refreshedDetail.merge_request.CIStatus).toBe("pending");
+      expect(refreshedDetail.merge_request.CIChecksJSON).toContain("in_progress");
+
+      const storedResponse = await page.request.get(
+        `${server.info.base_url}/api/v1/pulls/github/acme/widgets/1`,
+      );
+      expect(storedResponse.ok()).toBe(true);
+      const storedDetail = await storedResponse.json() as {
+        merge_request: { CIStatus: string; CIChecksJSON: string };
+      };
+      expect(storedDetail.merge_request.CIStatus).toBe("pending");
+      expect(storedDetail.merge_request.CIChecksJSON).toContain("in_progress");
+    } finally {
+      await server.stop();
+    }
+  });
+
+  test("expanded pending CI checks trigger a detail sync refresh", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      await page.addInitScript(() => {
+        const realSetInterval = window.setInterval;
+        window.setInterval = ((handler: TimerHandler, timeout?: number, ...args: unknown[]) =>
+          realSetInterval(handler, timeout === 15_000 ? 100 : timeout, ...args)) as typeof window.setInterval;
+      });
+
+      const seedResponse = await page.request.post(
+        `${server.info.base_url}/__e2e/pr-ci-state/pending`,
+      );
+      expect(seedResponse.ok()).toBe(true);
+      await expect(seedResponse.json()).resolves.toEqual({ status: "pending" });
+
+      const backgroundSync = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return response.request().method() === "POST" &&
+          url.pathname === "/api/v1/pulls/github/acme/widgets/1/sync/async";
+      });
+
+      await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
+
+      const pendingChip = page
+        .locator(".pull-detail")
+        .getByRole("button", { name: /CI:\s*pending \(1\)/i });
+      await expect(pendingChip).toBeVisible();
+      await backgroundSync;
+
+      const firstRefresh = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return response.request().method() === "POST" &&
+          url.pathname === "/api/v1/pulls/github/acme/widgets/1/ci-refresh";
+      });
+      await pendingChip.click();
+      await firstRefresh;
+
+      const successResponse = await page.request.post(
+        `${server.info.base_url}/__e2e/pr-ci-state/success`,
+      );
+      expect(successResponse.ok()).toBe(true);
+      await expect(successResponse.json()).resolves.toEqual({ status: "success" });
+
+      await expect(
+        page
+          .locator(".pull-detail")
+          .getByRole("button", { name: /CI:\s*success \(4\)/i }),
+      ).toBeVisible();
+
+      const detailResponse = await page.request.get(
+        `${server.info.base_url}/api/v1/pulls/github/acme/widgets/1`,
+      );
+      expect(detailResponse.ok()).toBe(true);
+      const storedDetail = await detailResponse.json() as {
+        merge_request: { CIStatus: string; CIChecksJSON: string };
+      };
+      expect(storedDetail.merge_request.CIStatus).toBe("success");
+    } finally {
+      await server.stop();
+    }
+  });
+
   test("detail chips use the shared centered chip layout", async ({ page }) => {
     await page.goto("/pulls/github/acme/widgets/1");
 

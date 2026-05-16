@@ -7,6 +7,37 @@ describe("CIStatus", () => {
     cleanup();
   });
 
+  it("shows spinners for pending checks during refresh", () => {
+    render(CIStatus, {
+      props: {
+        status: "pending",
+        checksJSON: JSON.stringify([
+          {
+            name: "build",
+            status: "in_progress",
+            conclusion: "",
+            url: "",
+            app: "GitHub Actions",
+          },
+          {
+            name: "lint",
+            status: "completed",
+            conclusion: "success",
+            url: "",
+            app: "GitHub Actions",
+          },
+        ]),
+        detailLoaded: true,
+        detailSyncing: true,
+        expanded: true,
+      },
+    });
+
+    expect(document.querySelectorAll(".ci-check .sync-spinner")).toHaveLength(1);
+    expect(screen.queryByText("◦")).toBeNull();
+    expect(screen.getByText("✓")).toBeTruthy();
+  });
+
   it("renders expanded CI checks when chip is clicked", async () => {
     render(CIStatus, {
       props: {

@@ -88,7 +88,9 @@ type mockClient struct {
 	forcePushEvents                 []ForcePushEvent
 	forcePushEventsErr              error
 	ciStatus                        *gh.CombinedStatus
+	ciStatusErr                     error
 	checkRuns                       []*gh.CheckRun
+	checkRunsErr                    error
 	workflowRuns                    []*gh.WorkflowRun
 	approveWorkflowRunFn            func(context.Context, string, string, int64) error
 	listOpenPRsCalled               bool
@@ -459,11 +461,17 @@ func (m *mockClient) ListForcePushEvents(_ context.Context, _, _ string, _ int) 
 func (m *mockClient) GetCombinedStatus(_ context.Context, _, _, _ string) (*gh.CombinedStatus, error) {
 	m.trackCall()
 	m.getCombinedCalls.Add(1)
+	if m.ciStatusErr != nil {
+		return nil, m.ciStatusErr
+	}
 	return m.ciStatus, nil
 }
 
 func (m *mockClient) ListCheckRunsForRef(_ context.Context, _, _, _ string) ([]*gh.CheckRun, error) {
 	m.trackCall()
+	if m.checkRunsErr != nil {
+		return nil, m.checkRunsErr
+	}
 	return m.checkRuns, nil
 }
 
@@ -4437,6 +4445,54 @@ func TestRefreshCIStatusAlwaysFetchesCombined(t *testing.T) {
 	// (legacy commit statuses exist alongside check runs).
 	assert.Equal(int32(1), mock.getCombinedCalls.Load(),
 		"GetCombinedStatus should always be called")
+}
+
+func TestRefreshCIStatusPreservesExistingStatusWhenChecksFail(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	repoID, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	now := time.Now().UTC()
+	_, err = d.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      1001,
+		Number:          1,
+		Title:           "pending",
+		State:           "open",
+		PlatformHeadSHA: "abc123",
+		CIStatus:        "pending",
+		CIChecksJSON:    `[{"name":"build","status":"in_progress"}]`,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+	})
+	require.NoError(err)
+
+	mock := &mockClient{checkRunsErr: errors.New("temporary provider failure")}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock},
+		d, nil,
+		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute,
+		nil,
+		nil,
+	)
+
+	err = syncer.refreshCIStatus(
+		t.Context(),
+		RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		repoID,
+		1,
+		"abc123",
+	)
+	require.NoError(err)
+
+	mr, err := d.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal("pending", mr.CIStatus)
+	assert.Contains(mr.CIChecksJSON, "in_progress")
 }
 
 func TestRefreshCIStatusFallsBackToCombinedWhenNoCheckRuns(t *testing.T) {

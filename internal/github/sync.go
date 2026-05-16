@@ -4181,6 +4181,70 @@ func (s *Syncer) refreshTimeline(
 	})
 }
 
+// RefreshMRCIStatusOnProvider fetches only CI checks for a PR's head SHA and
+// persists the derived CI fields. It intentionally skips the heavier PR detail
+// sync path (timeline, diff, review, and body refreshes).
+func (s *Syncer) RefreshMRCIStatusOnProvider(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	number int,
+	headSHA string,
+) ([]string, error) {
+	if headSHA == "" {
+		return nil, nil
+	}
+	if repoPlatform(repo) == platform.KindGitHub {
+		result, err := s.fetchGitHubCIStatus(ctx, repo, number, headSHA)
+		if err != nil {
+			return nil, err
+		}
+		if result.Warning != "" {
+			return []string{result.Warning}, nil
+		}
+		if !result.Updated {
+			return nil, nil
+		}
+		return nil, s.db.UpdateMRCIStatusForHead(
+			ctx, repoID, number, headSHA,
+			result.Status, result.ChecksJSON, ciHasPending(result.ChecksJSON),
+		)
+	}
+
+	ciReader, err := s.ciReaderFor(repo)
+	if err != nil {
+		if errors.Is(err, platform.ErrUnsupportedCapability) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("resolve CI reader for %s/%s: %w", repo.Owner, repo.Name, err)
+	}
+	checks, err := ciReader.ListCIChecks(ctx, platformRepoRef(repo), headSHA)
+	if err != nil {
+		if errors.Is(err, platform.ErrUnsupportedCapability) {
+			return nil, nil
+		}
+		slog.Warn("list CI checks failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", number,
+			"err", err,
+		)
+		return []string{ciRefreshWarning}, nil
+	}
+	dbChecks := platform.DBCIChecks(checks)
+	if dbChecks == nil {
+		dbChecks = []db.CICheck{}
+	}
+	ciJSON, _ := json.Marshal(dbChecks)
+	ciStatus := deriveCIStatusFromChecks(dbChecks)
+	if err := s.db.UpdateMRCIStatusForHead(
+		ctx, repoID, number, headSHA,
+		ciStatus, string(ciJSON), ciHasPending(string(ciJSON)),
+	); err != nil {
+		return nil, fmt.Errorf("update CI status for MR #%d: %w", number, err)
+	}
+	return nil, nil
+}
+
 // refreshCIStatus fetches combined status and check runs for a PR's head SHA.
 // Called on every sync cycle for open PRs, since check runs change independently
 // of the PR's updated_at field. Takes headSHA and number directly so it can be
@@ -4193,15 +4257,40 @@ func (s *Syncer) refreshCIStatus(
 	number int,
 	headSHA string,
 ) error {
-	if headSHA == "" {
+	result, err := s.fetchGitHubCIStatus(ctx, repo, number, headSHA)
+	if err != nil {
+		return err
+	}
+	if !result.Updated {
 		return nil
+	}
+	return s.db.UpdateMRCIStatus(ctx, repoID, number, result.Status, result.ChecksJSON)
+}
+
+const ciRefreshWarning = "Could not refresh CI checks; showing last known status."
+
+type ciStatusFetchResult struct {
+	Status     string
+	ChecksJSON string
+	Updated    bool
+	Warning    string
+}
+
+func (s *Syncer) fetchGitHubCIStatus(
+	ctx context.Context,
+	repo RepoRef,
+	number int,
+	headSHA string,
+) (ciStatusFetchResult, error) {
+	if headSHA == "" {
+		return ciStatusFetchResult{}, nil
 	}
 
 	// Fetch both sources. On failure, skip the DB write to preserve
 	// existing data rather than wiping it with empty values.
 	client, err := s.clientFor(repo)
 	if err != nil {
-		return fmt.Errorf("resolve client for %s/%s: %w", repo.Owner, repo.Name, err)
+		return ciStatusFetchResult{}, fmt.Errorf("resolve client for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
 	checkRuns, err := client.ListCheckRunsForRef(ctx, repo.Owner, repo.Name, headSHA)
 	if err != nil {
@@ -4210,7 +4299,7 @@ func (s *Syncer) refreshCIStatus(
 			"number", number,
 			"err", err,
 		)
-		return nil
+		return ciStatusFetchResult{Warning: ciRefreshWarning}, nil
 	}
 
 	combined, err := client.GetCombinedStatus(ctx, repo.Owner, repo.Name, headSHA)
@@ -4220,13 +4309,14 @@ func (s *Syncer) refreshCIStatus(
 			"number", number,
 			"err", err,
 		)
-		return nil
+		return ciStatusFetchResult{Warning: ciRefreshWarning}, nil
 	}
 
-	ciStatus := DeriveOverallCIStatus(checkRuns, combined)
-	ciChecksJSON := NormalizeCIChecks(checkRuns, combined)
-
-	return s.db.UpdateMRCIStatus(ctx, repoID, number, ciStatus, ciChecksJSON)
+	return ciStatusFetchResult{
+		Status:     DeriveOverallCIStatus(checkRuns, combined),
+		ChecksJSON: NormalizeCIChecks(checkRuns, combined),
+		Updated:    true,
+	}, nil
 }
 
 // ciHasPending parses the CI checks JSON and returns true if any

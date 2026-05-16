@@ -776,6 +776,145 @@ func run(
 	)
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/pr-workflow-approval/required" {
+			repo, err := database.GetRepoByOwnerName(
+				r.Context(), "acme", "widgets",
+			)
+			if err != nil || repo == nil {
+				http.Error(w, "repo not found", http.StatusNotFound)
+				return
+			}
+			pendingChecks, err := json.Marshal([]db.CICheck{{
+				Name:       "build",
+				Status:     "in_progress",
+				Conclusion: "",
+				URL:        "https://github.com/acme/widgets/actions/runs/1/job/1",
+				App:        "GitHub Actions",
+			}})
+			if err != nil {
+				http.Error(w, "marshal pending checks", http.StatusInternalServerError)
+				return
+			}
+			if err := database.UpdateMRCIStatus(
+				r.Context(), repo.ID, 1, "pending", string(pendingChecks),
+			); err != nil {
+				http.Error(w, "update pending CI", http.StatusInternalServerError)
+				return
+			}
+			if err := database.UpdateMRDetailFetchedByRepoID(
+				r.Context(), repo.ID, 1, true,
+			); err != nil {
+				http.Error(w, "mark pending CI fetched", http.StatusInternalServerError)
+				return
+			}
+
+			headSHA := fc.PullRequestHeadSHA("acme", "widgets", 1)
+			if headSHA == "" {
+				http.Error(w, "PR head SHA not found", http.StatusNotFound)
+				return
+			}
+			runID := int64(9001)
+			event := "pull_request"
+			number := 1
+			fc.SetWorkflowRuns("acme", "widgets", headSHA, []*gh.WorkflowRun{{
+				ID:           &runID,
+				HeadSHA:      &headSHA,
+				Event:        &event,
+				PullRequests: []*gh.PullRequest{{Number: &number}},
+			}})
+
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(map[string]any{
+				"status": "required",
+				"run_id": runID,
+			}); err != nil {
+				slog.Warn("write e2e response", "err", err)
+			}
+			return
+		}
+		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/pr-ci-state/pending" {
+			repo, err := database.GetRepoByOwnerName(
+				r.Context(), "acme", "widgets",
+			)
+			if err != nil || repo == nil {
+				http.Error(w, "repo not found", http.StatusNotFound)
+				return
+			}
+			pendingChecks, err := json.Marshal([]db.CICheck{{
+				Name:       "build",
+				Status:     "in_progress",
+				Conclusion: "",
+				URL:        "https://github.com/acme/widgets/actions/runs/1/job/1",
+				App:        "GitHub Actions",
+			}})
+			if err != nil {
+				http.Error(w, "marshal pending checks", http.StatusInternalServerError)
+				return
+			}
+			if err := database.UpdateMRCIStatus(
+				r.Context(), repo.ID, 1, "pending", string(pendingChecks),
+			); err != nil {
+				http.Error(w, "update pending CI", http.StatusInternalServerError)
+				return
+			}
+			if err := database.UpdateMRDetailFetchedByRepoID(
+				r.Context(), repo.ID, 1, false,
+			); err != nil {
+				http.Error(w, "mark pending CI fetched", http.StatusInternalServerError)
+				return
+			}
+
+			if !fc.SetPullRequestCheckRunStatus(
+				"acme", "widgets", 1, "in_progress", "",
+			) {
+				http.Error(w, "update fixture check runs", http.StatusNotFound)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(map[string]string{
+				"status": "pending",
+			}); err != nil {
+				slog.Warn("write e2e response", "err", err)
+			}
+			return
+		}
+		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/pr-ci-state/fail-refresh" {
+			if !fc.SetPullRequestCheckRunError(
+				"acme", "widgets", 1, errors.New("fixture CI refresh failed"),
+			) {
+				http.Error(w, "set fixture check error", http.StatusNotFound)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(map[string]string{
+				"status": "fail-refresh",
+			}); err != nil {
+				slog.Warn("write e2e response", "err", err)
+			}
+			return
+		}
+		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/pr-ci-state/success" {
+			if !fc.SetPullRequestCheckRunStatus(
+				"acme", "widgets", 1, "completed", "success",
+			) {
+				http.Error(w, "update fixture check runs", http.StatusNotFound)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(map[string]string{
+				"status": "success",
+			}); err != nil {
+				slog.Warn("write e2e response", "err", err)
+			}
+			return
+		}
+		if r.Method == http.MethodPost &&
 			r.URL.Path == "/__e2e/pr-diff-summary/advance-head" {
 			repo, err := database.GetRepoByOwnerName(
 				r.Context(), "acme", "widgets",
@@ -944,40 +1083,5 @@ func patchFixturePRSHAs(fc *testutil.FixtureClient, owner, repo string, number i
 	if fc == nil {
 		return
 	}
-
-	repoKey := fmt.Sprintf("%s/%s", owner, repo)
-	oldHeadSHA := ""
-	patch := func(prs []*gh.PullRequest) {
-		for _, pr := range prs {
-			if pr.GetNumber() != number {
-				continue
-			}
-			if pr.Head == nil {
-				pr.Head = &gh.PullRequestBranch{}
-			}
-			if pr.Base == nil {
-				pr.Base = &gh.PullRequestBranch{}
-			}
-			if oldHeadSHA == "" {
-				oldHeadSHA = pr.Head.GetSHA()
-			}
-			pr.Head.SHA = &headSHA
-			pr.Base.SHA = &baseSHA
-		}
-	}
-
-	patch(fc.OpenPRs[repoKey])
-	patch(fc.PRs[repoKey])
-
-	if oldHeadSHA == "" || oldHeadSHA == headSHA {
-		return
-	}
-	oldRefKey := fmt.Sprintf("%s/%s@%s", owner, repo, oldHeadSHA)
-	newRefKey := fmt.Sprintf("%s/%s@%s", owner, repo, headSHA)
-	if combined, ok := fc.CombinedStatuses[oldRefKey]; ok {
-		fc.CombinedStatuses[newRefKey] = combined
-	}
-	if runs, ok := fc.CheckRuns[oldRefKey]; ok {
-		fc.CheckRuns[newRefKey] = runs
-	}
+	fc.UpdatePullRequestSHAs(owner, repo, number, headSHA, baseSHA)
 }

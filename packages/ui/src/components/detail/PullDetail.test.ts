@@ -137,10 +137,11 @@ function renderPullDetail(detail: PullDetail) {
     updateKanbanState: vi.fn(),
     toggleDetailPRStar: vi.fn(),
     updatePRContent: vi.fn(),
+    refreshPendingCI: vi.fn(async () => undefined),
     editComment: vi.fn(),
   };
 
-  return render(PullDetailComponent, {
+  const rendered = render(PullDetailComponent, {
     props: {
       owner: "acme",
       name: "widget",
@@ -176,11 +177,13 @@ function renderPullDetail(detail: PullDetail) {
       [NAVIGATE_KEY, vi.fn()],
     ]),
   });
+  return { ...rendered, detailStore };
 }
 
 describe("PullDetail approvals", () => {
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
   });
 
   it("shows approval count and expands approver names", async () => {
@@ -210,5 +213,45 @@ describe("PullDetail approvals", () => {
     const popup = document.querySelector(".approval-popup");
     expect(popup?.textContent).toContain("alice");
     expect(popup?.textContent).toContain("bob");
+  });
+
+  it("auto-refreshes pending CI checks while the CI panel is expanded", async () => {
+    vi.useFakeTimers();
+    const detail = pullDetail();
+    detail.merge_request.CIStatus = "pending";
+    detail.merge_request.CIChecksJSON = JSON.stringify([
+      {
+        name: "build",
+        status: "in_progress",
+        conclusion: "",
+        url: "https://example.com/build",
+        app: "GitHub Actions",
+      },
+    ]);
+
+    const { detailStore } = renderPullDetail(detail);
+
+    expect(detailStore.refreshPendingCI).not.toHaveBeenCalled();
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: /CI:\s*pending \(1\)/i }),
+    );
+
+    expect(detailStore.refreshPendingCI).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    expect(detailStore.refreshPendingCI).toHaveBeenCalledTimes(2);
+    expect(detailStore.refreshPendingCI).toHaveBeenCalledWith(
+      "acme",
+      "widget",
+      1,
+      {
+        provider: "github",
+        platformHost: "github.com",
+        repoPath: "acme/widget",
+        workflowApprovalSync: true,
+      },
+    );
   });
 });

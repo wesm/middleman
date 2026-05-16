@@ -32,6 +32,11 @@ notice the regression:
 Regenerate OpenAPI and generated clients with `make api-generate` after Huma
 route or API type changes.
 
+Do not duplicate full-stack e2e tests across default-host and
+`/host/{platform_host}` route forms when the host route is only a generic
+wrapper. Add host-specific e2e coverage only for custom host logic, route
+parsing, or provider identity changes.
+
 ## Race test runtime
 
 Treat `go test -race` runtime as a test architecture concern, not a CI-only

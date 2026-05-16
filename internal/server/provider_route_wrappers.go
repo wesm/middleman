@@ -433,6 +433,11 @@ func (s *Server) syncPROnHost(ctx context.Context, input *repoNumberHostInput) (
 	return s.syncPR(ctx, &next)
 }
 
+func (s *Server) syncPRCIOnHost(ctx context.Context, input *repoNumberHostInput) (*syncPRCIOutput, error) {
+	next := repoNumberFromHost(input)
+	return s.syncPRCI(ctx, &next)
+}
+
 func (s *Server) enqueuePRSyncOnHost(ctx context.Context, input *repoNumberHostInput) (*acceptedOutput, error) {
 	next := repoNumberFromHost(input)
 	return s.enqueuePRSync(ctx, &next)

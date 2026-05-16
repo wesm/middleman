@@ -281,6 +281,8 @@ type acceptedOutput = acceptedStatusOutput
 
 type syncPROutput = bodyOutput[mergeRequestDetailResponse]
 
+type syncPRCIOutput = bodyOutput[mergeRequestDetailResponse]
+
 type syncIssueOutput = bodyOutput[issueDetailResponse]
 
 type resolveItemOutput = bodyOutput[resolveItemResponse]
@@ -617,6 +619,8 @@ func (s *Server) registerProviderRepoAPI(api huma.API) {
 	huma.Post(api, hostPullPath+"/merge", s.mergePROnHost)
 	huma.Post(api, pullPath+"/sync", s.syncPR)
 	huma.Post(api, hostPullPath+"/sync", s.syncPROnHost)
+	huma.Post(api, pullPath+"/ci-refresh", s.syncPRCI)
+	huma.Post(api, hostPullPath+"/ci-refresh", s.syncPRCIOnHost)
 	huma.Register(api, huma.Operation{OperationID: "enqueue-pr-sync", Method: http.MethodPost, Path: pullPath + "/sync/async", DefaultStatus: http.StatusAccepted}, s.enqueuePRSync)
 	huma.Register(api, huma.Operation{OperationID: "enqueue-pr-sync-on-host", Method: http.MethodPost, Path: hostPullPath + "/sync/async", DefaultStatus: http.StatusAccepted}, s.enqueuePRSyncOnHost)
 	huma.Post(api, issuePath+"/sync", s.syncIssue)
@@ -2248,6 +2252,57 @@ func (s *Server) getRateLimits(
 	return &rateLimitsOutput{
 		Body: rateLimitsResponse{Hosts: hosts},
 	}, nil
+}
+
+func (s *Server) syncPRCI(ctx context.Context, input *repoNumberInput) (*syncPRCIOutput, error) {
+	repo, err := s.lookupRepoByProviderRoute(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
+	)
+	if err != nil {
+		return nil, providerRouteLookupError(err)
+	}
+
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("get pull request: " + err.Error())
+	}
+	if mr == nil {
+		return nil, huma.Error404NotFound("pull request not found")
+	}
+	warnings, err := s.syncer.RefreshMRCIStatusOnProvider(
+		ctx,
+		ghclient.RepoRef{
+			Platform:           repoProviderKind(*repo),
+			Owner:              repo.Owner,
+			Name:               repo.Name,
+			PlatformHost:       repoProviderHost(*repo),
+			RepoPath:           repo.RepoPath,
+			PlatformExternalID: repo.PlatformRepoID,
+			WebURL:             repo.WebURL,
+			CloneURL:           repo.CloneURL,
+			DefaultBranch:      repo.DefaultBranch,
+		},
+		repo.ID,
+		input.Number,
+		mr.PlatformHeadSHA,
+	)
+	if err != nil {
+		return nil, huma.Error502BadGateway("refresh PR CI: " + err.Error())
+	}
+
+	mr, err = s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("get pull request: " + err.Error())
+	}
+	if mr == nil {
+		return nil, huma.Error404NotFound("pull request not found after CI refresh")
+	}
+	body, err := s.buildPullDetailResponse(ctx, mr, workflowDBOnly)
+	if err != nil {
+		return nil, err
+	}
+	body.Warnings = append(body.Warnings, warnings...)
+	return &syncPRCIOutput{Body: body}, nil
 }
 
 func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROutput, error) {

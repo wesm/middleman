@@ -29,6 +29,11 @@ lacks browser testing infrastructure. middleman already has Playwright
 e2e coverage, and many required e2e tests here are API plus SQLite
 full-stack tests rather than purely browser concerns.
 
+Do not require duplicate e2e coverage for default-host and
+`/host/{platform_host}` routes when the host route is only a generic
+wrapper. Require host-specific e2e only for custom host logic, route
+parsing, or provider identity changes.
+
 middleman targets Go 1.26, where the built-in new accepts expression
 operands such as new(expr). Do not flag new(expr) usage as invalid,
 suspicious, or something that must be rewritten through a temporary

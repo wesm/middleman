@@ -119,6 +119,24 @@ test.describe("detail action buttons", () => {
     }
   });
 
+  test("PR detail shows approve workflows after real pending workflow sync", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      const seedResponse = await page.request.post(
+        `${server.info.base_url}/__e2e/pr-workflow-approval/required`,
+      );
+      expect(seedResponse.ok()).toBe(true);
+
+      await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
+
+      await expect(
+        page.getByRole("button", { name: "Approve workflows" }),
+      ).toBeVisible({ timeout: 10_000 });
+    } finally {
+      await server.stop();
+    }
+  });
+
   test("issue workspace button still creates a middleman workspace after detail sync refresh", async ({ page }) => {
     const createdWorkspace = {
       id: "ws-issue-10",

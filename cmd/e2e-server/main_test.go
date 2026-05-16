@@ -64,8 +64,10 @@ func TestPatchFixturePRSHAsUpdatesOpenPRs(t *testing.T) {
 	patchFixturePRSHAs(fc, "acme", "widgets", 1, "head-sha", "base-sha")
 
 	assert := Assert.New(t)
-	assert.Equal("head-sha", openPR.GetHead().GetSHA())
-	assert.Equal("base-sha", openPR.GetBase().GetSHA())
+	updated := fc.OpenPRs["acme/widgets"][0]
+	assert.Equal("head-sha", updated.GetHead().GetSHA())
+	assert.Equal("base-sha", updated.GetBase().GetSHA())
+	assert.Empty(openPR.GetHead().GetSHA(), "update should replace fixture PR instead of mutating shared pointer")
 }
 
 func TestPatchFixturePRSHAsUpdatesLookupPRs(t *testing.T) {
@@ -83,8 +85,10 @@ func TestPatchFixturePRSHAsUpdatesLookupPRs(t *testing.T) {
 	patchFixturePRSHAs(fc, "acme", "widgets", 1, "head-sha", "base-sha")
 
 	assert := Assert.New(t)
-	assert.Equal("head-sha", lookupPR.GetHead().GetSHA())
-	assert.Equal("base-sha", lookupPR.GetBase().GetSHA())
+	updated := fc.PRs["acme/widgets"][0]
+	assert.Equal("head-sha", updated.GetHead().GetSHA())
+	assert.Equal("base-sha", updated.GetBase().GetSHA())
+	assert.Empty(lookupPR.GetHead().GetSHA(), "update should replace fixture PR instead of mutating shared pointer")
 }
 
 // TestDefaultRoborevEndpointIsUnbindable pins the e2e server's

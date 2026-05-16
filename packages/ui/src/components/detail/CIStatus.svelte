@@ -1,4 +1,5 @@
 <script lang="ts">
+  import LoaderCircleIcon from "@lucide/svelte/icons/loader-circle";
   import type { CICheck } from "../../api/types.js";
   import Chip from "../shared/Chip.svelte";
 
@@ -57,6 +58,10 @@
     return "var(--text-muted)";
   }
 
+  function isRefreshingCheck(check: CICheck): boolean {
+    return detailSyncing && check.status !== "completed";
+  }
+
   function chipColor(chipStatus: string): string {
     if (chipStatus === "success") return "chip--green";
     if (chipStatus === "failure" || chipStatus === "error") return "chip--red";
@@ -92,7 +97,15 @@
       target="_blank"
       rel="noopener noreferrer"
     >
-      <span class="ci-icon" style="color: {checkColor(check)}">{checkIcon(check)}</span>
+      <span class="ci-icon" style="color: {checkColor(check)}">
+        {#if isRefreshingCheck(check)}
+          <span class="sync-spinner" aria-hidden="true">
+            <LoaderCircleIcon size={14} strokeWidth={2} />
+          </span>
+        {:else}
+          {checkIcon(check)}
+        {/if}
+      </span>
       <span class="ci-name">{check.name}</span>
       {#if duration}
         <span class="ci-duration">{duration}</span>
@@ -104,7 +117,15 @@
     </a>
   {:else}
     <div class="ci-check ci-check--static">
-      <span class="ci-icon" style="color: {checkColor(check)}">{checkIcon(check)}</span>
+      <span class="ci-icon" style="color: {checkColor(check)}">
+        {#if isRefreshingCheck(check)}
+          <span class="sync-spinner" aria-hidden="true">
+            <LoaderCircleIcon size={14} strokeWidth={2} />
+          </span>
+        {:else}
+          {checkIcon(check)}
+        {/if}
+      </span>
       <span class="ci-name">{check.name}</span>
       {#if duration}
         <span class="ci-duration">{duration}</span>
@@ -139,9 +160,9 @@
         {#if !detailLoaded}
           {#if detailSyncing}
             <div class="loading-placeholder">
-              <svg class="sync-spinner" width="14" height="14" viewBox="0 0 16 16" fill="none">
-                <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" stroke-dasharray="28" stroke-dashoffset="8" stroke-linecap="round"/>
-              </svg>
+              <span class="sync-spinner" aria-hidden="true">
+                <LoaderCircleIcon size={14} strokeWidth={2} />
+              </span>
               Loading checks...
             </div>
           {:else}
@@ -239,6 +260,9 @@
   }
 
   .ci-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     font-weight: 700;
     font-size: var(--font-size-root);
     flex-shrink: 0;
@@ -287,6 +311,7 @@
   }
 
   .sync-spinner {
+    display: inline-flex;
     animation: spin 0.9s linear infinite;
   }
 

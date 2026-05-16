@@ -8,11 +8,13 @@ import {
   providerRouteParams,
 } from "../api/provider-routes.js";
 import type { MiddlemanClient } from "../types.js";
+import { showFlash } from "./flash.svelte.js";
 
 export type DetailSyncMode = boolean | "background";
 
 export interface DetailRequestOptions {
   sync?: DetailSyncMode;
+  workflowApprovalSync?: boolean;
   provider: string;
   platformHost?: string | undefined;
   repoPath: string;
@@ -76,6 +78,20 @@ function strongerSyncMode(
   return syncIntentRank(b) > syncIntentRank(a) ? b : a;
 }
 
+function needsWorkflowApprovalSync(
+  detail: PullDetail | null,
+  enabled: boolean,
+): boolean {
+  if (!enabled || !detail) return false;
+  const pr = detail.merge_request;
+  return Boolean(
+    detail.repo?.capabilities?.workflow_approval &&
+      pr?.State === "open" &&
+      detail.workflow_approval?.checked === false &&
+      pr.CIHadPending,
+  );
+}
+
 export function createDetailStore(
   opts: DetailStoreOptions,
 ) {
@@ -109,6 +125,11 @@ export function createDetailStore(
     key: string;
     promise: Promise<void> | null;
     syncMode: DetailSyncMode;
+    workflowApprovalSync: boolean;
+  } | null = null;
+  let activeCIRefresh: {
+    key: string;
+    promise: Promise<void>;
   } | null = null;
 
   // Per-PR monotonic counters for kanban updates.
@@ -376,6 +397,7 @@ export function createDetailStore(
         activeLoad.syncMode,
         syncMode,
       );
+      activeLoad.workflowApprovalSync ||= options.workflowApprovalSync ?? true;
       return activeLoad.promise;
     }
 
@@ -384,7 +406,13 @@ export function createDetailStore(
       key: string;
       promise: Promise<void> | null;
       syncMode: DetailSyncMode;
-    } = { key, promise: null, syncMode };
+      workflowApprovalSync: boolean;
+    } = {
+      key,
+      promise: null,
+      syncMode,
+      workflowApprovalSync: options.workflowApprovalSync ?? true,
+    };
     activeLoad = currentLoad;
 
     // Keep the previously loaded detail visible while the new one
@@ -442,6 +470,10 @@ export function createDetailStore(
       if (gen === syncGeneration && finalSyncMode === true) {
         void syncDetail(owner, name, number, gen, requestRef);
       } else if (gen === syncGeneration && finalSyncMode === "background") {
+        if (needsWorkflowApprovalSync(detail, currentLoad.workflowApprovalSync)) {
+          void syncDetail(owner, name, number, gen, requestRef);
+          return;
+        }
         void enqueueBackgroundDetailSync(
           owner,
           name,
@@ -518,6 +550,65 @@ export function createDetailStore(
   ): Promise<void> {
     const ref = detailRequestRef(owner, name, number, identity);
     await refreshDetail(owner, name, number, syncGeneration, ref);
+  }
+
+  async function refreshPendingCI(
+    owner: string,
+    name: string,
+    number: number,
+    identity: DetailRequestOptions,
+  ): Promise<void> {
+    if (!isDetailShowing(owner, name, number)) return;
+    const ref = detailRequestRef(owner, name, number, identity);
+    const key = prKey(ref);
+    if (activeCIRefresh?.key === key) {
+      return activeCIRefresh.promise;
+    }
+    const gen = syncGeneration;
+    const promise = (async () => {
+      syncing = true;
+      try {
+        const { data, error: requestError } = await apiClient.POST(
+          providerItemPath("pulls", ref, "/ci-refresh"),
+          {
+            params: {
+              path: { ...providerRouteParams(ref), number: ref.number },
+            },
+          },
+        );
+        if (gen !== syncGeneration) return;
+        if (requestError) {
+          showFlash(apiErrorMessage(requestError, "Failed to refresh CI checks"));
+          return;
+        }
+        if (data) {
+          storeError = null;
+          detail = withPreservedLocalBody({
+            ...data,
+            events: data.events ?? [],
+          } as PullDetail);
+          detailLoaded = data.detail_loaded ?? detailLoaded;
+          const warning = data.warnings?.[0];
+          if (warning) {
+            showFlash(warning);
+          }
+          if (needsWorkflowApprovalSync(detail, identity.workflowApprovalSync ?? true)) {
+            await syncDetail(owner, name, number, gen, ref);
+          }
+        }
+      } finally {
+        if (gen === syncGeneration) syncing = false;
+        void syncDep?.refreshSyncStatus?.();
+      }
+      if (gen === syncGeneration) {
+        await refreshPullsIfActive();
+      }
+    })();
+    activeCIRefresh = { key, promise };
+    promise.finally(() => {
+      if (activeCIRefresh?.promise === promise) activeCIRefresh = null;
+    });
+    return promise;
   }
 
   async function updateKanbanState(
@@ -1118,6 +1209,7 @@ export function createDetailStore(
     clearDetail,
     loadDetail,
     refreshDetailOnly,
+    refreshPendingCI,
     updateKanbanState,
     setPullLabels,
     updatePRContent,

@@ -107,6 +107,7 @@
     hideWorkspaceAction?: boolean;
     hideStaleWhileLoading?: boolean;
     autoSync?: DetailSyncMode;
+    workflowApprovalSync?: boolean;
   }
 
   const {
@@ -121,6 +122,7 @@
     hideWorkspaceAction = false,
     hideStaleWhileLoading = false,
     autoSync = "background",
+    workflowApprovalSync = true,
   }: Props = $props();
 
   const routeRef = $derived({
@@ -151,6 +153,16 @@
   const hasActiveTimelineFilters = $derived(
     activePRTimelineFilterCount(timelineFilter) > 0,
   );
+
+  function ciChecksHavePending(checksJSON: string): boolean {
+    if (!checksJSON) return false;
+    try {
+      const checks = JSON.parse(checksJSON) as Array<{ status?: string }>;
+      return checks.some((check) => check.status !== "completed");
+    } catch {
+      return false;
+    }
+  }
   async function editTimelineComment(
     event: { PlatformID: number | null },
     body: string,
@@ -185,6 +197,31 @@
     );
   });
 
+  const shouldAutoRefreshCI = $derived.by(() => {
+    const pr = currentPR();
+    return Boolean(
+      ciExpanded &&
+      !stalePR &&
+      pr?.State === "open" &&
+      ciChecksHavePending(pr.CIChecksJSON),
+    );
+  });
+
+  $effect(() => {
+    if (!shouldAutoRefreshCI) return;
+    const refresh = () => {
+      void detailStore.refreshPendingCI(owner, name, number, {
+        provider,
+        platformHost,
+        repoPath,
+        workflowApprovalSync,
+      });
+    };
+    refresh();
+    const interval = setInterval(refresh, 15_000);
+    return () => clearInterval(interval);
+  });
+
   $effect(() => {
     const requestOwner = owner;
     const requestName = name;
@@ -193,6 +230,7 @@
     const requestPlatformHost = platformHost;
     const requestRepoPath = repoPath;
     const requestAutoSync = autoSync;
+    const requestWorkflowApprovalSync = workflowApprovalSync;
     untrack(() => {
       void detailStore.loadDetail(
         requestOwner,
@@ -200,6 +238,7 @@
         requestNumber,
         {
           sync: requestAutoSync,
+          workflowApprovalSync: requestWorkflowApprovalSync,
           provider: requestProvider,
           platformHost: requestPlatformHost,
           repoPath: requestRepoPath,

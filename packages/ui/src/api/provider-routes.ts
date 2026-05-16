@@ -54,6 +54,7 @@ type PullSuffix =
   | "/files"
   | "/file-preview"
   | "/github-state"
+  | "/ci-refresh"
   | "/import-metadata"
   | "/labels"
   | "/merge"

@@ -28,6 +28,7 @@
     showStackSidebar?: boolean;
     autoSyncDetail?: DetailSyncMode;
     hideStaleDetailWhileLoading?: boolean;
+    workflowApprovalSync?: boolean;
     onSidebarResize?: (width: number) => void;
     onDetailTabChange?: (tab: "conversation" | "files") => void;
   }
@@ -41,6 +42,7 @@
     showStackSidebar = true,
     autoSyncDetail = "background",
     hideStaleDetailWhileLoading = false,
+    workflowApprovalSync = true,
     onSidebarResize,
     onDetailTabChange,
   }: Props = $props();
@@ -113,6 +115,7 @@
         platformHost={selectedPR.platformHost}
         repoPath={selectedPR.repoPath}
         autoSync={autoSyncDetail}
+        {workflowApprovalSync}
         hideTabs={true}
         hideStaleWhileLoading={hideStaleDetailWhileLoading}
       />
