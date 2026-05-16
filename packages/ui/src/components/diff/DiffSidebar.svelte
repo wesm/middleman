@@ -81,9 +81,7 @@
   // does not silently hide files in the next PR.
   $effect(() => {
     const key = resetKey;
-    if (showCommits) {
-      pulls.getSelectedPR();
-    }
+    pulls.getSelectedPR();
     if (key === "\0") return;
     fileFilterText = "";
   });

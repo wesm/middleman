@@ -877,8 +877,7 @@ test.describe("activity split view and detail drawers", () => {
     await expect(detail.locator(".diff-file")).toHaveCount(1);
     const fileSidebar = detail.locator(".files-layout > .files-sidebar");
     await expect(fileSidebar).toBeVisible();
-    await expect(fileSidebar.locator(".commit-section .commit-section__label"))
-      .toHaveText("Commits");
+    await expect(detail.locator(".diff-scope-picker")).toBeVisible();
     await expect(fileSidebar.locator(".diff-file-row")).toHaveCount(1);
     await expect(fileSidebar.locator(".diff-file-row .diff-file-name"))
       .toHaveText("handler.go");
@@ -907,8 +906,7 @@ test.describe("activity split view and detail drawers", () => {
     await expect(sidebar).toBeVisible();
     await expect(drawer.locator(".files-layout > .files-main .diff-view")).toBeVisible();
 
-    await expect(sidebar.locator(".commit-section .commit-section__label"))
-      .toHaveText("Commits");
+    await expect(drawer.locator(".diff-scope-picker")).toBeVisible();
     await expect(sidebar.locator(".diff-file-row")).toHaveCount(1);
     await expect(sidebar.locator(".diff-file-row .diff-file-name"))
       .toHaveText("handler.go");

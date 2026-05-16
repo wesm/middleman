@@ -272,6 +272,14 @@ test.describe("workspace tab persistence", () => {
       await expect(activeDiffFile).toHaveAttribute("title", "alpha.ts");
       await expect(page.locator('.right-sidebar .diff-file-row[title="beta_test.go"]'))
         .toHaveCount(0);
+      await page.locator(".right-sidebar .file-list-toggle").click();
+      await expect(page.locator(".right-sidebar .workspace-diff-sidebar"))
+        .toHaveCount(0);
+      await expect(page.locator(".right-sidebar .diff-file")).toHaveCount(1);
+      await page.locator(".right-sidebar .file-list-toggle").click();
+      await expect(page.locator(".right-sidebar .workspace-diff-sidebar"))
+        .toBeVisible();
+      await expect(activeDiffFile).toHaveAttribute("title", "alpha.ts");
       await expect(panes).toHaveCount(1);
       await expect(homeTab).toHaveAttribute("aria-selected", "true");
 

@@ -681,17 +681,16 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     base: WorkspaceDiffBase,
     stacked = false,
   ): Promise<void> {
-    const workspaceChanged =
+    const workspaceScopeChanged =
       workspaceID !== currentWorkspaceID ||
-      base !== currentWorkspaceBase ||
-      stacked !== currentWorkspaceStacked;
+      base !== currentWorkspaceBase;
     currentWorkspaceID = workspaceID;
     currentWorkspaceBase = base;
     currentWorkspaceStacked = stacked;
     currentOwner = "";
     currentName = "";
     currentNumber = 0;
-    if (workspaceChanged) {
+    if (workspaceScopeChanged) {
       resetDiffScopeState();
     }
 
