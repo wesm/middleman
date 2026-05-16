@@ -423,6 +423,10 @@ func normalizeCIChecks(
 	return checks
 }
 
+func NormalizeLabels(repo platform.RepoRef, labels []*gh.Label) []platform.Label {
+	return normalizeLabels(repo, labels)
+}
+
 func normalizeLabels(repo platform.RepoRef, labels []*gh.Label) []platform.Label {
 	if len(labels) == 0 {
 		return nil

@@ -1,4 +1,4 @@
-import type { Issue, IssueDetail, IssuesParams } from "../api/types.js";
+import type { Issue, IssueDetail, IssuesParams, Label } from "../api/types.js";
 import {
   providerItemPath,
   providerRouteParams,
@@ -306,6 +306,18 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     return undefined;
   }
 
+  function isIssueDetailShowingRef(ref: IssueDetailRequestRef): boolean {
+    return (
+      issueDetail !== null &&
+      issueDetail.repo_owner === ref.owner &&
+      issueDetail.repo_name === ref.name &&
+      issueDetail.issue.Number === ref.number &&
+      issueDetail.repo?.provider === ref.provider &&
+      issueDetail.repo?.platform_host === ref.platformHost &&
+      issueDetail.repo?.repo_path === ref.repoPath
+    );
+  }
+
   function currentIssueDetailRef(
     owner: string,
     name: string,
@@ -586,6 +598,44 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     detailError = null;
     issueDetailLoaded = false;
     unsavedLocalBody = null;
+  }
+
+  async function setIssueLabels(
+    owner: string,
+    name: string,
+    number: number,
+    labels: string[],
+  ): Promise<Label[]> {
+    const ref = currentIssueDetailRef(owner, name, number);
+    const { data, error: requestError } = await apiClient.PUT(
+      providerItemPath("issues", ref, "/labels"),
+      {
+        params: {
+          path: { ...providerRouteParams(ref), number },
+        },
+        body: { labels },
+      },
+    );
+    if (requestError) {
+      const message = apiErrorMessage(
+        requestError,
+        "failed to update labels",
+      );
+      detailError = message;
+      throw new Error(message);
+    }
+    const nextLabels = (data?.labels ?? []) as Label[];
+    if (isIssueDetailShowingRef(ref) && issueDetail) {
+      issueDetail = {
+        ...issueDetail,
+        issue: {
+          ...issueDetail.issue,
+          labels: nextLabels,
+        },
+      };
+    }
+    void refreshIssuesIfActive();
+    return nextLabels;
   }
 
   async function submitIssueComment(
@@ -1016,6 +1066,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     startIssueDetailPolling,
     stopIssueDetailPolling,
     clearIssueDetail,
+    setIssueLabels,
     submitIssueComment,
     editIssueComment,
     setLocalIssueBody,

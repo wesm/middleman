@@ -1,5 +1,6 @@
 import type {
   KanbanStatus,
+  Label,
   PullDetail,
 } from "../api/types.js";
 import {
@@ -226,6 +227,18 @@ export function createDetailStore(
 
   function hasUnsavedLocalBody(): boolean {
     return unsavedLocalBody !== null;
+  }
+
+  function isDetailShowingRef(ref: DetailRequestRef): boolean {
+    return (
+      detail !== null &&
+      detail.repo_owner === ref.owner &&
+      detail.repo_name === ref.name &&
+      detail.merge_request.Number === ref.number &&
+      detail.repo?.provider === ref.provider &&
+      detail.repo?.platform_host === ref.platformHost &&
+      detail.repo?.repo_path === ref.repoPath
+    );
   }
 
   function currentDetailRef(
@@ -619,6 +632,44 @@ export function createDetailStore(
       }
       await Promise.all(refreshes);
     }
+  }
+
+  async function setPullLabels(
+    owner: string,
+    name: string,
+    number: number,
+    labels: string[],
+  ): Promise<Label[]> {
+    const ref = currentDetailRef(owner, name, number);
+    const { data, error: requestError } = await apiClient.PUT(
+      providerItemPath("pulls", ref, "/labels"),
+      {
+        params: {
+          path: { ...providerRouteParams(ref), number },
+        },
+        body: { labels },
+      },
+    );
+    if (requestError) {
+      const message = apiErrorMessage(
+        requestError,
+        "failed to update labels",
+      );
+      storeError = message;
+      throw new Error(message);
+    }
+    const nextLabels = (data?.labels ?? []) as Label[];
+    if (isDetailShowingRef(ref) && detail) {
+      detail = {
+        ...detail,
+        merge_request: {
+          ...detail.merge_request,
+          labels: nextLabels,
+        },
+      };
+    }
+    void refreshPullsIfActive();
+    return nextLabels;
   }
 
   async function updatePRContent(
@@ -1068,6 +1119,7 @@ export function createDetailStore(
     loadDetail,
     refreshDetailOnly,
     updateKanbanState,
+    setPullLabels,
     updatePRContent,
     setLocalPRBody,
     savePRBodyInBackground,

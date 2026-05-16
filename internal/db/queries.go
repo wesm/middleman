@@ -149,6 +149,69 @@ func labelPlatformIDTx(ctx context.Context, tx *sql.Tx, labelID int64) (sql.Null
 }
 
 func mergeLabelRowAssociationsTx(ctx context.Context, tx *sql.Tx, fromLabelID, toLabelID int64) error {
+	var sourceName string
+	var shouldCopySourceName bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT source.name,
+		       (source.catalog_seen_at IS NOT NULL
+		           AND (target.catalog_seen_at IS NULL OR source.catalog_seen_at > target.catalog_seen_at))
+		       OR (target.catalog_present = 0 AND source.updated_at > target.updated_at)
+		FROM middleman_labels AS source
+		JOIN middleman_labels AS target ON target.id = ?
+		WHERE source.id = ?`,
+		toLabelID, fromLabelID,
+	).Scan(&sourceName, &shouldCopySourceName); err != nil {
+		return fmt.Errorf("load source label metadata: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE middleman_labels
+		SET description = CASE
+		        WHEN (SELECT catalog_seen_at FROM middleman_labels WHERE id = ?) > COALESCE(catalog_seen_at, '')
+		          OR (catalog_present = 0 AND (SELECT updated_at FROM middleman_labels WHERE id = ?) > updated_at)
+		        THEN (SELECT description FROM middleman_labels WHERE id = ?)
+		        ELSE description
+		    END,
+		    color = CASE
+		        WHEN (SELECT catalog_seen_at FROM middleman_labels WHERE id = ?) > COALESCE(catalog_seen_at, '')
+		          OR (catalog_present = 0 AND (SELECT updated_at FROM middleman_labels WHERE id = ?) > updated_at)
+		        THEN (SELECT color FROM middleman_labels WHERE id = ?)
+		        ELSE color
+		    END,
+		    is_default = CASE
+		        WHEN (SELECT catalog_seen_at FROM middleman_labels WHERE id = ?) > COALESCE(catalog_seen_at, '')
+		          OR (catalog_present = 0 AND (SELECT updated_at FROM middleman_labels WHERE id = ?) > updated_at)
+		        THEN (SELECT is_default FROM middleman_labels WHERE id = ?)
+		        ELSE is_default
+		    END,
+		    updated_at = CASE
+		        WHEN (SELECT updated_at FROM middleman_labels WHERE id = ?) > updated_at
+		        THEN (SELECT updated_at FROM middleman_labels WHERE id = ?)
+		        ELSE updated_at
+		    END,
+		    catalog_present = CASE
+		        WHEN catalog_present = 1 OR (SELECT catalog_present FROM middleman_labels WHERE id = ?) = 1
+		        THEN 1
+		        ELSE catalog_present
+		    END,
+		    catalog_seen_at = CASE
+		        WHEN catalog_seen_at IS NULL
+		        THEN (SELECT catalog_seen_at FROM middleman_labels WHERE id = ?)
+		        WHEN (SELECT catalog_seen_at FROM middleman_labels WHERE id = ?) IS NULL
+		        THEN catalog_seen_at
+		        WHEN (SELECT catalog_seen_at FROM middleman_labels WHERE id = ?) > catalog_seen_at
+		        THEN (SELECT catalog_seen_at FROM middleman_labels WHERE id = ?)
+		        ELSE catalog_seen_at
+		    END
+		WHERE id = ?`,
+		fromLabelID, fromLabelID, fromLabelID,
+		fromLabelID, fromLabelID, fromLabelID,
+		fromLabelID, fromLabelID, fromLabelID,
+		fromLabelID, fromLabelID,
+		fromLabelID, fromLabelID, fromLabelID, fromLabelID, fromLabelID, toLabelID,
+	); err != nil {
+		return fmt.Errorf("merge label catalog metadata: %w", err)
+	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO middleman_issue_labels (issue_id, label_id)
 		SELECT issue_id, ? FROM middleman_issue_labels WHERE label_id = ?
@@ -182,6 +245,11 @@ func mergeLabelRowAssociationsTx(ctx context.Context, tx *sql.Tx, fromLabelID, t
 		fromLabelID,
 	); err != nil {
 		return fmt.Errorf("delete old label row: %w", err)
+	}
+	if shouldCopySourceName {
+		if _, err := tx.ExecContext(ctx, `UPDATE middleman_labels SET name = ? WHERE id = ?`, sourceName, toLabelID); err != nil {
+			return fmt.Errorf("copy source label name: %w", err)
+		}
 	}
 	return nil
 }
@@ -314,6 +382,11 @@ func repoIDForMergeRequestTx(ctx context.Context, tx *sql.Tx, mrID int64) (int64
 func upsertLabelsTx(ctx context.Context, tx *sql.Tx, repoID int64, labels []Label) (map[string]int64, error) {
 	ids := make(map[string]int64, len(labels))
 	for _, label := range labels {
+		catalogSeenAt := label.CatalogSeenAt
+		if label.CatalogPresent && catalogSeenAt == nil {
+			seenAt := label.UpdatedAt.UTC()
+			catalogSeenAt = &seenAt
+		}
 		id, found, err := labelIDForUpsertTx(ctx, tx, repoID, label)
 		if err != nil {
 			return nil, err
@@ -322,11 +395,13 @@ func upsertLabelsTx(ctx context.Context, tx *sql.Tx, repoID int64, labels []Labe
 			result, err := tx.ExecContext(ctx, `
 				INSERT INTO middleman_labels (
 					repo_id, platform_id, platform_external_id,
-					name, description, color, is_default, updated_at
+					name, description, color, is_default, updated_at,
+					catalog_present, catalog_seen_at
 				)
-				VALUES (?, NULLIF(?, 0), ?, ?, ?, ?, ?, ?)`,
+				VALUES (?, NULLIF(?, 0), ?, ?, ?, ?, ?, ?, ?, ?)`,
 				repoID, label.PlatformID, label.PlatformExternalID,
 				label.Name, label.Description, label.Color, label.IsDefault, label.UpdatedAt,
+				label.CatalogPresent, catalogSeenAt,
 			)
 			if err != nil {
 				return nil, fmt.Errorf("insert label %s: %w", label.Name, err)
@@ -340,14 +415,40 @@ func upsertLabelsTx(ctx context.Context, tx *sql.Tx, repoID int64, labels []Labe
 				UPDATE middleman_labels
 				SET platform_id = COALESCE(NULLIF(?, 0), platform_id),
 				    platform_external_id = COALESCE(NULLIF(?, ''), platform_external_id),
-				    name = ?,
-				    description = ?,
-				    color = ?,
-				    is_default = ?,
-				    updated_at = ?
+				    name = CASE
+				        WHEN (? IS NOT NULL AND (catalog_seen_at IS NULL OR ? >= catalog_seen_at)) OR (catalog_present = 0 AND ? >= updated_at) THEN ?
+				        ELSE name
+				    END,
+				    description = CASE
+				        WHEN (? IS NOT NULL AND (catalog_seen_at IS NULL OR ? >= catalog_seen_at)) OR (catalog_present = 0 AND ? >= updated_at) THEN ?
+				        ELSE description
+				    END,
+				    color = CASE
+				        WHEN (? IS NOT NULL AND (catalog_seen_at IS NULL OR ? >= catalog_seen_at)) OR (catalog_present = 0 AND ? >= updated_at) THEN ?
+				        ELSE color
+				    END,
+				    is_default = CASE
+				        WHEN (? IS NOT NULL AND (catalog_seen_at IS NULL OR ? >= catalog_seen_at)) OR (catalog_present = 0 AND ? >= updated_at) THEN ?
+				        ELSE is_default
+				    END,
+				    updated_at = CASE
+				        WHEN (? IS NOT NULL AND (catalog_seen_at IS NULL OR ? >= catalog_seen_at)) OR (catalog_present = 0 AND ? >= updated_at) THEN ?
+				        ELSE updated_at
+				    END,
+				    catalog_present = CASE WHEN ? THEN 1 ELSE catalog_present END,
+				    catalog_seen_at = CASE
+				        WHEN ? IS NULL THEN catalog_seen_at
+				        WHEN catalog_seen_at IS NULL OR ? > catalog_seen_at THEN ?
+				        ELSE catalog_seen_at
+				    END
 				WHERE id = ?`,
 				label.PlatformID, label.PlatformExternalID,
-				label.Name, label.Description, label.Color, label.IsDefault, label.UpdatedAt, id,
+				catalogSeenAt, catalogSeenAt, label.UpdatedAt, label.Name,
+				catalogSeenAt, catalogSeenAt, label.UpdatedAt, label.Description,
+				catalogSeenAt, catalogSeenAt, label.UpdatedAt, label.Color,
+				catalogSeenAt, catalogSeenAt, label.UpdatedAt, label.IsDefault,
+				catalogSeenAt, catalogSeenAt, label.UpdatedAt, label.UpdatedAt,
+				label.CatalogPresent, catalogSeenAt, catalogSeenAt, catalogSeenAt, id,
 			)
 			if err != nil {
 				return nil, fmt.Errorf("update label %s: %w", label.Name, err)
@@ -421,6 +522,161 @@ func (d *DB) UpsertLabels(ctx context.Context, repoID int64, labels []Label) err
 		_, err := upsertLabelsTx(ctx, tx, repoID, labels)
 		return err
 	})
+}
+
+// ReplaceRepoLabelCatalog replaces the selectable provider label catalog for a repo.
+// Historical label rows and item-label joins are preserved, but labels not returned
+// by the provider stop appearing in catalog results.
+func (d *DB) ReplaceRepoLabelCatalog(ctx context.Context, repoID int64, labels []Label, syncedAt time.Time) error {
+	syncedAt = canonicalUTCTime(syncedAt)
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		result, err := tx.ExecContext(ctx, `
+			UPDATE middleman_repos
+			SET label_catalog_synced_at = ?,
+			    label_catalog_checked_at = CASE
+			        WHEN ? >= COALESCE(label_catalog_checked_at, '') THEN ?
+			        ELSE label_catalog_checked_at
+			    END,
+			    label_catalog_sync_error = CASE
+			        WHEN ? >= COALESCE(label_catalog_checked_at, '') THEN ''
+			        ELSE label_catalog_sync_error
+			    END
+			WHERE id = ?
+			  AND (? >= COALESCE(label_catalog_synced_at, ''))`,
+			syncedAt, syncedAt, syncedAt, syncedAt, repoID, syncedAt,
+		)
+		if err != nil {
+			return fmt.Errorf("mark label catalog synced: %w", err)
+		}
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("check label catalog sync claim: %w", err)
+		}
+		if rowsAffected == 0 {
+			return nil
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE middleman_labels SET catalog_present = 0 WHERE repo_id = ?`,
+			repoID,
+		); err != nil {
+			return fmt.Errorf("clear label catalog: %w", err)
+		}
+		for i := range labels {
+			labels[i].CatalogPresent = true
+			labels[i].CatalogSeenAt = &syncedAt
+			if labels[i].UpdatedAt.IsZero() {
+				labels[i].UpdatedAt = syncedAt
+			}
+		}
+		if _, err := upsertLabelsTx(ctx, tx, repoID, labels); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func (d *DB) ListRepoLabelCatalog(ctx context.Context, repoID int64) ([]Label, LabelCatalogFreshness, error) {
+	rows, err := d.ro.QueryContext(ctx, `
+		SELECT id, repo_id, COALESCE(platform_id, 0), platform_external_id,
+		       name, description, color, is_default, updated_at,
+		       catalog_present, catalog_seen_at
+		FROM middleman_labels
+		WHERE repo_id = ? AND catalog_present = 1
+		ORDER BY lower(name), name`,
+		repoID,
+	)
+	if err != nil {
+		return nil, LabelCatalogFreshness{}, fmt.Errorf("list repo label catalog: %w", err)
+	}
+	defer rows.Close()
+
+	labels := []Label{}
+	for rows.Next() {
+		var label Label
+		var seenAt sql.NullTime
+		if err := rows.Scan(
+			&label.ID, &label.RepoID, &label.PlatformID, &label.PlatformExternalID,
+			&label.Name, &label.Description, &label.Color, &label.IsDefault,
+			&label.UpdatedAt, &label.CatalogPresent, &seenAt,
+		); err != nil {
+			return nil, LabelCatalogFreshness{}, fmt.Errorf("scan repo label catalog: %w", err)
+		}
+		label.UpdatedAt = label.UpdatedAt.UTC()
+		if seenAt.Valid {
+			seen := seenAt.Time.UTC()
+			label.CatalogSeenAt = &seen
+		}
+		labels = append(labels, label)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, LabelCatalogFreshness{}, fmt.Errorf("iterate repo label catalog: %w", err)
+	}
+	freshness, err := d.GetRepoLabelCatalogFreshness(ctx, repoID)
+	if err != nil {
+		return nil, LabelCatalogFreshness{}, err
+	}
+	return labels, freshness, nil
+}
+
+func (d *DB) GetRepoLabelCatalogFreshness(ctx context.Context, repoID int64) (LabelCatalogFreshness, error) {
+	var freshness LabelCatalogFreshness
+	err := d.ro.QueryRowContext(ctx, `
+		SELECT label_catalog_synced_at, label_catalog_checked_at, label_catalog_sync_error
+		FROM middleman_repos
+		WHERE id = ?`, repoID,
+	).Scan(&freshness.SyncedAt, &freshness.CheckedAt, &freshness.SyncError)
+	if err != nil {
+		return LabelCatalogFreshness{}, fmt.Errorf("get label catalog freshness: %w", err)
+	}
+	if freshness.SyncedAt != nil {
+		t := freshness.SyncedAt.UTC()
+		freshness.SyncedAt = &t
+	}
+	if freshness.CheckedAt != nil {
+		t := freshness.CheckedAt.UTC()
+		freshness.CheckedAt = &t
+	}
+	return freshness, nil
+}
+
+func (d *DB) UpdateRepoLabelCatalogCheck(ctx context.Context, repoID int64, checkedAt time.Time, syncErr string) error {
+	checkedAt = canonicalUTCTime(checkedAt)
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_repos
+		SET label_catalog_checked_at = ?, label_catalog_sync_error = ?
+		WHERE id = ?
+		  AND (? >= COALESCE(label_catalog_checked_at, ''))`,
+		checkedAt, syncErr, repoID, checkedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("update label catalog check: %w", err)
+	}
+	return nil
+}
+
+func (d *DB) MarkRepoLabelCatalogSynced(ctx context.Context, repoID int64, syncedAt time.Time) error {
+	syncedAt = canonicalUTCTime(syncedAt)
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_repos
+		SET label_catalog_synced_at = CASE
+		        WHEN ? >= COALESCE(label_catalog_synced_at, '') THEN ?
+		        ELSE label_catalog_synced_at
+		    END,
+		    label_catalog_checked_at = CASE
+		        WHEN ? >= COALESCE(label_catalog_checked_at, '') THEN ?
+		        ELSE label_catalog_checked_at
+		    END,
+		    label_catalog_sync_error = CASE
+		        WHEN ? >= COALESCE(label_catalog_checked_at, '') THEN ''
+		        ELSE label_catalog_sync_error
+		    END
+		WHERE id = ?`,
+		syncedAt, syncedAt, syncedAt, syncedAt, syncedAt, repoID,
+	)
+	if err != nil {
+		return fmt.Errorf("mark label catalog synced: %w", err)
+	}
+	return nil
 }
 
 func (d *DB) ReplaceIssueLabels(ctx context.Context, repoID, issueID int64, labels []Label) error {
@@ -907,6 +1163,58 @@ func mergeWorkspaceRowsForIdentityChangeTx(
 	return nil
 }
 
+func mergeRepoLabelNameConflictsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64) error {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT conflict.id, target.id
+		FROM middleman_labels AS source
+		JOIN middleman_labels AS target
+		  ON target.repo_id = ?
+		 AND (
+		     source.platform_id IS NOT NULL
+		     AND target.platform_id IS NOT NULL
+		     AND source.platform_id = target.platform_id
+		     OR (
+		         source.platform_external_id <> ''
+		         AND target.platform_external_id <> ''
+		         AND source.platform_external_id = target.platform_external_id
+		     )
+		 )
+		JOIN middleman_labels AS conflict
+		  ON conflict.repo_id = ?
+		 AND conflict.name = source.name
+		 AND conflict.id <> target.id
+		WHERE source.repo_id = ?
+		  AND source.catalog_present = 1`,
+		toRepoID, toRepoID, fromRepoID,
+	)
+	if err != nil {
+		return fmt.Errorf("list label name conflicts: %w", err)
+	}
+	defer rows.Close()
+
+	type mergePair struct {
+		fromID int64
+		toID   int64
+	}
+	pairs := []mergePair{}
+	for rows.Next() {
+		var pair mergePair
+		if err := rows.Scan(&pair.fromID, &pair.toID); err != nil {
+			return fmt.Errorf("scan label name conflict: %w", err)
+		}
+		pairs = append(pairs, pair)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate label name conflicts: %w", err)
+	}
+	for _, pair := range pairs {
+		if err := mergeLabelRowAssociationsTx(ctx, tx, pair.fromID, pair.toID); err != nil {
+			return fmt.Errorf("merge destination label name conflict: %w", err)
+		}
+	}
+	return nil
+}
+
 func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64) error {
 	if fromRepoID == toRepoID {
 		return nil
@@ -917,6 +1225,24 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 		sql  string
 		args []any
 	}{
+		{
+			name: "clear stale source label catalog membership",
+			sql: `UPDATE middleman_labels
+			      SET catalog_present = 0
+			      WHERE repo_id = ?
+			        AND COALESCE((SELECT label_catalog_synced_at FROM middleman_repos WHERE id = ?), '') <=
+			            COALESCE((SELECT label_catalog_synced_at FROM middleman_repos WHERE id = ?), '')`,
+			args: []any{fromRepoID, fromRepoID, toRepoID},
+		},
+		{
+			name: "clear stale destination label catalog membership",
+			sql: `UPDATE middleman_labels
+			      SET catalog_present = 0
+			      WHERE repo_id = ?
+			        AND COALESCE((SELECT label_catalog_synced_at FROM middleman_repos WHERE id = ?), '') >
+			            COALESCE((SELECT label_catalog_synced_at FROM middleman_repos WHERE id = ?), '')`,
+			args: []any{toRepoID, fromRepoID, toRepoID},
+		},
 		{
 			name: "copy source repo metadata",
 			sql: `UPDATE middleman_repos
@@ -934,9 +1260,24 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			              WHEN default_branch = ''
 			              THEN (SELECT default_branch FROM middleman_repos WHERE id = ?)
 			              ELSE default_branch
+			          END,
+			          label_catalog_synced_at = CASE
+			              WHEN (SELECT label_catalog_synced_at FROM middleman_repos WHERE id = ?) > COALESCE(label_catalog_synced_at, '')
+			              THEN (SELECT label_catalog_synced_at FROM middleman_repos WHERE id = ?)
+			              ELSE label_catalog_synced_at
+			          END,
+			          label_catalog_checked_at = CASE
+			              WHEN (SELECT label_catalog_checked_at FROM middleman_repos WHERE id = ?) > COALESCE(label_catalog_checked_at, '')
+			              THEN (SELECT label_catalog_checked_at FROM middleman_repos WHERE id = ?)
+			              ELSE label_catalog_checked_at
+			          END,
+			          label_catalog_sync_error = CASE
+			              WHEN (SELECT label_catalog_checked_at FROM middleman_repos WHERE id = ?) > COALESCE(label_catalog_checked_at, '')
+			              THEN (SELECT label_catalog_sync_error FROM middleman_repos WHERE id = ?)
+			              ELSE label_catalog_sync_error
 			          END
 			      WHERE id = ?`,
-			args: []any{fromRepoID, fromRepoID, fromRepoID, toRepoID},
+			args: []any{fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, toRepoID},
 		},
 		{
 			name: "move merge requests",
@@ -996,9 +1337,224 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			                      AND middleman_labels.platform_id IS NOT NULL
 			                      AND target.platform_id = middleman_labels.platform_id
 			                  )
+			                  OR (
+			                      target.platform_external_id <> ''
+			                      AND middleman_labels.platform_external_id <> ''
+			                      AND target.platform_external_id = middleman_labels.platform_external_id
+			                  )
 			              )
 			        )`,
 			args: []any{toRepoID, fromRepoID, toRepoID},
+		},
+		{
+			name: "copy duplicate label catalog metadata",
+			sql: `UPDATE middleman_labels AS target
+			      SET name = COALESCE((
+			              SELECT source.name
+			              FROM middleman_labels AS source
+			              WHERE source.repo_id = ?
+			                AND source.catalog_present = 1
+			                AND (
+			                    source.name = target.name
+			                    OR (
+			                        source.platform_id IS NOT NULL
+			                        AND target.platform_id IS NOT NULL
+			                        AND source.platform_id = target.platform_id
+			                    )
+			                    OR (
+			                        source.platform_external_id <> ''
+			                        AND target.platform_external_id <> ''
+			                        AND source.platform_external_id = target.platform_external_id
+			                    )
+			                )
+			              ORDER BY source.catalog_seen_at DESC
+			              LIMIT 1
+			          ), name),
+			          description = COALESCE((
+			              SELECT source.description
+			              FROM middleman_labels AS source
+			              WHERE source.repo_id = ?
+			                AND source.catalog_present = 1
+			                AND (
+			                    source.name = target.name
+			                    OR (
+			                        source.platform_id IS NOT NULL
+			                        AND target.platform_id IS NOT NULL
+			                        AND source.platform_id = target.platform_id
+			                    )
+			                    OR (
+			                        source.platform_external_id <> ''
+			                        AND target.platform_external_id <> ''
+			                        AND source.platform_external_id = target.platform_external_id
+			                    )
+			                )
+			              ORDER BY source.catalog_seen_at DESC
+			              LIMIT 1
+			          ), description),
+			          color = COALESCE((
+			              SELECT source.color
+			              FROM middleman_labels AS source
+			              WHERE source.repo_id = ?
+			                AND source.catalog_present = 1
+			                AND (
+			                    source.name = target.name
+			                    OR (
+			                        source.platform_id IS NOT NULL
+			                        AND target.platform_id IS NOT NULL
+			                        AND source.platform_id = target.platform_id
+			                    )
+			                    OR (
+			                        source.platform_external_id <> ''
+			                        AND target.platform_external_id <> ''
+			                        AND source.platform_external_id = target.platform_external_id
+			                    )
+			                )
+			              ORDER BY source.catalog_seen_at DESC
+			              LIMIT 1
+			          ), color),
+			          is_default = COALESCE((
+			              SELECT source.is_default
+			              FROM middleman_labels AS source
+			              WHERE source.repo_id = ?
+			                AND source.catalog_present = 1
+			                AND (
+			                    source.name = target.name
+			                    OR (
+			                        source.platform_id IS NOT NULL
+			                        AND target.platform_id IS NOT NULL
+			                        AND source.platform_id = target.platform_id
+			                    )
+			                    OR (
+			                        source.platform_external_id <> ''
+			                        AND target.platform_external_id <> ''
+			                        AND source.platform_external_id = target.platform_external_id
+			                    )
+			                )
+			              ORDER BY source.catalog_seen_at DESC
+			              LIMIT 1
+			          ), is_default),
+			          updated_at = COALESCE((
+			              SELECT source.updated_at
+			              FROM middleman_labels AS source
+			              WHERE source.repo_id = ?
+			                AND source.catalog_present = 1
+			                AND (
+			                    source.name = target.name
+			                    OR (
+			                        source.platform_id IS NOT NULL
+			                        AND target.platform_id IS NOT NULL
+			                        AND source.platform_id = target.platform_id
+			                    )
+			                    OR (
+			                        source.platform_external_id <> ''
+			                        AND target.platform_external_id <> ''
+			                        AND source.platform_external_id = target.platform_external_id
+			                    )
+			                )
+			              ORDER BY source.catalog_seen_at DESC
+			              LIMIT 1
+			          ), updated_at),
+			          catalog_present = CASE
+			              WHEN catalog_present = 1 OR EXISTS (
+			                  SELECT 1
+			                  FROM middleman_labels AS source
+			                  WHERE source.repo_id = ?
+			                    AND source.catalog_present = 1
+			                    AND (
+			                        source.name = target.name
+			                        OR (
+			                            source.platform_id IS NOT NULL
+			                            AND target.platform_id IS NOT NULL
+			                            AND source.platform_id = target.platform_id
+			                        )
+			                        OR (
+			                            source.platform_external_id <> ''
+			                            AND target.platform_external_id <> ''
+			                            AND source.platform_external_id = target.platform_external_id
+			                        )
+			                    )
+			              )
+			              THEN 1
+			              ELSE catalog_present
+			          END,
+			          catalog_seen_at = CASE
+			              WHEN catalog_seen_at IS NULL
+			              THEN (
+			                  SELECT MAX(source.catalog_seen_at)
+			                  FROM middleman_labels AS source
+			                  WHERE source.repo_id = ?
+			                    AND (
+			                        source.name = target.name
+			                        OR (
+			                            source.platform_id IS NOT NULL
+			                            AND target.platform_id IS NOT NULL
+			                            AND source.platform_id = target.platform_id
+			                        )
+			                        OR (
+			                            source.platform_external_id <> ''
+			                            AND target.platform_external_id <> ''
+			                            AND source.platform_external_id = target.platform_external_id
+			                        )
+			                    )
+			              )
+			              WHEN (
+			                  SELECT MAX(source.catalog_seen_at)
+			                  FROM middleman_labels AS source
+			                  WHERE source.repo_id = ?
+			                    AND (
+			                        source.name = target.name
+			                        OR (
+			                            source.platform_id IS NOT NULL
+			                            AND target.platform_id IS NOT NULL
+			                            AND source.platform_id = target.platform_id
+			                        )
+			                        OR (
+			                            source.platform_external_id <> ''
+			                            AND target.platform_external_id <> ''
+			                            AND source.platform_external_id = target.platform_external_id
+			                        )
+			                    )
+			              ) > catalog_seen_at
+			              THEN (
+			                  SELECT MAX(source.catalog_seen_at)
+			                  FROM middleman_labels AS source
+			                  WHERE source.repo_id = ?
+			                    AND (
+			                        source.name = target.name
+			                        OR (
+			                            source.platform_id IS NOT NULL
+			                            AND target.platform_id IS NOT NULL
+			                            AND source.platform_id = target.platform_id
+			                        )
+			                        OR (
+			                            source.platform_external_id <> ''
+			                            AND target.platform_external_id <> ''
+			                            AND source.platform_external_id = target.platform_external_id
+			                        )
+			                    )
+			              )
+			              ELSE catalog_seen_at
+			          END
+			      WHERE target.repo_id = ?
+			        AND EXISTS (
+			            SELECT 1
+			            FROM middleman_labels AS source
+			            WHERE source.repo_id = ?
+			              AND (
+			                  source.name = target.name
+			                  OR (
+			                      source.platform_id IS NOT NULL
+			                      AND target.platform_id IS NOT NULL
+			                      AND source.platform_id = target.platform_id
+			                  )
+			                  OR (
+			                      source.platform_external_id <> ''
+			                      AND target.platform_external_id <> ''
+			                      AND source.platform_external_id = target.platform_external_id
+			                  )
+			              )
+			        )`,
+			args: []any{fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, fromRepoID, toRepoID, fromRepoID},
 		},
 		{
 			name: "copy issue label associations to duplicate labels",
@@ -1013,7 +1569,11 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			                                  AND source.platform_id IS NOT NULL
 			                                  AND target.platform_id = source.platform_id
 			                             THEN 0
-			                             ELSE 1
+			                             WHEN target.platform_external_id <> ''
+			                                  AND source.platform_external_id <> ''
+			                                  AND target.platform_external_id = source.platform_external_id
+			                             THEN 1
+			                             ELSE 2
 			                         END,
 			                         target.id
 			                 ) AS target_rank
@@ -1026,6 +1586,11 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			                     target.platform_id IS NOT NULL
 			                     AND source.platform_id IS NOT NULL
 			                     AND target.platform_id = source.platform_id
+			                 )
+			                 OR (
+			                     target.platform_external_id <> ''
+			                     AND source.platform_external_id <> ''
+			                     AND target.platform_external_id = source.platform_external_id
 			                 )
 			             )
 			          WHERE source.repo_id = ?
@@ -1052,7 +1617,11 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			                                  AND source.platform_id IS NOT NULL
 			                                  AND target.platform_id = source.platform_id
 			                             THEN 0
-			                             ELSE 1
+			                             WHEN target.platform_external_id <> ''
+			                                  AND source.platform_external_id <> ''
+			                                  AND target.platform_external_id = source.platform_external_id
+			                             THEN 1
+			                             ELSE 2
 			                         END,
 			                         target.id
 			                 ) AS target_rank
@@ -1065,6 +1634,11 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 			                     target.platform_id IS NOT NULL
 			                     AND source.platform_id IS NOT NULL
 			                     AND target.platform_id = source.platform_id
+			                 )
+			                 OR (
+			                     target.platform_external_id <> ''
+			                     AND source.platform_external_id <> ''
+			                     AND target.platform_external_id = source.platform_external_id
 			                 )
 			             )
 			          WHERE source.repo_id = ?
@@ -1141,6 +1715,11 @@ func mergeRepoRowsTx(ctx context.Context, tx *sql.Tx, fromRepoID, toRepoID int64
 	}
 
 	for _, step := range steps {
+		if step.name == "copy duplicate label catalog metadata" {
+			if err := mergeRepoLabelNameConflictsTx(ctx, tx, fromRepoID, toRepoID); err != nil {
+				return err
+			}
+		}
 		if _, err := tx.ExecContext(ctx, step.sql, step.args...); err != nil {
 			return fmt.Errorf("%s: %w", step.name, err)
 		}
@@ -1162,6 +1741,8 @@ func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
 		        backfill_pr_completed_at,
 		        backfill_issue_page, backfill_issue_complete,
 		        backfill_issue_completed_at,
+		        label_catalog_synced_at, label_catalog_checked_at,
+		        label_catalog_sync_error,
 		        created_at
 		 FROM middleman_repos ORDER BY owner, name, platform, platform_host`,
 	)
@@ -1185,6 +1766,8 @@ func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
 			&r.BackfillPRCompletedAt,
 			&r.BackfillIssuePage, &r.BackfillIssueComplete,
 			&r.BackfillIssueCompletedAt,
+			&r.LabelCatalogSyncedAt, &r.LabelCatalogCheckedAt,
+			&r.LabelCatalogSyncError,
 			&r.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan repo: %w", err)
@@ -1263,6 +1846,8 @@ func (d *DB) GetRepoByOwnerName(ctx context.Context, owner, name string) (*Repo,
 		        backfill_pr_completed_at,
 		        backfill_issue_page, backfill_issue_complete,
 		        backfill_issue_completed_at,
+		        label_catalog_synced_at, label_catalog_checked_at,
+		        label_catalog_sync_error,
 		        created_at
 		 FROM middleman_repos WHERE owner_key = ? AND name_key = ?
 		 ORDER BY platform_host ASC LIMIT 1`, owner, name,
@@ -1278,6 +1863,8 @@ func (d *DB) GetRepoByOwnerName(ctx context.Context, owner, name string) (*Repo,
 		&r.BackfillPRCompletedAt,
 		&r.BackfillIssuePage, &r.BackfillIssueComplete,
 		&r.BackfillIssueCompletedAt,
+		&r.LabelCatalogSyncedAt, &r.LabelCatalogCheckedAt,
+		&r.LabelCatalogSyncError,
 		&r.CreatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -1307,6 +1894,8 @@ func (d *DB) GetRepoByIdentity(ctx context.Context, identity RepoIdentity) (*Rep
 		        backfill_pr_completed_at,
 		        backfill_issue_page, backfill_issue_complete,
 		        backfill_issue_completed_at,
+		        label_catalog_synced_at, label_catalog_checked_at,
+		        label_catalog_sync_error,
 		        created_at
 		 FROM middleman_repos
 		 WHERE platform = ?
@@ -1325,6 +1914,8 @@ func (d *DB) GetRepoByIdentity(ctx context.Context, identity RepoIdentity) (*Rep
 		&r.BackfillPRCompletedAt,
 		&r.BackfillIssuePage, &r.BackfillIssueComplete,
 		&r.BackfillIssueCompletedAt,
+		&r.LabelCatalogSyncedAt, &r.LabelCatalogCheckedAt,
+		&r.LabelCatalogSyncError,
 		&r.CreatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -1352,6 +1943,8 @@ func (d *DB) GetRepoByID(ctx context.Context, id int64) (*Repo, error) {
 		        backfill_pr_completed_at,
 		        backfill_issue_page, backfill_issue_complete,
 		        backfill_issue_completed_at,
+		        label_catalog_synced_at, label_catalog_checked_at,
+		        label_catalog_sync_error,
 		        created_at
 		 FROM middleman_repos WHERE id = ?`, id,
 	).Scan(
@@ -1366,6 +1959,8 @@ func (d *DB) GetRepoByID(ctx context.Context, id int64) (*Repo, error) {
 		&r.BackfillPRCompletedAt,
 		&r.BackfillIssuePage, &r.BackfillIssueComplete,
 		&r.BackfillIssueCompletedAt,
+		&r.LabelCatalogSyncedAt, &r.LabelCatalogCheckedAt,
+		&r.LabelCatalogSyncError,
 		&r.CreatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -1398,6 +1993,14 @@ func normalizeRepoTimestamps(r *Repo) {
 	if r.BackfillIssueCompletedAt != nil {
 		t := r.BackfillIssueCompletedAt.UTC()
 		r.BackfillIssueCompletedAt = &t
+	}
+	if r.LabelCatalogSyncedAt != nil {
+		t := r.LabelCatalogSyncedAt.UTC()
+		r.LabelCatalogSyncedAt = &t
+	}
+	if r.LabelCatalogCheckedAt != nil {
+		t := r.LabelCatalogCheckedAt.UTC()
+		r.LabelCatalogCheckedAt = &t
 	}
 }
 
@@ -3231,6 +3834,8 @@ func (d *DB) GetRepoByHostOwnerName(
 		        backfill_pr_completed_at,
 		        backfill_issue_page, backfill_issue_complete,
 		        backfill_issue_completed_at,
+		        label_catalog_synced_at, label_catalog_checked_at,
+		        label_catalog_sync_error,
 		        created_at
 		 FROM middleman_repos
 		 WHERE platform_host = ? AND owner_key = ? AND name_key = ?
@@ -3248,6 +3853,8 @@ func (d *DB) GetRepoByHostOwnerName(
 		&r.BackfillPRCompletedAt,
 		&r.BackfillIssuePage, &r.BackfillIssueComplete,
 		&r.BackfillIssueCompletedAt,
+		&r.LabelCatalogSyncedAt, &r.LabelCatalogCheckedAt,
+		&r.LabelCatalogSyncError,
 		&r.CreatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {

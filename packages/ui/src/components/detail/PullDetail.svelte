@@ -3,6 +3,7 @@
   import type {
     DiffFile,
     KanbanStatus,
+    Label,
     ProviderCapabilities,
   } from "../../api/types.js";
   import type { DetailSyncMode } from "../../stores/detail.svelte.js";
@@ -33,9 +34,18 @@
   import MonitorUpIcon from "@lucide/svelte/icons/monitor-up";
   import PackagePlusIcon from "@lucide/svelte/icons/package-plus";
   import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
+  import TagsIcon from "@lucide/svelte/icons/tags";
   import XIcon from "@lucide/svelte/icons/x";
   import Chip from "../shared/Chip.svelte";
   import GitHubLabels from "../shared/GitHubLabels.svelte";
+  import LabelPicker from "./LabelPicker.svelte";
+  import { loadLabelCatalogWithRefresh } from "./labelCatalogRefresh.js";
+  import {
+    labelPickerCommandMatches,
+    OPEN_LABEL_PICKER_EVENT,
+    type OpenLabelPickerDetail,
+  } from "./labelPickerCommand.js";
+  import { nextCatalogLabelNames } from "./labelSelection.js";
   import DiffFilesLayout from "../diff/DiffFilesLayout.svelte";
   import CIStatus from "./CIStatus.svelte";
   import DiffSummaryChip from "./DiffSummaryChip.svelte";
@@ -69,6 +79,7 @@
     read_comments: true,
     read_releases: true,
     read_ci: true,
+    read_labels: false,
     comment_mutation: true,
     state_mutation: true,
     merge_mutation: true,
@@ -76,6 +87,7 @@
     workflow_approval: true,
     ready_for_review: true,
     issue_mutation: true,
+    label_mutation: false,
   };
 
   function currentCapabilities(): ProviderCapabilities {
@@ -117,6 +129,15 @@
     owner,
     name,
     repoPath,
+  });
+  const labelPickerCommandRef = $derived({
+    itemType: "pull" as const,
+    provider,
+    platformHost,
+    owner,
+    name,
+    repoPath,
+    number,
   });
 
   let activeTab = $state<"conversation" | "files">("conversation");
@@ -196,6 +217,12 @@
       );
     });
     return () => detailStore.stopDetailPolling();
+  });
+
+  $effect(() => {
+    const handler = (event: Event) => onOpenLabelPickerCommand(event);
+    window.addEventListener(OPEN_LABEL_PICKER_EVENT, handler);
+    return () => window.removeEventListener(OPEN_LABEL_PICKER_EVENT, handler);
   });
 
   // Clear modal/edit state on route change so PR A's open modal
@@ -538,6 +565,11 @@
     ),
   );
   const labels = $derived(detailStore.getDetail()?.merge_request?.labels ?? []);
+  let labelPickerOpen = $state(false);
+  let labelCatalog = $state<Label[]>([]);
+  let labelCatalogSyncing = $state(false);
+  let labelPickerError = $state<string | null>(null);
+  let pendingLabel = $state<string | null>(null);
 
   const workspace = $derived(detailStore.getDetail()?.workspace);
   let wsCreating = $state(false);
@@ -547,6 +579,66 @@
 
   function closeActionMenu(): void {
     actionMenuOpen = false;
+  }
+
+  function closeLabelPicker(): void {
+    labelPickerOpen = false;
+    labelPickerError = null;
+    pendingLabel = null;
+  }
+
+  function onOpenLabelPickerCommand(event: Event): void {
+    const detail = (event as CustomEvent<OpenLabelPickerDetail>).detail;
+    if (labelPickerCommandMatches(labelPickerCommandRef, detail)) {
+      void openLabelPicker();
+    }
+  }
+
+  async function openLabelPicker(): Promise<void> {
+    labelPickerOpen = true;
+    labelPickerError = null;
+    labelCatalogSyncing = true;
+    try {
+      await loadLabelCatalogWithRefresh({
+        isActive: () => labelPickerOpen,
+        loadOnce: async () => {
+          const { data, error } = await client.GET(
+            providerRepoPath(routeRef, "/labels"),
+            { params: { path: providerRouteParams(routeRef) } },
+          );
+          if (error) {
+            throw new Error(error.detail ?? error.title ?? "failed to load labels");
+          }
+          return {
+            labels: (data?.labels ?? []) as Label[],
+            stale: data?.stale ?? false,
+            syncing: data?.syncing ?? false,
+          };
+        },
+        onUpdate: (catalog) => {
+          labelCatalog = catalog.labels;
+          labelCatalogSyncing = Boolean(catalog.stale || catalog.syncing);
+        },
+      });
+    } catch (err) {
+      labelPickerError = err instanceof Error ? err.message : String(err);
+    } finally {
+      if (labelPickerOpen) labelCatalogSyncing = false;
+    }
+  }
+
+  async function toggleLabel(labelName: string): Promise<void> {
+    if (pendingLabel !== null) return;
+    pendingLabel = labelName;
+    labelPickerError = null;
+    const nextNames = nextCatalogLabelNames(labels, labelCatalog, labelName);
+    try {
+      await detailStore.setPullLabels(owner, name, number, nextNames);
+    } catch (err) {
+      labelPickerError = err instanceof Error ? err.message : String(err);
+    } finally {
+      pendingLabel = null;
+    }
   }
 
   function onActionMenuKeydown(e: KeyboardEvent): void {
@@ -1052,6 +1144,37 @@
           bind:expanded={ciExpanded}
           showButton={false}
         />
+        {#if labels.length > 0}
+          <GitHubLabels {labels} mode="full" />
+        {/if}
+        {#if capabilities.read_labels && capabilities.label_mutation}
+          <div class="label-editor-anchor">
+            <ActionButton
+              label="Labels"
+              shortLabel="Labels"
+              size="sm"
+              surface="soft"
+              tone="neutral"
+              disabled={stalePR}
+              onclick={openLabelPicker}
+            >
+              <TagsIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+            </ActionButton>
+            {#if labelPickerOpen}
+              <div class="label-editor-popover">
+                <LabelPicker
+                  catalogLabels={labelCatalog}
+                  selectedLabels={labels}
+                  syncing={labelCatalogSyncing}
+                  {pendingLabel}
+                  error={labelPickerError}
+                  ontoggle={toggleLabel}
+                  onclose={closeLabelPicker}
+                />
+              </div>
+            {/if}
+          </div>
+        {/if}
       </div>
 
       {#if !stalePR}
@@ -1064,9 +1187,6 @@
         />
       {/if}
 
-      {#if labels.length > 0}
-        <GitHubLabels {labels} mode="full" />
-      {/if}
 
       <!-- Mergeable state warnings -->
       {#if !stalePR && pr.State === "open" && pr.MergeableState === "dirty"}
@@ -1557,6 +1677,17 @@
     width: 100%;
     max-width: 800px;
     margin-inline: auto;
+  }
+
+  .label-editor-anchor {
+    position: relative;
+  }
+
+  .label-editor-popover {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + 4px);
+    left: 0;
   }
 
   .detail-header {

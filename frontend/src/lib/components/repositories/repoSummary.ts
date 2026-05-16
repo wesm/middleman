@@ -36,6 +36,7 @@ export const defaultProviderCapabilities: ProviderCapabilities = {
   read_comments: true,
   read_releases: true,
   read_ci: true,
+  read_labels: false,
   comment_mutation: true,
   state_mutation: true,
   merge_mutation: true,
@@ -43,6 +44,7 @@ export const defaultProviderCapabilities: ProviderCapabilities = {
   workflow_approval: true,
   ready_for_review: true,
   issue_mutation: true,
+  label_mutation: false,
 };
 
 export function repoKey(summary: {

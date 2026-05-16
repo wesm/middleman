@@ -269,6 +269,85 @@ func gitLabReadOnlyIssueFixture(
 	return issue, events
 }
 
+func seedLabelEditingFixture(
+	ctx context.Context,
+	database *db.DB,
+	fc *testutil.FixtureClient,
+) error {
+	repo, err := database.GetRepoByOwnerName(ctx, "acme", "widgets")
+	if err != nil {
+		return fmt.Errorf("get widgets repo: %w", err)
+	}
+	if repo == nil {
+		return nil
+	}
+	now := time.Now().UTC().Add(-time.Hour)
+	catalog := []db.Label{
+		{Name: "bug", Description: "Something is broken", Color: "d73a4a", IsDefault: true, UpdatedAt: now},
+		{Name: "triage", Description: "Needs maintainer review", Color: "fbca04", UpdatedAt: now},
+		{Name: "docs", Description: "Documentation", Color: "0075ca", UpdatedAt: now},
+	}
+	if err := database.ReplaceRepoLabelCatalog(ctx, repo.ID, catalog, now); err != nil {
+		return fmt.Errorf("seed label catalog: %w", err)
+	}
+	if pr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 1); err != nil {
+		return fmt.Errorf("get seeded pr: %w", err)
+	} else if pr != nil {
+		if err := database.ReplaceMergeRequestLabels(ctx, repo.ID, pr.ID, catalog[:1]); err != nil {
+			return fmt.Errorf("seed pr labels: %w", err)
+		}
+	}
+	if issue, err := database.GetIssueByRepoIDAndNumber(ctx, repo.ID, 10); err != nil {
+		return fmt.Errorf("get seeded issue: %w", err)
+	} else if issue != nil {
+		if err := database.ReplaceIssueLabels(ctx, repo.ID, issue.ID, catalog[:1]); err != nil {
+			return fmt.Errorf("seed issue labels: %w", err)
+		}
+	}
+	seedFixtureClientLabels(fc)
+	return nil
+}
+
+func seedFixtureClientLabels(fc *testutil.FixtureClient) {
+	if fc == nil {
+		return
+	}
+	bug := &gh.Label{
+		ID:          new(int64(1)),
+		NodeID:      new("LABEL_bug"),
+		Name:        new("bug"),
+		Description: new("Something is broken"),
+		Color:       new("d73a4a"),
+		Default:     new(true),
+	}
+	docs := &gh.Label{ID: new(int64(2)), NodeID: new("LABEL_docs"), Name: new("docs"), Description: new("Documentation"), Color: new("0075ca")}
+	triage := &gh.Label{ID: new(int64(3)), NodeID: new("LABEL_triage"), Name: new("triage"), Description: new("Needs maintainer review"), Color: new("fbca04")}
+	if fc.Labels == nil {
+		fc.Labels = make(map[string][]*gh.Label)
+	}
+	fc.Labels["acme/widgets"] = []*gh.Label{bug, docs, triage}
+	for _, prs := range [][]*gh.PullRequest{
+		fc.OpenPRs["acme/widgets"],
+		fc.PRs["acme/widgets"],
+	} {
+		for _, pr := range prs {
+			if pr.GetNumber() == 1 {
+				pr.Labels = []*gh.Label{bug}
+			}
+		}
+	}
+	for _, issues := range [][]*gh.Issue{
+		fc.OpenIssues["acme/widgets"],
+		fc.Issues["acme/widgets"],
+	} {
+		for _, issue := range issues {
+			if issue.GetNumber() == 10 {
+				issue.Labels = []*gh.Label{bug}
+			}
+		}
+	}
+}
+
 func seedGitLabReadOnlyCapabilityFixture(
 	ctx context.Context,
 	database *db.DB,
@@ -424,6 +503,9 @@ func run(
 	}
 
 	fc := result.FixtureClient()
+	if err := seedLabelEditingFixture(ctx, database, fc); err != nil {
+		return fmt.Errorf("seed label editing fixture: %w", err)
+	}
 	fc.ListRepositoriesByOwnerFn = func(
 		ctx context.Context, owner string,
 	) ([]*gh.Repository, error) {

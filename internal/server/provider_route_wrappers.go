@@ -87,6 +87,24 @@ type getRepoHostInput struct {
 	Name         string `path:"name"`
 }
 
+type setPullLabelsHostInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string `path:"platform_host"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Body         setLabelsRequest
+}
+
+type setIssueLabelsHostInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string `path:"platform_host"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Body         setLabelsRequest
+}
+
 type commentAutocompleteHostInput struct {
 	Provider     string `path:"provider"`
 	PlatformHost string `path:"platform_host"`
@@ -273,6 +291,18 @@ func (s *Server) editCommentOnHost(ctx context.Context, input *editCommentHostIn
 	return s.editComment(ctx, &next)
 }
 
+func (s *Server) setPullLabelsOnHost(ctx context.Context, input *setPullLabelsHostInput) (*setLabelsOutput, error) {
+	next := setPullLabelsInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        input.Owner,
+		Name:         input.Name,
+		Number:       input.Number,
+		Body:         input.Body,
+	}
+	return s.setPullLabels(ctx, &next)
+}
+
 func (s *Server) createIssueOnHost(ctx context.Context, input *createIssueHostInput) (*createIssueOutput, error) {
 	next := createIssueInput{
 		Provider:     input.Provider,
@@ -314,6 +344,18 @@ func (s *Server) editIssueCommentOnHost(ctx context.Context, input *editIssueCom
 	return s.editIssueComment(ctx, &next)
 }
 
+func (s *Server) setIssueLabelsOnHost(ctx context.Context, input *setIssueLabelsHostInput) (*setLabelsOutput, error) {
+	next := setIssueLabelsInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        input.Owner,
+		Name:         input.Name,
+		Number:       input.Number,
+		Body:         input.Body,
+	}
+	return s.setIssueLabels(ctx, &next)
+}
+
 func (s *Server) resolveItemOnHost(ctx context.Context, input *repoNumberHostInput) (*resolveItemOutput, error) {
 	next := repoNumberFromHost(input)
 	return s.resolveItem(ctx, &next)
@@ -327,6 +369,16 @@ func (s *Server) getRepoOnHost(ctx context.Context, input *getRepoHostInput) (*g
 		Name:         input.Name,
 	}
 	return s.getRepo(ctx, &next)
+}
+
+func (s *Server) listRepoLabelsOnHost(ctx context.Context, input *getRepoHostInput) (*listRepoLabelsOutput, error) {
+	next := getRepoInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        input.Owner,
+		Name:         input.Name,
+	}
+	return s.listRepoLabels(ctx, &next)
 }
 
 func (s *Server) getCommentAutocompleteOnHost(ctx context.Context, input *commentAutocompleteHostInput) (*commentAutocompleteOutput, error) {

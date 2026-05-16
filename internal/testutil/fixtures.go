@@ -809,6 +809,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 				Comments:   make(map[string][]*gh.IssueComment),
 				Reviews:    reviews,
 				Tags:       make(map[string][]*gh.RepositoryTag),
+				Labels:     make(map[string][]*gh.Label),
 				CombinedStatuses: map[string]*gh.CombinedStatus{
 					refKey("acme", "widgets", widgetsPR1HeadSHA): {
 						State: new("success"),

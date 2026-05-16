@@ -129,27 +129,29 @@ func (c shutdownAwareContext) Value(key any) any {
 
 // Server holds the HTTP mux and its dependencies.
 type Server struct {
-	db                 *db.DB
-	syncer             *ghclient.Syncer
-	clones             *gitclone.Manager
-	workspaces         *workspace.Manager
-	workspacePRMonitor *workspace.PRMonitor
-	tmuxActivity       *tmuxActivityTracker
-	runtime            *localruntime.Manager
-	cfg                *config.Config
-	cfgPath            string
-	cfgMu              sync.Mutex
-	basePath           string
-	options            ServerOptions
-	version            string
-	now                func() time.Time
-	handler            http.Handler
-	hub                *EventHub
-	activeWorktreeMu   sync.Mutex
-	activeWorktreeKey  string
-	activeWorktreeSet  bool
-	detailSyncMu       sync.Mutex
-	detailSyncInFlight map[string]struct{}
+	db                     *db.DB
+	syncer                 *ghclient.Syncer
+	clones                 *gitclone.Manager
+	workspaces             *workspace.Manager
+	workspacePRMonitor     *workspace.PRMonitor
+	tmuxActivity           *tmuxActivityTracker
+	runtime                *localruntime.Manager
+	cfg                    *config.Config
+	cfgPath                string
+	cfgMu                  sync.Mutex
+	basePath               string
+	options                ServerOptions
+	version                string
+	now                    func() time.Time
+	handler                http.Handler
+	hub                    *EventHub
+	activeWorktreeMu       sync.Mutex
+	activeWorktreeKey      string
+	activeWorktreeSet      bool
+	labelCatalogRefreshMu  sync.Mutex
+	labelCatalogRefreshIDs map[int64]struct{}
+	detailSyncMu           sync.Mutex
+	detailSyncInFlight     map[string]struct{}
 
 	// bg tracks short-lived goroutines that HTTP handlers spawn
 	// outside of the Syncer's own wait group (e.g. mergePR's
@@ -399,16 +401,17 @@ func newServer(
 	bgBaseCtx, bgCancel := context.WithCancel(context.Background())
 	bgDeadline := &shutdownDeadline{}
 	s := &Server{
-		db:           database,
-		basePath:     basePath,
-		syncer:       syncer,
-		clones:       clones,
-		cfg:          cfg,
-		cfgPath:      cfgPath,
-		options:      options,
-		now:          time.Now,
-		hub:          NewEventHub(),
-		tmuxActivity: newTmuxActivityTracker(nil),
+		db:                     database,
+		basePath:               basePath,
+		syncer:                 syncer,
+		clones:                 clones,
+		cfg:                    cfg,
+		cfgPath:                cfgPath,
+		options:                options,
+		now:                    time.Now,
+		hub:                    NewEventHub(),
+		tmuxActivity:           newTmuxActivityTracker(nil),
+		labelCatalogRefreshIDs: make(map[int64]struct{}),
 		bgCtx: shutdownAwareContext{
 			parent:   bgBaseCtx,
 			deadline: bgDeadline,

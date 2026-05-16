@@ -74,6 +74,16 @@ Not every visibility control means "remove this entity entirely."
 - Empty states should make it clear when filters, not missing data, are hiding
   results.
 
+## Optional Metadata Controls
+
+Optional metadata must not reserve empty rows or placeholders when absent. Put
+compact edit controls beside the metadata's normal display location, and keep
+empty states for places where missing data itself is useful information.
+
+Async detail mutations must be scoped to the currently visible item. Compare the
+full provider route identity before opening transient UI or applying mutation
+responses, and discard stale responses instead of patching another item.
+
 ## Testing Expectations
 
 Behavior contracts should usually be tested where the user would notice the
