@@ -42,12 +42,16 @@
   let reconnectDelay = 1000;
   let resizeObserver: ResizeObserver | null = null;
   let refreshFrame: number | null = null;
+  let resizeFrame: number | null = null;
+  let appliedTerminalFontFamily = "";
   let disposed = false;
   let exited = false;
   const encoder = new TextEncoder();
   const tmuxMouseDragFilter = createTmuxMouseDragFilter();
 
   const MAX_RECONNECT_DELAY = 30000;
+  const TERMINAL_SMOOTH_SCROLL_DURATION = 0;
+  const TERMINAL_MINIMUM_CONTRAST_RATIO = 4.5;
 
   function defaultTerminalFontFamily(): string {
     const rootFontFamily = getComputedStyle(
@@ -149,9 +153,15 @@
     if (!terminal) return;
 
     fitAddon?.fit();
-    terminal.clearTextureAtlas();
     terminal.refresh(0, Math.max(0, terminal.rows - 1));
     sendRefresh(terminal.cols, terminal.rows);
+  }
+
+  function redrawTerminalTextureAtlas(): void {
+    if (!terminal) return;
+
+    terminal.clearTextureAtlas();
+    terminal.refresh(0, Math.max(0, terminal.rows - 1));
   }
 
   function scheduleTerminalRefresh(): void {
@@ -162,6 +172,23 @@
       refreshFrame = null;
       refreshVisibleTerminal();
     });
+  }
+
+  function scheduleTerminalResize(): void {
+    if (resizeFrame !== null) {
+      cancelAnimationFrame(resizeFrame);
+    }
+    resizeFrame = requestAnimationFrame(() => {
+      resizeFrame = null;
+      resizeVisibleTerminal();
+    });
+  }
+
+  function resizeVisibleTerminal(): void {
+    if (!fitAddon || !terminal) return;
+
+    fitAddon.fit();
+    sendResize(terminal.cols, terminal.rows);
   }
 
   function connect(): void {
@@ -270,6 +297,10 @@
       cancelAnimationFrame(refreshFrame);
       refreshFrame = null;
     }
+    if (resizeFrame !== null) {
+      cancelAnimationFrame(resizeFrame);
+      resizeFrame = null;
+    }
     if (ws) {
       ws.onclose = null;
       ws.onerror = null;
@@ -285,10 +316,10 @@
 
   $effect(() => {
     if (!terminal) return;
+    if (terminalFontFamily === appliedTerminalFontFamily) return;
+    appliedTerminalFontFamily = terminalFontFamily;
     terminal.options.fontFamily = terminalFontFamily;
-    // The WebGL renderer caches glyphs per font; force a rebuild so
-    // cell widths and glyph metrics line up after the family changes.
-    terminal.clearTextureAtlas();
+    redrawTerminalTextureAtlas();
     fitAddon?.fit();
   });
 
@@ -310,9 +341,17 @@
           foreground: "#c9d1d9",
           cursor: "#58a6ff",
         },
+        allowTransparency: false,
         cursorBlink: true,
+        drawBoldTextInBrightColors: true,
         fontFamily: terminalFontFamily,
         fontSize: 14,
+        letterSpacing: 0,
+        lineHeight: 1,
+        minimumContrastRatio: TERMINAL_MINIMUM_CONTRAST_RATIO,
+        rescaleOverlappingGlyphs: true,
+        scrollOnEraseInDisplay: true,
+        smoothScrollDuration: TERMINAL_SMOOTH_SCROLL_DURATION,
       });
       terminal = term;
 
@@ -323,15 +362,18 @@
       term.loadAddon(fit);
 
       try {
-        const wgl = new WebglAddon();
+        const wgl = new WebglAddon({ customGlyphs: true });
         wgl.onContextLoss(() => {
           wgl.dispose();
+          scheduleTerminalResize();
         });
         term.loadAddon(wgl);
+        scheduleTerminalResize();
       } catch {
         // WebGL unavailable; canvas renderer used as fallback.
       }
 
+      appliedTerminalFontFamily = terminalFontFamily;
       fit.fit();
 
       term.onData((data: string) => {
@@ -354,9 +396,7 @@
       });
 
       resizeObserver = new ResizeObserver(() => {
-        if (!fitAddon || !terminal) return;
-        fitAddon.fit();
-        sendResize(terminal.cols, terminal.rows);
+        scheduleTerminalResize();
       });
       resizeObserver.observe(containerEl);
 

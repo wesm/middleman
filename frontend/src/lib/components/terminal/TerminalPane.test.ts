@@ -4,12 +4,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const {
   ghosttyTerminalCtor,
   mockGhosttyInit,
+  mockWebglCtor,
+  resizeObserverCallbacks,
+  xtermFitAddons,
+  xtermInstances,
   xtermOnDataHandlers,
   xtermTerminalCtor,
   xtermOpen,
 } = vi.hoisted(() => ({
   ghosttyTerminalCtor: vi.fn(),
   mockGhosttyInit: vi.fn().mockResolvedValue(undefined),
+  mockWebglCtor: vi.fn(),
+  resizeObserverCallbacks: [] as ResizeObserverCallback[],
+  xtermFitAddons: [] as Array<{ fit: ReturnType<typeof vi.fn> }>,
+  xtermInstances: [] as Array<{
+    clearTextureAtlas: ReturnType<typeof vi.fn>;
+    cols: number;
+    refresh: ReturnType<typeof vi.fn>;
+    rows: number;
+  }>,
   xtermOnDataHandlers: [] as Array<(data: string) => void>,
   xtermTerminalCtor: vi.fn(),
   xtermOpen: vi.fn(),
@@ -50,7 +63,7 @@ vi.mock("@middleman/ui", () => ({
 vi.mock("@xterm/xterm", () => ({
   Terminal: vi.fn().mockImplementation((options) => {
     xtermTerminalCtor(options);
-    return {
+    const terminal = {
       cols: 80,
       rows: 24,
       options: { ...options },
@@ -66,20 +79,27 @@ vi.mock("@xterm/xterm", () => ({
       refresh: vi.fn(),
       write: vi.fn(),
     };
+    xtermInstances.push(terminal);
+    return terminal;
   }),
 }));
 
 vi.mock("@xterm/addon-fit", () => ({
-  FitAddon: vi.fn().mockImplementation(() => ({
-    fit: vi.fn(),
-  })),
+  FitAddon: vi.fn().mockImplementation(() => {
+    const addon = { fit: vi.fn() };
+    xtermFitAddons.push(addon);
+    return addon;
+  }),
 }));
 
 vi.mock("@xterm/addon-webgl", () => ({
-  WebglAddon: vi.fn().mockImplementation(() => ({
-    dispose: vi.fn(),
-    onContextLoss: vi.fn(),
-  })),
+  WebglAddon: vi.fn().mockImplementation((options) => {
+    mockWebglCtor(options);
+    return {
+      dispose: vi.fn(),
+      onContextLoss: vi.fn(),
+    };
+  }),
 }));
 
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
@@ -112,12 +132,19 @@ describe("TerminalPane", () => {
     configuredFontFamily = "";
     ghosttyTerminalCtor.mockReset();
     mockGhosttyInit.mockClear();
+    mockWebglCtor.mockReset();
+    resizeObserverCallbacks.length = 0;
+    xtermFitAddons.length = 0;
+    xtermInstances.length = 0;
     xtermTerminalCtor.mockReset();
     xtermOpen.mockReset();
     xtermOnDataHandlers.length = 0;
     mockSockets = [];
 
     vi.stubGlobal("ResizeObserver", class {
+      constructor(callback: ResizeObserverCallback) {
+        resizeObserverCallbacks.push(callback);
+      }
       observe(): void {}
       disconnect(): void {}
     });
@@ -144,6 +171,52 @@ describe("TerminalPane", () => {
 
     expect(ghosttyTerminalCtor).not.toHaveBeenCalled();
     expect(mockGhosttyInit).not.toHaveBeenCalled();
+  });
+
+  it("matches VS Code's stable xterm rendering defaults", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+
+    await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
+
+    expect(xtermTerminalCtor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        allowTransparency: false,
+        minimumContrastRatio: 4.5,
+        rescaleOverlappingGlyphs: true,
+        scrollOnEraseInDisplay: true,
+        smoothScrollDuration: 0,
+      }),
+    );
+    expect(mockWebglCtor).toHaveBeenCalledWith({ customGlyphs: true });
+  });
+
+  it("does not rebuild the WebGL atlas during initial mount refresh", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+
+    await waitFor(() => expect(xtermInstances).toHaveLength(1));
+
+    expect(xtermInstances[0]!.clearTextureAtlas).not.toHaveBeenCalled();
+  });
+
+  it("resizes without rebuilding the WebGL atlas after container resize", async () => {
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+
+    await waitFor(() => expect(resizeObserverCallbacks).toHaveLength(1));
+    const terminal = xtermInstances[0]!;
+    const fitAddon = xtermFitAddons[0]!;
+    terminal.clearTextureAtlas.mockClear();
+    terminal.refresh.mockClear();
+    fitAddon.fit.mockClear();
+    mockSockets[0]!.sent = [];
+
+    resizeObserverCallbacks[0]!([], {} as ResizeObserver);
+
+    expect(fitAddon.fit).toHaveBeenCalled();
+    expect(terminal.clearTextureAtlas).not.toHaveBeenCalled();
+    expect(terminal.refresh).not.toHaveBeenCalled();
+    expect(mockSockets[0]!.sent).toContain(
+      JSON.stringify({ type: "resize", cols: 80, rows: 24 }),
+    );
   });
 
   it("uses ghostty-web when selected", async () => {

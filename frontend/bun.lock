@@ -5,9 +5,9 @@
     "": {
       "name": "middleman-frontend",
       "dependencies": {
-        "@xterm/addon-fit": "^0.11.0",
-        "@xterm/addon-webgl": "^0.19.0",
-        "@xterm/xterm": "^6.0.0",
+        "@xterm/addon-fit": "0.12.0-beta.213",
+        "@xterm/addon-webgl": "0.20.0-beta.212",
+        "@xterm/xterm": "6.1.0-beta.213",
         "dompurify": "3.3.3",
         "ghostty-web": "^0.4.0",
         "marked": "17.0.5",
@@ -329,11 +329,11 @@
 
     "@vitest/utils": ["@vitest/utils@3.2.4", "", { "dependencies": { "@vitest/pretty-format": "3.2.4", "loupe": "^3.1.4", "tinyrainbow": "^2.0.0" } }, "sha512-fB2V0JFrQSMsCo9HiSq3Ezpdv4iYaXRG1Sx8edX3MwxfyNn83mKiGzOcH+Fkxt4MHxr3y42fQi1oeAInqgX2QA=="],
 
-    "@xterm/addon-fit": ["@xterm/addon-fit@0.11.0", "", {}, "sha512-jYcgT6xtVYhnhgxh3QgYDnnNMYTcf8ElbxxFzX0IZo+vabQqSPAjC3c1wJrKB5E19VwQei89QCiZZP86DCPF7g=="],
+    "@xterm/addon-fit": ["@xterm/addon-fit@0.12.0-beta.213", "", { "peerDependencies": { "@xterm/xterm": "^6.1.0-beta.213" } }, "sha512-hFupt6CX7MNO0XKjugPpm2T3/PUGT2Y7o92Y9UyQAH0a7Da/H5nzkDbJLH1LZHfyUFaJOOvkJOQl8oreWMr/SQ=="],
 
-    "@xterm/addon-webgl": ["@xterm/addon-webgl@0.19.0", "", {}, "sha512-b3fMOsyLVuCeNJWxolACEUED0vm7qC0cy4wRvf3oURSzDTYVQiGPhTnhWZwIHdvC48Y+oLhvYXnY4XDXPoJo6A=="],
+    "@xterm/addon-webgl": ["@xterm/addon-webgl@0.20.0-beta.212", "", { "peerDependencies": { "@xterm/xterm": "^6.1.0-beta.213" } }, "sha512-RzaTYeukTXTJth+Sl7FzCmb8AqiyDrNWNnqG+/300qJbfHYfCMmBlBVZ0yCTSZIWMdgFbgkhmnmBN7Yzs6xoBA=="],
 
-    "@xterm/xterm": ["@xterm/xterm@6.0.0", "", {}, "sha512-TQwDdQGtwwDt+2cgKDLn0IRaSxYu1tSUjgKarSDkUM0ZNiSRXFpjxEsvc/Zgc5kq5omJ+V0a8/kIM2WD3sMOYg=="],
+    "@xterm/xterm": ["@xterm/xterm@6.1.0-beta.213", "", {}, "sha512-bq5nJkgoZDSg6Ma4zgiQ7jlooGNo7U+HDa6vnhx43yXsVEK2laIF7R08bMYAuU0B+C9xX0gwSrcsW18GxjUoJQ=="],
 
     "acorn": ["acorn@8.16.0", "", { "bin": { "acorn": "bin/acorn" } }, "sha512-UVJyE9MttOsBQIDKw1skb9nAwQuR5wuGD3+82K6JgJlm/Y+KI92oNsMNGZCYdDsVtRHSak0pcV5Dno5+4jh9sw=="],
 

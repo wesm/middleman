@@ -2,11 +2,26 @@ import { expect, test } from "@playwright/test";
 
 import { mockApi } from "./support/mockApi";
 
+function workspaceRepoRef(
+  owner = "acme",
+  name = "widgets",
+  host = "github.com",
+) {
+  return {
+    provider: "github",
+    platform_host: host,
+    owner,
+    name,
+    repo_path: `${owner}/${name}`,
+  };
+}
+
 const testWorkspace = {
   id: "ws-123",
   platform_host: "github.com",
   repo_owner: "acme",
   repo_name: "widgets",
+  repo: workspaceRepoRef(),
   item_type: "pull_request",
   item_number: 42,
   git_head_ref: "feature/auth",
@@ -26,6 +41,7 @@ const testIssueWorkspace = {
   platform_host: "github.com",
   repo_owner: "acme",
   repo_name: "widgets",
+  repo: workspaceRepoRef(),
   item_type: "issue",
   item_number: 7,
   git_head_ref: "middleman/issue-7",
@@ -1211,6 +1227,120 @@ test.describe("workspace launch home", () => {
       await expect(
         page.locator(".terminal-container"),
       ).toBeVisible();
+    },
+  );
+
+  test(
+    "xterm workspace terminal sends resize frames after viewport changes",
+    async ({ page }) => {
+      await page.addInitScript(() => {
+        type RecordedSocket = {
+          sent: unknown[];
+          url: string;
+        };
+        const recordedSockets: RecordedSocket[] = [];
+        Object.defineProperty(
+          window,
+          "__middlemanRecordedTerminalSockets",
+          {
+            value: recordedSockets,
+          },
+        );
+
+        class MockTerminalWebSocket extends EventTarget {
+          static CONNECTING = 0;
+          static OPEN = 1;
+          static CLOSING = 2;
+          static CLOSED = 3;
+
+          binaryType = "arraybuffer";
+          extensions = "";
+          onclose: ((event: CloseEvent) => void) | null = null;
+          onerror: ((event: Event) => void) | null = null;
+          onmessage: ((event: MessageEvent) => void) | null = null;
+          onopen: ((event: Event) => void) | null = null;
+          protocol = "";
+          readyState = MockTerminalWebSocket.OPEN;
+          readonly url: string;
+          private readonly record: RecordedSocket;
+
+          constructor(url: string | URL) {
+            super();
+            this.url = String(url);
+            this.record = { url: this.url, sent: [] };
+            recordedSockets.push(this.record);
+            queueMicrotask(() => {
+              const event = new Event("open");
+              this.dispatchEvent(event);
+              this.onopen?.(event);
+            });
+          }
+
+          close(): void {
+            this.readyState = MockTerminalWebSocket.CLOSED;
+            const event = new CloseEvent("close");
+            this.dispatchEvent(event);
+            this.onclose?.(event);
+          }
+
+          send(data: unknown): void {
+            if (typeof data === "string") {
+              this.record.sent.push(data);
+              return;
+            }
+            this.record.sent.push("[binary]");
+          }
+        }
+
+        window.WebSocket =
+          MockTerminalWebSocket as unknown as typeof WebSocket;
+      });
+
+      await page.goto("/terminal/ws-123");
+      await page
+        .getByRole("button", { name: "Codex" })
+        .click();
+
+      await expect(
+        page.locator(".terminal-container .xterm"),
+      ).toBeVisible();
+      await page.evaluate(() => {
+        for (const socket of (
+          window as unknown as {
+            __middlemanRecordedTerminalSockets: Array<{
+              sent: unknown[];
+            }>;
+          }
+        ).__middlemanRecordedTerminalSockets) {
+          socket.sent = [];
+        }
+      });
+
+      await page.setViewportSize({ width: 900, height: 700 });
+      await page.setViewportSize({ width: 1200, height: 800 });
+
+      await expect
+        .poll(async () =>
+          page.evaluate(() =>
+            (
+              window as unknown as {
+                __middlemanRecordedTerminalSockets: Array<{
+                  sent: unknown[];
+                }>;
+              }
+            ).__middlemanRecordedTerminalSockets.some((socket) =>
+              socket.sent.some((frame) => {
+                if (typeof frame !== "string") return false;
+                try {
+                  return JSON.parse(frame).type === "resize";
+                } catch {
+                  return false;
+                }
+              }),
+            ),
+          ),
+        )
+        .toBe(true);
     },
   );
 
@@ -2685,6 +2815,7 @@ test.describe("issue workspace sidebar", () => {
       const mirroredWorkspace = {
         ...testIssueWorkspace,
         platform_host: "example.com",
+        repo: workspaceRepoRef("acme", "widgets", "example.com"),
       };
       const seenHosts: string[] = [];
       const mirroredIssueDetail = {
