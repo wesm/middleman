@@ -19,6 +19,11 @@
   import GitHubLabels from "../shared/GitHubLabels.svelte";
   import LabelPicker from "./LabelPicker.svelte";
   import { loadLabelCatalogWithRefresh } from "./labelCatalogRefresh.js";
+  import {
+    labelPickerCommandMatches,
+    OPEN_LABEL_PICKER_EVENT,
+    type OpenLabelPickerDetail,
+  } from "./labelPickerCommand.js";
   import { nextCatalogLabelNames } from "./labelSelection.js";
   import CopyItemNumber from "./CopyItemNumber.svelte";
   import MonitorUpIcon from "@lucide/svelte/icons/monitor-up";
@@ -85,6 +90,15 @@
     name,
     repoPath,
   });
+  const labelPickerCommandRef = $derived({
+    itemType: "issue" as const,
+    provider,
+    platformHost,
+    owner,
+    name,
+    repoPath,
+    number,
+  });
 
   // See PullDetail.svelte: while a route change is in flight, the
   // displayed issue may briefly belong to the previous route. Mutating
@@ -149,6 +163,12 @@
     return () => issues.stopIssueDetailPolling();
   });
 
+  $effect(() => {
+    const handler = (event: Event) => onOpenLabelPickerCommand(event);
+    window.addEventListener(OPEN_LABEL_PICKER_EVENT, handler);
+    return () => window.removeEventListener(OPEN_LABEL_PICKER_EVENT, handler);
+  });
+
   // Clear conflict/error state on route change so issue A's
   // dialogs can't bleed into issue B's view.
   $effect(() => {
@@ -176,6 +196,13 @@
     labelPickerOpen = false;
     labelPickerError = null;
     pendingLabel = null;
+  }
+
+  function onOpenLabelPickerCommand(event: Event): void {
+    const detail = (event as CustomEvent<OpenLabelPickerDetail>).detail;
+    if (labelPickerCommandMatches(labelPickerCommandRef, detail)) {
+      void openLabelPicker();
+    }
   }
 
   async function openLabelPicker(): Promise<void> {

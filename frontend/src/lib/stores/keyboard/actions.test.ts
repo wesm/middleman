@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { defaultActions } from "./actions.js";
+import { defaultActions, setStoreInstances } from "./actions.js";
+import {
+  OPEN_LABEL_PICKER_EVENT,
+  type OpenLabelPickerDetail,
+} from "../../../../../packages/ui/src/components/detail/labelPickerCommand.js";
 import type { Context } from "./types.js";
 
-function ctx(page: Context["page"]): Context {
+function ctx(page: Context["page"], overrides: Partial<Context> = {}): Context {
   return {
     page,
     route: { page } as never,
@@ -11,14 +15,35 @@ function ctx(page: Context["page"]): Context {
     selectedIssue: null,
     isDiffView: false,
     detailTab: "conversation",
+    ...overrides,
   };
 }
+
+const repo = {
+  provider: "github",
+  platform_host: "github.com",
+  owner: "octo",
+  name: "repo",
+  repo_path: "octo/repo",
+  capabilities: { read_labels: true, label_mutation: true },
+};
+
+const selected = {
+  provider: "github",
+  platformHost: "github.com",
+  owner: "octo",
+  name: "repo",
+  repoPath: "octo/repo",
+  number: 1,
+};
 
 describe("defaultActions", () => {
   it("includes the migrated globals", () => {
     const ids = defaultActions.map((a) => a.id);
     expect(ids).toEqual(
       expect.arrayContaining([
+        "labels.edit.pr",
+        "labels.edit.issue",
         "go.next",
         "go.prev",
         "tab.toggle",
@@ -57,6 +82,50 @@ describe("defaultActions", () => {
     const cheatsheet = defaultActions.find((a) => a.id === "cheatsheet.open");
     expect(cheatsheet).toBeDefined();
     expect(cheatsheet!.binding).toEqual({ key: "?", shift: true });
+  });
+
+  it("dispatches Edit labels from PR detail context", () => {
+    const action = defaultActions.find((a) => a.id === "labels.edit.pr");
+    expect(action).toBeDefined();
+    setStoreInstances(() => ({
+      detail: {
+        getDetail: () => ({ repo_owner: "octo", repo_name: "repo", repo, merge_request: { Number: 1 } }),
+      },
+    } as never));
+    const events: OpenLabelPickerDetail[] = [];
+    const listener = (event: Event) => events.push((event as CustomEvent<OpenLabelPickerDetail>).detail);
+    window.addEventListener(OPEN_LABEL_PICKER_EVENT, listener);
+    try {
+      const context = ctx("pulls", { selectedPR: selected });
+      expect(action!.when(context)).toBe(true);
+      action!.handler(context);
+    } finally {
+      window.removeEventListener(OPEN_LABEL_PICKER_EVENT, listener);
+    }
+
+    expect(events).toEqual([{ itemType: "pull", ...selected }]);
+  });
+
+  it("dispatches Edit labels from issue detail context", () => {
+    const action = defaultActions.find((a) => a.id === "labels.edit.issue");
+    expect(action).toBeDefined();
+    setStoreInstances(() => ({
+      issues: {
+        getIssueDetail: () => ({ repo_owner: "octo", repo_name: "repo", repo, issue: { Number: 1 } }),
+      },
+    } as never));
+    const events: OpenLabelPickerDetail[] = [];
+    const listener = (event: Event) => events.push((event as CustomEvent<OpenLabelPickerDetail>).detail);
+    window.addEventListener(OPEN_LABEL_PICKER_EVENT, listener);
+    try {
+      const context = ctx("issues", { selectedIssue: selected });
+      expect(action!.when(context)).toBe(true);
+      action!.handler(context);
+    } finally {
+      window.removeEventListener(OPEN_LABEL_PICKER_EVENT, listener);
+    }
+
+    expect(events).toEqual([{ itemType: "issue", ...selected }]);
   });
 
   it("cheatsheet.open does not fire on the reviews page (roborev owns ?)", () => {

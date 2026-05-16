@@ -40,6 +40,11 @@
   import GitHubLabels from "../shared/GitHubLabels.svelte";
   import LabelPicker from "./LabelPicker.svelte";
   import { loadLabelCatalogWithRefresh } from "./labelCatalogRefresh.js";
+  import {
+    labelPickerCommandMatches,
+    OPEN_LABEL_PICKER_EVENT,
+    type OpenLabelPickerDetail,
+  } from "./labelPickerCommand.js";
   import { nextCatalogLabelNames } from "./labelSelection.js";
   import DiffFilesLayout from "../diff/DiffFilesLayout.svelte";
   import CIStatus from "./CIStatus.svelte";
@@ -125,6 +130,15 @@
     name,
     repoPath,
   });
+  const labelPickerCommandRef = $derived({
+    itemType: "pull" as const,
+    provider,
+    platformHost,
+    owner,
+    name,
+    repoPath,
+    number,
+  });
 
   let activeTab = $state<"conversation" | "files">("conversation");
   let ciExpanded = $state(false);
@@ -203,6 +217,12 @@
       );
     });
     return () => detailStore.stopDetailPolling();
+  });
+
+  $effect(() => {
+    const handler = (event: Event) => onOpenLabelPickerCommand(event);
+    window.addEventListener(OPEN_LABEL_PICKER_EVENT, handler);
+    return () => window.removeEventListener(OPEN_LABEL_PICKER_EVENT, handler);
   });
 
   // Clear modal/edit state on route change so PR A's open modal
@@ -565,6 +585,13 @@
     labelPickerOpen = false;
     labelPickerError = null;
     pendingLabel = null;
+  }
+
+  function onOpenLabelPickerCommand(event: Event): void {
+    const detail = (event as CustomEvent<OpenLabelPickerDetail>).detail;
+    if (labelPickerCommandMatches(labelPickerCommandRef, detail)) {
+      void openLabelPicker();
+    }
   }
 
   async function openLabelPicker(): Promise<void> {

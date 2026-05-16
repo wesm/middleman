@@ -12,6 +12,10 @@ import { toggleTheme } from "../theme.svelte.js";
 import { toggleCheatsheet } from "./cheatsheet-state.svelte.js";
 import { togglePalette } from "./palette-state.svelte.js";
 import {
+  openLabelPickerFor,
+  type OpenLabelPickerDetail,
+} from "../../../../../packages/ui/src/components/detail/labelPickerCommand.js";
+import {
   buildPullRequestFilesRoute,
   buildPullRequestRoute,
 } from "@middleman/ui/routes";
@@ -42,6 +46,48 @@ const onPullsListNotBoard = (ctx: Context): boolean =>
   ctx.page === "pulls" && !ctx.isDiffView && !isBoardRoute(ctx);
 
 const onIssuesList = (ctx: Context): boolean => ctx.page === "issues";
+
+function hasLabelEditingCapability(caps: { read_labels?: boolean; label_mutation?: boolean } | undefined): boolean {
+  return Boolean(caps?.read_labels && caps.label_mutation);
+}
+
+function prLabelPickerDetail(ctx: Context): OpenLabelPickerDetail | null {
+  const sel = ctx.selectedPR;
+  if (sel === null) return null;
+  const detail = stores().detail.getDetail();
+  if (detail === null) return null;
+  if (!hasLabelEditingCapability(detail.repo?.capabilities)) return null;
+  if (
+    detail.repo_owner !== sel.owner
+    || detail.repo_name !== sel.name
+    || detail.merge_request?.Number !== sel.number
+    || detail.repo?.provider !== sel.provider
+    || detail.repo?.platform_host !== sel.platformHost
+    || detail.repo?.repo_path !== sel.repoPath
+  ) {
+    return null;
+  }
+  return { itemType: "pull", ...sel };
+}
+
+function issueLabelPickerDetail(ctx: Context): OpenLabelPickerDetail | null {
+  const sel = ctx.selectedIssue;
+  if (sel === null) return null;
+  const detail = stores().issues.getIssueDetail();
+  if (detail === null) return null;
+  if (!hasLabelEditingCapability(detail.repo?.capabilities)) return null;
+  if (
+    detail.repo_owner !== sel.owner
+    || detail.repo_name !== sel.name
+    || detail.issue?.Number !== sel.number
+    || detail.repo?.provider !== sel.provider
+    || detail.repo?.platform_host !== sel.platformHost
+    || detail.repo?.repo_path !== sel.repoPath
+  ) {
+    return null;
+  }
+  return { itemType: "issue", ...sel };
+}
 
 // Mirrors App.svelte's pre-migration page exclusions for `1`/`2`/`f`/etc.:
 // settings, design-system, repos, reviews, workspaces, activity all returned
@@ -214,6 +260,30 @@ export const defaultActions: Action[] = [
     // subsequent Escape (its tag === "INPUT" guard returns early).
     when: (ctx) => ctx.page !== "reviews",
     handler: () => toggleCheatsheet(),
+  },
+  {
+    id: "labels.edit.pr",
+    label: "Edit labels",
+    scope: "detail-pr",
+    binding: null,
+    priority: 0,
+    when: (ctx) => prLabelPickerDetail(ctx) !== null,
+    handler: (ctx) => {
+      const detail = prLabelPickerDetail(ctx);
+      if (detail !== null) openLabelPickerFor(detail);
+    },
+  },
+  {
+    id: "labels.edit.issue",
+    label: "Edit labels",
+    scope: "detail-issue",
+    binding: null,
+    priority: 0,
+    when: (ctx) => issueLabelPickerDetail(ctx) !== null,
+    handler: (ctx) => {
+      const detail = issueLabelPickerDetail(ctx);
+      if (detail !== null) openLabelPickerFor(detail);
+    },
   },
   {
     id: "sync.repos",
