@@ -4195,9 +4195,12 @@ func (s *Syncer) RefreshMRCIStatusOnProvider(
 		return nil
 	}
 	if repoPlatform(repo) == platform.KindGitHub {
-		ciStatus, ciChecksJSON, err := s.fetchGitHubCIStatus(ctx, repo, number, headSHA)
+		ciStatus, ciChecksJSON, ok, err := s.fetchGitHubCIStatus(ctx, repo, number, headSHA)
 		if err != nil {
 			return err
+		}
+		if !ok {
+			return nil
 		}
 		return s.db.UpdateMRCIStatusForHead(ctx, repoID, number, headSHA, ciStatus, ciChecksJSON)
 	}
@@ -4240,9 +4243,12 @@ func (s *Syncer) refreshCIStatus(
 	number int,
 	headSHA string,
 ) error {
-	ciStatus, ciChecksJSON, err := s.fetchGitHubCIStatus(ctx, repo, number, headSHA)
+	ciStatus, ciChecksJSON, ok, err := s.fetchGitHubCIStatus(ctx, repo, number, headSHA)
 	if err != nil {
 		return err
+	}
+	if !ok {
+		return nil
 	}
 	return s.db.UpdateMRCIStatus(ctx, repoID, number, ciStatus, ciChecksJSON)
 }
@@ -4252,16 +4258,16 @@ func (s *Syncer) fetchGitHubCIStatus(
 	repo RepoRef,
 	number int,
 	headSHA string,
-) (string, string, error) {
+) (string, string, bool, error) {
 	if headSHA == "" {
-		return "", "", nil
+		return "", "", false, nil
 	}
 
 	// Fetch both sources. On failure, skip the DB write to preserve
 	// existing data rather than wiping it with empty values.
 	client, err := s.clientFor(repo)
 	if err != nil {
-		return "", "", fmt.Errorf("resolve client for %s/%s: %w", repo.Owner, repo.Name, err)
+		return "", "", false, fmt.Errorf("resolve client for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
 	checkRuns, err := client.ListCheckRunsForRef(ctx, repo.Owner, repo.Name, headSHA)
 	if err != nil {
@@ -4270,7 +4276,7 @@ func (s *Syncer) fetchGitHubCIStatus(
 			"number", number,
 			"err", err,
 		)
-		return "", "", nil
+		return "", "", false, nil
 	}
 
 	combined, err := client.GetCombinedStatus(ctx, repo.Owner, repo.Name, headSHA)
@@ -4280,10 +4286,10 @@ func (s *Syncer) fetchGitHubCIStatus(
 			"number", number,
 			"err", err,
 		)
-		return "", "", nil
+		return "", "", false, nil
 	}
 
-	return DeriveOverallCIStatus(checkRuns, combined), NormalizeCIChecks(checkRuns, combined), nil
+	return DeriveOverallCIStatus(checkRuns, combined), NormalizeCIChecks(checkRuns, combined), true, nil
 }
 
 // ciHasPending parses the CI checks JSON and returns true if any
