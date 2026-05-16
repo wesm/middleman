@@ -3267,11 +3267,11 @@ func (d *DB) UpdateMRDetailFetchedByRepoID(
 	return nil
 }
 
-// UpdateMRWorkflowApproval persists the GitHub Actions approval state
-// for a PR. The result is tied to headSHA: a later GET must compare
-// the stored head SHA to the PR's current PlatformHeadSHA and only
-// trust the snapshot when they match. checkedAt is normalized to UTC
-// so SQLite text ordering stays sane.
+// UpdateMRWorkflowApproval persists the workflow-approval snapshot
+// for a merge request. The result is tied to headSHA: a later GET
+// must compare the stored head SHA to the merge request's current
+// PlatformHeadSHA and only trust the snapshot when they match.
+// checkedAt is normalized to UTC so SQLite text ordering stays sane.
 func (d *DB) UpdateMRWorkflowApproval(
 	ctx context.Context,
 	repoID int64,

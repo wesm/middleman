@@ -859,12 +859,12 @@ func (s *Server) diffWarnings(mr *db.MergeRequest) []string {
 	return nil
 }
 
-// workflowApprovalState reads the persisted workflow approval snapshot
-// from the merge_request row. Sync (SyncMROnProvider) is the only
-// writer; this read path makes no live calls so detail GETs stay
-// cheap. The snapshot is keyed by head SHA: if the PR has been
-// force-pushed since the snapshot was taken, treat it as unchecked so
-// the UI doesn't render an Approve workflows button against a SHA
+// workflowApprovalState reads the persisted workflow-approval
+// snapshot from the merge request row. Sync (SyncMROnProvider) is
+// the only writer; this read path makes no live calls so detail
+// GETs stay cheap. The snapshot is keyed by head SHA: if the head
+// has moved since the snapshot was taken, treat it as unchecked so
+// the UI doesn't render an approve-workflows button against a SHA
 // that no longer has pending runs.
 func (s *Server) workflowApprovalState(
 	_ context.Context,

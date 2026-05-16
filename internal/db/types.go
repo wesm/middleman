@@ -170,9 +170,11 @@ type MergeRequest struct {
 	DetailFetchedAt    *time.Time
 	CIHadPending       bool
 	// WorkflowApprovalCheckedAt is when middleman last reconciled the
-	// GitHub Actions approval state for this PR. Nil means never
+	// workflow-approval state for this merge request. Nil means never
 	// checked; the GET path treats persisted state as authoritative
-	// only when WorkflowApprovalHeadSHA matches PlatformHeadSHA.
+	// only when WorkflowApprovalHeadSHA matches PlatformHeadSHA. Only
+	// providers that surface a workflow-approval concept populate
+	// these columns; others leave them zero.
 	WorkflowApprovalCheckedAt *time.Time `json:"-"`
 	WorkflowApprovalHeadSHA   string     `json:"-"`
 	WorkflowApprovalRequired  bool       `json:"-"`
