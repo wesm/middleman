@@ -195,6 +195,7 @@
   let labelPickerError = $state<string | null>(null);
   let pendingLabel = $state<string | null>(null);
   let labelPickerAnchor = $state<HTMLDivElement>();
+  let labelPickerPopover = $state<HTMLDivElement>();
   let labelPickerStyle = $state("");
 
   function closeLabelPicker(): void {
@@ -205,9 +206,12 @@
 
   function positionLabelPicker(): void {
     if (!labelPickerAnchor) return;
+    const popoverHeight = labelPickerPopover?.getBoundingClientRect().height;
     labelPickerStyle = floatingPopoverStyle({
       trigger: labelPickerAnchor.getBoundingClientRect(),
       viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      ...(popoverHeight !== undefined ? { popoverHeight } : {}),
       align: "end",
       edgeGap: 12,
       maxWidth: 360,
@@ -248,6 +252,9 @@
         onUpdate: (catalog) => {
           labelCatalog = catalog.labels;
           labelCatalogSyncing = Boolean(catalog.stale || catalog.syncing);
+          void tick().then(() => {
+            if (labelPickerOpen) positionLabelPicker();
+          });
         },
       });
     } catch (err) {
@@ -861,7 +868,7 @@
                 <TagsIcon size="16" aria-hidden="true" />
               </ActionButton>
               {#if labelPickerOpen}
-                <div class="label-editor-popover" style={labelPickerStyle}>
+                <div class="label-editor-popover" style={labelPickerStyle} bind:this={labelPickerPopover}>
                   <LabelPicker
                     catalogLabels={labelCatalog}
                     selectedLabels={labels}

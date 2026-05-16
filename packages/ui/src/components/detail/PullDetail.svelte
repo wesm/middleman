@@ -574,6 +574,7 @@
   let labelPickerError = $state<string | null>(null);
   let pendingLabel = $state<string | null>(null);
   let labelPickerAnchor = $state<HTMLDivElement>();
+  let labelPickerPopover = $state<HTMLDivElement>();
   let labelPickerLaunchedFromActionMenu = $state(false);
   let labelPickerStyle = $state("");
 
@@ -607,9 +608,12 @@
     }
 
     if (!labelPickerAnchor) return;
+    const popoverHeight = labelPickerPopover?.getBoundingClientRect().height;
     labelPickerStyle = floatingPopoverStyle({
       trigger: labelPickerAnchor.getBoundingClientRect(),
       viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      ...(popoverHeight !== undefined ? { popoverHeight } : {}),
       align: "end",
       edgeGap: 12,
       maxWidth: 360,
@@ -665,6 +669,9 @@
         onUpdate: (catalog) => {
           labelCatalog = catalog.labels;
           labelCatalogSyncing = Boolean(catalog.stale || catalog.syncing);
+          void tick().then(() => {
+            if (labelPickerOpen) positionLabelPicker();
+          });
         },
       });
     } catch (err) {
@@ -1057,7 +1064,10 @@
         <DiffFilesLayout {provider} {platformHost} {owner} {name} {repoPath} {number} />
       {:else}
         <div class="pull-detail">
-          <div class="pull-detail-content">
+          <div
+            class="pull-detail-content"
+            class:pull-detail-content--has-compact-actions={pr.State !== "merged" && !stalePR}
+          >
             {#snippet labelActionButton()}
               <div class="label-editor-anchor">
                 <ActionButton
@@ -1253,7 +1263,7 @@
           {#if labelPickerLaunchedFromActionMenu}
             <div class="label-editor-backdrop" aria-hidden="true"></div>
           {/if}
-          <div class="label-editor-popover" style={labelPickerStyle}>
+          <div class="label-editor-popover" style={labelPickerStyle} bind:this={labelPickerPopover}>
             <LabelPicker
               catalogLabels={labelCatalog}
               selectedLabels={labels}
@@ -2213,7 +2223,7 @@
       display: block;
     }
 
-    .pull-detail-content .actions-row.actions-row--workspace {
+    .pull-detail-content--has-compact-actions .actions-row.actions-row--workspace {
       display: none;
     }
   }
@@ -2239,8 +2249,8 @@
       display: block;
     }
 
-    .pull-detail-content .label-editor-anchor--inline,
-    .pull-detail-content .actions-row.actions-row--workspace {
+    .pull-detail-content--has-compact-actions .label-editor-anchor--inline,
+    .pull-detail-content--has-compact-actions .actions-row.actions-row--workspace {
       display: none;
     }
   }
@@ -2565,6 +2575,15 @@
       border-radius: 3px;
       font-size: var(--font-size-mobile-sm);
       line-height: 1.35;
+    }
+
+    @media (max-width: 480px) {
+      .pull-detail-content .meta-row :global(.copy-number-btn) {
+        min-width: max(44px, var(--detail-mobile-hit-target));
+        min-height: max(44px, var(--detail-mobile-hit-target));
+        padding: var(--detail-mobile-space-xs);
+        border-radius: var(--radius-sm);
+      }
     }
 
     .meta-row,
