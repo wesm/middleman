@@ -42,6 +42,7 @@ test.describe("focus mode", () => {
 
     await page.locator(".actions-menu-popover").getByRole("button", { name: "Labels" }).click();
     await expect(page.locator(".label-picker")).toBeVisible();
+    await expect(page.locator(".actions-menu-popover")).toBeHidden();
 
     const pickerRect = await page.locator(".label-picker").boundingBox();
     const viewport = page.viewportSize();

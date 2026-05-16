@@ -574,6 +574,7 @@
   let labelPickerError = $state<string | null>(null);
   let pendingLabel = $state<string | null>(null);
   let labelPickerAnchor = $state<HTMLDivElement>();
+  let labelPickerLaunchedFromActionMenu = $state(false);
   let labelPickerStyle = $state("");
 
   const workspace = $derived(detailStore.getDetail()?.workspace);
@@ -590,11 +591,11 @@
     labelPickerOpen = false;
     labelPickerError = null;
     pendingLabel = null;
+    labelPickerLaunchedFromActionMenu = false;
   }
 
   function positionLabelPicker(): void {
-    if (!labelPickerAnchor) return;
-    if (labelPickerAnchor.closest(".actions-menu-popover")) {
+    if (labelPickerLaunchedFromActionMenu) {
       labelPickerStyle = [
         "left: 50%",
         "top: 50%",
@@ -605,6 +606,7 @@
       return;
     }
 
+    if (!labelPickerAnchor) return;
     labelPickerStyle = floatingPopoverStyle({
       trigger: labelPickerAnchor.getBoundingClientRect(),
       viewportWidth: window.innerWidth,
@@ -634,6 +636,10 @@
   async function openLabelPicker(event?: MouseEvent): Promise<void> {
     labelPickerAnchor = (event?.currentTarget as HTMLElement | null)?.closest<HTMLDivElement>(".label-editor-anchor")
       ?? visibleLabelPickerAnchor();
+    labelPickerLaunchedFromActionMenu = Boolean(labelPickerAnchor?.closest(".actions-menu-popover"));
+    if (labelPickerLaunchedFromActionMenu) {
+      closeActionMenu();
+    }
     labelPickerOpen = true;
     labelPickerError = null;
     labelCatalogSyncing = true;
@@ -1790,7 +1796,7 @@
 
   .label-editor-popover {
     position: fixed;
-    z-index: 20;
+    z-index: 60;
   }
 
   .detail-header {
