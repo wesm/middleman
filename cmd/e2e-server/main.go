@@ -808,14 +808,7 @@ func run(
 				return
 			}
 
-			var headSHA string
-			for _, pr := range fc.PRs["acme/widgets"] {
-				if pr.GetNumber() != 1 || pr.GetHead() == nil {
-					continue
-				}
-				headSHA = pr.GetHead().GetSHA()
-				break
-			}
+			headSHA := fc.PullRequestHeadSHA("acme", "widgets", 1)
 			if headSHA == "" {
 				http.Error(w, "PR head SHA not found", http.StatusNotFound)
 				return
@@ -872,23 +865,33 @@ func run(
 				return
 			}
 
-			for _, pr := range fc.PRs["acme/widgets"] {
-				if pr.GetNumber() != 1 || pr.GetHead() == nil {
-					continue
-				}
-				key := fmt.Sprintf("acme/widgets@%s", pr.GetHead().GetSHA())
-				for _, run := range fc.CheckRuns[key] {
-					status := "completed"
-					conclusion := "success"
-					run.Status = &status
-					run.Conclusion = &conclusion
-				}
-				break
+			if !fc.SetPullRequestCheckRunStatus(
+				"acme", "widgets", 1, "in_progress", "",
+			) {
+				http.Error(w, "update fixture check runs", http.StatusNotFound)
+				return
 			}
 
 			w.Header().Set("Content-Type", "application/json")
 			if err := json.NewEncoder(w).Encode(map[string]string{
 				"status": "pending",
+			}); err != nil {
+				slog.Warn("write e2e response", "err", err)
+			}
+			return
+		}
+		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/pr-ci-state/success" {
+			if !fc.SetPullRequestCheckRunStatus(
+				"acme", "widgets", 1, "completed", "success",
+			) {
+				http.Error(w, "update fixture check runs", http.StatusNotFound)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(map[string]string{
+				"status": "success",
 			}); err != nil {
 				slog.Warn("write e2e response", "err", err)
 			}
@@ -1063,40 +1066,5 @@ func patchFixturePRSHAs(fc *testutil.FixtureClient, owner, repo string, number i
 	if fc == nil {
 		return
 	}
-
-	repoKey := fmt.Sprintf("%s/%s", owner, repo)
-	oldHeadSHA := ""
-	patch := func(prs []*gh.PullRequest) {
-		for _, pr := range prs {
-			if pr.GetNumber() != number {
-				continue
-			}
-			if pr.Head == nil {
-				pr.Head = &gh.PullRequestBranch{}
-			}
-			if pr.Base == nil {
-				pr.Base = &gh.PullRequestBranch{}
-			}
-			if oldHeadSHA == "" {
-				oldHeadSHA = pr.Head.GetSHA()
-			}
-			pr.Head.SHA = &headSHA
-			pr.Base.SHA = &baseSHA
-		}
-	}
-
-	patch(fc.OpenPRs[repoKey])
-	patch(fc.PRs[repoKey])
-
-	if oldHeadSHA == "" || oldHeadSHA == headSHA {
-		return
-	}
-	oldRefKey := fmt.Sprintf("%s/%s@%s", owner, repo, oldHeadSHA)
-	newRefKey := fmt.Sprintf("%s/%s@%s", owner, repo, headSHA)
-	if combined, ok := fc.CombinedStatuses[oldRefKey]; ok {
-		fc.CombinedStatuses[newRefKey] = combined
-	}
-	if runs, ok := fc.CheckRuns[oldRefKey]; ok {
-		fc.CheckRuns[newRefKey] = runs
-	}
+	fc.UpdatePullRequestSHAs(owner, repo, number, headSHA, baseSHA)
 }

@@ -554,7 +554,6 @@ export function createDetailStore(
     identity: DetailRequestOptions,
   ): Promise<void> {
     if (!isDetailShowing(owner, name, number)) return;
-    if (syncing) return;
     const ref = detailRequestRef(owner, name, number, identity);
     await syncDetail(owner, name, number, syncGeneration, ref);
   }

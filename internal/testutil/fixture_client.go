@@ -42,7 +42,7 @@ type FixtureClient struct {
 	Labels                    map[string][]*gh.Label
 	WorkflowRuns              map[string][]*gh.WorkflowRun
 	ListRepositoriesByOwnerFn func(context.Context, string) ([]*gh.Repository, error)
-	mu                        sync.Mutex
+	mu                        sync.RWMutex
 	nextID                    int64
 }
 
@@ -82,14 +82,20 @@ func refKey(owner, repo, ref string) string {
 func (c *FixtureClient) ListOpenPullRequests(
 	_ context.Context, owner, repo string,
 ) ([]*gh.PullRequest, error) {
-	return c.OpenPRs[repoKey(owner, repo)], nil
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return slices.Clone(c.OpenPRs[repoKey(owner, repo)]), nil
 }
 
 // ListOpenIssues returns the seeded open issues for the given repo.
 func (c *FixtureClient) ListOpenIssues(
 	_ context.Context, owner, repo string,
 ) ([]*gh.Issue, error) {
-	return c.OpenIssues[repoKey(owner, repo)], nil
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return slices.Clone(c.OpenIssues[repoKey(owner, repo)]), nil
 }
 
 // GetUser returns a stub user with the given login.
@@ -103,6 +109,9 @@ func (c *FixtureClient) ListRepositoriesByOwner(
 	if c.ListRepositoriesByOwnerFn != nil {
 		return c.ListRepositoriesByOwnerFn(ctx, owner)
 	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	repos := c.ReposByOwner[owner]
 	if len(repos) == 0 {
 		return nil, nil
@@ -113,6 +122,9 @@ func (c *FixtureClient) ListRepositoriesByOwner(
 func (c *FixtureClient) ListReleases(
 	_ context.Context, owner, repo string, perPage int,
 ) ([]*gh.RepositoryRelease, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	releases := c.Releases[repoKey(owner, repo)]
 	if len(releases) == 0 {
 		return nil, nil
@@ -126,6 +138,9 @@ func (c *FixtureClient) ListReleases(
 func (c *FixtureClient) ListTags(
 	_ context.Context, owner, repo string, perPage int,
 ) ([]*gh.RepositoryTag, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	tags := c.Tags[repoKey(owner, repo)]
 	if len(tags) == 0 {
 		return nil, nil
@@ -159,6 +174,9 @@ func (c *FixtureClient) GetRepository(
 func (c *FixtureClient) GetPullRequest(
 	_ context.Context, owner, repo string, number int,
 ) (*gh.PullRequest, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	for _, pr := range c.PRs[repoKey(owner, repo)] {
 		if pr.GetNumber() == number {
 			return pr, nil
@@ -199,6 +217,9 @@ func (c *FixtureClient) updatePullRequestDraft(owner, repo string, number int, d
 func (c *FixtureClient) GetIssue(
 	_ context.Context, owner, repo string, number int,
 ) (*gh.Issue, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	for _, iss := range c.Issues[repoKey(owner, repo)] {
 		if iss.GetNumber() == number {
 			return iss, nil
@@ -310,8 +331,8 @@ func (c *FixtureClient) CreateIssue(
 func (c *FixtureClient) ListIssueComments(
 	_ context.Context, owner, repo string, number int,
 ) ([]*gh.IssueComment, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	comments := c.Comments[issueKey(owner, repo, number)]
 	if len(comments) == 0 {
 		return nil, nil
@@ -322,7 +343,10 @@ func (c *FixtureClient) ListIssueComments(
 func (c *FixtureClient) ListIssueCommentsIfChanged(
 	ctx context.Context, owner, repo string, number int,
 ) ([]*gh.IssueComment, error) {
-	if len(c.Comments[issueKey(owner, repo, number)]) == 0 {
+	c.mu.RLock()
+	empty := len(c.Comments[issueKey(owner, repo, number)]) == 0
+	c.mu.RUnlock()
+	if empty {
 		return nil, &gh.ErrorResponse{
 			Response: &http.Response{StatusCode: http.StatusNotModified},
 		}
@@ -333,8 +357,8 @@ func (c *FixtureClient) ListIssueCommentsIfChanged(
 func (c *FixtureClient) ListReviews(
 	_ context.Context, owner, repo string, number int,
 ) ([]*gh.PullRequestReview, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	reviews := c.Reviews[issueKey(owner, repo, number)]
 	if len(reviews) == 0 {
 		return nil, nil
@@ -367,6 +391,9 @@ func (c *FixtureClient) ListPullRequestTimelineEvents(
 func (c *FixtureClient) GetCombinedStatus(
 	_ context.Context, owner, repo, ref string,
 ) (*gh.CombinedStatus, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	return c.CombinedStatuses[refKey(owner, repo, ref)], nil
 }
 
@@ -374,19 +401,133 @@ func (c *FixtureClient) GetCombinedStatus(
 func (c *FixtureClient) ListCheckRunsForRef(
 	_ context.Context, owner, repo, ref string,
 ) ([]*gh.CheckRun, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	runs := c.CheckRuns[refKey(owner, repo, ref)]
 	if len(runs) == 0 {
 		return nil, nil
 	}
-	return slices.Clone(runs), nil
+	return cloneCheckRuns(runs), nil
+}
+
+// SetPullRequestCheckRunStatus updates all seeded check runs for a PR head.
+func (c *FixtureClient) SetPullRequestCheckRunStatus(
+	owner, repo string,
+	number int,
+	status, conclusion string,
+) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	headSHA := c.pullRequestHeadSHA(owner, repo, number)
+	if headSHA == "" {
+		return false
+	}
+	key := refKey(owner, repo, headSHA)
+	runs := c.CheckRuns[key]
+	if len(runs) == 0 {
+		return false
+	}
+	updated := make([]*gh.CheckRun, 0, len(runs))
+	for _, run := range runs {
+		if run == nil {
+			updated = append(updated, nil)
+			continue
+		}
+		copyRun := *run
+		copyRun.Status = &status
+		copyRun.Conclusion = &conclusion
+		updated = append(updated, &copyRun)
+	}
+	c.CheckRuns[key] = updated
+	return true
+}
+
+// PullRequestHeadSHA returns the seeded PR head SHA.
+func (c *FixtureClient) PullRequestHeadSHA(owner, repo string, number int) string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return c.pullRequestHeadSHA(owner, repo, number)
+}
+
+func (c *FixtureClient) pullRequestHeadSHA(owner, repo string, number int) string {
+	for _, prs := range []map[string][]*gh.PullRequest{c.PRs, c.OpenPRs} {
+		for _, pr := range prs[repoKey(owner, repo)] {
+			if pr.GetNumber() == number && pr.GetHead() != nil {
+				return pr.GetHead().GetSHA()
+			}
+		}
+	}
+	return ""
+}
+
+// UpdatePullRequestSHAs updates seeded PR head/base SHAs and moves ref-based fixtures.
+func (c *FixtureClient) UpdatePullRequestSHAs(
+	owner, repo string,
+	number int,
+	headSHA, baseSHA string,
+) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	repoKey := repoKey(owner, repo)
+	oldHeadSHA := ""
+	patch := func(prs []*gh.PullRequest) {
+		for _, pr := range prs {
+			if pr.GetNumber() != number {
+				continue
+			}
+			if pr.Head == nil {
+				pr.Head = &gh.PullRequestBranch{}
+			}
+			if pr.Base == nil {
+				pr.Base = &gh.PullRequestBranch{}
+			}
+			if oldHeadSHA == "" {
+				oldHeadSHA = pr.Head.GetSHA()
+			}
+			pr.Head.SHA = &headSHA
+			pr.Base.SHA = &baseSHA
+		}
+	}
+
+	patch(c.OpenPRs[repoKey])
+	patch(c.PRs[repoKey])
+
+	if oldHeadSHA == "" || oldHeadSHA == headSHA {
+		return
+	}
+	oldRefKey := refKey(owner, repo, oldHeadSHA)
+	newRefKey := refKey(owner, repo, headSHA)
+	if combined, ok := c.CombinedStatuses[oldRefKey]; ok {
+		c.CombinedStatuses[newRefKey] = combined
+	}
+	if runs, ok := c.CheckRuns[oldRefKey]; ok {
+		c.CheckRuns[newRefKey] = cloneCheckRuns(runs)
+	}
+}
+
+func cloneCheckRuns(runs []*gh.CheckRun) []*gh.CheckRun {
+	cloned := make([]*gh.CheckRun, 0, len(runs))
+	for _, run := range runs {
+		if run == nil {
+			cloned = append(cloned, nil)
+			continue
+		}
+		copyRun := *run
+		cloned = append(cloned, &copyRun)
+	}
+	return cloned
 }
 
 // ListWorkflowRunsForHeadSHA returns seeded action-required workflow runs.
 func (c *FixtureClient) ListWorkflowRunsForHeadSHA(
 	_ context.Context, owner, repo, headSHA string,
 ) ([]*gh.WorkflowRun, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 
 	runs := c.WorkflowRuns[refKey(owner, repo, headSHA)]
 	if len(runs) == 0 {
@@ -490,6 +631,9 @@ func (c *FixtureClient) MarkPullRequestReadyForReview(
 func (c *FixtureClient) MergePullRequest(
 	_ context.Context, owner, repo string, number int, _, _, _ string,
 ) (*gh.PullRequestMergeResult, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	pr := c.findPullRequest(owner, repo, number)
 	if pr == nil {
 		return nil, nil
@@ -513,6 +657,9 @@ func (c *FixtureClient) MergePullRequest(
 func (c *FixtureClient) EditPullRequest(
 	_ context.Context, owner, repo string, number int, opts ghclient.EditPullRequestOpts,
 ) (*gh.PullRequest, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	now := gh.Timestamp{Time: time.Now().UTC()}
 	var updated *gh.PullRequest
 	for _, prs := range []map[string][]*gh.PullRequest{c.OpenPRs, c.PRs} {
@@ -553,6 +700,9 @@ func (c *FixtureClient) EditPullRequest(
 func (c *FixtureClient) EditIssue(
 	_ context.Context, owner, repo string, number int, state string,
 ) (*gh.Issue, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	now := gh.Timestamp{Time: time.Now().UTC()}
 	var updated *gh.Issue
 	for _, issues := range []map[string][]*gh.Issue{c.OpenIssues, c.Issues} {
@@ -581,6 +731,9 @@ func (c *FixtureClient) EditIssue(
 func (c *FixtureClient) EditIssueContent(
 	_ context.Context, owner, repo string, number int, title *string, body *string,
 ) (*gh.Issue, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	now := gh.Timestamp{Time: time.Now().UTC()}
 	var updated *gh.Issue
 	for _, issues := range []map[string][]*gh.Issue{c.OpenIssues, c.Issues} {

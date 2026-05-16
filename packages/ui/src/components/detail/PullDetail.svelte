@@ -216,6 +216,7 @@
         repoPath,
       });
     };
+    refresh();
     const interval = setInterval(refresh, 15_000);
     return () => clearInterval(interval);
   });

@@ -18,24 +18,34 @@ test.describe("CI dropdown", () => {
       expect(seedResponse.ok()).toBe(true);
       await expect(seedResponse.json()).resolves.toEqual({ status: "pending" });
 
-      const syncRequests: string[] = [];
-      page.on("request", (request) => {
-        if (
-          request.method() === "POST" &&
-          request.url().includes("/api/v1/pulls/github/acme/widgets/1/sync")
-        ) {
-          syncRequests.push(request.url());
-        }
+      const backgroundSync = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return response.request().method() === "POST" &&
+          url.pathname === "/api/v1/pulls/github/acme/widgets/1/sync/async";
       });
 
       await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
 
-      await page
+      const pendingChip = page
         .locator(".pull-detail")
-        .getByRole("button", { name: /CI:\s*pending \(1\)/i })
-        .click();
+        .getByRole("button", { name: /CI:\s*pending \(1\)/i });
+      await expect(pendingChip).toBeVisible();
+      await backgroundSync;
 
-      await expect.poll(() => syncRequests.length).toBeGreaterThan(0);
+      const successResponse = await page.request.post(
+        `${server.info.base_url}/__e2e/pr-ci-state/success`,
+      );
+      expect(successResponse.ok()).toBe(true);
+      await expect(successResponse.json()).resolves.toEqual({ status: "success" });
+
+      const syncRequest = page.waitForRequest((request) => {
+        const url = new URL(request.url());
+        return request.method() === "POST" &&
+          url.pathname === "/api/v1/pulls/github/acme/widgets/1/sync";
+      });
+      await pendingChip.click();
+
+      await syncRequest;
       await expect(
         page
           .locator(".pull-detail")
