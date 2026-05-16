@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -446,7 +447,14 @@ func TestWorkspaceResponseTracksTmuxOutputActivity(t *testing.T) {
 		t, script,
 	)
 	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
-	srv.tmuxActivity = newTmuxActivityTracker(func() time.Time { return now })
+	var clockNow atomic.Int64
+	clockNow.Store(now.UnixNano())
+	setClock := func(t time.Time) {
+		clockNow.Store(t.UTC().UnixNano())
+	}
+	srv.tmuxActivity = newTmuxActivityTracker(func() time.Time {
+		return time.Unix(0, clockNow.Load()).UTC()
+	})
 	ctx := context.Background()
 
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
@@ -477,14 +485,33 @@ func TestWorkspaceResponseTracksTmuxOutputActivity(t *testing.T) {
 		[]byte("initial\nnew output\n"),
 		0o644,
 	))
-	now = now.Add(tmuxSampleMinInterval + time.Second)
-	second := getRawWorkspaceActivity(t, client, ctx, wsID)
+	probeAt := now.Add(tmuxSampleMinInterval + time.Second)
+	setClock(probeAt)
+	var second struct {
+		TmuxPaneTitle      *string `json:"tmux_pane_title"`
+		TmuxWorking        bool    `json:"tmux_working"`
+		TmuxActivitySource string  `json:"tmux_activity_source"`
+		TmuxLastOutputAt   *string `json:"tmux_last_output_at"`
+	}
+	require.Eventually(func() bool {
+		second = getRawWorkspaceActivity(t, client, ctx, wsID)
+		if second.TmuxWorking &&
+			second.TmuxActivitySource == tmuxActivitySourceOutput &&
+			second.TmuxLastOutputAt != nil {
+			return true
+		}
+		probeAt = probeAt.Add(tmuxSampleMinInterval + time.Second)
+		setClock(probeAt)
+		return false
+	}, time.Second, 10*time.Millisecond)
 	assert.True(second.TmuxWorking)
 	assert.Equal(tmuxActivitySourceOutput, second.TmuxActivitySource)
 	require.NotNil(second.TmuxLastOutputAt)
-	assert.Equal(now.Format(time.RFC3339), *second.TmuxLastOutputAt)
+	assert.Equal(probeAt.Format(time.RFC3339), *second.TmuxLastOutputAt)
 
-	now = now.Add(tmuxActivityTTL + time.Second)
+	lastOutputAt, err := time.Parse(time.RFC3339, *second.TmuxLastOutputAt)
+	require.NoError(err)
+	setClock(lastOutputAt.Add(tmuxActivityTTL + time.Second))
 	expired := getRawWorkspaceActivity(t, client, ctx, wsID)
 	assert.False(expired.TmuxWorking)
 	assert.Equal(tmuxActivitySourceNone, expired.TmuxActivitySource)

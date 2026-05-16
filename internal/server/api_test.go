@@ -45,6 +45,8 @@ import (
 	"github.com/wesm/middleman/internal/gitenv"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/platform"
+	forgejoplatform "github.com/wesm/middleman/internal/platform/forgejo"
+	giteaplatform "github.com/wesm/middleman/internal/platform/gitea"
 	"github.com/wesm/middleman/internal/platform/gitealike"
 	"github.com/wesm/middleman/internal/ptyowner"
 	"github.com/wesm/middleman/internal/stacks"
@@ -8504,6 +8506,146 @@ func TestAPIGitealikeReadSyncPersistsThroughServer(t *testing.T) {
 	require.NotNil(issueResp.JSON200.Events)
 	require.Len(*issueResp.JSON200.Events, 1)
 	assert.Equal("confirmed", (*issueResp.JSON200.Events)[0].Body)
+}
+
+func TestAPIGitealikeHTTPMergeabilityPersistsThroughServer(t *testing.T) {
+	tests := []struct {
+		name      string
+		kind      platform.Kind
+		host      string
+		token     string
+		newClient func(host, token, baseURL string) (platform.Provider, error)
+	}{
+		{
+			name:  "gitea",
+			kind:  platform.KindGitea,
+			host:  "gitea.test",
+			token: "gitea-token",
+			newClient: func(host, token, baseURL string) (platform.Provider, error) {
+				return giteaplatform.NewClient(
+					host, token, giteaplatform.WithBaseURLForTesting(baseURL),
+				)
+			},
+		},
+		{
+			name:  "forgejo",
+			kind:  platform.KindForgejo,
+			host:  "codeberg.test",
+			token: "forgejo-token",
+			newClient: func(host, token, baseURL string) (platform.Provider, error) {
+				return forgejoplatform.NewClient(
+					host, token, forgejoplatform.WithBaseURLForTesting(baseURL),
+				)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := Assert.New(t)
+			require := require.New(t)
+			ctx := t.Context()
+			base := time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC)
+			pull := func(number int, title, headSHA string) map[string]any {
+				return map[string]any{
+					"id":         number + 1000,
+					"number":     number,
+					"url":        "https://" + tt.host + "/tea/kettle/pulls/" + strconv.Itoa(number),
+					"html_url":   "https://" + tt.host + "/tea/kettle/pulls/" + strconv.Itoa(number),
+					"title":      title,
+					"state":      "open",
+					"user":       map[string]any{"login": "alice"},
+					"head":       map[string]any{"ref": "feature", "sha": headSHA},
+					"base":       map[string]any{"ref": "main", "sha": "base-sha"},
+					"created_at": base,
+					"updated_at": base.Add(time.Minute),
+				}
+			}
+			dirtyPull := pull(7, "Conflicted kettle", "head-dirty")
+			dirtyPull["mergeable"] = false
+			nullPull := pull(8, "Unknown kettle", "head-null")
+			nullPull["mergeable"] = nil
+			omittedPull := pull(9, "Omitted kettle", "head-omitted")
+
+			providerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal("token "+tt.token, r.Header.Get("Authorization"))
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/api/v1/repos/tea/kettle":
+					assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+						"id":             101,
+						"name":           "kettle",
+						"full_name":      "tea/kettle",
+						"html_url":       "https://" + tt.host + "/tea/kettle",
+						"clone_url":      "https://" + tt.host + "/tea/kettle.git",
+						"default_branch": "main",
+						"owner":          map[string]any{"login": "tea"},
+						"created_at":     base,
+						"updated_at":     base,
+					}))
+				case "/api/v1/repos/tea/kettle/pulls":
+					assert.Equal("open", r.URL.Query().Get("state"))
+					assert.NoError(json.NewEncoder(w).Encode([]map[string]any{
+						dirtyPull, nullPull, omittedPull,
+					}))
+				case "/api/v1/repos/tea/kettle/issues",
+					"/api/v1/repos/tea/kettle/releases",
+					"/api/v1/repos/tea/kettle/tags":
+					assert.NoError(json.NewEncoder(w).Encode([]map[string]any{}))
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer providerServer.Close()
+
+			provider, err := tt.newClient(tt.host, tt.token, providerServer.URL)
+			require.NoError(err)
+			registry, err := platform.NewRegistry(provider)
+			require.NoError(err)
+
+			database := dbtest.Open(t)
+			syncer := ghclient.NewSyncerWithRegistry(
+				registry,
+				database,
+				nil,
+				[]ghclient.RepoRef{{
+					Platform:     tt.kind,
+					PlatformHost: tt.host,
+					Owner:        "tea",
+					Name:         "kettle",
+					RepoPath:     "tea/kettle",
+				}},
+				time.Minute,
+				nil,
+				nil,
+			)
+			t.Cleanup(syncer.Stop)
+			srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+			t.Cleanup(func() { gracefulShutdown(t, srv) })
+			client := setupTestClient(t, srv)
+
+			syncer.RunOnce(ctx)
+			repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+				Platform:     string(tt.kind),
+				PlatformHost: tt.host,
+				RepoPath:     "tea/kettle",
+			})
+			require.NoError(err)
+			require.NotNil(repo)
+
+			assert.Equal("dirty", requireMR(t, database, repo.ID, 7).MergeableState)
+			assert.Empty(requireMR(t, database, repo.ID, 8).MergeableState)
+			assert.Empty(requireMR(t, database, repo.ID, 9).MergeableState)
+
+			detailResp, err := client.HTTP.GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberWithResponse(
+				ctx, tt.host, string(tt.kind), "tea", "kettle", 7,
+			)
+			require.NoError(err)
+			require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
+			require.NotNil(detailResp.JSON200)
+			assert.Equal("dirty", detailResp.JSON200.MergeRequest.MergeableState)
+		})
+	}
 }
 
 func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
