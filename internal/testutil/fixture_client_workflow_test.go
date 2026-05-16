@@ -10,6 +10,47 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestFixtureClientPullRequestsAreReturnedAsCopies(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	client := NewFixtureClient()
+	fc, ok := client.(*FixtureClient)
+	require.True(ok)
+
+	originalHead := "old-head"
+	originalBase := "old-base"
+	fc.OpenPRs["acme/widgets"] = []*gh.PullRequest{{
+		Number: new(1),
+		Head:   &gh.PullRequestBranch{SHA: &originalHead},
+		Base:   &gh.PullRequestBranch{SHA: &originalBase},
+	}}
+	fc.PRs["acme/widgets"] = []*gh.PullRequest{{
+		Number: new(1),
+		Head:   &gh.PullRequestBranch{SHA: &originalHead},
+		Base:   &gh.PullRequestBranch{SHA: &originalBase},
+	}}
+
+	listed, err := fc.ListOpenPullRequests(t.Context(), "acme", "widgets")
+	require.NoError(err)
+	require.Len(listed, 1)
+	got, err := fc.GetPullRequest(t.Context(), "acme", "widgets", 1)
+	require.NoError(err)
+	require.NotNil(got)
+
+	mutatedHead := "caller-mutated"
+	listed[0].Head.SHA = &mutatedHead
+	got.Base.SHA = &mutatedHead
+	fc.UpdatePullRequestSHAs("acme", "widgets", 1, "new-head", "new-base")
+
+	assert.Equal("caller-mutated", listed[0].GetHead().GetSHA())
+	assert.Equal("caller-mutated", got.GetBase().GetSHA())
+	fresh, err := fc.GetPullRequest(t.Context(), "acme", "widgets", 1)
+	require.NoError(err)
+	require.NotNil(fresh)
+	assert.Equal("new-head", fresh.GetHead().GetSHA())
+	assert.Equal("new-base", fresh.GetBase().GetSHA())
+}
+
 func TestFixtureClientCheckRunsConcurrentStatusUpdates(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

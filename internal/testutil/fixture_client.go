@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -85,7 +86,7 @@ func (c *FixtureClient) ListOpenPullRequests(
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	return slices.Clone(c.OpenPRs[repoKey(owner, repo)]), nil
+	return clonePullRequests(c.OpenPRs[repoKey(owner, repo)]), nil
 }
 
 // ListOpenIssues returns the seeded open issues for the given repo.
@@ -179,7 +180,7 @@ func (c *FixtureClient) GetPullRequest(
 
 	for _, pr := range c.PRs[repoKey(owner, repo)] {
 		if pr.GetNumber() == number {
-			return pr, nil
+			return clonePullRequest(pr), nil
 		}
 	}
 	return nil, nil
@@ -474,27 +475,35 @@ func (c *FixtureClient) UpdatePullRequestSHAs(
 
 	repoKey := repoKey(owner, repo)
 	oldHeadSHA := ""
-	patch := func(prs []*gh.PullRequest) {
-		for _, pr := range prs {
+	patch := func(prs []*gh.PullRequest) []*gh.PullRequest {
+		patched := slices.Clone(prs)
+		for i, pr := range patched {
 			if pr.GetNumber() != number {
 				continue
 			}
-			if pr.Head == nil {
-				pr.Head = &gh.PullRequestBranch{}
+			copyPR := clonePullRequest(pr)
+			if copyPR.Head == nil {
+				copyPR.Head = &gh.PullRequestBranch{}
 			}
-			if pr.Base == nil {
-				pr.Base = &gh.PullRequestBranch{}
+			if copyPR.Base == nil {
+				copyPR.Base = &gh.PullRequestBranch{}
 			}
 			if oldHeadSHA == "" {
-				oldHeadSHA = pr.Head.GetSHA()
+				oldHeadSHA = copyPR.Head.GetSHA()
 			}
-			pr.Head.SHA = &headSHA
-			pr.Base.SHA = &baseSHA
+			copyPR.Head.SHA = &headSHA
+			copyPR.Base.SHA = &baseSHA
+			patched[i] = copyPR
 		}
+		return patched
 	}
 
-	patch(c.OpenPRs[repoKey])
-	patch(c.PRs[repoKey])
+	if c.OpenPRs != nil {
+		c.OpenPRs[repoKey] = patch(c.OpenPRs[repoKey])
+	}
+	if c.PRs != nil {
+		c.PRs[repoKey] = patch(c.PRs[repoKey])
+	}
 
 	if oldHeadSHA == "" || oldHeadSHA == headSHA {
 		return
@@ -509,17 +518,47 @@ func (c *FixtureClient) UpdatePullRequestSHAs(
 	}
 }
 
+func clonePullRequests(prs []*gh.PullRequest) []*gh.PullRequest {
+	cloned := make([]*gh.PullRequest, 0, len(prs))
+	for _, pr := range prs {
+		cloned = append(cloned, clonePullRequest(pr))
+	}
+	return cloned
+}
+
+func clonePullRequest(pr *gh.PullRequest) *gh.PullRequest {
+	return cloneFixtureValue(pr)
+}
+
 func cloneCheckRuns(runs []*gh.CheckRun) []*gh.CheckRun {
 	cloned := make([]*gh.CheckRun, 0, len(runs))
 	for _, run := range runs {
-		if run == nil {
-			cloned = append(cloned, nil)
-			continue
-		}
-		copyRun := *run
-		cloned = append(cloned, &copyRun)
+		cloned = append(cloned, cloneFixtureValue(run))
 	}
 	return cloned
+}
+
+func cloneWorkflowRuns(runs []*gh.WorkflowRun) []*gh.WorkflowRun {
+	cloned := make([]*gh.WorkflowRun, 0, len(runs))
+	for _, run := range runs {
+		cloned = append(cloned, cloneFixtureValue(run))
+	}
+	return cloned
+}
+
+func cloneFixtureValue[T any](value *T) *T {
+	if value == nil {
+		return nil
+	}
+	content, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var cloned T
+	if err := json.Unmarshal(content, &cloned); err != nil {
+		return nil
+	}
+	return &cloned
 }
 
 // ListWorkflowRunsForHeadSHA returns seeded action-required workflow runs.
@@ -533,7 +572,7 @@ func (c *FixtureClient) ListWorkflowRunsForHeadSHA(
 	if len(runs) == 0 {
 		return nil, nil
 	}
-	return slices.Clone(runs), nil
+	return cloneWorkflowRuns(runs), nil
 }
 
 // SetWorkflowRuns seeds action-required workflow runs for a repo/head SHA.
@@ -544,7 +583,7 @@ func (c *FixtureClient) SetWorkflowRuns(owner, repo, headSHA string, runs []*gh.
 	if c.WorkflowRuns == nil {
 		c.WorkflowRuns = make(map[string][]*gh.WorkflowRun)
 	}
-	c.WorkflowRuns[refKey(owner, repo, headSHA)] = slices.Clone(runs)
+	c.WorkflowRuns[refKey(owner, repo, headSHA)] = cloneWorkflowRuns(runs)
 }
 
 // ApproveWorkflowRun returns an error (mutations not supported).
@@ -624,7 +663,7 @@ func (c *FixtureClient) MarkPullRequestReadyForReview(
 			),
 		}
 	}
-	return pr, nil
+	return clonePullRequest(pr), nil
 }
 
 // MergePullRequest returns an error (mutations not supported).
@@ -690,7 +729,7 @@ func (c *FixtureClient) EditPullRequest(
 			}
 		}
 	}
-	return updated, nil
+	return clonePullRequest(updated), nil
 }
 
 // EditIssue updates the seeded issue state for E2E mutations.
