@@ -721,11 +721,15 @@
   async function openLabelPicker(event?: MouseEvent): Promise<void> {
     labelPickerAnchor = (event?.currentTarget as HTMLElement | null)?.closest<HTMLDivElement>(".label-editor-anchor")
       ?? visibleLabelPickerAnchor();
+    const launchedFromActionMenu = Boolean(labelPickerAnchor?.closest(".actions-menu-popover"));
     if (event !== undefined && labelPickerOpen) {
+      if (launchedFromActionMenu) {
+        closeActionMenu();
+      }
       closeLabelPicker();
       return;
     }
-    labelPickerLaunchedFromActionMenu = Boolean(labelPickerAnchor?.closest(".actions-menu-popover"));
+    labelPickerLaunchedFromActionMenu = launchedFromActionMenu;
     labelPickerAutofocusFilter = event !== undefined && !(window.matchMedia?.("(pointer: coarse)").matches ?? false);
     if (labelPickerLaunchedFromActionMenu) {
       closeActionMenu();
