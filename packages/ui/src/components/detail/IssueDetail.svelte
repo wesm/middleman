@@ -25,7 +25,7 @@
     type OpenLabelPickerDetail,
   } from "./labelPickerCommand.js";
   import { nextCatalogLabelNames } from "./labelSelection.js";
-  import { labelPickerPopoverStyle } from "./labelPickerPosition.js";
+  import { floatingPopoverStyle } from "../shared/floatingPosition.js";
   import CopyItemNumber from "./CopyItemNumber.svelte";
   import MonitorUpIcon from "@lucide/svelte/icons/monitor-up";
   import PackagePlusIcon from "@lucide/svelte/icons/package-plus";
@@ -205,10 +205,14 @@
 
   function positionLabelPicker(): void {
     if (!labelPickerAnchor) return;
-    labelPickerStyle = labelPickerPopoverStyle(
-      labelPickerAnchor.getBoundingClientRect(),
-      window.innerWidth,
-    );
+    labelPickerStyle = floatingPopoverStyle({
+      trigger: labelPickerAnchor.getBoundingClientRect(),
+      viewportWidth: window.innerWidth,
+      align: "end",
+      edgeGap: 12,
+      maxWidth: 360,
+      constrainWidth: true,
+    });
   }
 
   function onOpenLabelPickerCommand(event: Event): void {
