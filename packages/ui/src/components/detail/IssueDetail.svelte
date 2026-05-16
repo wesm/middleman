@@ -32,6 +32,8 @@
   import TagsIcon from "@lucide/svelte/icons/tags";
   import XIcon from "@lucide/svelte/icons/x";
 
+  const CLEAR_LABELS_PENDING = "__clear-label-selection__";
+
   const { issues, activity } = getStores();
   const client = getClient();
   const actions = getActions();
@@ -246,6 +248,21 @@
     const nextNames = nextCatalogLabelNames(currentLabels, labelCatalog, labelName);
     try {
       await issues.setIssueLabels(owner, name, number, nextNames);
+    } catch (err) {
+      labelPickerError = err instanceof Error ? err.message : String(err);
+    } finally {
+      pendingLabel = null;
+    }
+  }
+
+  async function clearLabels(): Promise<void> {
+    if (pendingLabel !== null) return;
+    const currentLabels = issues.getIssueDetail()?.issue.labels ?? [];
+    if (currentLabels.length === 0) return;
+    pendingLabel = CLEAR_LABELS_PENDING;
+    labelPickerError = null;
+    try {
+      await issues.setIssueLabels(owner, name, number, []);
     } catch (err) {
       labelPickerError = err instanceof Error ? err.message : String(err);
     } finally {
@@ -809,6 +826,7 @@
                     {pendingLabel}
                     error={labelPickerError}
                     ontoggle={toggleLabel}
+                    onclear={clearLabels}
                     onclose={closeLabelPicker}
                   />
                 </div>

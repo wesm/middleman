@@ -57,11 +57,11 @@ test.describe("label editing", () => {
         response.request().method() === "PUT"
         && response.url() === `${baseURL}/api/v1/pulls/github/acme/widgets/1/labels`,
       );
-      await page.getByRole("menuitemcheckbox", { name: /bug/i }).click();
+      await page.getByRole("button", { name: "Clear selected labels" }).click();
       expect((await updateResponse).status()).toBe(200);
 
       await expect(page.locator(".pull-detail .label-editor-row")).toHaveCount(0);
-      await expect(page.locator(".pull-detail .chips-row").getByRole("button", { name: "Labels" })).toBeVisible();
+      await expect(page.locator(".pull-detail .chips-row").getByRole("button", { name: "Labels", exact: true })).toBeVisible();
       await expect(page.locator(".pull-detail .label-editor-empty")).toHaveCount(0);
     } finally {
       await isolatedServer?.stop();

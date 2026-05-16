@@ -66,6 +66,8 @@
     type PRTimelineFilterState,
   } from "./prTimelineFilter.js";
 
+  const CLEAR_LABELS_PENDING = "__clear-label-selection__";
+
   const { detail: detailStore, pulls, activity } = getStores();
   const client = getClient();
   const actions = getActions();
@@ -641,6 +643,19 @@
     }
   }
 
+  async function clearLabels(): Promise<void> {
+    if (pendingLabel !== null || labels.length === 0) return;
+    pendingLabel = CLEAR_LABELS_PENDING;
+    labelPickerError = null;
+    try {
+      await detailStore.setPullLabels(owner, name, number, []);
+    } catch (err) {
+      labelPickerError = err instanceof Error ? err.message : String(err);
+    } finally {
+      pendingLabel = null;
+    }
+  }
+
   function onActionMenuKeydown(e: KeyboardEvent): void {
     if (actionMenuOpen && e.key === "Escape") {
       actionMenuOpen = false;
@@ -1169,6 +1184,7 @@
                   {pendingLabel}
                   error={labelPickerError}
                   ontoggle={toggleLabel}
+                  onclear={clearLabels}
                   onclose={closeLabelPicker}
                 />
               </div>

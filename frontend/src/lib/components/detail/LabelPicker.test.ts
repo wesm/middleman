@@ -55,4 +55,24 @@ describe("LabelPicker", () => {
 
     expect(onToggle).toHaveBeenCalledWith("triage");
   });
+
+  it("emits clear from the header action", async () => {
+    const onClear = vi.fn();
+    render(LabelPicker, {
+      props: {
+        catalogLabels: [label("bug"), label("triage")],
+        selectedLabels: [label("bug")],
+        syncing: false,
+        pendingLabel: null,
+        error: null,
+        ontoggle: vi.fn(),
+        onclear: onClear,
+        onclose: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Clear selected labels" }));
+
+    expect(onClear).toHaveBeenCalledOnce();
+  });
 });
