@@ -1551,6 +1551,9 @@ type ClientInterface interface {
 	// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflows request
 	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflows(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefresh request
+	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefresh(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// PostPrCommentOnHostWithBody request with any body
 	PostPrCommentOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1713,6 +1716,9 @@ type ClientInterface interface {
 
 	// PostPullsByProviderByOwnerByNameByNumberApproveWorkflows request
 	PostPullsByProviderByOwnerByNameByNumberApproveWorkflows(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostPullsByProviderByOwnerByNameByNumberCiRefresh request
+	PostPullsByProviderByOwnerByNameByNumberCiRefresh(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostPrCommentWithBody request with any body
 	PostPrCommentWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2174,6 +2180,18 @@ func (c *Client) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberAppro
 
 func (c *Client) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflows(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsRequest(c.Server, platformHost, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefresh(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshRequest(c.Server, platformHost, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -2894,6 +2912,18 @@ func (c *Client) PostPullsByProviderByOwnerByNameByNumberApprove(ctx context.Con
 
 func (c *Client) PostPullsByProviderByOwnerByNameByNumberApproveWorkflows(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostPullsByProviderByOwnerByNameByNumberApproveWorkflowsRequest(c.Server, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostPullsByProviderByOwnerByNameByNumberCiRefresh(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostPullsByProviderByOwnerByNameByNumberCiRefreshRequest(c.Server, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -4744,6 +4774,68 @@ func NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflo
 	}
 
 	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/approve-workflows", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshRequest generates requests for PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefresh
+func NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/ci-refresh", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -7684,6 +7776,61 @@ func NewPostPullsByProviderByOwnerByNameByNumberApproveWorkflowsRequest(server s
 	return req, nil
 }
 
+// NewPostPullsByProviderByOwnerByNameByNumberCiRefreshRequest generates requests for PostPullsByProviderByOwnerByNameByNumberCiRefresh
+func NewPostPullsByProviderByOwnerByNameByNumberCiRefreshRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/ci-refresh", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewPostPrCommentRequest calls the generic PostPrComment builder with application/json body
 func NewPostPrCommentRequest(server string, provider string, owner string, name string, number int64, body PostPrCommentJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -10201,6 +10348,9 @@ type ClientWithResponsesInterface interface {
 	// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse request
 	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse, error)
 
+	// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshWithResponse request
+	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshResponse, error)
+
 	// PostPrCommentOnHostWithBodyWithResponse request with any body
 	PostPrCommentOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostPrCommentOnHostResponse, error)
 
@@ -10363,6 +10513,9 @@ type ClientWithResponsesInterface interface {
 
 	// PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse request
 	PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse, error)
+
+	// PostPullsByProviderByOwnerByNameByNumberCiRefreshWithResponse request
+	PostPullsByProviderByOwnerByNameByNumberCiRefreshWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberCiRefreshResponse, error)
 
 	// PostPrCommentWithBodyWithResponse request with any body
 	PostPrCommentWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostPrCommentResponse, error)
@@ -10872,6 +11025,29 @@ func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflo
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *MergeRequestDetailResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -11857,6 +12033,29 @@ func (r PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse) Status
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PostPullsByProviderByOwnerByNameByNumberCiRefreshResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *MergeRequestDetailResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PostPullsByProviderByOwnerByNameByNumberCiRefreshResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostPullsByProviderByOwnerByNameByNumberCiRefreshResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -13143,6 +13342,15 @@ func (c *ClientWithResponses) PostHostByPlatformHostPullsByProviderByOwnerByName
 	return ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse(rsp)
 }
 
+// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshWithResponse request returning *PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshResponse
+func (c *ClientWithResponses) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshResponse, error) {
+	rsp, err := c.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefresh(ctx, platformHost, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshResponse(rsp)
+}
+
 // PostPrCommentOnHostWithBodyWithResponse request with arbitrary body returning *PostPrCommentOnHostResponse
 func (c *ClientWithResponses) PostPrCommentOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostPrCommentOnHostResponse, error) {
 	rsp, err := c.PostPrCommentOnHostWithBody(ctx, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
@@ -13664,6 +13872,15 @@ func (c *ClientWithResponses) PostPullsByProviderByOwnerByNameByNumberApproveWor
 		return nil, err
 	}
 	return ParsePostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse(rsp)
+}
+
+// PostPullsByProviderByOwnerByNameByNumberCiRefreshWithResponse request returning *PostPullsByProviderByOwnerByNameByNumberCiRefreshResponse
+func (c *ClientWithResponses) PostPullsByProviderByOwnerByNameByNumberCiRefreshWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberCiRefreshResponse, error) {
+	rsp, err := c.PostPullsByProviderByOwnerByNameByNumberCiRefresh(ctx, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostPullsByProviderByOwnerByNameByNumberCiRefreshResponse(rsp)
 }
 
 // PostPrCommentWithBodyWithResponse request with arbitrary body returning *PostPrCommentResponse
@@ -14672,6 +14889,39 @@ func ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkf
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest ActionStatusBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshResponse parses an HTTP response from a PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshWithResponse call
+func ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshResponse(rsp *http.Response) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MergeRequestDetailResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16063,6 +16313,39 @@ func ParsePostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse(rsp *
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest ActionStatusBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostPullsByProviderByOwnerByNameByNumberCiRefreshResponse parses an HTTP response from a PostPullsByProviderByOwnerByNameByNumberCiRefreshWithResponse call
+func ParsePostPullsByProviderByOwnerByNameByNumberCiRefreshResponse(rsp *http.Response) (*PostPullsByProviderByOwnerByNameByNumberCiRefreshResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostPullsByProviderByOwnerByNameByNumberCiRefreshResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MergeRequestDetailResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

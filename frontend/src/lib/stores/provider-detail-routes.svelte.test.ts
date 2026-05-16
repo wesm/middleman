@@ -41,7 +41,7 @@ describe("provider-aware detail API routes", () => {
     });
   });
 
-  it("refreshes pending PR CI through the provider sync endpoint", async () => {
+  it("refreshes pending PR CI through the provider CI endpoint", async () => {
     const detail = {
       repo_owner: "Group/SubGroup",
       repo_name: "Project",
@@ -80,7 +80,7 @@ describe("provider-aware detail API routes", () => {
       repoPath: "Group/SubGroup/Project",
     });
 
-    expect(client.POST).toHaveBeenCalledWith("/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/sync", {
+    expect(client.POST).toHaveBeenCalledWith("/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/ci-refresh", {
       params: {
         path: {
           provider: "gitlab",

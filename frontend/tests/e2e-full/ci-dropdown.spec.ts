@@ -41,7 +41,7 @@ test.describe("CI dropdown", () => {
       const syncRequest = page.waitForRequest((request) => {
         const url = new URL(request.url());
         return request.method() === "POST" &&
-          url.pathname === "/api/v1/pulls/github/acme/widgets/1/sync";
+          url.pathname === "/api/v1/pulls/github/acme/widgets/1/ci-refresh";
       });
       await pendingChip.click();
 

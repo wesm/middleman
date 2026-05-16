@@ -555,7 +555,34 @@ export function createDetailStore(
   ): Promise<void> {
     if (!isDetailShowing(owner, name, number)) return;
     const ref = detailRequestRef(owner, name, number, identity);
-    await syncDetail(owner, name, number, syncGeneration, ref);
+    const gen = syncGeneration;
+    syncing = true;
+    try {
+      const { data, error: requestError } = await apiClient.POST(
+        providerItemPath("pulls", ref, "/ci-refresh"),
+        {
+          params: {
+            path: { ...providerRouteParams(ref), number: ref.number },
+          },
+        },
+      );
+      if (gen !== syncGeneration) return;
+      if (requestError) return;
+      if (data) {
+        storeError = null;
+        detail = withPreservedLocalBody({
+          ...data,
+          events: data.events ?? [],
+        } as PullDetail);
+        detailLoaded = data.detail_loaded ?? detailLoaded;
+      }
+    } finally {
+      if (gen === syncGeneration) syncing = false;
+      void syncDep?.refreshSyncStatus?.();
+    }
+    if (gen === syncGeneration) {
+      await refreshPullsIfActive();
+    }
   }
 
   async function updateKanbanState(

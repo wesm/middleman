@@ -234,6 +234,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/ci-refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post host by platform host pulls by provider by owner by name by number ci refresh */
+        post: operations["post-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-ci-refresh"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/comments": {
         parameters: {
             query?: never;
@@ -855,6 +872,23 @@ export interface paths {
         put?: never;
         /** Post pulls by provider by owner by name by number approve workflows */
         post: operations["post-pulls-by-provider-by-owner-by-name-by-number-approve-workflows"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/ci-refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post pulls by provider by owner by name by number ci refresh */
+        post: operations["post-pulls-by-provider-by-owner-by-name-by-number-ci-refresh"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3486,6 +3520,41 @@ export interface operations {
             };
         };
     };
+    "post-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-ci-refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergeRequestDetailResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "post-pr-comment-on-host": {
         parameters: {
             query?: never;
@@ -5016,6 +5085,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ActionStatusBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "post-pulls-by-provider-by-owner-by-name-by-number-ci-refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergeRequestDetailResponse"];
                 };
             };
             /** @description Error */

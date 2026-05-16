@@ -4181,6 +4181,49 @@ func (s *Syncer) refreshTimeline(
 	})
 }
 
+// RefreshMRCIStatusOnProvider fetches only CI checks for a PR's head SHA and
+// persists the derived CI fields. It intentionally skips the heavier PR detail
+// sync path (timeline, diff, review, and body refreshes).
+func (s *Syncer) RefreshMRCIStatusOnProvider(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	number int,
+	headSHA string,
+) error {
+	if headSHA == "" {
+		return nil
+	}
+	if repoPlatform(repo) == platform.KindGitHub {
+		return s.refreshCIStatus(ctx, repo, repoID, number, headSHA)
+	}
+
+	ciReader, err := s.ciReaderFor(repo)
+	if err != nil {
+		if errors.Is(err, platform.ErrUnsupportedCapability) {
+			return nil
+		}
+		return fmt.Errorf("resolve CI reader for %s/%s: %w", repo.Owner, repo.Name, err)
+	}
+	checks, err := ciReader.ListCIChecks(ctx, platformRepoRef(repo), headSHA)
+	if err != nil {
+		if errors.Is(err, platform.ErrUnsupportedCapability) {
+			return nil
+		}
+		return fmt.Errorf("list CI checks for MR #%d: %w", number, err)
+	}
+	dbChecks := platform.DBCIChecks(checks)
+	if dbChecks == nil {
+		dbChecks = []db.CICheck{}
+	}
+	ciJSON, _ := json.Marshal(dbChecks)
+	ciStatus := deriveCIStatusFromChecks(dbChecks)
+	if err := s.db.UpdateMRCIStatus(ctx, repoID, number, ciStatus, string(ciJSON)); err != nil {
+		return fmt.Errorf("update CI status for MR #%d: %w", number, err)
+	}
+	return nil
+}
+
 // refreshCIStatus fetches combined status and check runs for a PR's head SHA.
 // Called on every sync cycle for open PRs, since check runs change independently
 // of the PR's updated_at field. Takes headSHA and number directly so it can be
