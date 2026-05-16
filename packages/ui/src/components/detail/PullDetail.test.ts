@@ -255,45 +255,65 @@ describe("PullDetail approvals", () => {
     );
   });
 
-  it("does not describe GitHub unstable mergeability as required checks", () => {
-    const detail = pullDetail();
-    detail.merge_request.MergeableState = "unstable";
-    detail.merge_request.CIStatus = "failure";
-    detail.merge_request.CIChecksJSON = JSON.stringify([
-      {
-        name: "e2e",
-        status: "completed",
-        conclusion: "failure",
-        url: "https://example.com/e2e",
-        app: "GitHub Actions",
-      },
-    ]);
+  const warningCases = [
+    {
+      name: "does not describe GitHub unstable mergeability as required checks",
+      mergeableState: "unstable",
+      checks: [
+        {
+          name: "e2e",
+          status: "completed",
+          conclusion: "failure",
+          url: "https://example.com/e2e",
+          app: "GitHub Actions",
+        },
+      ],
+      requiredWarning: false,
+      behindWarning: false,
+    },
+    {
+      name: "shows required CI and branch freshness warnings independently",
+      mergeableState: "behind",
+      checks: [
+        {
+          name: "build",
+          status: "completed",
+          conclusion: "failure",
+          url: "https://example.com/build",
+          app: "GitHub Actions",
+          required: true,
+        },
+      ],
+      requiredWarning: true,
+      behindWarning: true,
+    },
+  ];
 
-    renderPullDetail(detail);
+  for (const { name, mergeableState, checks, requiredWarning, behindWarning } of warningCases) {
+    it(name, () => {
+      const detail = pullDetail();
+      detail.merge_request.MergeableState = mergeableState;
+      detail.merge_request.CIStatus = "failure";
+      detail.merge_request.CIChecksJSON = JSON.stringify(checks);
 
-    expect(screen.queryByText(/required status checks/i)).toBeNull();
-  });
+      renderPullDetail(detail);
 
-  it("shows required CI and branch freshness warnings independently", () => {
-    const detail = pullDetail();
-    detail.merge_request.MergeableState = "behind";
-    detail.merge_request.CIStatus = "failure";
-    detail.merge_request.CIChecksJSON = JSON.stringify([
-      {
-        name: "build",
-        status: "completed",
-        conclusion: "failure",
-        url: "https://example.com/build",
-        app: "GitHub Actions",
-        required: true,
-      },
-    ]);
-
-    renderPullDetail(detail);
-
-    expect(screen.getByText("Required status checks have not passed.")).not.toBeNull();
-    expect(
-      screen.getByText("This branch is behind the base branch and may need to be updated."),
-    ).not.toBeNull();
-  });
+      const requiredStatusWarning = screen.queryByText(
+        "Required status checks have not passed.",
+      );
+      const behindBranchWarning = screen.queryByText(
+        "This branch is behind the base branch and may need to be updated.",
+      );
+      if (requiredWarning) {
+        expect(requiredStatusWarning).not.toBeNull();
+      } else {
+        expect(requiredStatusWarning).toBeNull();
+      }
+      if (behindWarning) {
+        expect(behindBranchWarning).not.toBeNull();
+      } else {
+        expect(behindBranchWarning).toBeNull();
+      }
+    });
+  }
 });
