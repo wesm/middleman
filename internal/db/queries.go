@@ -2684,12 +2684,13 @@ func (d *DB) UpdateMRCIStatusForHead(
 	headSHA string,
 	ciStatus string,
 	ciChecksJSON string,
+	ciHadPending bool,
 ) error {
 	_, err := d.rw.ExecContext(ctx, `
 		UPDATE middleman_merge_requests
-		SET ci_status = ?, ci_checks_json = ?
+		SET ci_status = ?, ci_checks_json = ?, ci_had_pending = ?
 		WHERE repo_id = ? AND number = ? AND platform_head_sha = ?`,
-		ciStatus, ciChecksJSON,
+		ciStatus, ciChecksJSON, ciHadPending,
 		repoID, number, headSHA,
 	)
 	if err != nil {

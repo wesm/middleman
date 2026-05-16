@@ -4202,7 +4202,10 @@ func (s *Syncer) RefreshMRCIStatusOnProvider(
 		if !ok {
 			return nil
 		}
-		return s.db.UpdateMRCIStatusForHead(ctx, repoID, number, headSHA, ciStatus, ciChecksJSON)
+		return s.db.UpdateMRCIStatusForHead(
+			ctx, repoID, number, headSHA,
+			ciStatus, ciChecksJSON, ciHasPending(ciChecksJSON),
+		)
 	}
 
 	ciReader, err := s.ciReaderFor(repo)
@@ -4225,7 +4228,10 @@ func (s *Syncer) RefreshMRCIStatusOnProvider(
 	}
 	ciJSON, _ := json.Marshal(dbChecks)
 	ciStatus := deriveCIStatusFromChecks(dbChecks)
-	if err := s.db.UpdateMRCIStatusForHead(ctx, repoID, number, headSHA, ciStatus, string(ciJSON)); err != nil {
+	if err := s.db.UpdateMRCIStatusForHead(
+		ctx, repoID, number, headSHA,
+		ciStatus, string(ciJSON), ciHasPending(string(ciJSON)),
+	); err != nil {
 		return fmt.Errorf("update CI status for MR #%d: %w", number, err)
 	}
 	return nil

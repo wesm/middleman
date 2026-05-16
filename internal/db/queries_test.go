@@ -2795,17 +2795,18 @@ func TestUpdateMRCIStatusForHeadSkipsStaleHead(t *testing.T) {
 	})
 	require.NoError(err)
 
-	require.NoError(d.UpdateMRCIStatusForHead(ctx, repoID, 7, "old-head", "success", `[]`))
+	require.NoError(d.UpdateMRCIStatusForHead(ctx, repoID, 7, "old-head", "success", `[]`, false))
 	stale, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
 	require.NotNil(stale)
 	assert.Equal("pending", stale.CIStatus)
 
-	require.NoError(d.UpdateMRCIStatusForHead(ctx, repoID, 7, "new-head", "success", `[]`))
+	require.NoError(d.UpdateMRCIStatusForHead(ctx, repoID, 7, "new-head", "pending", `[{"name":"build","status":"in_progress"}]`, true))
 	fresh, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
 	require.NotNil(fresh)
-	assert.Equal("success", fresh.CIStatus)
+	assert.Equal("pending", fresh.CIStatus)
+	assert.True(fresh.CIHadPending)
 }
 
 func TestGetPreviouslyOpenPRNumbers(t *testing.T) {
