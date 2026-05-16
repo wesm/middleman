@@ -340,6 +340,29 @@ async function setupHeldIssue(
   return { release };
 }
 
+async function mockPullDetail(page: Page, pr: typeof prA): Promise<void> {
+  await page.route(
+    pullDetailApiPath(pr),
+    async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(detailEnvelopePR(pr)),
+        });
+        return;
+      }
+      await route.fallback();
+    },
+  );
+}
+
+async function gotoPullDetail(page: Page, pr: typeof prA): Promise<void> {
+  await page.goto(
+    `/pulls/github/${pr.repo_owner}/${pr.repo_name}/${pr.Number}`,
+  );
+}
+
 test.describe("PR detail merge modal route reset", () => {
   test("merge button is disabled when the PR has merge conflicts", async ({ page }) => {
     await mockApi(page);
@@ -350,24 +373,9 @@ test.describe("PR detail merge modal route reset", () => {
       MergeableState: "dirty",
     };
 
-    await page.route(
-      pullDetailApiPath(conflictedPR),
-      async (route) => {
-        if (route.request().method() === "GET") {
-          await route.fulfill({
-            status: 200,
-            contentType: "application/json",
-            body: JSON.stringify(detailEnvelopePR(conflictedPR)),
-          });
-          return;
-        }
-        await route.fallback();
-      },
-    );
+    await mockPullDetail(page, conflictedPR);
 
-    await page.goto(
-      `/pulls/github/${conflictedPR.repo_owner}/${conflictedPR.repo_name}/${conflictedPR.Number}`,
-    );
+    await gotoPullDetail(page, conflictedPR);
 
     await expect(page.locator(".detail-title")).toContainText(
       conflictedPR.Title,
@@ -381,6 +389,83 @@ test.describe("PR detail merge modal route reset", () => {
       page.locator(".modal-title", { hasText: "Merge Pull Request" }),
     ).toHaveCount(0);
   });
+
+  const warningLineCases = [
+    {
+      name: "non-required failed checks do not show required-check warnings",
+      pr: {
+        ...prA,
+        Number: 101,
+        URL: "https://github.com/acme/widgets/pull/101",
+        Title: "Non-required failing check",
+        MergeableState: "unstable",
+        CIStatus: "failure",
+        CIChecksJSON: JSON.stringify([
+          {
+            name: "e2e",
+            status: "completed",
+            conclusion: "failure",
+            url: "https://example.com/e2e",
+            app: "GitHub Actions",
+          },
+        ]),
+      },
+      requiredWarning: false,
+      behindWarning: false,
+    },
+    {
+      name: "warning lines show required checks and branch freshness independently",
+      pr: {
+        ...prA,
+        Number: 102,
+        URL: "https://github.com/acme/widgets/pull/102",
+        Title: "Required check and behind branch",
+        MergeableState: "behind",
+        CIStatus: "failure",
+        CIChecksJSON: JSON.stringify([
+          {
+            name: "build",
+            status: "completed",
+            conclusion: "failure",
+            url: "https://example.com/build",
+            app: "GitHub Actions",
+            required: true,
+          },
+        ]),
+      },
+      requiredWarning: true,
+      behindWarning: true,
+    },
+  ];
+
+  for (const { name, pr, requiredWarning, behindWarning } of warningLineCases) {
+    test(name, async ({ page }) => {
+      await mockApi(page);
+      await mockSettings(page);
+      await mockPullDetail(page, pr);
+
+      await gotoPullDetail(page, pr);
+
+      await expect(page.locator(".detail-title")).toContainText(pr.Title);
+
+      const requiredStatusWarning = page.getByText(
+        "Required status checks have not passed.",
+      );
+      const behindBranchWarning = page.getByText(
+        "This branch is behind the base branch and may need to be updated.",
+      );
+      if (requiredWarning) {
+        await expect(requiredStatusWarning).toBeVisible();
+      } else {
+        await expect(requiredStatusWarning).toHaveCount(0);
+      }
+      if (behindWarning) {
+        await expect(behindBranchWarning).toBeVisible();
+      } else {
+        await expect(behindBranchWarning).toHaveCount(0);
+      }
+    });
+  }
 
   test("merge modal closes when the route changes and does not reopen for the new PR", async ({ page }) => {
     await mockApi(page);
