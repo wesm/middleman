@@ -181,13 +181,14 @@ describe("TerminalPane", () => {
     expect(xtermTerminalCtor).toHaveBeenCalledWith(
       expect.objectContaining({
         allowTransparency: false,
+        customGlyphs: true,
         minimumContrastRatio: 4.5,
         rescaleOverlappingGlyphs: true,
         scrollOnEraseInDisplay: true,
         smoothScrollDuration: 0,
       }),
     );
-    expect(mockWebglCtor).toHaveBeenCalledWith({ customGlyphs: true });
+    expect(mockWebglCtor).toHaveBeenCalledWith(undefined);
   });
 
   it("does not rebuild the WebGL atlas during initial mount refresh", async () => {

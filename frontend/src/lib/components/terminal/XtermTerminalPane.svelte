@@ -343,6 +343,7 @@
           cursor: "#58a6ff",
         },
         allowTransparency: false,
+        customGlyphs: true,
         cursorBlink: true,
         drawBoldTextInBrightColors: true,
         fontFamily: terminalFontFamily,
@@ -363,7 +364,7 @@
       term.loadAddon(fit);
 
       try {
-        const wgl = new WebglAddon({ customGlyphs: true });
+        const wgl = new WebglAddon();
         wgl.onContextLoss(() => {
           wgl.dispose();
           scheduleTerminalResize();

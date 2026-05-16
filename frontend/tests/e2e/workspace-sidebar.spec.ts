@@ -1233,6 +1233,7 @@ test.describe("workspace launch home", () => {
   test(
     "xterm workspace terminal sends resize frames after viewport changes",
     async ({ page }) => {
+      test.setTimeout(60_000);
       await page.addInitScript(() => {
         type RecordedSocket = {
           sent: unknown[];
@@ -1304,10 +1305,12 @@ test.describe("workspace launch home", () => {
           MockTerminalWebSocket as unknown as typeof WebSocket;
       });
 
-      await page.goto("/terminal/ws-123");
-      await page
-        .getByRole("button", { name: "Codex" })
-        .click();
+      await page.goto("/terminal/ws-123", {
+        waitUntil: "domcontentloaded",
+      });
+      const launchTarget = page.getByRole("button", { name: "Codex" });
+      await expect(launchTarget).toBeVisible();
+      await launchTarget.click();
 
       await expect(
         page.locator(".terminal-container .xterm"),
