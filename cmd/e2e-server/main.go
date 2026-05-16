@@ -281,7 +281,7 @@ func seedLabelEditingFixture(
 	if repo == nil {
 		return nil
 	}
-	now := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	now := time.Now().UTC().Add(-time.Hour)
 	catalog := []db.Label{
 		{Name: "bug", Description: "Something is broken", Color: "d73a4a", IsDefault: true, UpdatedAt: now},
 		{Name: "triage", Description: "Needs maintainer review", Color: "fbca04", UpdatedAt: now},

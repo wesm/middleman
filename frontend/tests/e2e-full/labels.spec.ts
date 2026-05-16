@@ -34,12 +34,37 @@ test.describe("label editing", () => {
 
       await expect(page.getByRole("menuitemcheckbox", { name: /triage/i })).toHaveAttribute("aria-checked", "true");
       await expect(page.locator(".pull-detail .label-editor-row .label-pill", { hasText: "triage" })).toBeVisible();
+
+      await page.reload();
+      await expect(page.locator(".pull-detail .label-editor-row .label-pill", { hasText: "triage" })).toBeVisible();
     } finally {
       await isolatedServer?.stop();
     }
   });
 
-  test("command palette opens pull and issue label editors", async ({ page }) => {
+  test("refreshes stale label catalog", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    try {
+      isolatedServer = await startIsolatedE2EServer();
+      const baseURL = isolatedServer.info.base_url;
+
+      const firstResponse = await page.request.get(`${baseURL}/api/v1/repo/github/acme/widgets/labels`);
+      expect(firstResponse.ok()).toBe(true);
+      const firstBody = await firstResponse.json();
+      expect(firstBody.stale).toBe(true);
+      expect(firstBody.syncing).toBe(true);
+
+      await expect.poll(async () => {
+        const response = await page.request.get(`${baseURL}/api/v1/repo/github/acme/widgets/labels`);
+        const body = await response.json();
+        return { stale: body.stale, syncing: body.syncing, count: body.labels.length };
+      }).toEqual({ stale: false, syncing: false, count: 3 });
+    } finally {
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("command palette edits pull and issue labels", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     try {
       isolatedServer = await startIsolatedE2EServer();
@@ -49,12 +74,29 @@ test.describe("label editing", () => {
       await expect(page.locator(".pull-detail")).toBeVisible();
       await openLabelsFromPalette(page);
       await expect(page.getByRole("menuitemcheckbox", { name: /bug/i })).toHaveAttribute("aria-checked", "true");
-      await page.getByRole("button", { name: "Close label picker" }).click();
+      const pullUpdate = page.waitForResponse((response) =>
+        response.request().method() === "PUT"
+        && response.url() === `${baseURL}/api/v1/pulls/github/acme/widgets/1/labels`,
+      );
+      await page.getByRole("menuitemcheckbox", { name: /docs/i }).click();
+      expect((await pullUpdate).status()).toBe(200);
+      await expect(page.locator(".pull-detail .label-editor-row .label-pill", { hasText: "docs" })).toBeVisible();
+      await page.reload();
+      await expect(page.locator(".pull-detail .label-editor-row .label-pill", { hasText: "docs" })).toBeVisible();
 
       await page.goto(`${baseURL}/issues/github/acme/widgets/10`);
       await expect(page.locator(".issue-detail")).toBeVisible();
       await openLabelsFromPalette(page);
       await expect(page.getByRole("menuitemcheckbox", { name: /bug/i })).toHaveAttribute("aria-checked", "true");
+      const issueUpdate = page.waitForResponse((response) =>
+        response.request().method() === "PUT"
+        && response.url() === `${baseURL}/api/v1/issues/github/acme/widgets/10/labels`,
+      );
+      await page.getByRole("menuitemcheckbox", { name: /triage/i }).click();
+      expect((await issueUpdate).status()).toBe(200);
+      await expect(page.locator(".issue-detail .label-editor-row .label-pill", { hasText: "triage" })).toBeVisible();
+      await page.reload();
+      await expect(page.locator(".issue-detail .label-editor-row .label-pill", { hasText: "triage" })).toBeVisible();
     } finally {
       await isolatedServer?.stop();
     }
