@@ -3869,17 +3869,12 @@ func (s *Server) workspaceDiffWhitespaceOnlyCount(
 	req workspaceDiffRequest,
 ) (int, bool, error) {
 	if req.FromSHA != "" && req.ToSHA != "" {
-		result, ok, err := workspace.WorktreeDiffBetween(
+		return workspace.WorktreeDiffWhitespaceOnlyCountBetween(
 			ctx,
 			req.Summary.WorktreePath,
 			req.FromSHA,
 			req.ToSHA,
-			false,
 		)
-		if result == nil {
-			return 0, ok, err
-		}
-		return result.WhitespaceOnlyCount, ok, err
 	}
 	if req.Base == workspace.WorktreeDiffBaseMergeTarget {
 		return workspace.WorktreeDiffWhitespaceOnlyCountAgainstMergeTarget(

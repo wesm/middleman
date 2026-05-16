@@ -83,6 +83,16 @@ func WorktreeDiffWhitespaceOnlyCountAgainstMergeTarget(
 	return count, true, err
 }
 
+func WorktreeDiffWhitespaceOnlyCountBetween(
+	ctx context.Context,
+	dir string,
+	fromRef string,
+	toRef string,
+) (int, bool, error) {
+	count, err := worktreeWhitespaceOnlyCount(ctx, dir, fromRef, toRef, "")
+	return count, err == nil, err
+}
+
 func worktreeDiffFilesFromRef(
 	ctx context.Context,
 	dir string,

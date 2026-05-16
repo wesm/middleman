@@ -653,7 +653,7 @@ func configureForkPRRefs(
 	return originSHA, pullSHA
 }
 
-func runWorkspaceTestGit(t *testing.T, dir string, args ...string) {
+func runWorkspaceTestGit(t *testing.T, dir string, args ...string) []byte {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
@@ -664,6 +664,7 @@ func runWorkspaceTestGit(t *testing.T, dir string, args ...string) {
 	)
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "git %v failed: %s", args, out)
+	return out
 }
 
 func TestShellFromPasswdLine(t *testing.T) {
