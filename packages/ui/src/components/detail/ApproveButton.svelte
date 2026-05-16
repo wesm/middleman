@@ -111,7 +111,7 @@
       <textarea
         bind:this={commentInput}
         class="approve-comment"
-        placeholder="Leave an optional comment\u2026"
+        placeholder="Leave an optional comment…"
         bind:value={body}
         rows={3}
       ></textarea>

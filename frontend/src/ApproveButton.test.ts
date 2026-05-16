@@ -75,6 +75,17 @@ describe("ApproveButton tooltips", () => {
     });
   });
 
+  it("renders the optional comment placeholder as display text", async () => {
+    renderApproveButton();
+
+    await fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+
+    expect(
+      screen.getByPlaceholderText("Leave an optional comment…"),
+    ).toBeTruthy();
+    expect(screen.queryByPlaceholderText(/\\u2026/)).toBeNull();
+  });
+
   it("collapses the approval popover from cancel without removing the trigger", async () => {
     renderApproveButton();
 
