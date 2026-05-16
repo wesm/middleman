@@ -1474,6 +1474,12 @@ func TestAPIApproveWorkflows(t *testing.T) {
 
 	srv, database := setupTestServerWithMock(t, mock)
 	seedPR(t, database, "acme", "widget", 1)
+	repo, err := database.GetRepoByHostOwnerName(t.Context(), "github.com", "acme", "widget")
+	require.NoError(err)
+	require.NotNil(repo)
+	require.NoError(database.UpdateMRWorkflowApproval(
+		t.Context(), repo.ID, 1, time.Now().UTC(), "abc123", true, 2,
+	))
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse(
@@ -1491,6 +1497,10 @@ func TestAPIApproveWorkflows(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(pr)
 	assert.Equal("abc123", pr.PlatformHeadSHA)
+	require.NotNil(pr.WorkflowApprovalCheckedAt)
+	assert.Equal("abc123", pr.WorkflowApprovalHeadSHA)
+	assert.False(pr.WorkflowApprovalRequired)
+	assert.Equal(0, pr.WorkflowApprovalCount)
 }
 
 func TestAPIApproveWorkflowsZeroMatchesStillSyncsPR(t *testing.T) {

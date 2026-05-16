@@ -3694,12 +3694,14 @@ func (s *Syncer) syncOpenMRFromBulk(
 		// Refresh workflow approval state so the DB-only detail GET
 		// can render the Approve workflows button without a foreground
 		// sync. GraphQL doesn't return action_required runs, so this
-		// stays a one-extra REST call per fully-synced PR — matching
-		// the REST detail-drain budget.
-		s.refreshWorkflowApproval(
-			ctx, repo, repoID, number,
-			normalized.PlatformHeadSHA, bulk.PR, normalized,
-		)
+		// stays a one-extra REST call per fully-synced PR, gated by
+		// the same per-host budget as the REST detail drain.
+		if s.canSpendWorkflowApprovalRefresh(repo) {
+			s.refreshWorkflowApproval(
+				ctx, repo, repoID, number,
+				normalized.PlatformHeadSHA, bulk.PR, normalized,
+			)
+		}
 	}
 
 	// Fire onMRSynced hook.
@@ -5040,6 +5042,11 @@ func (s *Syncer) refreshRepoIssueComments(
 }
 
 func (s *Syncer) canSpendCommentRefresh(repo RepoRef) bool {
+	budget := s.budgets[repoRateBucketKey(repo)]
+	return budget == nil || budget.CanSpend(1)
+}
+
+func (s *Syncer) canSpendWorkflowApprovalRefresh(repo RepoRef) bool {
 	budget := s.budgets[repoRateBucketKey(repo)]
 	return budget == nil || budget.CanSpend(1)
 }

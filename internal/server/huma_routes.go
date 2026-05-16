@@ -1725,6 +1725,15 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 	); syncErr != nil {
 		slog.Warn("sync after workflow approval", "err", syncErr)
 	}
+	if err := s.db.UpdateMRWorkflowApproval(
+		ctx, repo.ID, input.Number, s.now().UTC(), headSHA, false, 0,
+	); err != nil {
+		slog.Warn("clear workflow approval state after approval",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", input.Number,
+			"err", err,
+		)
+	}
 
 	return &actionStatusOutput{Body: actionStatusBody{
 		Status:        "approved_workflows",

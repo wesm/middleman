@@ -6572,6 +6572,57 @@ func TestSyncOpenMRFromBulkPersistsWorkflowApproval(t *testing.T) {
 	assert.Equal(1, got.WorkflowApprovalCount)
 }
 
+func TestSyncOpenMRFromBulkSkipsWorkflowApprovalWhenBudgetExhausted(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
+	require.NoError(err)
+
+	now := time.Date(2026, 4, 21, 12, 30, 0, 0, time.UTC)
+	pr := buildOpenPR(1, now)
+	headSHA := pr.GetHead().GetSHA()
+	require.NotEmpty(headSHA)
+
+	budgets := testBudget(1)
+	budgets["github.com"].Spend(1)
+	mc := &mockClient{
+		budget: budgets["github.com"],
+		workflowRuns: []*gh.WorkflowRun{{
+			ID:           new(int64(9001)),
+			HeadSHA:      &headSHA,
+			Event:        new("pull_request"),
+			PullRequests: []*gh.PullRequest{{Number: new(1)}},
+		}},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, budgets,
+	)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
+		PR:               pr,
+		Comments:         []*gh.IssueComment{},
+		CommentsComplete: true,
+		ReviewsComplete:  true,
+		CommitsComplete:  true,
+		TimelineComplete: true,
+		CIComplete:       true,
+	}, false)
+	require.NoError(err)
+
+	got, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Nil(got.WorkflowApprovalCheckedAt)
+	assert.Equal(1, budgets["github.com"].Spent())
+}
+
 // TestSyncOpenMRFromBulkSkipsWorkflowApprovalWhenIncomplete verifies
 // that a partial bulk sync (CI not complete) does not advance the
 // workflow approval snapshot. Such PRs stay eligible for REST detail
