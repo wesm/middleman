@@ -74,18 +74,15 @@ Not every visibility control means "remove this entity entirely."
 - Empty states should make it clear when filters, not missing data, are hiding
   results.
 
-## Label Editing
+## Optional Metadata Controls
 
-Desktop label editing should reuse existing detail header/meta/chip rows. Do not
-add an empty `No labels` row or otherwise consume vertical space when no labels
-are assigned; show the compact `Labels` action inline with existing metadata.
+Optional metadata must not reserve empty rows or placeholders when absent. Put
+compact edit controls beside the metadata's normal display location, and keep
+empty states for places where missing data itself is useful information.
 
-The picker opens only for the currently visible PR/issue detail. Compare
-provider, platform host, repo path, owner, name, and number before opening or
-applying mutation responses. While catalogs are stale or syncing, keep refreshing
-non-blockingly. Before sending a replacement label set, filter assigned labels to
-labels present in the current catalog so historical labels do not block edits.
-Command palette label actions target only the current detail item.
+Async detail mutations must be scoped to the currently visible item. Compare the
+full provider route identity before opening transient UI or applying mutation
+responses, and discard stale responses instead of patching another item.
 
 ## Testing Expectations
 
