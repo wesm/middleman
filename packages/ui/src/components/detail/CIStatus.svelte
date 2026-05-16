@@ -199,11 +199,12 @@
 
   :global(.chip-chevron) {
     flex-shrink: 0;
+    transform: translateY(1px);
     transition: transform 0.15s;
   }
 
   :global(.chip-chevron--open) {
-    transform: rotate(180deg);
+    transform: translateY(1px) rotate(180deg);
   }
 
   .ci-collapse {
