@@ -2269,7 +2269,7 @@ func (s *Server) syncPRCI(ctx context.Context, input *repoNumberInput) (*syncPRC
 	if mr == nil {
 		return nil, huma.Error404NotFound("pull request not found")
 	}
-	if err := s.syncer.RefreshMRCIStatusOnProvider(
+	warnings, err := s.syncer.RefreshMRCIStatusOnProvider(
 		ctx,
 		ghclient.RepoRef{
 			Platform:           repoProviderKind(*repo),
@@ -2285,7 +2285,8 @@ func (s *Server) syncPRCI(ctx context.Context, input *repoNumberInput) (*syncPRC
 		repo.ID,
 		input.Number,
 		mr.PlatformHeadSHA,
-	); err != nil {
+	)
+	if err != nil {
 		return nil, huma.Error502BadGateway("refresh PR CI: " + err.Error())
 	}
 
@@ -2300,6 +2301,7 @@ func (s *Server) syncPRCI(ctx context.Context, input *repoNumberInput) (*syncPRC
 	if err != nil {
 		return nil, err
 	}
+	body.Warnings = append(body.Warnings, warnings...)
 	return &syncPRCIOutput{Body: body}, nil
 }
 

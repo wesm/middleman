@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createDetailStore } from "@middleman/ui/stores/detail";
 import { createIssuesStore } from "@middleman/ui/stores/issues";
+import * as flash from "@middleman/ui/stores/flash";
 import type { MiddlemanClient } from "@middleman/ui";
 
 describe("provider-aware detail API routes", () => {
@@ -91,6 +92,91 @@ describe("provider-aware detail API routes", () => {
         },
       },
     });
+  });
+
+  it("flashes CI refresh warnings returned with preserved detail", async () => {
+    const detail = {
+      repo_owner: "acme",
+      repo_name: "widgets",
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "widgets",
+        repo_path: "acme/widgets",
+      },
+      merge_request: { Number: 1, CIStatus: "pending" },
+      warnings: ["Could not refresh CI checks; showing last known status."],
+      events: [],
+    };
+    const client = {
+      GET: vi.fn(async () => ({ data: detail })),
+      POST: vi.fn(async () => ({ data: detail })),
+      PUT: vi.fn(),
+      DELETE: vi.fn(),
+    } as unknown as MiddlemanClient;
+    const showFlash = vi.spyOn(flash, "showFlash").mockImplementation(() => {});
+    const store = createDetailStore({ client });
+
+    await store.loadDetail("acme", "widgets", 1, {
+      sync: false,
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widgets",
+    } as never);
+
+    await store.refreshPendingCI("acme", "widgets", 1, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widgets",
+    });
+
+    expect(showFlash).toHaveBeenCalledWith(
+      "Could not refresh CI checks; showing last known status.",
+    );
+    showFlash.mockRestore();
+  });
+
+  it("flashes hard CI refresh request failures", async () => {
+    const detail = {
+      repo_owner: "acme",
+      repo_name: "widgets",
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "widgets",
+        repo_path: "acme/widgets",
+      },
+      merge_request: { Number: 1, CIStatus: "pending" },
+      events: [],
+    };
+    const client = {
+      GET: vi.fn(async () => ({ data: detail })),
+      POST: vi.fn(async () => ({
+        error: { detail: "refresh PR CI: upstream unavailable" },
+      })),
+      PUT: vi.fn(),
+      DELETE: vi.fn(),
+    } as unknown as MiddlemanClient;
+    const showFlash = vi.spyOn(flash, "showFlash").mockImplementation(() => {});
+    const store = createDetailStore({ client });
+
+    await store.loadDetail("acme", "widgets", 1, {
+      sync: false,
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widgets",
+    } as never);
+
+    await store.refreshPendingCI("acme", "widgets", 1, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widgets",
+    });
+
+    expect(showFlash).toHaveBeenCalledWith("refresh PR CI: upstream unavailable");
+    showFlash.mockRestore();
   });
 
   it("serializes overlapping pending PR CI refreshes", async () => {

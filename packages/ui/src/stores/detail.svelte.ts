@@ -8,6 +8,7 @@ import {
   providerRouteParams,
 } from "../api/provider-routes.js";
 import type { MiddlemanClient } from "../types.js";
+import { showFlash } from "./flash.svelte.js";
 
 export type DetailSyncMode = boolean | "background";
 
@@ -576,7 +577,10 @@ export function createDetailStore(
           },
         );
         if (gen !== syncGeneration) return;
-        if (requestError) return;
+        if (requestError) {
+          showFlash(apiErrorMessage(requestError, "Failed to refresh CI checks"));
+          return;
+        }
         if (data) {
           storeError = null;
           detail = withPreservedLocalBody({
@@ -584,6 +588,10 @@ export function createDetailStore(
             events: data.events ?? [],
           } as PullDetail);
           detailLoaded = data.detail_loaded ?? detailLoaded;
+          const warning = data.warnings?.[0];
+          if (warning) {
+            showFlash(warning);
+          }
           if (needsWorkflowApprovalSync(detail, identity.workflowApprovalSync ?? true)) {
             await syncDetail(owner, name, number, gen, ref);
           }

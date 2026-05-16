@@ -439,6 +439,7 @@ type apiTestGitLabProvider struct {
 	releases           []platform.Release
 	tags               []platform.Tag
 	ciChecks           map[string][]platform.CICheck
+	ciErr              error
 }
 
 func (p *apiTestGitLabProvider) Platform() platform.Kind {
@@ -561,6 +562,9 @@ func (p *apiTestGitLabProvider) ListCIChecks(
 	_ platform.RepoRef,
 	sha string,
 ) ([]platform.CICheck, error) {
+	if p.ciErr != nil {
+		return nil, p.ciErr
+	}
 	return p.ciChecks[sha], nil
 }
 
@@ -2679,6 +2683,94 @@ func TestGitLabSyncCoversRepositoryItemsEventsOverviewAndCI(t *testing.T) {
 	assert.Equal(
 		"https://gitlab.example.com:8443/Group/SubGroup/Project.Special/-/releases/v1.2.0",
 		summary.LatestRelease.Url,
+	)
+}
+
+func TestAPICIRefreshWarnsAndPreservesCIWhenProviderFails(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	database := dbtest.Open(t)
+
+	ref := platform.RepoRef{
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		DefaultBranch: "main",
+	}
+	provider := &apiTestGitLabProvider{
+		ref:   ref,
+		ciErr: errors.New("gitlab pipeline API unavailable"),
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(ref))
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      7001,
+		Number:          7,
+		URL:             "https://gitlab.example.com/group/project/-/merge_requests/7",
+		Title:           "Keep stale CI visible",
+		Author:          "ada",
+		State:           "open",
+		HeadBranch:      "feature",
+		BaseBranch:      "main",
+		PlatformHeadSHA: "head-sha",
+		CIStatus:        "pending",
+		CIChecksJSON:    `[{"name":"pipeline","status":"in_progress","conclusion":""}]`,
+		CIHadPending:    true,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+	})
+	require.NoError(err)
+
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry,
+		database,
+		nil,
+		[]ghclient.RepoRef{{
+			Platform:     platform.KindGitLab,
+			PlatformHost: ref.Host,
+			Owner:        ref.Owner,
+			Name:         ref.Name,
+			RepoPath:     ref.RepoPath,
+		}},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshWithResponse(
+		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+	require.NotNil(resp.JSON200)
+	assert.Equal("pending", resp.JSON200.MergeRequest.CIStatus)
+	assert.JSONEq(
+		`[{"name":"pipeline","status":"in_progress","conclusion":""}]`,
+		resp.JSON200.MergeRequest.CIChecksJSON,
+	)
+	require.NotNil(resp.JSON200.Warnings)
+	require.Len(*resp.JSON200.Warnings, 1)
+	assert.Contains((*resp.JSON200.Warnings)[0], "Could not refresh CI checks")
+
+	stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("pending", stored.CIStatus)
+	assert.JSONEq(
+		`[{"name":"pipeline","status":"in_progress","conclusion":""}]`,
+		stored.CIChecksJSON,
 	)
 }
 
