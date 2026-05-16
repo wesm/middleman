@@ -302,6 +302,70 @@ describe("createDiffStore loadDiff", () => {
     });
   });
 
+  it("applies selected range scope to workspace files and patch requests", async () => {
+    const calls: string[] = [];
+    const files = makeFilesResult(["src/app.go"]);
+    const diff = makeDiffResult(["src/app.go"]);
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        calls.push(url);
+        if (url.includes("/workspaces/ws-1/commits")) {
+          return Response.json({
+            commits: [
+              {
+                sha: "sha3",
+                message: "third",
+                author_name: "Alice",
+                authored_at: "2026-01-01T00:00:00Z",
+              },
+              {
+                sha: "sha2",
+                message: "second",
+                author_name: "Alice",
+                authored_at: "2026-01-01T00:00:00Z",
+              },
+              {
+                sha: "sha1",
+                message: "first",
+                author_name: "Alice",
+                authored_at: "2026-01-01T00:00:00Z",
+              },
+            ],
+          });
+        }
+        if (url.includes("/workspaces/ws-1/files")) {
+          return Response.json(files);
+        }
+        if (url.includes("/workspaces/ws-1/diff")) {
+          return Response.json(diff);
+        }
+        return Response.json({}, { status: 404 });
+      },
+    );
+
+    const store = createDiffStore({ client: testClient() });
+    await store.loadWorkspaceDiff("ws-1", "merge-target");
+    await store.loadCommits();
+
+    store.selectRange("sha3", "sha2");
+
+    await vi.waitFor(() => {
+      expect(calls).toContain(
+        "/api/v1/workspaces/ws-1/files?base=merge-target&from=sha2&to=sha3",
+      );
+      expect(calls).toContain(
+        "/api/v1/workspaces/ws-1/diff?base=merge-target&from=sha2&to=sha3&path=src%2Fapp.go",
+      );
+    });
+  });
+
   it("refetches workspace files when toggling whitespace hiding", async () => {
     const calls: string[] = [];
     const filesAll = makeFilesResult(["a.ts", "whitespace.ts"]);
