@@ -111,7 +111,7 @@ func (t *MergeableCaptureTransport) RoundTrip(req *http.Request) (*http.Response
 }
 
 func shouldCaptureMergeable(req *http.Request, resp *http.Response) bool {
-	if req == nil || req.URL == nil || req.Method != http.MethodGet || resp.StatusCode < 200 || resp.StatusCode >= 300 {
+	if req == nil || req.URL == nil || !isMergeableCaptureMethod(req.Method) || resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return false
 	}
 	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
@@ -119,6 +119,15 @@ func shouldCaptureMergeable(req *http.Request, resp *http.Response) bool {
 		return false
 	}
 	return isPullRequestAPIPath(req.URL.Path)
+}
+
+func isMergeableCaptureMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodPost, http.MethodPatch:
+		return true
+	default:
+		return false
+	}
 }
 
 func isPullRequestAPIPath(path string) bool {
@@ -129,7 +138,7 @@ func isPullRequestAPIPath(path string) bool {
 		}
 		pullsIndex := i + 3
 		if parts[pullsIndex] != "pulls" {
-			return false
+			continue
 		}
 		return len(parts) == pullsIndex+1 || len(parts) == pullsIndex+2
 	}
