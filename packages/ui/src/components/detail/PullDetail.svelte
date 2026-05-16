@@ -214,6 +214,7 @@
         provider,
         platformHost,
         repoPath,
+        workflowApprovalSync,
       });
     };
     refresh();

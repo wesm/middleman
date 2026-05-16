@@ -250,6 +250,7 @@ describe("PullDetail approvals", () => {
         provider: "github",
         platformHost: "github.com",
         repoPath: "acme/widget",
+        workflowApprovalSync: true,
       },
     );
   });

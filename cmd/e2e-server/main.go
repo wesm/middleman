@@ -881,6 +881,23 @@ func run(
 			return
 		}
 		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/pr-ci-state/fail-refresh" {
+			if !fc.SetPullRequestCheckRunError(
+				"acme", "widgets", 1, errors.New("fixture CI refresh failed"),
+			) {
+				http.Error(w, "set fixture check error", http.StatusNotFound)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(map[string]string{
+				"status": "fail-refresh",
+			}); err != nil {
+				slog.Warn("write e2e response", "err", err)
+			}
+			return
+		}
+		if r.Method == http.MethodPost &&
 			r.URL.Path == "/__e2e/pr-ci-state/success" {
 			if !fc.SetPullRequestCheckRunStatus(
 				"acme", "widgets", 1, "completed", "success",

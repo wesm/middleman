@@ -41,6 +41,7 @@ type FixtureClient struct {
 	CombinedStatuses          map[string]*gh.CombinedStatus
 	CheckRuns                 map[string][]*gh.CheckRun
 	Labels                    map[string][]*gh.Label
+	CheckRunErrors            map[string]error
 	WorkflowRuns              map[string][]*gh.WorkflowRun
 	ListRepositoriesByOwnerFn func(context.Context, string) ([]*gh.Repository, error)
 	mu                        sync.RWMutex
@@ -62,6 +63,7 @@ func NewFixtureClient() ghclient.Client {
 		CombinedStatuses: make(map[string]*gh.CombinedStatus),
 		CheckRuns:        make(map[string][]*gh.CheckRun),
 		Labels:           make(map[string][]*gh.Label),
+		CheckRunErrors:   make(map[string]error),
 		WorkflowRuns:     make(map[string][]*gh.WorkflowRun),
 		nextID:           10_000,
 	}
@@ -405,11 +407,35 @@ func (c *FixtureClient) ListCheckRunsForRef(
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	runs := c.CheckRuns[refKey(owner, repo, ref)]
+	key := refKey(owner, repo, ref)
+	if err := c.CheckRunErrors[key]; err != nil {
+		return nil, err
+	}
+	runs := c.CheckRuns[key]
 	if len(runs) == 0 {
 		return nil, nil
 	}
 	return cloneCheckRuns(runs), nil
+}
+
+// SetPullRequestCheckRunError makes CI check refreshes fail for a PR head.
+func (c *FixtureClient) SetPullRequestCheckRunError(
+	owner, repo string,
+	number int,
+	err error,
+) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	headSHA := c.pullRequestHeadSHA(owner, repo, number)
+	if headSHA == "" {
+		return false
+	}
+	if c.CheckRunErrors == nil {
+		c.CheckRunErrors = make(map[string]error)
+	}
+	c.CheckRunErrors[refKey(owner, repo, headSHA)] = err
+	return true
 }
 
 // SetPullRequestCheckRunStatus updates all seeded check runs for a PR head.

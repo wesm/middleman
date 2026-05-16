@@ -584,7 +584,7 @@ export function createDetailStore(
             events: data.events ?? [],
           } as PullDetail);
           detailLoaded = data.detail_loaded ?? detailLoaded;
-          if (needsWorkflowApprovalSync(detail, true)) {
+          if (needsWorkflowApprovalSync(detail, identity.workflowApprovalSync ?? true)) {
             await syncDetail(owner, name, number, gen, ref);
           }
         }

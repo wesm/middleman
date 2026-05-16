@@ -146,6 +146,61 @@ describe("provider-aware detail API routes", () => {
     await Promise.all([first, second]);
   });
 
+  it("keeps CI refreshes in CI-only mode when workflow approval sync is disabled", async () => {
+    const pendingDetail = {
+      repo_owner: "acme",
+      repo_name: "widgets",
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "widgets",
+        repo_path: "acme/widgets",
+        capabilities: { workflow_approval: true },
+      },
+      merge_request: {
+        Number: 1,
+        State: "open",
+        CIStatus: "pending",
+        CIChecksJSON: JSON.stringify([
+          { name: "build", status: "in_progress", conclusion: "" },
+        ]),
+        CIHadPending: true,
+      },
+      workflow_approval: { checked: false, required: false, count: 0 },
+      events: [],
+    };
+    const postPaths: string[] = [];
+    const client = {
+      GET: vi.fn(async () => ({ data: pendingDetail })),
+      POST: vi.fn(async (path: string) => {
+        postPaths.push(path);
+        return { data: pendingDetail };
+      }),
+      PUT: vi.fn(),
+      DELETE: vi.fn(),
+    } as unknown as MiddlemanClient;
+    const store = createDetailStore({ client });
+
+    await store.loadDetail("acme", "widgets", 1, {
+      sync: false,
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widgets",
+    } as never);
+
+    await store.refreshPendingCI("acme", "widgets", 1, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widgets",
+      workflowApprovalSync: false,
+    });
+
+    expect(postPaths).toEqual([
+      "/pulls/{provider}/{owner}/{name}/{number}/ci-refresh",
+    ]);
+  });
+
   it("promotes CI refresh results that may need workflow approval to foreground PR sync", async () => {
     const pendingDetail = {
       repo_owner: "acme",
