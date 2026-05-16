@@ -594,6 +594,17 @@
 
   function positionLabelPicker(): void {
     if (!labelPickerAnchor) return;
+    if (labelPickerAnchor.closest(".actions-menu-popover")) {
+      labelPickerStyle = [
+        "left: 50%",
+        "top: 50%",
+        "width: min(360px, calc(100dvw - 24px))",
+        "transform: translate(-50%, -50%)",
+        "--label-picker-max-height: min(560px, calc(100dvh - 48px))",
+      ].join("; ");
+      return;
+    }
+
     labelPickerStyle = floatingPopoverStyle({
       trigger: labelPickerAnchor.getBoundingClientRect(),
       viewportWidth: window.innerWidth,
@@ -604,6 +615,15 @@
     });
   }
 
+  function visibleLabelPickerAnchor(): HTMLDivElement | undefined {
+    const anchors = Array.from(document.querySelectorAll<HTMLDivElement>(".label-editor-anchor"));
+    return anchors.find((anchor) => {
+      const rect = anchor.getBoundingClientRect();
+      const style = getComputedStyle(anchor);
+      return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+    }) ?? anchors[0];
+  }
+
   function onOpenLabelPickerCommand(event: Event): void {
     const detail = (event as CustomEvent<OpenLabelPickerDetail>).detail;
     if (labelPickerCommandMatches(labelPickerCommandRef, detail)) {
@@ -611,7 +631,9 @@
     }
   }
 
-  async function openLabelPicker(): Promise<void> {
+  async function openLabelPicker(event?: MouseEvent): Promise<void> {
+    labelPickerAnchor = (event?.currentTarget as HTMLElement | null)?.closest<HTMLDivElement>(".label-editor-anchor")
+      ?? visibleLabelPickerAnchor();
     labelPickerOpen = true;
     labelPickerError = null;
     labelCatalogSyncing = true;
@@ -698,6 +720,12 @@
     const target = e.target as Node;
     if (actionMenuOpen && !actionMenuWrapEl?.contains(target)) {
       closeActionMenu();
+    }
+    if (labelPickerOpen) {
+      const picker = document.querySelector(".label-editor-popover");
+      if (!picker?.contains(target) && !labelPickerAnchor?.contains(target)) {
+        closeLabelPicker();
+      }
     }
   }
 
@@ -1025,7 +1053,7 @@
         <div class="pull-detail">
           <div class="pull-detail-content">
             {#snippet labelActionButton()}
-              <div class="label-editor-anchor" bind:this={labelPickerAnchor}>
+              <div class="label-editor-anchor">
                 <ActionButton
                   label="Labels"
                   shortLabel="Labels"
@@ -1037,20 +1065,6 @@
                 >
                   <TagsIcon size="16" aria-hidden="true" />
                 </ActionButton>
-                {#if labelPickerOpen}
-                  <div class="label-editor-popover" style={labelPickerStyle}>
-                    <LabelPicker
-                      catalogLabels={labelCatalog}
-                      selectedLabels={labels}
-                      syncing={labelCatalogSyncing}
-                      {pendingLabel}
-                      error={labelPickerError}
-                      ontoggle={toggleLabel}
-                      onclear={clearLabels}
-                      onclose={closeLabelPicker}
-                    />
-                  </div>
-                {/if}
               </div>
             {/snippet}
 
@@ -1227,6 +1241,20 @@
         {#if capabilities.read_labels && capabilities.label_mutation}
           <div class="label-editor-anchor--inline">
             {@render labelActionButton()}
+          </div>
+        {/if}
+        {#if labelPickerOpen}
+          <div class="label-editor-popover" style={labelPickerStyle}>
+            <LabelPicker
+              catalogLabels={labelCatalog}
+              selectedLabels={labels}
+              syncing={labelCatalogSyncing}
+              {pendingLabel}
+              error={labelPickerError}
+              ontoggle={toggleLabel}
+              onclear={clearLabels}
+              onclose={closeLabelPicker}
+            />
           </div>
         {/if}
       </div>

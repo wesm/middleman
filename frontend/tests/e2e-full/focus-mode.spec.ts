@@ -39,6 +39,34 @@ test.describe("focus mode", () => {
     await expect(page.locator(".actions-menu-popover .btn--close")).toBeVisible();
     await expect(page.locator(".actions-menu-popover").getByRole("button", { name: "Labels" })).toBeVisible();
     await expect(page.locator(".actions-menu-popover .btn--workspace")).toBeVisible();
+
+    await page.locator(".actions-menu-popover").getByRole("button", { name: "Labels" }).click();
+    await expect(page.locator(".label-picker")).toBeVisible();
+
+    const pickerRect = await page.locator(".label-picker").boundingBox();
+    const viewport = page.viewportSize();
+    expect(pickerRect).not.toBeNull();
+    expect(viewport).not.toBeNull();
+    if (pickerRect && viewport) {
+      expect(pickerRect.y).toBeGreaterThanOrEqual(20);
+      expect(pickerRect.y + pickerRect.height).toBeLessThanOrEqual(viewport.height - 20);
+      expect(Math.abs(pickerRect.x + pickerRect.width / 2 - viewport.width / 2)).toBeLessThanOrEqual(2);
+    }
+
+    await page.mouse.click(4, 4);
+    await expect(page.locator(".label-picker")).toBeHidden();
+  });
+
+  test("PR focus route dismisses the inline label picker on outside click", async ({ page }) => {
+    await page.setViewportSize({ width: 560, height: 720 });
+    await page.goto("/focus/pulls/github/acme/widgets/1");
+    await page.locator(".focus-layout .pull-detail").waitFor({ state: "visible", timeout: 10_000 });
+
+    await page.locator(".label-editor-anchor--inline").getByRole("button", { name: "Labels" }).click();
+    await expect(page.locator(".label-picker")).toBeVisible();
+
+    await page.mouse.click(4, 4);
+    await expect(page.locator(".label-picker")).toBeHidden();
   });
 
   test("browser back/forward works between focus routes", async ({ page }) => {

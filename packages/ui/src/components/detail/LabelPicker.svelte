@@ -123,7 +123,7 @@
   .label-picker {
     width: 100%;
     min-width: 0;
-    max-height: min(390px, calc(100vh - 64px));
+    max-height: var(--label-picker-max-height, min(390px, calc(100dvh - 64px)));
     display: flex;
     flex-direction: column;
     overflow: hidden;

@@ -302,6 +302,15 @@
     }
   }
 
+  function onDocumentMousedown(e: MouseEvent): void {
+    if (!labelPickerOpen) return;
+    const target = e.target as Node;
+    const picker = document.querySelector(".label-editor-popover");
+    if (!picker?.contains(target) && !labelPickerAnchor?.contains(target)) {
+      closeLabelPicker();
+    }
+  }
+
   function copyBody(text: string): void {
     void copyToClipboard(text).then((ok) => {
       if (!ok) return;
@@ -764,6 +773,8 @@
     clearDragState();
   });
 </script>
+
+<svelte:document onmousedown={onDocumentMousedown} />
 
 {#if issues.isIssueDetailLoading() && (issues.getIssueDetail() === null || (staleIssue && hideStaleWhileLoading))}
   <div class="state-center"><p class="state-msg">Loading...</p></div>
