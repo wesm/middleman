@@ -1468,6 +1468,9 @@
             {#if !hideWorkspaceAction}
               <div class="primary-workspace-action">
                 {@render workspaceActionButton()}
+                {#if wsError}
+                  <span class="action-error action-error--workspace-compact">{wsError}</span>
+                {/if}
               </div>
             {/if}
           </div>
@@ -2261,6 +2264,11 @@
   }
 
   .action-error--state {
+    display: block;
+    margin-top: 6px;
+  }
+
+  .action-error--workspace-compact {
     display: block;
     margin-top: 6px;
   }

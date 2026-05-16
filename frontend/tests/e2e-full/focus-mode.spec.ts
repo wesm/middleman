@@ -73,6 +73,18 @@ test.describe("focus mode", () => {
   });
 
   test("PR focus route keeps workspace inside the mid-narrow action grid", async ({ page }) => {
+    await page.route("**/api/v1/workspaces", async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ title: "Workspace failed", detail: "workspace setup failed" }),
+      });
+    });
+
     await page.setViewportSize({ width: 560, height: 720 });
     await page.goto("/focus/pulls/github/acme/widgets/1");
     await page.locator(".focus-layout .pull-detail").waitFor({ state: "visible", timeout: 10_000 });
@@ -87,6 +99,11 @@ test.describe("focus mode", () => {
     expect(copyNumberHeight).toBeLessThan(28);
     await expect(page.locator(".meta-sep--branch")).toBeHidden();
     await expect(page.locator(".meta-sep--sync")).toBeHidden();
+
+    await page.locator(".actions-row--primary .primary-workspace-action .btn--workspace").click();
+    await expect(page.locator(".actions-row--primary .primary-workspace-action .action-error")).toHaveText(
+      "workspace setup failed",
+    );
   });
 
   test("narrow merged PR focus route keeps labels and workspace actions available", async ({ page }) => {
