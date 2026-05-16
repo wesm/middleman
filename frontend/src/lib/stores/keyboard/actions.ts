@@ -47,46 +47,74 @@ const onPullsListNotBoard = (ctx: Context): boolean =>
 
 const onIssuesList = (ctx: Context): boolean => ctx.page === "issues";
 
-function hasLabelEditingCapability(caps: { read_labels?: boolean; label_mutation?: boolean } | undefined): boolean {
+type LabelEditableSelection = Omit<OpenLabelPickerDetail, "itemType">;
+
+type LabelEditableDetail = {
+  repo_owner: string;
+  repo_name: string;
+  number: number | undefined;
+  repo?: {
+    provider?: string;
+    platform_host?: string;
+    repo_path?: string;
+    capabilities?: { read_labels?: boolean; label_mutation?: boolean };
+  };
+};
+
+function hasLabelEditingCapability(detail: LabelEditableDetail): boolean {
+  const caps = detail.repo?.capabilities;
   return Boolean(caps?.read_labels && caps.label_mutation);
 }
 
+function labelEditableDetailMatches(
+  detail: LabelEditableDetail,
+  selection: LabelEditableSelection,
+): boolean {
+  return detail.repo_owner === selection.owner
+    && detail.repo_name === selection.name
+    && detail.number === selection.number
+    && detail.repo?.provider === selection.provider
+    && detail.repo?.platform_host === selection.platformHost
+    && detail.repo?.repo_path === selection.repoPath;
+}
+
+function labelPickerDetailFor(
+  itemType: OpenLabelPickerDetail["itemType"],
+  selection: LabelEditableSelection | null,
+  detail: LabelEditableDetail | null,
+): OpenLabelPickerDetail | null {
+  if (selection === null || detail === null) return null;
+  if (!hasLabelEditingCapability(detail)) return null;
+  if (!labelEditableDetailMatches(detail, selection)) return null;
+  return { itemType, ...selection };
+}
+
 function prLabelPickerDetail(ctx: Context): OpenLabelPickerDetail | null {
-  const sel = ctx.selectedPR;
-  if (sel === null) return null;
   const detail = stores().detail.getDetail();
-  if (detail === null) return null;
-  if (!hasLabelEditingCapability(detail.repo?.capabilities)) return null;
-  if (
-    detail.repo_owner !== sel.owner
-    || detail.repo_name !== sel.name
-    || detail.merge_request?.Number !== sel.number
-    || detail.repo?.provider !== sel.provider
-    || detail.repo?.platform_host !== sel.platformHost
-    || detail.repo?.repo_path !== sel.repoPath
-  ) {
-    return null;
-  }
-  return { itemType: "pull", ...sel };
+  return labelPickerDetailFor(
+    "pull",
+    ctx.selectedPR,
+    detail && {
+      repo_owner: detail.repo_owner,
+      repo_name: detail.repo_name,
+      number: detail.merge_request?.Number,
+      repo: detail.repo,
+    },
+  );
 }
 
 function issueLabelPickerDetail(ctx: Context): OpenLabelPickerDetail | null {
-  const sel = ctx.selectedIssue;
-  if (sel === null) return null;
   const detail = stores().issues.getIssueDetail();
-  if (detail === null) return null;
-  if (!hasLabelEditingCapability(detail.repo?.capabilities)) return null;
-  if (
-    detail.repo_owner !== sel.owner
-    || detail.repo_name !== sel.name
-    || detail.issue?.Number !== sel.number
-    || detail.repo?.provider !== sel.provider
-    || detail.repo?.platform_host !== sel.platformHost
-    || detail.repo?.repo_path !== sel.repoPath
-  ) {
-    return null;
-  }
-  return { itemType: "issue", ...sel };
+  return labelPickerDetailFor(
+    "issue",
+    ctx.selectedIssue,
+    detail && {
+      repo_owner: detail.repo_owner,
+      repo_name: detail.repo_name,
+      number: detail.issue?.Number,
+      repo: detail.repo,
+    },
+  );
 }
 
 // Mirrors App.svelte's pre-migration page exclusions for `1`/`2`/`f`/etc.:
