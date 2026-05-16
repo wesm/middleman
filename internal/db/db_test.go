@@ -1244,6 +1244,7 @@ func removeProviderIdentityColumnsForTest(raw *sql.DB) error {
 		ALTER TABLE middleman_repos DROP COLUMN label_catalog_sync_error;
 		ALTER TABLE middleman_repos DROP COLUMN label_catalog_checked_at;
 		ALTER TABLE middleman_repos DROP COLUMN label_catalog_synced_at;
+		ALTER TABLE middleman_repos DROP COLUMN viewer_can_merge;
 		ALTER TABLE middleman_labels DROP COLUMN catalog_seen_at;
 		ALTER TABLE middleman_labels DROP COLUMN catalog_present;
 		ALTER TABLE middleman_mr_events DROP COLUMN platform_external_id;
