@@ -39,6 +39,7 @@ type FixtureClient struct {
 	Tags                      map[string][]*gh.RepositoryTag
 	CombinedStatuses          map[string]*gh.CombinedStatus
 	CheckRuns                 map[string][]*gh.CheckRun
+	Labels                    map[string][]*gh.Label
 	ListRepositoriesByOwnerFn func(context.Context, string) ([]*gh.Repository, error)
 	mu                        sync.Mutex
 	nextID                    int64
@@ -58,6 +59,7 @@ func NewFixtureClient() ghclient.Client {
 		Tags:             make(map[string][]*gh.RepositoryTag),
 		CombinedStatuses: make(map[string]*gh.CombinedStatus),
 		CheckRuns:        make(map[string][]*gh.CheckRun),
+		Labels:           make(map[string][]*gh.Label),
 		nextID:           10_000,
 	}
 }
@@ -201,6 +203,50 @@ func (c *FixtureClient) GetIssue(
 		}
 	}
 	return nil, nil
+}
+
+func (c *FixtureClient) ListRepoLabels(
+	_ context.Context, owner, repo string,
+) ([]*gh.Label, error) {
+	return slices.Clone(c.Labels[repoKey(owner, repo)]), nil
+}
+
+func (c *FixtureClient) ReplaceIssueLabels(
+	_ context.Context, owner, repo string, number int, names []string,
+) ([]*gh.Label, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	catalog := c.Labels[repoKey(owner, repo)]
+	byName := make(map[string]*gh.Label, len(catalog))
+	for _, label := range catalog {
+		if label != nil {
+			byName[label.GetName()] = label
+		}
+	}
+	labels := make([]*gh.Label, 0, len(names))
+	for _, name := range names {
+		label, ok := byName[name]
+		if !ok {
+			return nil, errFixtureNotFound
+		}
+		labels = append(labels, label)
+	}
+	for _, prs := range [][]*gh.PullRequest{c.OpenPRs[repoKey(owner, repo)], c.PRs[repoKey(owner, repo)]} {
+		for _, pr := range prs {
+			if pr.GetNumber() == number {
+				pr.Labels = slices.Clone(labels)
+			}
+		}
+	}
+	for _, issues := range [][]*gh.Issue{c.OpenIssues[repoKey(owner, repo)], c.Issues[repoKey(owner, repo)]} {
+		for _, issue := range issues {
+			if issue.GetNumber() == number {
+				issue.Labels = slices.Clone(labels)
+			}
+		}
+	}
+	return slices.Clone(labels), nil
 }
 
 func (c *FixtureClient) CreateIssue(

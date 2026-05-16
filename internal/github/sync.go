@@ -426,6 +426,11 @@ type gitHubClientProvider struct {
 	client Client
 }
 
+type githubLabelClient interface {
+	ListRepoLabels(ctx context.Context, owner, repo string) ([]*gh.Label, error)
+	ReplaceIssueLabels(ctx context.Context, owner, repo string, number int, names []string) ([]*gh.Label, error)
+}
+
 func registryFromGitHubClients(clients map[string]Client) *platform.Registry {
 	registry, err := platform.NewRegistry()
 	if err != nil {
@@ -466,6 +471,7 @@ func (p gitHubClientProvider) Host() string {
 }
 
 func (p gitHubClientProvider) Capabilities() platform.Capabilities {
+	_, labels := p.client.(githubLabelClient)
 	return platform.Capabilities{
 		ReadRepositories:  true,
 		ReadMergeRequests: true,
@@ -473,7 +479,7 @@ func (p gitHubClientProvider) Capabilities() platform.Capabilities {
 		ReadComments:      true,
 		ReadReleases:      true,
 		ReadCI:            true,
-		ReadLabels:        true,
+		ReadLabels:        labels,
 		CommentMutation:   true,
 		StateMutation:     true,
 		MergeMutation:     true,
@@ -481,7 +487,7 @@ func (p gitHubClientProvider) Capabilities() platform.Capabilities {
 		WorkflowApproval:  true,
 		ReadyForReview:    true,
 		IssueMutation:     true,
-		LabelMutation:     true,
+		LabelMutation:     labels,
 	}
 }
 
@@ -643,6 +649,21 @@ func (p gitHubClientProvider) ListOpenGitHubIssues(
 	ref platform.RepoRef,
 ) ([]*gh.Issue, error) {
 	return p.client.ListOpenIssues(ctx, ref.Owner, ref.Name)
+}
+
+func (p gitHubClientProvider) ListLabels(
+	ctx context.Context,
+	ref platform.RepoRef,
+) (platform.LabelCatalog, error) {
+	client, ok := p.client.(githubLabelClient)
+	if !ok {
+		return platform.LabelCatalog{}, platform.UnsupportedCapability(platform.KindGitHub, p.host, "read_labels")
+	}
+	labels, err := client.ListRepoLabels(ctx, ref.Owner, ref.Name)
+	if err != nil {
+		return platform.LabelCatalog{}, err
+	}
+	return platform.LabelCatalog{Labels: platformgithub.NormalizeLabels(ref, labels)}, nil
 }
 
 func (p gitHubClientProvider) GetIssue(
@@ -838,6 +859,41 @@ func (p gitHubClientProvider) CreateIssue(
 		return platform.Issue{}, fmt.Errorf("provider returned no issue")
 	}
 	return platformgithub.NormalizeIssue(ref, issue)
+}
+
+func (p gitHubClientProvider) SetMergeRequestLabels(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	names []string,
+) ([]platform.Label, error) {
+	return p.setIssueLikeLabels(ctx, ref, number, names)
+}
+
+func (p gitHubClientProvider) SetIssueLabels(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	names []string,
+) ([]platform.Label, error) {
+	return p.setIssueLikeLabels(ctx, ref, number, names)
+}
+
+func (p gitHubClientProvider) setIssueLikeLabels(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	names []string,
+) ([]platform.Label, error) {
+	client, ok := p.client.(githubLabelClient)
+	if !ok {
+		return nil, platform.UnsupportedCapability(platform.KindGitHub, p.host, "label_mutation")
+	}
+	labels, err := client.ReplaceIssueLabels(ctx, ref.Owner, ref.Name, number, names)
+	if err != nil {
+		return nil, err
+	}
+	return platformgithub.NormalizeLabels(ref, labels), nil
 }
 
 func (p gitHubClientProvider) ApproveMergeRequest(
@@ -1100,6 +1156,10 @@ func (s *Syncer) issueReaderFor(repo RepoRef) (platform.IssueReader, error) {
 	return s.clients.IssueReader(repoPlatform(repo), repoHost(repo))
 }
 
+func (s *Syncer) labelReaderFor(repo RepoRef) (platform.LabelReader, error) {
+	return s.clients.LabelReader(repoPlatform(repo), repoHost(repo))
+}
+
 func (s *Syncer) releaseReaderFor(repo RepoRef) (platform.ReleaseReader, error) {
 	return s.clients.ReleaseReader(repoPlatform(repo), repoHost(repo))
 }
@@ -1162,6 +1222,13 @@ func (s *Syncer) RepositoryReader(
 	return s.clients.RepositoryReader(kind, canonicalRepoHost(host))
 }
 
+func (s *Syncer) LabelReader(
+	kind platform.Kind,
+	host string,
+) (platform.LabelReader, error) {
+	return s.clients.LabelReader(kind, canonicalRepoHost(host))
+}
+
 func (s *Syncer) CommentMutator(
 	kind platform.Kind,
 	host string,
@@ -1202,6 +1269,13 @@ func (s *Syncer) IssueMutator(
 	host string,
 ) (platform.IssueMutator, error) {
 	return s.clients.IssueMutator(kind, canonicalRepoHost(host))
+}
+
+func (s *Syncer) LabelMutator(
+	kind platform.Kind,
+	host string,
+) (platform.LabelMutator, error) {
+	return s.clients.LabelMutator(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) ReviewMutator(
@@ -2036,6 +2110,8 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		s.syncProviderRepoOverview(ctx, repo, repoID, cloneFetchOK)
 	}
 
+	s.syncRepoLabelCatalog(ctx, repo, repoID)
+
 	syncErr := s.indexSyncRepo(ctx, repo, repoID, cloneFetchOK)
 
 	syncErrStr := ""
@@ -2049,7 +2125,77 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 	return syncErr
 }
 
+func (s *Syncer) syncRepoLabelCatalog(ctx context.Context, repo RepoRef, repoID int64) {
+	checkedAt := time.Now().UTC()
+	reader, err := s.labelReaderFor(repo)
+	if err != nil {
+		if errors.Is(err, platform.ErrUnsupportedCapability) || errors.Is(err, platform.ErrProviderNotConfigured) {
+			return
+		}
+		_ = s.db.UpdateRepoLabelCatalogCheck(ctx, repoID, checkedAt, err.Error())
+		return
+	}
+	catalog, err := reader.ListLabels(ctx, platformRepoRef(repo))
+	if err != nil {
+		_ = s.db.UpdateRepoLabelCatalogCheck(ctx, repoID, checkedAt, err.Error())
+		return
+	}
+	if catalog.NotModified {
+		if err := s.db.MarkRepoLabelCatalogSynced(ctx, repoID, checkedAt); err != nil {
+			slog.Warn("mark label catalog synced", "repo", repo.Owner+"/"+repo.Name, "err", err)
+		}
+		return
+	}
+	labels := platform.DBLabels(catalog.Labels, checkedAt)
+	if err := s.db.ReplaceRepoLabelCatalog(ctx, repoID, labels, checkedAt); err != nil {
+		slog.Warn("replace label catalog", "repo", repo.Owner+"/"+repo.Name, "err", err)
+	}
+}
+
+func (s *Syncer) RefreshRepoLabelCatalog(ctx context.Context, repo db.Repo) error {
+	ref := RepoRef{
+		Platform:           platform.Kind(repo.Platform),
+		PlatformHost:       repoProviderHostFromDB(repo),
+		Owner:              repo.Owner,
+		Name:               repo.Name,
+		RepoPath:           repo.RepoPath,
+		PlatformExternalID: repo.PlatformRepoID,
+		CloneURL:           repo.CloneURL,
+		WebURL:             repo.WebURL,
+		DefaultBranch:      repo.DefaultBranch,
+	}
+	checkedAt := time.Now().UTC()
+	reader, err := s.labelReaderFor(ref)
+	if err != nil {
+		_ = s.db.UpdateRepoLabelCatalogCheck(ctx, repo.ID, checkedAt, err.Error())
+		return err
+	}
+	catalog, err := reader.ListLabels(ctx, platformRepoRef(ref))
+	if err != nil {
+		_ = s.db.UpdateRepoLabelCatalogCheck(ctx, repo.ID, checkedAt, err.Error())
+		return err
+	}
+	if catalog.NotModified {
+		return s.db.MarkRepoLabelCatalogSynced(ctx, repo.ID, checkedAt)
+	}
+	return s.db.ReplaceRepoLabelCatalog(ctx, repo.ID, platform.DBLabels(catalog.Labels, checkedAt), checkedAt)
+}
+
 const repoOverviewTimelineLimit = 30
+
+func repoProviderHostFromDB(repo db.Repo) string {
+	if repo.PlatformHost != "" {
+		return repo.PlatformHost
+	}
+	kind := platform.Kind(repo.Platform)
+	if kind == "" {
+		kind = platform.KindGitHub
+	}
+	if host, ok := platform.DefaultHost(kind); ok {
+		return host
+	}
+	return platform.DefaultGitHubHost
+}
 
 func (s *Syncer) syncRepoOverview(
 	ctx context.Context,

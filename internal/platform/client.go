@@ -33,6 +33,15 @@ type IssueReader interface {
 	ListIssueEvents(ctx context.Context, ref RepoRef, number int) ([]IssueEvent, error)
 }
 
+type LabelCatalog struct {
+	Labels      []Label
+	NotModified bool
+}
+
+type LabelReader interface {
+	ListLabels(ctx context.Context, ref RepoRef) (LabelCatalog, error)
+}
+
 type ReleaseReader interface {
 	ListReleases(ctx context.Context, ref RepoRef) ([]Release, error)
 }
@@ -89,6 +98,11 @@ type ReadyForReviewMutator interface {
 
 type IssueMutator interface {
 	CreateIssue(ctx context.Context, ref RepoRef, title string, body string) (Issue, error)
+}
+
+type LabelMutator interface {
+	SetMergeRequestLabels(ctx context.Context, ref RepoRef, number int, names []string) ([]Label, error)
+	SetIssueLabels(ctx context.Context, ref RepoRef, number int, names []string) ([]Label, error)
 }
 
 type ReviewMutator interface {

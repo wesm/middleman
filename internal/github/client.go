@@ -203,6 +203,37 @@ func (c *liveClient) ListTags(
 	return tags, nil
 }
 
+func (c *liveClient) ListRepoLabels(
+	ctx context.Context, owner, repo string,
+) ([]*gh.Label, error) {
+	var all []*gh.Label
+	opts := &gh.ListOptions{PerPage: 100}
+	for {
+		labels, resp, err := c.gh.Issues.ListLabels(ctx, owner, repo, opts)
+		c.trackRate(resp)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, labels...)
+		if resp == nil || resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+	return all, nil
+}
+
+func (c *liveClient) ReplaceIssueLabels(
+	ctx context.Context, owner, repo string, number int, names []string,
+) ([]*gh.Label, error) {
+	labels, resp, err := c.gh.Issues.ReplaceLabelsForIssue(ctx, owner, repo, number, names)
+	c.trackRate(resp)
+	if err != nil {
+		return nil, err
+	}
+	return labels, nil
+}
+
 func (c *liveClient) CreateIssue(
 	ctx context.Context, owner, repo, title, body string,
 ) (*gh.Issue, error) {

@@ -102,6 +102,33 @@ type mockClient struct {
 	listIssueCommentsIfChangedFn    func(context.Context, string, string, int) ([]*gh.IssueComment, error)
 }
 
+type labelCatalogTestClient struct {
+	*mockClient
+	labels []*gh.Label
+	calls  atomic.Int32
+}
+
+func (c *labelCatalogTestClient) ListRepoLabels(
+	_ context.Context, _, _ string,
+) ([]*gh.Label, error) {
+	c.calls.Add(1)
+	return append([]*gh.Label(nil), c.labels...), nil
+}
+
+func (c *labelCatalogTestClient) ReplaceIssueLabels(
+	_ context.Context, _, _ string, _ int, names []string,
+) ([]*gh.Label, error) {
+	byName := make(map[string]*gh.Label, len(c.labels))
+	for _, label := range c.labels {
+		byName[label.GetName()] = label
+	}
+	labels := make([]*gh.Label, 0, len(names))
+	for _, name := range names {
+		labels = append(labels, byName[name])
+	}
+	return labels, nil
+}
+
 type syncTestProvider struct {
 	kind platform.Kind
 	host string
@@ -1096,6 +1123,38 @@ func TestSyncStoresPRLabels(t *testing.T) {
 	require.True(stored.Labels[0].IsDefault)
 	require.Equal(int64(501), stored.Labels[0].PlatformID)
 	require.True(stored.Labels[0].UpdatedAt.Equal(now))
+}
+
+func TestSyncRefreshesRepoLabelCatalog(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	client := &labelCatalogTestClient{
+		mockClient: &mockClient{
+			openPRs:   []*gh.PullRequest{},
+			comments:  []*gh.IssueComment{},
+			reviews:   []*gh.PullRequestReview{},
+			commits:   []*gh.RepositoryCommit{},
+			ciStatus:  &gh.CombinedStatus{},
+			checkRuns: []*gh.CheckRun{},
+		},
+		labels: []*gh.Label{buildGitHubLabel(901, "triage", "Needs review", "fbca04", false)},
+	}
+
+	syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}, time.Minute, nil, testBudget(500))
+	syncer.RunOnce(ctx)
+
+	repo, err := d.GetRepoByOwnerName(ctx, "owner", "repo")
+	require.NoError(err)
+	require.NotNil(repo)
+	labels, freshness, err := d.ListRepoLabelCatalog(ctx, repo.ID)
+	require.NoError(err)
+	require.Len(labels, 1)
+	require.Equal("triage", labels[0].Name)
+	require.NotNil(freshness.CheckedAt)
+	require.NotNil(freshness.SyncedAt)
+	require.Equal(int32(1), client.calls.Load())
 }
 
 func TestSyncMRReplacesLabelsOnResync(t *testing.T) {

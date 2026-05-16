@@ -313,11 +313,19 @@ func seedFixtureClientLabels(fc *testutil.FixtureClient) {
 		return
 	}
 	bug := &gh.Label{
+		ID:          new(int64(1)),
+		NodeID:      new("LABEL_bug"),
 		Name:        new("bug"),
 		Description: new("Something is broken"),
 		Color:       new("d73a4a"),
 		Default:     new(true),
 	}
+	docs := &gh.Label{ID: new(int64(2)), NodeID: new("LABEL_docs"), Name: new("docs"), Description: new("Documentation"), Color: new("0075ca")}
+	triage := &gh.Label{ID: new(int64(3)), NodeID: new("LABEL_triage"), Name: new("triage"), Description: new("Needs maintainer review"), Color: new("fbca04")}
+	if fc.Labels == nil {
+		fc.Labels = make(map[string][]*gh.Label)
+	}
+	fc.Labels["acme/widgets"] = []*gh.Label{bug, docs, triage}
 	for _, prs := range [][]*gh.PullRequest{
 		fc.OpenPRs["acme/widgets"],
 		fc.PRs["acme/widgets"],

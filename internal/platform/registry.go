@@ -94,6 +94,19 @@ func (r *Registry) IssueReader(kind Kind, host string) (IssueReader, error) {
 	return reader, nil
 }
 
+func (r *Registry) LabelReader(kind Kind, host string) (LabelReader, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+
+	reader, ok := provider.(LabelReader)
+	if !ok {
+		return nil, UnsupportedCapability(kind, host, "read_labels")
+	}
+	return reader, nil
+}
+
 func (r *Registry) ReleaseReader(kind Kind, host string) (ReleaseReader, error) {
 	provider, err := r.Provider(kind, host)
 	if err != nil {
@@ -201,6 +214,18 @@ func (r *Registry) IssueMutator(kind Kind, host string) (IssueMutator, error) {
 	mutator, ok := provider.(IssueMutator)
 	if !ok {
 		return nil, UnsupportedCapability(kind, host, "issue_mutation")
+	}
+	return mutator, nil
+}
+
+func (r *Registry) LabelMutator(kind Kind, host string) (LabelMutator, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+	mutator, ok := provider.(LabelMutator)
+	if !ok {
+		return nil, UnsupportedCapability(kind, host, "label_mutation")
 	}
 	return mutator, nil
 }

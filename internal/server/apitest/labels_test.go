@@ -2,19 +2,60 @@ package apitest
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	gh "github.com/google/go-github/v84/github"
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wesm/middleman/internal/db"
+	ghclient "github.com/wesm/middleman/internal/github"
+	"github.com/wesm/middleman/internal/server"
+	"github.com/wesm/middleman/internal/testutil"
+	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
 type labelAPIResponse struct {
 	Labels []db.Label `json:"labels"`
+}
+
+func setupLabelTestServer(t *testing.T) (*server.Server, *db.DB, *testutil.FixtureClient, *ghclient.Syncer) {
+	t.Helper()
+	database := dbtest.Open(t)
+	client := testutil.NewFixtureClient().(*testutil.FixtureClient)
+	client.Labels["acme/widget"] = []*gh.Label{
+		{Name: new("bug"), Description: new("Something is broken"), Color: new("d73a4a"), Default: new(true)},
+		{Name: new("triage"), Description: new("Needs review"), Color: new("fbca04")},
+	}
+	pr := &gh.PullRequest{
+		ID:        new(int64),
+		Number:    new(int),
+		Title:     new(string),
+		State:     new(string),
+		CreatedAt: &gh.Timestamp{Time: time.Date(2026, 5, 15, 10, 0, 0, 0, time.UTC)},
+		UpdatedAt: &gh.Timestamp{Time: time.Date(2026, 5, 15, 10, 0, 0, 0, time.UTC)},
+	}
+	*pr.ID = 101
+	*pr.Number = 1
+	*pr.Title = "Improve widgets"
+	*pr.State = "open"
+	client.PRs["acme/widget"] = []*gh.PullRequest{pr}
+	client.OpenPRs["acme/widget"] = []*gh.PullRequest{pr}
+	client.Issues["acme/widget"] = []*gh.Issue{{Number: new(int)}}
+	*client.Issues["acme/widget"][0].Number = 7
+	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": client}, database, nil, defaultTestRepos, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		require.NoError(t, srv.Shutdown(ctx))
+	})
+	return srv, database, client, syncer
 }
 
 func doLabelAPIRequest(
@@ -57,10 +98,25 @@ func seedRepoLabelCatalog(
 	return repo.ID
 }
 
+func TestAPIListRepoLabelsRefreshesStaleCatalogFromProvider(t *testing.T) {
+	require := require.New(t)
+	srv, database, _, _ := setupLabelTestServer(t)
+	seedPR(t, database, "acme", "widget", 1)
+
+	rr := doLabelAPIRequest(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget/labels", nil)
+	require.Equal(http.StatusOK, rr.Code)
+
+	var body labelAPIResponse
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+	require.Len(body.Labels, 2)
+	require.Equal("bug", body.Labels[0].Name)
+	require.Equal("triage", body.Labels[1].Name)
+}
+
 func TestAPIListRepoLabelsReturnsCachedCatalog(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _, _ := setupLabelTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 	seedRepoLabelCatalog(t, database, "acme", "widget")
 
@@ -76,7 +132,7 @@ func TestAPIListRepoLabelsReturnsCachedCatalog(t *testing.T) {
 
 func TestAPISetPullLabelsReplacesAssignedLabelsFromCatalog(t *testing.T) {
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, providerClient, syncer := setupLabelTestServer(t)
 	seedPRWithLabels(t, database, "acme", "widget", 1, []db.Label{{Name: "bug", Color: "d73a4a"}})
 	repoID := seedRepoLabelCatalog(t, database, "acme", "widget")
 
@@ -95,11 +151,40 @@ func TestAPISetPullLabelsReplacesAssignedLabelsFromCatalog(t *testing.T) {
 	require.NotNil(pr)
 	require.Len(pr.Labels, 1)
 	require.Equal("triage", pr.Labels[0].Name)
+	require.Len(providerClient.PRs["acme/widget"][0].Labels, 1)
+	require.Equal("triage", providerClient.PRs["acme/widget"][0].Labels[0].GetName())
+
+	syncer.RunOnce(t.Context())
+	resynced, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 1)
+	require.NoError(err)
+	require.NotNil(resynced)
+	require.Len(resynced.Labels, 1)
+	require.Equal("triage", resynced.Labels[0].Name)
+}
+
+func TestAPISetIssueLabelsReplacesAssignedLabelsViaProvider(t *testing.T) {
+	require := require.New(t)
+	srv, database, providerClient, _ := setupLabelTestServer(t)
+	seedIssue(t, database, "acme", "widget", 7, "open")
+	repoID := seedRepoLabelCatalog(t, database, "acme", "widget")
+
+	rr := doLabelAPIRequest(t, srv, http.MethodPut, "/api/v1/issues/github/acme/widget/7/labels", map[string][]string{
+		"labels": {"triage"},
+	})
+	require.Equal(http.StatusOK, rr.Code)
+
+	issue, err := database.GetIssueByRepoIDAndNumber(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(issue)
+	require.Len(issue.Labels, 1)
+	require.Equal("triage", issue.Labels[0].Name)
+	require.Len(providerClient.Issues["acme/widget"][0].Labels, 1)
+	require.Equal("triage", providerClient.Issues["acme/widget"][0].Labels[0].GetName())
 }
 
 func TestAPISetIssueLabelsRejectsLabelsOutsideCatalog(t *testing.T) {
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _, _ := setupLabelTestServer(t)
 	seedIssue(t, database, "acme", "widget", 7, "open")
 	seedRepoLabelCatalog(t, database, "acme", "widget")
 

@@ -177,7 +177,7 @@ func defaultGitHubProviderCapabilities() providerCapabilitiesResponse {
 		ReadComments:      true,
 		ReadReleases:      true,
 		ReadCI:            true,
-		ReadLabels:        true,
+		ReadLabels:        false,
 		CommentMutation:   true,
 		StateMutation:     true,
 		MergeMutation:     true,
@@ -185,7 +185,7 @@ func defaultGitHubProviderCapabilities() providerCapabilitiesResponse {
 		WorkflowApproval:  true,
 		ReadyForReview:    true,
 		IssueMutation:     true,
-		LabelMutation:     true,
+		LabelMutation:     false,
 	})
 }
 

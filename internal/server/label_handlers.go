@@ -8,6 +8,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/wesm/middleman/internal/db"
+	"github.com/wesm/middleman/internal/platform"
 )
 
 type listRepoLabelsOutput = bodyOutput[repoLabelsResponse]
@@ -62,6 +63,14 @@ func (s *Server) listRepoLabels(
 		return nil, unsupportedCapabilityProblem(*repo, capabilityReadLabels)
 	}
 
+	_, freshness, err := s.db.ListRepoLabelCatalog(ctx, repo.ID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("list repo labels failed")
+	}
+	if labelCatalogStale(freshness, time.Now().UTC()) && s.syncer != nil {
+		_ = s.syncer.RefreshRepoLabelCatalog(ctx, *repo)
+	}
+
 	labels, freshness, err := s.db.ListRepoLabelCatalog(ctx, repo.ID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("list repo labels failed")
@@ -80,7 +89,7 @@ func (s *Server) setPullLabels(
 	ctx context.Context,
 	input *setPullLabelsInput,
 ) (*setLabelsOutput, error) {
-	repo, labels, err := s.resolveRequestedLabels(
+	repo, names, err := s.resolveRequestedLabelNames(
 		ctx,
 		input.Provider,
 		input.PlatformHost,
@@ -99,6 +108,21 @@ func (s *Server) setPullLabels(
 	if mr == nil {
 		return nil, huma.Error404NotFound("pull not found")
 	}
+
+	if s.syncer == nil {
+		return nil, unsupportedCapabilityProblem(*repo, capabilityLabelMutation)
+	}
+	mutator, err := s.syncer.LabelMutator(repoProviderKind(*repo), repoProviderHost(*repo))
+	if err != nil {
+		return nil, unsupportedCapabilityProblem(*repo, capabilityLabelMutation)
+	}
+	providerLabels, err := mutator.SetMergeRequestLabels(
+		ctx, platformRepoRefFromDB(*repo), input.Number, names,
+	)
+	if err != nil {
+		return nil, huma.Error502BadGateway("provider API error: " + err.Error())
+	}
+	labels := platform.DBLabels(providerLabels, time.Now().UTC())
 	if err := s.db.ReplaceMergeRequestLabels(ctx, repo.ID, mr.ID, labels); err != nil {
 		return nil, huma.Error500InternalServerError("save pull labels failed")
 	}
@@ -109,7 +133,7 @@ func (s *Server) setIssueLabels(
 	ctx context.Context,
 	input *setIssueLabelsInput,
 ) (*setLabelsOutput, error) {
-	repo, labels, err := s.resolveRequestedLabels(
+	repo, names, err := s.resolveRequestedLabelNames(
 		ctx,
 		input.Provider,
 		input.PlatformHost,
@@ -128,20 +152,35 @@ func (s *Server) setIssueLabels(
 	if issue == nil {
 		return nil, huma.Error404NotFound("issue not found")
 	}
+
+	if s.syncer == nil {
+		return nil, unsupportedCapabilityProblem(*repo, capabilityLabelMutation)
+	}
+	mutator, err := s.syncer.LabelMutator(repoProviderKind(*repo), repoProviderHost(*repo))
+	if err != nil {
+		return nil, unsupportedCapabilityProblem(*repo, capabilityLabelMutation)
+	}
+	providerLabels, err := mutator.SetIssueLabels(
+		ctx, platformRepoRefFromDB(*repo), input.Number, names,
+	)
+	if err != nil {
+		return nil, huma.Error502BadGateway("provider API error: " + err.Error())
+	}
+	labels := platform.DBLabels(providerLabels, time.Now().UTC())
 	if err := s.db.ReplaceIssueLabels(ctx, repo.ID, issue.ID, labels); err != nil {
 		return nil, huma.Error500InternalServerError("save issue labels failed")
 	}
 	return &setLabelsOutput{Body: itemLabelsResponse{Labels: labels}}, nil
 }
 
-func (s *Server) resolveRequestedLabels(
+func (s *Server) resolveRequestedLabelNames(
 	ctx context.Context,
 	provider string,
 	platformHost string,
 	owner string,
 	name string,
 	names []string,
-) (*db.Repo, []db.Label, error) {
+) (*db.Repo, []string, error) {
 	repo, err := s.lookupRepoByProviderRoute(ctx, provider, platformHost, owner, name)
 	if err != nil {
 		return nil, nil, providerRouteLookupError(err)
@@ -154,17 +193,24 @@ func (s *Server) resolveRequestedLabels(
 		return nil, nil, unsupportedCapabilityProblem(*repo, capabilityLabelMutation)
 	}
 
-	catalog, _, err := s.db.ListRepoLabelCatalog(ctx, repo.ID)
+	catalog, freshness, err := s.db.ListRepoLabelCatalog(ctx, repo.ID)
 	if err != nil {
 		return nil, nil, huma.Error500InternalServerError("list repo labels failed")
 	}
-	catalogByName := make(map[string]db.Label, len(catalog))
+	if labelCatalogStale(freshness, time.Now().UTC()) && s.syncer != nil {
+		_ = s.syncer.RefreshRepoLabelCatalog(ctx, *repo)
+		catalog, _, err = s.db.ListRepoLabelCatalog(ctx, repo.ID)
+		if err != nil {
+			return nil, nil, huma.Error500InternalServerError("list repo labels failed")
+		}
+	}
+	catalogByName := make(map[string]struct{}, len(catalog))
 	for _, label := range catalog {
-		catalogByName[label.Name] = label
+		catalogByName[label.Name] = struct{}{}
 	}
 
 	seen := make(map[string]struct{}, len(names))
-	labels := make([]db.Label, 0, len(names))
+	resolved := make([]string, 0, len(names))
 	for _, raw := range names {
 		labelName := strings.TrimSpace(raw)
 		if labelName == "" {
@@ -173,14 +219,13 @@ func (s *Server) resolveRequestedLabels(
 		if _, ok := seen[labelName]; ok {
 			return nil, nil, huma.Error400BadRequest(fmt.Sprintf("duplicate label %q", labelName))
 		}
-		label, ok := catalogByName[labelName]
-		if !ok {
+		if _, ok := catalogByName[labelName]; !ok {
 			return nil, nil, huma.Error400BadRequest(fmt.Sprintf("label %q is not in the repository label catalog", labelName))
 		}
 		seen[labelName] = struct{}{}
-		labels = append(labels, label)
+		resolved = append(resolved, labelName)
 	}
-	return repo, labels, nil
+	return repo, resolved, nil
 }
 
 func labelCatalogStale(freshness db.LabelCatalogFreshness, now time.Time) bool {
