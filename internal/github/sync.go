@@ -2148,15 +2148,19 @@ func (s *Syncer) refreshRepoSettings(
 			)
 			return
 		}
-		viewerCanMerge := true
 		if canMerge := gitHubViewerCanMerge(ghRepo); canMerge != nil {
-			viewerCanMerge = *canMerge
+			_ = s.db.UpdateRepoSettings(ctx, repoID,
+				ghRepo.GetAllowSquashMerge(),
+				ghRepo.GetAllowMergeCommit(),
+				ghRepo.GetAllowRebaseMerge(),
+				*canMerge,
+			)
+			return
 		}
-		_ = s.db.UpdateRepoSettings(ctx, repoID,
+		_ = s.db.UpdateRepoMergeSettings(ctx, repoID,
 			ghRepo.GetAllowSquashMerge(),
 			ghRepo.GetAllowMergeCommit(),
 			ghRepo.GetAllowRebaseMerge(),
-			viewerCanMerge,
 		)
 		return
 	}

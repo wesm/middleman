@@ -2488,6 +2488,51 @@ func TestSyncRepoUpdatesViewerCanMergeWithoutMergeSettings(t *testing.T) {
 	assert.False(repos[0].ViewerCanMerge)
 }
 
+func TestRefreshRepoSettingsPreservesViewerCanMergeWhenGitHubOmitsPermissions(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widgets",
+		RepoPath:     "acme/widgets",
+	})
+	require.NoError(err)
+	require.NoError(d.UpdateRepoSettings(ctx, repoID, true, true, true, false))
+	client := &mockClient{getRepositoryFn: func(
+		context.Context,
+		string,
+		string,
+	) (*gh.Repository, error) {
+		return &gh.Repository{
+			Name:             new("widgets"),
+			AllowSquashMerge: new(false),
+			AllowMergeCommit: new(true),
+			AllowRebaseMerge: new(false),
+		}, nil
+	}}
+	syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widgets",
+		RepoPath:     "acme/widgets",
+	}}, time.Minute, nil, nil)
+
+	syncer.refreshRepoSettings(ctx, syncer.repos[0], repoID, nil)
+
+	repos, err := d.ListRepos(ctx)
+	require.NoError(err)
+	require.Len(repos, 1)
+	assert.False(repos[0].AllowSquashMerge)
+	assert.True(repos[0].AllowMergeCommit)
+	assert.False(repos[0].AllowRebaseMerge)
+	assert.False(repos[0].ViewerCanMerge)
+}
+
 func TestSyncRepoPreservesViewerCanMergeWhenMergeSettingsOmitPermission(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
