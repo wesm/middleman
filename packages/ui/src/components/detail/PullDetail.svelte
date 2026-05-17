@@ -819,13 +819,25 @@
     }
   }
 
+  function isLabelPickerControlTarget(target: Node): boolean {
+    if (!(target instanceof Element)) return false;
+    return Boolean(
+      target.closest(".label-editor-anchor")
+      || target.closest(".actions-menu-trigger"),
+    );
+  }
+
   function onDocumentMousedown(e: MouseEvent): void {
     const target = e.target as Node;
     if (actionMenuOpen && !actionMenuWrapEl?.contains(target)) {
       closeActionMenu();
     }
     if (labelPickerOpen) {
-      if (!labelPickerPopover?.contains(target) && !labelPickerAnchor?.contains(target)) {
+      if (
+        !labelPickerPopover?.contains(target)
+        && !labelPickerAnchor?.contains(target)
+        && !isLabelPickerControlTarget(target)
+      ) {
         closeLabelPicker();
       }
     }
