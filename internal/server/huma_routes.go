@@ -2280,7 +2280,7 @@ func (s *Server) syncPRCI(ctx context.Context, input *repoNumberInput) (*syncPRC
 	if mr == nil {
 		return nil, huma.Error404NotFound("pull request not found after CI refresh")
 	}
-	body, err := s.buildPullDetailResponse(ctx, mr, workflowDBOnly)
+	body, err := s.buildPullDetailResponse(ctx, mr)
 	if err != nil {
 		return nil, err
 	}
