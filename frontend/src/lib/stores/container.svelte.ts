@@ -6,7 +6,7 @@ let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 function classify(width: number): ContainerSize {
   if (width < 500) return "narrow";
-  if (width < 900) return "medium";
+  if (width < 1100) return "medium";
   return "wide";
 }
 

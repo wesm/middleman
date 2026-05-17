@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getStores, KbdBadge } from "@middleman/ui";
+  import { getStores, KbdBadge, SelectDropdown } from "@middleman/ui";
   import {
     getBasePath,
     getPage,
@@ -54,6 +54,34 @@
 
   const syncing = $derived(sync.getSyncState()?.running ?? false);
   const compactHeader = $derived(getContainerSize() !== "wide");
+  const compactNavOptions = $derived.by(() => {
+    const options = [
+      { value: "activity", label: "Activity" },
+      { value: "repos", label: "Repos" },
+      { value: "pulls", label: "PRs" },
+      { value: "issues", label: "Issues" },
+      { value: "board", label: "Board" },
+      { value: "reviews", label: "Reviews" },
+      { value: "workspaces", label: "Workspaces" },
+    ];
+
+    if (getPage() === "design-system") {
+      options.push({ value: "design-system", label: "Design system" });
+    }
+    if (getPage() === "terminal") {
+      options.push({ value: "terminal", label: "Workspaces" });
+    }
+    if (!isEmbedded() && getPage() === "settings") {
+      options.push({ value: "settings", label: "Settings" });
+    }
+
+    return options;
+  });
+  const compactNavValue = $derived(
+    getPage() === "pulls" && getView() === "board"
+      ? "board"
+      : getPage(),
+  );
 
   function routeForTab(
     destination: "pulls" | "issues",
@@ -87,6 +115,19 @@
     else if (destination === "settings") navigate("/settings");
     else if (destination === "design-system") navigate("/design-system");
   }
+
+  function navigateCompactNav(value: string): void {
+    if (value === "activity") navigate("/");
+    else if (value === "repos") navigateTab("repos");
+    else if (value === "pulls") navigateTab("pulls");
+    else if (value === "issues") navigateTab("issues");
+    else if (value === "board") navigateTab("board");
+    else if (value === "reviews") navigateTab("reviews");
+    else if (value === "workspaces" || value === "terminal") {
+      navigateTab("workspaces");
+    } else if (value === "settings") navigateTab("settings");
+    else if (value === "design-system") navigateTab("design-system");
+  }
 </script>
 
 <header class="app-header">
@@ -118,39 +159,13 @@
 
   <nav class="header-center">
     {#if compactHeader}
-      <select
+      <SelectDropdown
         class="nav-select"
-        value={getPage() === "pulls" && getView() === "board" ? "board" : getPage()}
-        onchange={(e) => {
-          const v = (e.target as HTMLSelectElement).value;
-          if (v === "activity") navigate("/");
-          else if (v === "repos") navigateTab("repos");
-          else if (v === "pulls") navigateTab("pulls");
-          else if (v === "issues") navigateTab("issues");
-          else if (v === "board") navigateTab("board");
-          else if (v === "reviews") navigateTab("reviews");
-          else if (v === "workspaces" || v === "terminal") navigateTab("workspaces");
-          else if (v === "settings") navigateTab("settings");
-          else if (v === "design-system") navigateTab("design-system");
-        }}
-      >
-        <option value="activity">Activity</option>
-        <option value="repos">Repos</option>
-        <option value="pulls">PRs</option>
-        <option value="issues">Issues</option>
-        <option value="board">Board</option>
-        <option value="reviews">Reviews</option>
-        <option value="workspaces">Workspaces</option>
-        {#if getPage() === "design-system"}
-          <option value="design-system">Design system</option>
-        {/if}
-        {#if getPage() === "terminal"}
-          <option value="terminal">Workspaces</option>
-        {/if}
-        {#if !isEmbedded() && getPage() === "settings"}
-          <option value="settings">Settings</option>
-        {/if}
-      </select>
+        value={compactNavValue}
+        options={compactNavOptions}
+        onchange={navigateCompactNav}
+        title="Page"
+      />
     {:else}
       <div class="tab-group">
         <button class="view-tab" class:active={getPage() === "activity"} onclick={() => { if (getPage() !== "activity") navigateTab("activity"); }}>
@@ -321,6 +336,8 @@
   }
 
   .action-btn {
+    box-sizing: border-box;
+    height: 28px;
     padding: 5px 12px;
     border-radius: var(--radius-sm);
     font-size: var(--font-size-md);
@@ -338,14 +355,20 @@
     gap: 7px;
     min-width: 34px;
     min-height: 28px;
+    line-height: 0;
   }
 
   .sync-icon {
+    display: inline-flex;
     flex-shrink: 0;
   }
 
   .sync-icon--spinning {
     animation: header-spin 0.9s linear infinite;
+  }
+
+  .sync-label {
+    line-height: 1;
   }
 
   @keyframes header-spin {
@@ -362,15 +385,6 @@
   .action-btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
-  }
-
-  .nav-select {
-    font-size: var(--font-size-sm);
-    padding: 4px 8px;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
-    background: var(--bg-surface);
-    color: var(--text-primary);
   }
 
   .daemon-indicator {
@@ -409,8 +423,14 @@
     flex: 0 0 132px;
   }
 
-  :global(#app.container-medium) .nav-select {
+  :global(#app.container-medium .nav-select) {
     width: 100%;
+    min-width: 0;
+  }
+
+  :global(#app.container-medium .nav-select .select-dropdown-trigger) {
+    border-color: var(--border-muted);
+    background: var(--bg-inset);
   }
 
   :global(#app.container-medium) .header-right {
@@ -419,7 +439,8 @@
   }
 
   :global(#app.container-medium) .sync-btn {
-    padding-inline: 9px;
+    min-height: 28px;
+    padding: 5px 10px;
   }
 
   :global(#app.container-medium) .sync-label {
@@ -471,8 +492,12 @@
     order: 2;
   }
 
-  :global(#app.container-narrow) .nav-select {
+  :global(#app.container-narrow .nav-select) {
     width: 100%;
+    min-width: 0;
+  }
+
+  :global(#app.container-narrow .nav-select .select-dropdown-trigger) {
     min-height: 32px;
     font-size: var(--font-size-md);
   }
@@ -484,7 +509,7 @@
   }
 
   :global(#app.container-narrow) .action-btn {
-    min-height: 32px;
+    height: 32px;
     padding-inline: 10px;
   }
 

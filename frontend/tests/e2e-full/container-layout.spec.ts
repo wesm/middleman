@@ -46,7 +46,7 @@ test.describe("container-aware layout", () => {
   });
 
   test("medium viewport collapses page tabs and sync label", async ({ page }) => {
-    await page.setViewportSize({ width: 785, height: 900 });
+    await page.setViewportSize({ width: 1024, height: 768 });
     await page.goto("/pulls/github/acme/widgets/1?desktop=1");
     const header = page.locator(".app-header");
     await header.waitFor({ state: "visible", timeout: 10_000 });
@@ -56,15 +56,47 @@ test.describe("container-aware layout", () => {
     await expect(page.getByRole("button", { name: "Sync" })).toBeVisible();
     await expect(page.locator(".sync-btn .sync-label")).not.toBeVisible();
 
+    await page.getByRole("button", { name: "All repos" }).click();
+    await expect(page.locator(".typeahead-list")).toBeVisible();
+    const repoMenuStyle = await page.evaluate(() => {
+      const list = document.querySelector(".typeahead-list");
+      const style = list ? getComputedStyle(list) : null;
+      return {
+        background: style?.backgroundColor ?? "",
+        borderColor: style?.borderColor ?? "",
+        borderRadius: style?.borderRadius ?? "",
+      };
+    });
+
+    await page.locator(".nav-select .select-dropdown-trigger").click();
+    const navList = page.locator(".nav-select .select-dropdown-list");
+    await expect(navList).toBeVisible();
+    await expect(navList.getByRole("option", { name: "PRs" })).toBeVisible();
+    const navMenuStyle = await page.evaluate(() => {
+      const list = document.querySelector(".nav-select .select-dropdown-list");
+      const style = list ? getComputedStyle(list) : null;
+      return {
+        background: style?.backgroundColor ?? "",
+        borderColor: style?.borderColor ?? "",
+        borderRadius: style?.borderRadius ?? "",
+      };
+    });
+
+    expect(navMenuStyle).toEqual(repoMenuStyle);
+
     const metrics = await page.evaluate(() => {
       const headerRect = document.querySelector(".app-header")
         ?.getBoundingClientRect();
       const syncRect = document.querySelector(".sync-btn")
         ?.getBoundingClientRect();
+      const themeRect = document.querySelector("button[title='Toggle theme']")
+        ?.getBoundingClientRect();
       return {
         headerRight: headerRect?.right ?? 0,
         headerHeight: headerRect?.height ?? 0,
+        syncHeight: syncRect?.height ?? 0,
         syncWidth: syncRect?.width ?? 0,
+        themeHeight: themeRect?.height ?? 0,
         viewportWidth: window.innerWidth,
         documentWidth: document.documentElement.scrollWidth,
         bodyWidth: document.body.scrollWidth,
@@ -73,6 +105,7 @@ test.describe("container-aware layout", () => {
 
     expect(metrics.headerRight).toBeLessThanOrEqual(metrics.viewportWidth);
     expect(metrics.headerHeight).toBeLessThanOrEqual(52);
+    expect(Math.abs(metrics.syncHeight - metrics.themeHeight)).toBeLessThanOrEqual(1);
     expect(metrics.syncWidth).toBeLessThanOrEqual(42);
     expect(Math.max(metrics.documentWidth, metrics.bodyWidth)).toBeLessThanOrEqual(
       metrics.viewportWidth,
@@ -124,5 +157,18 @@ test.describe("container-aware layout", () => {
     // Wait for the resize observer debounce (100ms) to settle.
     await expect(page.locator(".tab-group")).toBeVisible({ timeout: 5_000 });
     await expect(page.locator(".nav-select")).not.toBeAttached();
+
+    const metrics = await page.evaluate(() => {
+      const syncRect = document.querySelector(".sync-btn")
+        ?.getBoundingClientRect();
+      const themeRect = document.querySelector("button[title='Toggle theme']")
+        ?.getBoundingClientRect();
+      return {
+        syncHeight: syncRect?.height ?? 0,
+        themeHeight: themeRect?.height ?? 0,
+      };
+    });
+
+    expect(Math.abs(metrics.syncHeight - metrics.themeHeight)).toBeLessThanOrEqual(1);
   });
 });
