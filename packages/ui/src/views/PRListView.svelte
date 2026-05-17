@@ -17,6 +17,7 @@
     buildPullRequestRoute,
     type PullRequestRouteRef,
   } from "../routes.js";
+  import { canonicalProvider } from "../api/provider-routes.js";
 
   const { isSidebarToggleEnabled, toggleSidebar } = getSidebar();
   const navigate = getNavigate();
@@ -94,7 +95,7 @@
       && detail.repo_owner === ref.owner
       && detail.repo_name === ref.name
       && detail.merge_request.Number === ref.number
-      && detail.repo?.provider === ref.provider
+      && canonicalProvider(detail.repo?.provider ?? "") === canonicalProvider(ref.provider)
       && detail.repo?.platform_host === ref.platformHost
       && detail.repo?.repo_path === ref.repoPath;
   }

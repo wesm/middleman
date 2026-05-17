@@ -35,8 +35,10 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
   let loading = $state(false);
   let submitting = $state(false);
   let storeError = $state<string | null>(null);
+  let storeWarning = $state<string | null>(null);
   let wasEnabled = false;
   let draftVersion = 0;
+  let submitVersion = 0;
 
   function isEnabled(): boolean {
     return enabled;
@@ -62,6 +64,10 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     return storeError;
   }
 
+  function getWarning(): string | null {
+    return storeWarning;
+  }
+
   function currentParams() {
     if (!ref || !number) return null;
     return {
@@ -78,6 +84,23 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
       ref.repoPath,
       number,
     ].join(":");
+  }
+
+  function beginSubmit(): number {
+    const token = ++submitVersion;
+    submitting = true;
+    return token;
+  }
+
+  function finishSubmit(token: number): void {
+    if (submitVersion === token) {
+      submitting = false;
+    }
+  }
+
+  function cancelSubmit(): void {
+    submitVersion += 1;
+    submitting = false;
   }
 
   function setContext(
@@ -99,10 +122,14 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     if (!enabled) {
       draft = null;
       storeError = null;
+      storeWarning = null;
+      cancelSubmit();
       return;
     }
     if (changed || enabling) {
       draft = null;
+      storeWarning = null;
+      cancelSubmit();
       void loadDraft();
     }
   }
@@ -111,20 +138,33 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     nextRef: ProviderRouteRef,
     nextNumber: number,
   ): void {
+    const changed =
+      !ref ||
+      ref.provider !== nextRef.provider ||
+      ref.platformHost !== nextRef.platformHost ||
+      ref.repoPath !== nextRef.repoPath ||
+      number !== nextNumber;
     ref = nextRef;
     number = nextNumber;
+    if (changed) {
+      draftVersion += 1;
+      cancelSubmit();
+      storeError = null;
+      storeWarning = null;
+    }
   }
 
   function clear(): void {
     draftVersion += 1;
+    cancelSubmit();
     enabled = false;
     wasEnabled = false;
     ref = null;
     number = 0;
     draft = null;
     loading = false;
-    submitting = false;
     storeError = null;
+    storeWarning = null;
   }
 
   async function loadDraft(): Promise<void> {
@@ -167,9 +207,12 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     if (!enabled || !ref) return false;
     const params = currentParams();
     if (!params) return false;
-    draftVersion += 1;
-    submitting = true;
+    const key = requestKey();
+    const version = ++draftVersion;
+    const isCurrent = () => requestKey() === key && draftVersion === version;
+    const submitToken = beginSubmit();
     storeError = null;
+    storeWarning = null;
     try {
       const { data, error, response } = await apiClient.POST(
         providerItemPath("pulls", ref, "/review-draft/comments"),
@@ -181,13 +224,16 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
       if (!data) {
         throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
       }
+      if (!isCurrent()) return true;
       await loadDraft();
       return true;
     } catch (err) {
-      storeError = err instanceof Error ? err.message : String(err);
+      if (isCurrent()) {
+        storeError = err instanceof Error ? err.message : String(err);
+      }
       return false;
     } finally {
-      submitting = false;
+      finishSubmit(submitToken);
     }
   }
 
@@ -195,9 +241,12 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     if (!enabled || !ref) return false;
     const params = currentParams();
     if (!params) return false;
-    draftVersion += 1;
-    submitting = true;
+    const key = requestKey();
+    const version = ++draftVersion;
+    const isCurrent = () => requestKey() === key && draftVersion === version;
+    const submitToken = beginSubmit();
     storeError = null;
+    storeWarning = null;
     try {
       const { error, response } = await apiClient.DELETE(
         providerItemPath("pulls", ref, "/review-draft/comments/{draft_comment_id}"),
@@ -213,13 +262,16 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
       if (!response.ok) {
         throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
       }
+      if (!isCurrent()) return true;
       await loadDraft();
       return true;
     } catch (err) {
-      storeError = err instanceof Error ? err.message : String(err);
+      if (isCurrent()) {
+        storeError = err instanceof Error ? err.message : String(err);
+      }
       return false;
     } finally {
-      submitting = false;
+      finishSubmit(submitToken);
     }
   }
 
@@ -230,19 +282,27 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     const publishedRef = ref;
     const publishedNumber = number;
     const key = requestKey();
-    draftVersion += 1;
-    submitting = true;
+    const version = ++draftVersion;
+    const isCurrent = () => requestKey() === key && draftVersion === version;
+    const submitToken = beginSubmit();
     storeError = null;
+    storeWarning = null;
     try {
-      const { error, response } = await apiClient.POST(
+      const { data, error, response } = await apiClient.POST(
         providerItemPath("pulls", ref, "/review-draft/publish"),
         { params, body: { action, body } },
       );
       if (!response.ok) {
         throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
       }
+      const partial = data?.status === "partially_published";
+      if (!isCurrent()) return true;
       draft = null;
       await loadDraft();
+      if (partial && requestKey() === key) {
+        storeWarning =
+          "Review was partially published. Some inline comments or the selected review action may not have been submitted.";
+      }
       if (requestKey() === key) {
         try {
           await opts.onPublished?.(publishedRef, publishedNumber);
@@ -252,10 +312,12 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
       }
       return true;
     } catch (err) {
-      storeError = err instanceof Error ? err.message : String(err);
+      if (isCurrent()) {
+        storeError = err instanceof Error ? err.message : String(err);
+      }
       return false;
     } finally {
-      submitting = false;
+      finishSubmit(submitToken);
     }
   }
 
@@ -263,9 +325,12 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     if (!enabled || !ref) return false;
     const params = currentParams();
     if (!params) return false;
-    draftVersion += 1;
-    submitting = true;
+    const key = requestKey();
+    const version = ++draftVersion;
+    const isCurrent = () => requestKey() === key && draftVersion === version;
+    const submitToken = beginSubmit();
     storeError = null;
+    storeWarning = null;
     try {
       const { error, response } = await apiClient.DELETE(
         providerItemPath("pulls", ref, "/review-draft"),
@@ -274,13 +339,16 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
       if (!response.ok) {
         throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
       }
+      if (!isCurrent()) return true;
       draft = null;
       return true;
     } catch (err) {
-      storeError = err instanceof Error ? err.message : String(err);
+      if (isCurrent()) {
+        storeError = err instanceof Error ? err.message : String(err);
+      }
       return false;
     } finally {
-      submitting = false;
+      finishSubmit(submitToken);
     }
   }
 
@@ -291,8 +359,12 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     if (!ref || !number) return false;
     const params = currentParams();
     if (!params) return false;
-    submitting = true;
+    const key = requestKey();
+    const version = ++draftVersion;
+    const isCurrent = () => requestKey() === key && draftVersion === version;
+    const submitToken = beginSubmit();
     storeError = null;
+    storeWarning = null;
     try {
       const path = resolved
         ? "/review-threads/{thread_id}/resolve"
@@ -313,10 +385,12 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
       }
       return true;
     } catch (err) {
-      storeError = err instanceof Error ? err.message : String(err);
+      if (isCurrent()) {
+        storeError = err instanceof Error ? err.message : String(err);
+      }
       return false;
     } finally {
-      submitting = false;
+      finishSubmit(submitToken);
     }
   }
 
@@ -327,6 +401,7 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     isLoading,
     isSubmitting,
     getError,
+    getWarning,
     setContext,
     setRouteContext,
     clear,

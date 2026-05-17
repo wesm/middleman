@@ -2103,6 +2103,7 @@ export interface components {
             old_line?: number;
             old_path?: string;
             path: string;
+            provider_comment_id?: string;
             resolved: boolean;
             side: string;
             /** Format: int64 */
