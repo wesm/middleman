@@ -318,6 +318,29 @@ describe("PullDetail approvals", () => {
     expect(document.querySelector(".actions-menu-popover")).toBeNull();
   });
 
+  it("keeps the actions menu Labels button on the compact action geometry", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities = {
+      ...capabilities,
+      read_labels: true,
+      label_mutation: true,
+    };
+
+    renderPullDetail(detail);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Actions" }));
+
+    const labelsAction = getActionMenuLabelsButton();
+    const labelsIcon = labelsAction.querySelector("svg");
+    const labelsItem = labelsAction.closest(".actions-menu-popover__item--labels");
+
+    expect(labelsAction.classList.contains("action-button--sm")).toBe(true);
+    expect(labelsAction.parentElement).toBe(labelsItem);
+    expect(labelsItem?.classList.contains("label-editor-anchor")).toBe(true);
+    expect(labelsIcon?.getAttribute("width")).toBe("14");
+    expect(labelsIcon?.getAttribute("height")).toBe("14");
+  });
+
   const warningCases = [
     {
       name: "does not describe GitHub unstable mergeability as required checks",
