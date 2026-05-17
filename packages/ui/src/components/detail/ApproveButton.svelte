@@ -73,7 +73,7 @@
   }
 
   async function handleApprove(): Promise<void> {
-    if (disabled) return;
+    if (disabled || submitting) return;
     submitting = true;
     error = null;
     try {
@@ -91,8 +91,8 @@
 <div class={["approve-section", expanded && "approve-section--open"]}>
   <ActionButton
     class="btn btn--approve"
-    onclick={() => { if (!disabled) expanded = !expanded; }}
-    {disabled}
+    onclick={() => { if (!disabled && !submitting) expanded = !expanded; }}
+    disabled={disabled || submitting}
     ariaExpanded={expanded}
     tone="success"
     surface="soft"

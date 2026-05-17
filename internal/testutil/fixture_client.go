@@ -664,11 +664,41 @@ func (c *FixtureClient) EditIssueComment(
 	return nil, fmt.Errorf("%w: comment %d", errFixtureNotFound, commentID)
 }
 
-// CreateReview returns an error (mutations not supported).
+// CreateReview records an approving review so full-stack e2e tests can verify
+// review mutations through the HTTP API and persisted timeline state.
 func (c *FixtureClient) CreateReview(
-	_ context.Context, _, _ string, _ int, _, _ string,
+	_ context.Context, owner, repo string, number int, event, body string,
 ) (*gh.PullRequestReview, error) {
-	return nil, errFixtureReadOnly
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.findPullRequest(owner, repo, number) == nil {
+		return nil, fmt.Errorf("%w: pull request %s/%s#%d", errFixtureNotFound, owner, repo, number)
+	}
+
+	id := c.nextID
+	c.nextID++
+	now := gh.Timestamp{Time: time.Now().UTC()}
+	login := "fixture-bot"
+	state := strings.ToUpper(event)
+	if state == "APPROVE" {
+		state = "APPROVED"
+	}
+	nodeID := fmt.Sprintf("PRR_fixture_%d", id)
+	htmlURL := fmt.Sprintf("https://github.com/%s/%s/pull/%d#pullrequestreview-%d", owner, repo, number, id)
+
+	review := &gh.PullRequestReview{
+		ID:          &id,
+		NodeID:      &nodeID,
+		User:        &gh.User{Login: &login},
+		Body:        &body,
+		State:       &state,
+		SubmittedAt: &now,
+		HTMLURL:     &htmlURL,
+	}
+	key := issueKey(owner, repo, number)
+	c.Reviews[key] = append(c.Reviews[key], review)
+	return review, nil
 }
 
 func (c *FixtureClient) MarkPullRequestReadyForReview(

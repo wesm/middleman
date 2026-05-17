@@ -5,13 +5,17 @@ import {
   screen,
   waitFor,
 } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mockPost = vi.hoisted(() => vi.fn());
+const mockLoadDetail = vi.hoisted(() => vi.fn());
+const mockLoadPulls = vi.hoisted(() => vi.fn());
 
 vi.mock("../../packages/ui/src/context.js", () => ({
-  getClient: () => ({ POST: vi.fn() }),
+  getClient: () => ({ POST: mockPost }),
   getStores: () => ({
-    detail: { loadDetail: vi.fn() },
-    pulls: { loadPulls: vi.fn() },
+    detail: { loadDetail: mockLoadDetail },
+    pulls: { loadPulls: mockLoadPulls },
   }),
 }));
 
@@ -33,8 +37,17 @@ function renderApproveButton(overrides: Partial<typeof defaultProps> = {}) {
 }
 
 describe("ApproveButton tooltips", () => {
+  beforeEach(() => {
+    mockPost.mockResolvedValue({ data: { status: "approved" } });
+    mockLoadDetail.mockResolvedValue(undefined);
+    mockLoadPulls.mockResolvedValue(undefined);
+  });
+
   afterEach(() => {
     cleanup();
+    mockPost.mockReset();
+    mockLoadDetail.mockReset();
+    mockLoadPulls.mockReset();
   });
 
   it("collapsed button title describes opening the form, not submitting", () => {
@@ -97,6 +110,43 @@ describe("ApproveButton tooltips", () => {
     expect(
       screen.queryByRole("dialog", { name: "Approve pull request" }),
     ).toBeNull();
+  });
+
+  it("keeps the approval popover open and trigger disabled while submitting", async () => {
+    let resolvePost: (value: { data: { status: string } }) => void = () => {};
+    mockPost.mockReturnValue(new Promise((resolve) => {
+      resolvePost = resolve;
+    }));
+    renderApproveButton();
+
+    const trigger = screen.getByRole("button", { name: /^approve$/i });
+    await fireEvent.click(trigger);
+    await fireEvent.input(screen.getByRole("textbox"), {
+      target: { value: "lgtm" },
+    });
+    await fireEvent.click(screen.getByTitle(
+      "Submit an approving code review on this pull request",
+    ));
+
+    await waitFor(() => {
+      expect(trigger.hasAttribute("disabled")).toBe(true);
+    });
+    expect(
+      screen.getByRole("dialog", { name: "Approve pull request" }),
+    ).toBeTruthy();
+
+    await fireEvent.click(trigger);
+    expect(
+      screen.getByRole("dialog", { name: "Approve pull request" }),
+    ).toBeTruthy();
+
+    resolvePost({ data: { status: "approved" } });
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: "Approve pull request" }),
+      ).toBeNull();
+    });
   });
 
   it("collapses and clears the draft when the PR identity changes", async () => {
