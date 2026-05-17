@@ -2279,6 +2279,7 @@
   .actions-menu-wrap {
     display: none;
     position: relative;
+    z-index: 65;
   }
 
   .actions-menu-trigger {

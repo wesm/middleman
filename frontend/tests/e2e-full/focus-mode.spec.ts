@@ -70,12 +70,10 @@ test.describe("focus mode", () => {
     await expect(page.locator(".label-picker")).toBeVisible();
     await expect(page.locator(".actions-menu-popover")).toBeHidden();
 
-    await page.locator(".actions-menu-trigger").evaluate((element) => {
-      (element as HTMLButtonElement).click();
-    });
+    await page.locator(".actions-menu-trigger").click();
     await expect(page.locator(".actions-menu-popover")).toBeVisible();
 
-    await page.locator(".actions-menu-popover").getByRole("button", { name: "Labels" }).click({ force: true });
+    await page.locator(".actions-menu-popover").getByRole("button", { name: "Labels" }).click();
     await expect(page.locator(".label-picker")).toBeHidden();
     await expect(page.locator(".actions-menu-popover")).toBeHidden();
   });
