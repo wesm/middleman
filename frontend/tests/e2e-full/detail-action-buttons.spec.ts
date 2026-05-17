@@ -476,6 +476,38 @@ test.describe("detail action buttons", () => {
     }
   });
 
+  test("repo merge permission hides merge action end-to-end", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    try {
+      isolatedServer = await startIsolatedE2EServer();
+      const baseURL = isolatedServer.info.base_url;
+
+      const seedResponse = await page.request.post(
+        `${baseURL}/__e2e/repo-settings/viewer-can-merge/deny`,
+      );
+      expect(seedResponse.ok()).toBe(true);
+
+      const settingsResponse = await page.request.get(
+        `${baseURL}/api/v1/repo/github/acme/widgets`,
+      );
+      expect(settingsResponse.ok()).toBe(true);
+      const settings = await settingsResponse.json() as { ViewerCanMerge: boolean };
+      expect(settings.ViewerCanMerge).toBe(false);
+
+      await page.goto(`${baseURL}/pulls/github/acme/widgets/1`);
+      await expect(page.locator(".pull-detail")).toBeVisible();
+      await expect(page.locator(".detail-title")).toContainText(
+        "Add widget caching layer",
+      );
+      await expect(page.locator(".btn--merge")).toHaveCount(0);
+      await expect(
+        page.locator(".modal-title", { hasText: "Merge Pull Request" }),
+      ).toHaveCount(0);
+    } finally {
+      await isolatedServer?.stop();
+    }
+  });
+
   test("conflicted pull request disables the merge action", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     try {
