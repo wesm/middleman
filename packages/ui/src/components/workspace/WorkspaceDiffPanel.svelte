@@ -1,6 +1,4 @@
 <script lang="ts">
-  import PanelLeftCloseIcon from "@lucide/svelte/icons/panel-left-close";
-  import PanelLeftOpenIcon from "@lucide/svelte/icons/panel-left-open";
   import DiffSidebar from "../diff/DiffSidebar.svelte";
   import DiffScopePicker from "../diff/DiffScopePicker.svelte";
   import DiffToolbar from "../diff/DiffToolbar.svelte";
@@ -194,21 +192,14 @@
       </button>
     </div>
     <DiffScopePicker compact />
-    <button
-      class="file-list-toggle"
-      type="button"
-      aria-label={fileListHidden ? "Show changed files" : "Hide changed files"}
-      title={fileListHidden ? "Show changed files" : "Hide changed files"}
-      onclick={toggleFileList}
-    >
-      {#if fileListHidden}
-        <PanelLeftOpenIcon size={16} strokeWidth={1.8} aria-hidden="true" />
-      {:else}
-        <PanelLeftCloseIcon size={16} strokeWidth={1.8} aria-hidden="true" />
-      {/if}
-    </button>
   </div>
-  <DiffToolbar compact showRichPreview={false} showScopePicker={false} />
+  <DiffToolbar
+    compact
+    {fileListHidden}
+    onToggleFileList={toggleFileList}
+    showRichPreview={false}
+    showScopePicker={false}
+  />
   <div class="workspace-diff-layout" bind:this={workspaceDiffLayout}>
     {#if !fileListHidden}
       <aside
@@ -313,23 +304,6 @@
 
   .scope-btn--active:hover {
     color: #fff;
-  }
-
-  .file-list-toggle {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 24px;
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-sm);
-    background: var(--bg-surface);
-    color: var(--text-muted);
-  }
-
-  .file-list-toggle:hover {
-    border-color: var(--accent-blue);
-    color: var(--accent-blue);
   }
 
   .workspace-diff-layout {

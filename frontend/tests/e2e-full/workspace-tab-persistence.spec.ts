@@ -259,6 +259,10 @@ test.describe("workspace tab persistence", () => {
       await expect(activeDiffFile).toHaveAttribute("title", "alpha.ts");
       const diffToolbar = page.locator(".right-sidebar .diff-toolbar");
       await expect(diffToolbar.locator(".compact-more-btn")).toBeVisible();
+      await expect(
+        page.locator(".right-sidebar .workspace-diff-scope .file-list-toggle"),
+      ).toHaveCount(0);
+      await expect(diffToolbar.locator(".file-list-toggle")).toBeVisible();
       await expect(diffToolbar.locator(".category-toggle")).toHaveCount(0);
       const toolbarMetrics = await diffToolbar.evaluate((element) => ({
         clientWidth: element.clientWidth,

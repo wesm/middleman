@@ -1,5 +1,7 @@
 <script lang="ts">
   import MoreHorizontalIcon from "@lucide/svelte/icons/more-horizontal";
+  import PanelLeftCloseIcon from "@lucide/svelte/icons/panel-left-close";
+  import PanelLeftOpenIcon from "@lucide/svelte/icons/panel-left-open";
   import { getStores } from "../../context.js";
   import {
     diffFileCategoryOptions,
@@ -9,12 +11,16 @@
 
   interface Props {
     compact?: boolean;
+    fileListHidden?: boolean;
+    onToggleFileList?: (() => void) | undefined;
     showRichPreview?: boolean;
     showScopePicker?: boolean;
   }
 
   let {
     compact = false,
+    fileListHidden = false,
+    onToggleFileList,
     showRichPreview = true,
     showScopePicker = true,
   }: Props = $props();
@@ -173,25 +179,42 @@
   {#if showScopePicker}
     <DiffScopePicker />
   {/if}
-  <div class="compact-menu-wrap" bind:this={compactMenuRef}>
-    <button
-      class="compact-more-btn"
-      class:compact-more-btn--active={menuOpen}
-      type="button"
-      aria-label="More diff filters"
-      aria-expanded={menuOpen}
-      title="More diff filters"
-      onclick={() => {
-        menuOpen = !menuOpen;
-      }}
-    >
-      <MoreHorizontalIcon size={16} strokeWidth={2} aria-hidden="true" />
-    </button>
-    {#if menuOpen}
-      <div class="compact-menu">
-        {@render menuContent(compact)}
-      </div>
+  <div class="toolbar-actions">
+    {#if onToggleFileList}
+      <button
+        class="file-list-toggle"
+        type="button"
+        aria-label={fileListHidden ? "Show changed files" : "Hide changed files"}
+        title={fileListHidden ? "Show changed files" : "Hide changed files"}
+        onclick={onToggleFileList}
+      >
+        {#if fileListHidden}
+          <PanelLeftOpenIcon size={16} strokeWidth={1.8} aria-hidden="true" />
+        {:else}
+          <PanelLeftCloseIcon size={16} strokeWidth={1.8} aria-hidden="true" />
+        {/if}
+      </button>
     {/if}
+    <div class="compact-menu-wrap" bind:this={compactMenuRef}>
+      <button
+        class="compact-more-btn"
+        class:compact-more-btn--active={menuOpen}
+        type="button"
+        aria-label="More diff filters"
+        aria-expanded={menuOpen}
+        title="More diff filters"
+        onclick={() => {
+          menuOpen = !menuOpen;
+        }}
+      >
+        <MoreHorizontalIcon size={16} strokeWidth={2} aria-hidden="true" />
+      </button>
+      {#if menuOpen}
+        <div class="compact-menu">
+          {@render menuContent(compact)}
+        </div>
+      {/if}
+    </div>
   </div>
 </div>
 
@@ -250,13 +273,21 @@
     color: var(--text-muted);
   }
 
-  .compact-menu-wrap {
-    position: relative;
+  .toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     margin-left: auto;
     flex-shrink: 0;
   }
 
-  .compact-more-btn {
+  .compact-menu-wrap {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .compact-more-btn,
+  .file-list-toggle {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -269,7 +300,8 @@
   }
 
   .compact-more-btn:hover,
-  .compact-more-btn--active {
+  .compact-more-btn--active,
+  .file-list-toggle:hover {
     color: var(--accent-blue);
     border-color: var(--accent-blue);
   }
@@ -418,7 +450,7 @@
       flex-direction: column;
     }
 
-    .compact-menu-wrap {
+    .toolbar-actions {
       margin-left: 0;
     }
   }
