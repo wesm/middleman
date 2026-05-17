@@ -143,7 +143,7 @@ test.describe("routed item builders through the UI", () => {
     await page.goto("/pulls/github/acme/widgets/1");
 
     await expectPathname(page, "/pulls/github/acme/widgets/1");
-    await expect(page.locator(".focus-layout.focus-layout--phone .pull-detail .detail-title"))
+    await expect(page.locator(".focus-layout:not(.focus-layout--phone) .pull-detail .detail-title"))
       .toContainText(prTitle);
     await expect(page.locator(".app-header")).toHaveCount(0);
 

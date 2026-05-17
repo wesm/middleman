@@ -103,7 +103,6 @@
   let appReady = $state(false);
   let viewportWidth = $state(window.innerWidth);
   let hasCoarsePointer = $state(window.matchMedia("(pointer: coarse)").matches);
-  let minScreenDimension = $state(readMinScreenDimension());
   let cleanupFullAppShell: (() => void) | undefined;
   let fullShellStores: StoreInstances | undefined;
   const appIconSrc = `${getBasePath().replace(/\/$/, "")}/favicon.svg`;
@@ -171,23 +170,23 @@
     return text ? `?${text}` : "?desktop=1";
   }
 
-  function readMinScreenDimension(): number {
-    const screen = (window as Window & { screen?: Screen }).screen;
-    if (!screen) return Number.POSITIVE_INFINITY;
-    return Math.min(screen.width, screen.height);
-  }
-
   function updateViewportState(): void {
     viewportWidth = window.innerWidth;
     hasCoarsePointer = window.matchMedia("(pointer: coarse)").matches;
-    minScreenDimension = readMinScreenDimension();
   }
 
-  function isPhoneViewport(): boolean {
+  function hasMobileUserAgent(): boolean {
+    return /\b(Android|iPhone|iPod|IEMobile|Mobile)\b/i.test(navigator.userAgent);
+  }
+
+  function isPhoneLikeViewport(): boolean {
+    return viewportWidth <= 640
+      && (hasCoarsePointer || hasMobileUserAgent());
+  }
+
+  function isCompactViewport(): boolean {
     const hasNarrowContainer = isNarrow();
-    const hasPhoneLikeTouchViewport = hasCoarsePointer
-      && minScreenDimension <= 640;
-    return viewportWidth <= 640 || hasNarrowContainer || hasPhoneLikeTouchViewport;
+    return viewportWidth <= 640 || hasNarrowContainer || isPhoneLikeViewport();
   }
 
   function shouldUseDesktopOnPhone(): boolean {
@@ -205,7 +204,7 @@
   function shouldUseResponsiveFocusPresentation(): boolean {
     const route = getRoute();
     if (shouldUseDesktopOnPhone()) return false;
-    if (!isPhoneViewport() && !shouldForceMobileRoutes()) return false;
+    if (!isCompactViewport() && !shouldForceMobileRoutes()) return false;
     if (route.page === "pulls") return route.view === "list";
     return route.page === "issues";
   }
@@ -215,13 +214,13 @@
   }
 
   function useFocusLayoutClass(): boolean {
-    return isPhoneViewport() || shouldForceMobileRoutes();
+    return isPhoneLikeViewport() || shouldForceMobileRoutes();
   }
 
   function shouldUseResponsiveMobileActivityPresentation(): boolean {
     if (shouldUseDesktopOnPhone()) return false;
     if (getPage() !== "activity") return false;
-    return isPhoneViewport() || shouldForceMobileRoutes();
+    return isCompactViewport() || shouldForceMobileRoutes();
   }
 
   function navigateFocusPRDetailTab(
@@ -763,7 +762,7 @@
             {detailTab}
             isSidebarCollapsed={isSidebarCollapsed()}
             sidebarWidth={getSidebarWidth()}
-            showStackSidebar={!isPhoneViewport() && !shouldForceMobileRoutes()}
+            showStackSidebar={!isPhoneLikeViewport() && !shouldForceMobileRoutes()}
             onSidebarResize={handleSidebarResize}
           />
         {/if}
