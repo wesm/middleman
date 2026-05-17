@@ -101,6 +101,9 @@
 
   let stores = $state<StoreInstances | undefined>();
   let appReady = $state(false);
+  let viewportWidth = $state(window.innerWidth);
+  let hasCoarsePointer = $state(window.matchMedia("(pointer: coarse)").matches);
+  let minScreenDimension = $state(readMinScreenDimension());
   let cleanupFullAppShell: (() => void) | undefined;
   let fullShellStores: StoreInstances | undefined;
   const appIconSrc = `${getBasePath().replace(/\/$/, "")}/favicon.svg`;
@@ -168,10 +171,23 @@
     return text ? `?${text}` : "?desktop=1";
   }
 
+  function readMinScreenDimension(): number {
+    const screen = (window as Window & { screen?: Screen }).screen;
+    if (!screen) return Number.POSITIVE_INFINITY;
+    return Math.min(screen.width, screen.height);
+  }
+
+  function updateViewportState(): void {
+    viewportWidth = window.innerWidth;
+    hasCoarsePointer = window.matchMedia("(pointer: coarse)").matches;
+    minScreenDimension = readMinScreenDimension();
+  }
+
   function isPhoneViewport(): boolean {
-    const hasPhoneLikeTouchViewport = window.matchMedia("(pointer: coarse)").matches
-      && Math.min(window.screen.width, window.screen.height) <= 640;
-    return window.innerWidth <= 640 || isNarrow() || hasPhoneLikeTouchViewport;
+    const hasNarrowContainer = isNarrow();
+    const hasPhoneLikeTouchViewport = hasCoarsePointer
+      && minScreenDimension <= 640;
+    return viewportWidth <= 640 || hasNarrowContainer || hasPhoneLikeTouchViewport;
   }
 
   function shouldUseDesktopOnPhone(): boolean {
@@ -504,6 +520,8 @@
     return registerPRDetailActions(buildPRDetailInput);
   });
 </script>
+
+<svelte:window onresize={updateViewportState} />
 
 {#if !shouldUseFullAppShell(getPage())}
   <WorkspaceEmbedShell />

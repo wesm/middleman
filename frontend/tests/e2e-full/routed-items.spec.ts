@@ -137,4 +137,21 @@ test.describe("routed item builders through the UI", () => {
       .toContainText(issueTitle);
     await expect((await detailLoaded).ok()).toBe(true);
   });
+
+  test("canonical PR detail swaps focus and desktop presentation as viewport resizes", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/pulls/github/acme/widgets/1");
+
+    await expectPathname(page, "/pulls/github/acme/widgets/1");
+    await expect(page.locator(".focus-layout.focus-layout--phone .pull-detail .detail-title"))
+      .toContainText(prTitle);
+    await expect(page.locator(".app-header")).toHaveCount(0);
+
+    await page.setViewportSize({ width: 1200, height: 844 });
+
+    await expectPathname(page, "/pulls/github/acme/widgets/1");
+    await expect(page.locator(".focus-layout")).toHaveCount(0);
+    await expect(page.locator(".app-header")).toBeVisible();
+    await expect(page.locator(".pull-detail .detail-title")).toContainText(prTitle);
+  });
 });
