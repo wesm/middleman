@@ -249,6 +249,9 @@ test.describe("workspace tab persistence", () => {
       );
       await page.locator(".seg-control .seg-btn", { hasText: "Diff" }).click();
       await expect(page.locator(".right-sidebar .workspace-diff")).toBeVisible();
+      await expect(page.locator(
+        ".right-sidebar .workspace-diff-scope .diff-scope-picker__label",
+      )).toBeHidden();
       expect((await diffResponse).ok()).toBe(true);
       const activeDiffFile = page.locator(
         ".right-sidebar .diff-file-row--active",

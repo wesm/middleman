@@ -1,8 +1,14 @@
 <script lang="ts">
+  import GitCommitHorizontalIcon from "@lucide/svelte/icons/git-commit-horizontal";
   import { getStores } from "../../context.js";
   import CommitListItem from "./CommitListItem.svelte";
   import ScopePill from "./ScopePill.svelte";
 
+  interface Props {
+    compact?: boolean;
+  }
+
+  const { compact = false }: Props = $props();
   const { diff: diffStore } = getStores();
 
   let open = $state(false);
@@ -56,16 +62,24 @@
 
 <svelte:document onclick={handleDocumentClick} onkeydown={handleDocumentKeydown} />
 
-<div class="diff-scope-picker" bind:this={pickerRef}>
+<div
+  class={["diff-scope-picker", compact && "diff-scope-picker--compact"]}
+  bind:this={pickerRef}
+>
   <div class="diff-scope-picker__control">
     <button
       class="diff-scope-picker__trigger"
       type="button"
       aria-label="Select commit range"
       aria-expanded={open}
+      title="Commits"
       onclick={toggle}
     >
-      <span class="diff-scope-picker__label">Commits</span>
+      {#if compact}
+        <GitCommitHorizontalIcon size={16} strokeWidth={1.8} aria-hidden="true" />
+      {:else}
+        <span class="diff-scope-picker__label">Commits</span>
+      {/if}
     </button>
     <ScopePill {scope} onreset={diffStore.resetToHead} />
   </div>
@@ -133,10 +147,24 @@
   }
 
   .diff-scope-picker__trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
     border: 0;
     background: transparent;
     color: inherit;
     font: inherit;
+  }
+
+  .diff-scope-picker--compact .diff-scope-picker__control {
+    gap: 5px;
+    padding: 2px 5px;
+  }
+
+  .diff-scope-picker--compact .diff-scope-picker__trigger {
+    width: 16px;
+    height: 18px;
   }
 
   .diff-scope-picker__label {

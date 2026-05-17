@@ -193,7 +193,7 @@
         Merge target
       </button>
     </div>
-    <DiffScopePicker />
+    <DiffScopePicker compact />
     <button
       class="file-list-toggle"
       type="button"
