@@ -21,6 +21,15 @@ type WorkspaceStatusResponse = {
   error_message?: string | null;
 };
 
+type PullDetailResponse = {
+  events: Array<{
+    EventType: string;
+    Author: string;
+    Body: string;
+    Summary: string;
+  }>;
+};
+
 const lockedWorkspaceTestTimeoutMs = 120_000;
 
 function hasCommand(command: string, args: string[] = ["--version"]): boolean {
@@ -549,6 +558,69 @@ test.describe("detail action buttons", () => {
       .toBeVisible();
     await expect(page.locator(".actions-menu-popover .btn--green"))
       .toHaveText("Approve");
+  });
+
+  test("approve action submits through API, persists review, and refreshes detail and list data", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedE2EServer();
+      api = await playwrightRequest.newContext({
+        baseURL: isolatedServer.info.base_url,
+      });
+
+      const baseURL = isolatedServer.info.base_url;
+      const approvalBody = "LGTM from approve e2e";
+      const detailURL = `${baseURL}/api/v1/pulls/github/acme/widgets/1`;
+
+      await page.goto(`${baseURL}/pulls/github/acme/widgets/1`);
+      await expect(page.locator(".pull-detail")).toBeVisible();
+
+      await page.locator(".btn--approve").first().click();
+      await page.locator(".approve-comment").fill(approvalBody);
+
+      const approveResponsePromise = page.waitForResponse((response) =>
+        response.request().method() === "POST"
+        && response.url() === `${detailURL}/approve`
+      );
+      const detailRefreshPromise = page.waitForResponse((response) =>
+        response.request().method() === "GET"
+        && response.url() === detailURL
+      );
+      const listRefreshPromise = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return response.request().method() === "GET"
+          && url.origin === baseURL
+          && url.pathname === "/api/v1/pulls";
+      });
+
+      await page.locator(".approve-actions .btn--green").click();
+
+      const approveResponse = await approveResponsePromise;
+      expect(approveResponse.status()).toBe(200);
+      expect((await approveResponse.json()).status).toBe("approved");
+      expect((await detailRefreshPromise).ok()).toBe(true);
+      expect((await listRefreshPromise).ok()).toBe(true);
+
+      await expect(page.locator(".approve-popover")).toHaveCount(0);
+      await expect(page.locator(".event-card", { hasText: approvalBody }))
+        .toBeVisible();
+
+      await expect.poll(async () => {
+        const response = await api!.get("/api/v1/pulls/github/acme/widgets/1");
+        expect(response.ok()).toBe(true);
+        const detail = await response.json() as PullDetailResponse;
+        return detail.events.some((event) =>
+          event.EventType === "review"
+          && event.Author === "fixture-bot"
+          && event.Summary === "APPROVED"
+          && event.Body === approvalBody
+        );
+      }).toBe(true);
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
   });
 
   test("self-contained actions close the narrow actions menu after success", async ({ page }) => {
