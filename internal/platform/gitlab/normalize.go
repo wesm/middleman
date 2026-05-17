@@ -52,12 +52,28 @@ func NormalizeProject(host string, p *gitlab.Project) (platform.Repository, erro
 		Description:        p.Description,
 		Private:            p.Visibility == gitlab.PrivateVisibility,
 		Archived:           p.Archived,
+		ViewerCanMerge:     gitLabViewerCanMerge(p.Permissions),
 		DefaultBranch:      p.DefaultBranch,
 		WebURL:             p.WebURL,
 		CloneURL:           p.HTTPURLToRepo,
 		CreatedAt:          timeValue(p.CreatedAt),
 		UpdatedAt:          timeValue(p.UpdatedAt),
 	}, nil
+}
+
+func gitLabViewerCanMerge(perms *gitlab.Permissions) *bool {
+	if perms == nil {
+		return nil
+	}
+	level := gitlab.NoPermissions
+	if perms.ProjectAccess != nil && perms.ProjectAccess.AccessLevel > level {
+		level = perms.ProjectAccess.AccessLevel
+	}
+	if perms.GroupAccess != nil && perms.GroupAccess.AccessLevel > level {
+		level = perms.GroupAccess.AccessLevel
+	}
+	canMerge := level >= gitlab.DeveloperPermissions
+	return &canMerge
 }
 
 func normalizeSafeProjectPath(raw string) (string, error) {

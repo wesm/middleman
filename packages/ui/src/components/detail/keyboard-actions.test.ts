@@ -68,6 +68,7 @@ interface BuildOpts {
   approveWorkflows?: boolean;
   stale?: boolean;
   withRepoSettings?: boolean;
+  repoSettings?: PRDetailActionInput["repoSettings"];
   client?: FakeClient;
   stores?: FakeStores;
   setMergeModalOpen?: (open: boolean) => void;
@@ -102,13 +103,14 @@ function buildInput(opts: BuildOpts = {}): PRDetailActionInput {
       markReady: opts.markReady ?? true,
       approveWorkflows: opts.approveWorkflows ?? true,
     },
-    repoSettings: opts.withRepoSettings === false
+    repoSettings: opts.repoSettings ?? (opts.withRepoSettings === false
       ? null
       : {
         allowSquash: true,
         allowMerge: true,
         allowRebase: true,
-      },
+        viewerCanMerge: true,
+      }),
     stale: opts.stale ?? false,
     stores: stores as unknown as PRDetailActionInput["stores"],
     client,
@@ -233,6 +235,19 @@ describe("canOpenMerge", () => {
 
   it("returns false when viewer lacks merge capability", () => {
     expect(canOpenMerge(buildInput({ merge: false }))).toBe(false);
+  });
+
+  it("returns false when the viewer lacks repo merge permission", () => {
+    expect(
+      canOpenMerge(buildInput({
+        repoSettings: {
+          allowSquash: true,
+          allowMerge: true,
+          allowRebase: true,
+          viewerCanMerge: false,
+        },
+      })),
+    ).toBe(false);
   });
 
   it("returns false when PR has merge conflicts (dirty)", () => {

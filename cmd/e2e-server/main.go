@@ -833,6 +833,27 @@ func run(
 			return
 		}
 		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/repo-settings/viewer-can-merge/deny" {
+			repo, err := database.GetRepoByOwnerName(
+				r.Context(), "acme", "widgets",
+			)
+			if err != nil || repo == nil {
+				http.Error(w, "repo not found", http.StatusNotFound)
+				return
+			}
+			if err := database.UpdateRepoViewerCanMerge(r.Context(), repo.ID, false); err != nil {
+				http.Error(w, "update repo viewer merge permission", http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(map[string]bool{
+				"ViewerCanMerge": false,
+			}); err != nil {
+				slog.Warn("write e2e response", "err", err)
+			}
+			return
+		}
+		if r.Method == http.MethodPost &&
 			r.URL.Path == "/__e2e/pr-ci-state/pending" {
 			repo, err := database.GetRepoByOwnerName(
 				r.Context(), "acme", "widgets",

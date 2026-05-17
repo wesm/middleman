@@ -27,6 +27,10 @@ func TestConvertGiteaSDKRecords(t *testing.T) {
 		Private:       true,
 		Archived:      true,
 		Description:   "cli",
+		AllowSquash:   true,
+		AllowMerge:    true,
+		AllowRebase:   true,
+		Permissions:   &giteasdk.Permission{Push: false, Admin: false, Pull: true},
 		Created:       created,
 		Updated:       updated,
 	})
@@ -37,6 +41,13 @@ func TestConvertGiteaSDKRecords(t *testing.T) {
 	assert.Equal("main", repo.DefaultBranch)
 	assert.True(repo.Private)
 	assert.True(repo.Archived)
+	assert.True(repo.AllowSquash)
+	assert.True(repo.AllowMerge)
+	assert.True(repo.AllowRebase)
+	require.NotNil(repo.CanPush)
+	assert.False(*repo.CanPush)
+	require.NotNil(repo.CanAdmin)
+	assert.False(*repo.CanAdmin)
 
 	mergeable := true
 	pr := convertPullRequest(&giteasdk.PullRequest{

@@ -116,6 +116,7 @@ func (s *Server) repoResponse(repo db.Repo) repoResponse {
 		AllowSquashMerge:         repo.AllowSquashMerge,
 		AllowMergeCommit:         repo.AllowMergeCommit,
 		AllowRebaseMerge:         repo.AllowRebaseMerge,
+		ViewerCanMerge:           repo.ViewerCanMerge,
 		BackfillPRPage:           repo.BackfillPRPage,
 		BackfillPRComplete:       repo.BackfillPRComplete,
 		BackfillPRCompletedAt:    repo.BackfillPRCompletedAt,

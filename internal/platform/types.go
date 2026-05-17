@@ -51,11 +51,19 @@ type Repository struct {
 	Description        string
 	Private            bool
 	Archived           bool
+	MergeSettings      *RepositoryMergeSettings
+	ViewerCanMerge     *bool
 	DefaultBranch      string
 	WebURL             string
 	CloneURL           string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
+}
+
+type RepositoryMergeSettings struct {
+	AllowSquashMerge bool
+	AllowMergeCommit bool
+	AllowRebaseMerge bool
 }
 
 type MergeRequest struct {

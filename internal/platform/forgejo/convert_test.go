@@ -27,6 +27,10 @@ func TestConvertForgejoSDKRecords(t *testing.T) {
 		Private:       true,
 		Archived:      true,
 		Description:   "forge",
+		AllowSquash:   true,
+		AllowMerge:    true,
+		AllowRebase:   true,
+		Permissions:   &forgejosdk.Permission{Push: true, Admin: false, Pull: true},
 		Created:       created,
 		Updated:       updated,
 	})
@@ -37,6 +41,13 @@ func TestConvertForgejoSDKRecords(t *testing.T) {
 	assert.Equal("main", repo.DefaultBranch)
 	assert.True(repo.Private)
 	assert.True(repo.Archived)
+	assert.True(repo.AllowSquash)
+	assert.True(repo.AllowMerge)
+	assert.True(repo.AllowRebase)
+	require.NotNil(repo.CanPush)
+	assert.True(*repo.CanPush)
+	require.NotNil(repo.CanAdmin)
+	assert.False(*repo.CanAdmin)
 
 	mergeable := true
 	pr := convertPullRequest(&forgejosdk.PullRequest{

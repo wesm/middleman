@@ -1736,7 +1736,7 @@ func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
 		        web_url, clone_url, default_branch,
 		        last_sync_started_at, last_sync_completed_at,
 		        last_sync_error, allow_squash_merge, allow_merge_commit,
-		        allow_rebase_merge,
+		        allow_rebase_merge, viewer_can_merge,
 		        backfill_pr_page, backfill_pr_complete,
 		        backfill_pr_completed_at,
 		        backfill_issue_page, backfill_issue_complete,
@@ -1762,6 +1762,7 @@ func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
 			&r.LastSyncStartedAt, &r.LastSyncCompletedAt,
 			&r.LastSyncError,
 			&r.AllowSquashMerge, &r.AllowMergeCommit, &r.AllowRebaseMerge,
+			&r.ViewerCanMerge,
 			&r.BackfillPRPage, &r.BackfillPRComplete,
 			&r.BackfillPRCompletedAt,
 			&r.BackfillIssuePage, &r.BackfillIssueComplete,
@@ -1841,7 +1842,7 @@ func (d *DB) GetRepoByOwnerName(ctx context.Context, owner, name string) (*Repo,
 		        web_url, clone_url, default_branch,
 		        last_sync_started_at, last_sync_completed_at,
 		        last_sync_error, allow_squash_merge, allow_merge_commit,
-		        allow_rebase_merge,
+		        allow_rebase_merge, viewer_can_merge,
 		        backfill_pr_page, backfill_pr_complete,
 		        backfill_pr_completed_at,
 		        backfill_issue_page, backfill_issue_complete,
@@ -1859,6 +1860,7 @@ func (d *DB) GetRepoByOwnerName(ctx context.Context, owner, name string) (*Repo,
 		&r.LastSyncStartedAt, &r.LastSyncCompletedAt,
 		&r.LastSyncError,
 		&r.AllowSquashMerge, &r.AllowMergeCommit, &r.AllowRebaseMerge,
+		&r.ViewerCanMerge,
 		&r.BackfillPRPage, &r.BackfillPRComplete,
 		&r.BackfillPRCompletedAt,
 		&r.BackfillIssuePage, &r.BackfillIssueComplete,
@@ -1889,7 +1891,7 @@ func (d *DB) GetRepoByIdentity(ctx context.Context, identity RepoIdentity) (*Rep
 		        web_url, clone_url, default_branch,
 		        last_sync_started_at, last_sync_completed_at,
 		        last_sync_error, allow_squash_merge, allow_merge_commit,
-		        allow_rebase_merge,
+		        allow_rebase_merge, viewer_can_merge,
 		        backfill_pr_page, backfill_pr_complete,
 		        backfill_pr_completed_at,
 		        backfill_issue_page, backfill_issue_complete,
@@ -1910,6 +1912,7 @@ func (d *DB) GetRepoByIdentity(ctx context.Context, identity RepoIdentity) (*Rep
 		&r.LastSyncStartedAt, &r.LastSyncCompletedAt,
 		&r.LastSyncError,
 		&r.AllowSquashMerge, &r.AllowMergeCommit, &r.AllowRebaseMerge,
+		&r.ViewerCanMerge,
 		&r.BackfillPRPage, &r.BackfillPRComplete,
 		&r.BackfillPRCompletedAt,
 		&r.BackfillIssuePage, &r.BackfillIssueComplete,
@@ -1938,7 +1941,7 @@ func (d *DB) GetRepoByID(ctx context.Context, id int64) (*Repo, error) {
 		        web_url, clone_url, default_branch,
 		        last_sync_started_at, last_sync_completed_at,
 		        last_sync_error, allow_squash_merge, allow_merge_commit,
-		        allow_rebase_merge,
+		        allow_rebase_merge, viewer_can_merge,
 		        backfill_pr_page, backfill_pr_complete,
 		        backfill_pr_completed_at,
 		        backfill_issue_page, backfill_issue_complete,
@@ -1955,6 +1958,7 @@ func (d *DB) GetRepoByID(ctx context.Context, id int64) (*Repo, error) {
 		&r.LastSyncStartedAt, &r.LastSyncCompletedAt,
 		&r.LastSyncError,
 		&r.AllowSquashMerge, &r.AllowMergeCommit, &r.AllowRebaseMerge,
+		&r.ViewerCanMerge,
 		&r.BackfillPRPage, &r.BackfillPRComplete,
 		&r.BackfillPRCompletedAt,
 		&r.BackfillIssuePage, &r.BackfillIssueComplete,
@@ -2008,11 +2012,33 @@ func normalizeRepoTimestamps(r *Repo) {
 func (d *DB) UpdateRepoSettings(
 	ctx context.Context,
 	id int64,
+	allowSquash, allowMerge, allowRebase, viewerCanMerge bool,
+) error {
+	_, err := d.rw.ExecContext(ctx,
+		`UPDATE middleman_repos SET allow_squash_merge = ?, allow_merge_commit = ?, allow_rebase_merge = ?, viewer_can_merge = ? WHERE id = ?`,
+		allowSquash, allowMerge, allowRebase, viewerCanMerge, id,
+	)
+	return err
+}
+
+// UpdateRepoMergeSettings updates the merge method settings for a repo without changing viewer permissions.
+func (d *DB) UpdateRepoMergeSettings(
+	ctx context.Context,
+	id int64,
 	allowSquash, allowMerge, allowRebase bool,
 ) error {
 	_, err := d.rw.ExecContext(ctx,
 		`UPDATE middleman_repos SET allow_squash_merge = ?, allow_merge_commit = ?, allow_rebase_merge = ? WHERE id = ?`,
 		allowSquash, allowMerge, allowRebase, id,
+	)
+	return err
+}
+
+// UpdateRepoViewerCanMerge updates the current user's merge permission for a repo without changing merge method settings.
+func (d *DB) UpdateRepoViewerCanMerge(ctx context.Context, id int64, viewerCanMerge bool) error {
+	_, err := d.rw.ExecContext(ctx,
+		`UPDATE middleman_repos SET viewer_can_merge = ? WHERE id = ?`,
+		viewerCanMerge, id,
 	)
 	return err
 }
@@ -3853,7 +3879,7 @@ func (d *DB) GetRepoByHostOwnerName(
 		        web_url, clone_url, default_branch,
 		        last_sync_started_at, last_sync_completed_at,
 		        last_sync_error, allow_squash_merge, allow_merge_commit,
-		        allow_rebase_merge,
+		        allow_rebase_merge, viewer_can_merge,
 		        backfill_pr_page, backfill_pr_complete,
 		        backfill_pr_completed_at,
 		        backfill_issue_page, backfill_issue_complete,
@@ -3873,6 +3899,7 @@ func (d *DB) GetRepoByHostOwnerName(
 		&r.LastSyncStartedAt, &r.LastSyncCompletedAt,
 		&r.LastSyncError,
 		&r.AllowSquashMerge, &r.AllowMergeCommit, &r.AllowRebaseMerge,
+		&r.ViewerCanMerge,
 		&r.BackfillPRPage, &r.BackfillPRComplete,
 		&r.BackfillPRCompletedAt,
 		&r.BackfillIssuePage, &r.BackfillIssueComplete,

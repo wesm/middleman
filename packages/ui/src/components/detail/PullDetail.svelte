@@ -520,6 +520,7 @@
     allowSquash: boolean;
     allowMerge: boolean;
     allowRebase: boolean;
+    viewerCanMerge: boolean;
   };
 
   let repoSettings = $state<RepoSettings | null>(null);
@@ -538,6 +539,7 @@
         allowSquash: data.AllowSquashMerge,
         allowMerge: data.AllowMergeCommit,
         allowRebase: data.AllowRebaseMerge,
+        viewerCanMerge: data.ViewerCanMerge,
       };
     }).catch(() => {
       if (requestID === repoSettingsRequestID) {
@@ -1475,7 +1477,7 @@
               oncompleted={closeActionMenu}
             />
           {/if}
-          {#if repoSettings && capabilities.merge_mutation}
+          {#if repoSettings && capabilities.merge_mutation && repoSettings.viewerCanMerge}
             {@const mergeSettings = repoSettings}
             {@const mergeDisabledByConflicts = hasMergeConflicts(pr)}
             <ActionButton
@@ -1699,7 +1701,7 @@
         </div>
       {/if}
 
-      {#if showMergeModal && repoSettings && capabilities.merge_mutation && !stalePR && !hasMergeConflicts(pr)}
+      {#if showMergeModal && repoSettings && capabilities.merge_mutation && repoSettings.viewerCanMerge && !stalePR && !hasMergeConflicts(pr)}
         {@const d = detailStore.getDetail()!}
         {@const p = d.merge_request}
         <MergeModal

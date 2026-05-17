@@ -10996,6 +10996,7 @@ func TestAPIActivityStartupRepairsLegacyTimestampStorage(t *testing.T) {
 			ALTER TABLE middleman_repos DROP COLUMN label_catalog_sync_error;
 			ALTER TABLE middleman_repos DROP COLUMN label_catalog_checked_at;
 			ALTER TABLE middleman_repos DROP COLUMN label_catalog_synced_at;
+			ALTER TABLE middleman_repos DROP COLUMN viewer_can_merge;
 			ALTER TABLE middleman_labels DROP COLUMN catalog_seen_at;
 			ALTER TABLE middleman_labels DROP COLUMN catalog_present;
 			ALTER TABLE middleman_merge_requests DROP COLUMN is_locked;

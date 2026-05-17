@@ -181,6 +181,7 @@ export interface PRDetailRepoSettings {
   allowSquash: boolean;
   allowMerge: boolean;
   allowRebase: boolean;
+  viewerCanMerge: boolean;
 }
 
 /** Stores the closures touch on the refresh path. */
@@ -284,6 +285,7 @@ export function canOpenMerge(input: PRDetailActionInput): boolean {
     input.pr.State === "open"
     && input.viewerCan.merge
     && input.repoSettings !== null
+    && input.repoSettings.viewerCanMerge
     && !input.stale
     && !hasMergeConflicts(input.pr)
   );

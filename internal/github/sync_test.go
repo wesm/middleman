@@ -160,6 +160,12 @@ type syncTestReadProvider struct {
 	listIssueReadEvents []platform.IssueEvent
 }
 
+type syncTestRepositoryReadProvider struct {
+	*syncTestReadProvider
+	repository         platform.Repository
+	getRepositoryCalls atomic.Int32
+}
+
 type syncTestMergeRequestOnlyProvider struct {
 	syncTestProvider
 	mergeRequests []platform.MergeRequest
@@ -238,6 +244,22 @@ func (p *syncTestReadProvider) Capabilities() platform.Capabilities {
 		ReadMergeRequests: true,
 		ReadIssues:        true,
 	}
+}
+
+func (p *syncTestRepositoryReadProvider) GetRepository(
+	context.Context,
+	platform.RepoRef,
+) (platform.Repository, error) {
+	p.getRepositoryCalls.Add(1)
+	return p.repository, nil
+}
+
+func (p *syncTestRepositoryReadProvider) ListRepositories(
+	context.Context,
+	string,
+	platform.RepositoryListOptions,
+) ([]platform.Repository, error) {
+	return nil, nil
 }
 
 func (p *syncTestReadProvider) ListOpenMergeRequests(
@@ -2434,6 +2456,161 @@ func TestSyncRepoUsesProviderIDToPreserveRenamedRepo(t *testing.T) {
 	assert.Equal("new-group", repos[0].Owner)
 	assert.Equal("new-project", repos[0].Name)
 	assert.Equal("new-group/new-project", repos[0].RepoPath)
+}
+
+func TestSyncRepoUpdatesViewerCanMergeWithoutMergeSettings(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		Owner:        "group",
+		Name:         "project",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NoError(d.UpdateRepoSettings(ctx, repoID, true, false, true, true))
+	syncer := &Syncer{db: d}
+	viewerCanMerge := false
+
+	syncer.updateRepoSettingsFromProviderRepo(ctx, repoID, platform.Repository{
+		ViewerCanMerge: &viewerCanMerge,
+	})
+
+	repos, err := d.ListRepos(ctx)
+	require.NoError(err)
+	require.Len(repos, 1)
+	assert.True(repos[0].AllowSquashMerge)
+	assert.False(repos[0].AllowMergeCommit)
+	assert.True(repos[0].AllowRebaseMerge)
+	assert.False(repos[0].ViewerCanMerge)
+}
+
+func TestRefreshRepoSettingsPreservesViewerCanMergeWhenGitHubOmitsPermissions(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widgets",
+		RepoPath:     "acme/widgets",
+	})
+	require.NoError(err)
+	require.NoError(d.UpdateRepoSettings(ctx, repoID, true, true, true, false))
+	client := &mockClient{getRepositoryFn: func(
+		context.Context,
+		string,
+		string,
+	) (*gh.Repository, error) {
+		return &gh.Repository{
+			Name:             new("widgets"),
+			AllowSquashMerge: new(false),
+			AllowMergeCommit: new(true),
+			AllowRebaseMerge: new(false),
+		}, nil
+	}}
+	syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widgets",
+		RepoPath:     "acme/widgets",
+	}}, time.Minute, nil, nil)
+
+	syncer.refreshRepoSettings(ctx, syncer.repos[0], repoID, nil)
+
+	repos, err := d.ListRepos(ctx)
+	require.NoError(err)
+	require.Len(repos, 1)
+	assert.False(repos[0].AllowSquashMerge)
+	assert.True(repos[0].AllowMergeCommit)
+	assert.False(repos[0].AllowRebaseMerge)
+	assert.False(repos[0].ViewerCanMerge)
+}
+
+func TestSyncRepoPreservesViewerCanMergeWhenMergeSettingsOmitPermission(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		Owner:        "group",
+		Name:         "project",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NoError(d.UpdateRepoSettings(ctx, repoID, true, true, true, false))
+	syncer := &Syncer{db: d}
+
+	syncer.updateRepoSettingsFromProviderRepo(ctx, repoID, platform.Repository{
+		MergeSettings: &platform.RepositoryMergeSettings{
+			AllowSquashMerge: false,
+			AllowMergeCommit: true,
+			AllowRebaseMerge: false,
+		},
+	})
+
+	repos, err := d.ListRepos(ctx)
+	require.NoError(err)
+	require.Len(repos, 1)
+	assert.False(repos[0].AllowSquashMerge)
+	assert.True(repos[0].AllowMergeCommit)
+	assert.False(repos[0].AllowRebaseMerge)
+	assert.False(repos[0].ViewerCanMerge)
+}
+
+func TestSyncRepoRefreshesProviderRepoSettingsWhenIdentityKnown(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repoID, err := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.example.com",
+		PlatformRepoID: "gid://gitlab/Project/42",
+		Owner:          "group",
+		Name:           "project",
+		RepoPath:       "group/project",
+	})
+	require.NoError(err)
+	require.NoError(d.UpdateRepoSettings(ctx, repoID, true, true, true, true))
+	viewerCanMerge := false
+	provider := &syncTestRepositoryReadProvider{
+		syncTestReadProvider: &syncTestReadProvider{
+			syncTestProvider: syncTestProvider{
+				kind: platform.KindGitLab,
+				host: "gitlab.example.com",
+			},
+		},
+		repository: platform.Repository{
+			ViewerCanMerge: &viewerCanMerge,
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(registry, d, nil, []RepoRef{{
+		Platform:           platform.KindGitLab,
+		PlatformHost:       "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformExternalID: "gid://gitlab/Project/42",
+	}}, time.Minute, nil, nil)
+
+	require.NoError(syncer.syncRepo(ctx, syncer.repos[0]))
+
+	repos, err := d.ListRepos(ctx)
+	require.NoError(err)
+	require.Len(repos, 1)
+	assert.Equal(int32(1), provider.getRepositoryCalls.Load())
+	assert.False(repos[0].ViewerCanMerge)
 }
 
 func TestSyncRepoUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
