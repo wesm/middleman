@@ -1347,14 +1347,6 @@
         {#if hasWorktreeLinks}
           <Chip class="chip--teal">Worktree</Chip>
         {/if}
-        <CIStatus
-          status={pr.CIStatus}
-          checksJSON={pr.CIChecksJSON}
-          detailLoaded={detailStore.getDetailLoaded()}
-          detailSyncing={detailStore.isDetailSyncing()}
-          bind:expanded={ciExpanded}
-          showButton={false}
-        />
         {#if labels.length > 0}
           <GitHubLabels {labels} mode="full" />
         {/if}
@@ -1381,6 +1373,14 @@
             />
           </div>
         {/if}
+        <CIStatus
+          status={pr.CIStatus}
+          checksJSON={pr.CIChecksJSON}
+          detailLoaded={detailStore.getDetailLoaded()}
+          detailSyncing={detailStore.isDetailSyncing()}
+          bind:expanded={ciExpanded}
+          showButton={false}
+        />
       </div>
 
       {#if !stalePR}
