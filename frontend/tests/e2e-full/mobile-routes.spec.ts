@@ -7,6 +7,10 @@ test.use({
   userAgent: iPhone13.userAgent,
 });
 
+async function expectPathname(page: Page, pathname: string): Promise<void> {
+  await expect.poll(() => new URL(page.url()).pathname).toBe(pathname);
+}
+
 async function expectReadableFocusList(
   page: Page,
   itemSelector: string,
@@ -122,10 +126,10 @@ async function expectReadableDetail(page: Page): Promise<void> {
 }
 
 test.describe("phone routes", () => {
-  test("phone viewport visiting desktop root redirects to the mobile activity route", async ({ page }) => {
+  test("phone viewport visiting desktop root renders mobile activity without changing URL", async ({ page }) => {
     await page.goto("/");
 
-    await expect(page).toHaveURL(/\/m(?:\?|$)/);
+    await expectPathname(page, "/");
     await expect(page.locator(".mobile-shell")).toBeVisible();
     await expect(page.locator(".mobile-tab--active")).toHaveText("Activity");
     await expect(page.locator(".mobile-topbar .mobile-app-icon")).toBeVisible();
@@ -301,19 +305,19 @@ test.describe("phone routes", () => {
     await expect(page.locator(".mobile-shell")).toHaveCount(0);
   });
 
-  test("phone desktop PR files deep link redirects to the focused files route", async ({ page }) => {
+  test("phone canonical PR files deep link renders focus presentation without changing URL", async ({ page }) => {
     await page.goto("/pulls/github/acme/widgets/1/files");
 
-    await expect(page).toHaveURL(/\/focus\/pulls\/github\/acme\/widgets\/1\/files$/);
+    await expectPathname(page, "/pulls/github/acme/widgets/1/files");
     await expect(page.locator(".focus-layout .files-layout")).toBeVisible();
     await expect(page.locator(".focus-layout .diff-view")).toBeVisible();
     await expect(page.locator(".mobile-shell")).toHaveCount(0);
   });
 
-  test("phone desktop issue deep link redirects to the focused issue route", async ({ page }) => {
+  test("phone canonical issue deep link renders focus presentation without changing URL", async ({ page }) => {
     await page.goto("/issues/github/acme/widgets/10");
 
-    await expect(page).toHaveURL(/\/focus\/issues\/github\/acme\/widgets\/10$/);
+    await expectPathname(page, "/issues/github/acme/widgets/10");
     await expect(page.locator(".focus-layout .issue-detail .detail-title")).toBeVisible();
     await expect(page.locator(".mobile-shell")).toHaveCount(0);
   });

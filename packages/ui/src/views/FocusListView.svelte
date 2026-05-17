@@ -7,6 +7,8 @@
   import {
     buildFocusIssueRoute,
     buildFocusPullRequestRoute,
+    buildIssueRoute,
+    buildPullRequestRoute,
     type IssueRouteRef,
     type PullRequestRouteRef,
   } from "../routes.js";
@@ -34,9 +36,10 @@
   interface Props {
     listType: "mrs" | "issues";
     repo?: string;
+    routeFamily?: "focus" | "canonical";
   }
 
-  const { listType, repo }: Props = $props();
+  const { listType, repo, routeFamily = "focus" }: Props = $props();
 
   let searchInput = $state("");
   let debounceHandle: ReturnType<typeof setTimeout> | null =
@@ -121,11 +124,19 @@
   }
 
   function handlePRSelect(ref: PullRequestRouteRef): void {
-    navigate(buildFocusPullRequestRoute(ref));
+    navigate(
+      routeFamily === "canonical"
+        ? buildPullRequestRoute(ref)
+        : buildFocusPullRequestRoute(ref),
+    );
   }
 
   function handleIssueSelect(ref: IssueRouteRef): void {
-    navigate(buildFocusIssueRoute(ref));
+    navigate(
+      routeFamily === "canonical"
+        ? buildIssueRoute(ref)
+        : buildFocusIssueRoute(ref),
+    );
   }
 
   // Filter state accessors for PRs.

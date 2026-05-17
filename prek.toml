@@ -146,7 +146,7 @@ hooks = [
     files = "^(package\\.json|bun\\.lock|frontend/((src|tests)/.*\\.(svelte|ts)|package\\.json|tsconfig\\.json|vite\\.config\\.ts|playwright(-e2e)?\\.config\\.ts|eslint\\.config\\.(js|mjs|cjs))|packages/ui/(src/.*\\.(svelte|ts)|package\\.json|tsconfig\\.json|eslint\\.config\\.(js|mjs|cjs)))$",
     pass_filenames = false,
     require_serial = true,
-    priority = 5,
+    priority = 30,
   },
 ]
 
