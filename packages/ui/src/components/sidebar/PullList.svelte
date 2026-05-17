@@ -32,7 +32,7 @@
     grouping.getGroupingMode(),
   );
   const workflowGroups = $derived(
-    groupByWorkflow(pulls.getPulls(), activeWorktreeKey),
+    groupByWorkflow(pulls.getPulls()),
   );
   const pullStateOptions = ["open", "closed", "all"] as const;
   const groupingOptions: {

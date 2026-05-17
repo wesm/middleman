@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy } from "svelte";
   import {
     Provider,
     PRListView,
@@ -101,6 +101,8 @@
 
   let stores = $state<StoreInstances | undefined>();
   let appReady = $state(false);
+  let viewportWidth = $state(window.innerWidth);
+  let hasCoarsePointer = $state(window.matchMedia("(pointer: coarse)").matches);
   let cleanupFullAppShell: (() => void) | undefined;
   let fullShellStores: StoreInstances | undefined;
   const appIconSrc = `${getBasePath().replace(/\/$/, "")}/favicon.svg`;
@@ -168,14 +170,27 @@
     return text ? `?${text}` : "?desktop=1";
   }
 
-  function shouldUseDesktopOnPhone(): boolean {
-    return new URLSearchParams(window.location.search).get("desktop") === "1";
+  function updateViewportState(): void {
+    viewportWidth = window.innerWidth;
+    hasCoarsePointer = window.matchMedia("(pointer: coarse)").matches;
   }
 
-  function isPhoneViewport(): boolean {
-    const hasPhoneLikeTouchViewport = window.matchMedia("(pointer: coarse)").matches
-      && Math.min(window.screen.width, window.screen.height) <= 640;
-    return window.innerWidth <= 640 || isNarrow() || hasPhoneLikeTouchViewport;
+  function hasMobileUserAgent(): boolean {
+    return /\b(Android|iPhone|iPod|IEMobile|Mobile)\b/i.test(navigator.userAgent);
+  }
+
+  function isPhoneLikeViewport(): boolean {
+    return viewportWidth <= 640
+      && (hasCoarsePointer || hasMobileUserAgent());
+  }
+
+  function isCompactViewport(): boolean {
+    const hasNarrowContainer = isNarrow();
+    return viewportWidth <= 640 || hasNarrowContainer || isPhoneLikeViewport();
+  }
+
+  function shouldUseDesktopOnPhone(): boolean {
+    return new URLSearchParams(window.location.search).get("desktop") === "1";
   }
 
   function shouldForceMobileRoutes(): boolean {
@@ -184,6 +199,28 @@
       import.meta.env.VITE_MIDDLEMAN_FORCE_MOBILE_ROUTES === "1" ||
       import.meta.env.VITE_MIDDLEMAN_FORCE_MOBILE_ROUTES === "true"
     );
+  }
+
+  function shouldUseResponsiveFocusPresentation(): boolean {
+    const route = getRoute();
+    if (shouldUseDesktopOnPhone()) return false;
+    if (!isCompactViewport() && !shouldForceMobileRoutes()) return false;
+    if (route.page === "pulls") return route.view === "list";
+    return route.page === "issues";
+  }
+
+  function shouldUseFocusPresentation(): boolean {
+    return getPage() === "focus" || shouldUseResponsiveFocusPresentation();
+  }
+
+  function useFocusLayoutClass(): boolean {
+    return isPhoneLikeViewport() || shouldForceMobileRoutes();
+  }
+
+  function shouldUseResponsiveMobileActivityPresentation(): boolean {
+    if (shouldUseDesktopOnPhone()) return false;
+    if (getPage() !== "activity") return false;
+    return isCompactViewport() || shouldForceMobileRoutes();
   }
 
   function navigateFocusPRDetailTab(
@@ -195,28 +232,6 @@
         ? buildFocusPullRequestFilesRoute(ref)
         : buildFocusPullRequestRoute(ref),
     );
-  }
-
-  function mobilePathForRoute(): string {
-    const route = getRoute();
-    if (route.page === "pulls") {
-      if (route.selected) {
-        return route.tab === "files"
-          ? buildFocusPullRequestFilesRoute(route.selected)
-          : buildFocusPullRequestRoute(route.selected);
-      }
-      return "/m/pulls";
-    }
-    if (route.page === "issues") {
-      if (route.selected) {
-        return buildRoutedItemRoute(
-          { ...route.selected, itemType: "issue" },
-          { focus: true },
-        );
-      }
-      return "/m/issues";
-    }
-    return "/m";
   }
 
   function desktopPathForMobileRoute(): string {
@@ -233,24 +248,6 @@
   function useDesktopView(): void {
     replaceUrl(`${desktopPathForMobileRoute()}${searchWithDesktopOptOut()}`);
   }
-
-  function redirectPhoneToMobileRoute(): void {
-    const page = getPage();
-    if (!shouldUseFullAppShell(page)) return;
-    if (isMobilePage(page)) return;
-    if (page !== "activity" && page !== "pulls" && page !== "issues") return;
-    if (!isPhoneViewport() && !shouldForceMobileRoutes()) return;
-    if (shouldUseDesktopOnPhone()) return;
-    replaceUrl(`${mobilePathForRoute()}${window.location.search}`);
-  }
-
-  onMount(() => {
-    redirectPhoneToMobileRoute();
-  });
-
-  $effect(() => {
-    redirectPhoneToMobileRoute();
-  });
 
   onDestroy(() => {
     stopFullAppShell();
@@ -390,7 +387,7 @@
       number: item.item_number,
     } satisfies RoutedItemRef;
 
-    if (isMobilePage(getPage())) {
+    if (isMobilePage(getPage()) || shouldUseResponsiveMobileActivityPresentation()) {
       navigate(buildRoutedItemRoute(selectedItem, { focus: true }));
       return;
     }
@@ -523,6 +520,8 @@
   });
 </script>
 
+<svelte:window onresize={updateViewportState} />
+
 {#if !shouldUseFullAppShell(getPage())}
   <WorkspaceEmbedShell />
 {:else}
@@ -575,25 +574,42 @@
     }}
     bind:stores
   >
-  {#if getPage() === "focus"}
+  {#if shouldUseFocusPresentation()}
     {@const r = getRoute()}
-    {#if r.page === "focus"}
-      <main
-        class="focus-layout"
-        class:focus-layout--phone={isPhoneViewport() || shouldForceMobileRoutes()}
-      >
-        {#if r.itemType === "mrs"}
-          <FocusListView
-            listType="mrs"
-            {...r.repo ? { repo: r.repo } : {}}
-          />
-        {:else if r.itemType === "issues"}
-          <FocusListView
-            listType="issues"
-            {...r.repo ? { repo: r.repo } : {}}
-          />
-        {:else if r.itemType === "pr"}
-          {@const selectedPR = {
+    <main
+      class="focus-layout"
+      class:focus-layout--phone={useFocusLayoutClass()}
+    >
+      {#if r.page === "focus" && r.itemType === "mrs"}
+        <FocusListView
+          listType="mrs"
+          {...r.repo ? { repo: r.repo } : {}}
+        />
+      {:else if r.page === "focus" && r.itemType === "issues"}
+        <FocusListView
+          listType="issues"
+          {...r.repo ? { repo: r.repo } : {}}
+        />
+      {:else if r.page === "focus" && r.itemType === "pr"}
+        {@const selectedPR = {
+          owner: r.owner,
+          name: r.name,
+          number: r.number,
+          provider: r.provider,
+          platformHost: r.platformHost,
+          repoPath: r.repoPath,
+        }}
+        <PRListView
+          {selectedPR}
+          detailTab={r.tab === "files" ? "files" : "conversation"}
+          onDetailTabChange={(tab) => navigateFocusPRDetailTab(selectedPR, tab)}
+          isSidebarCollapsed={true}
+          hideSidebar={true}
+          showStackSidebar={false}
+        />
+      {:else if r.page === "focus"}
+        <IssueListView
+          selectedIssue={{
             owner: r.owner,
             name: r.name,
             number: r.number,
@@ -601,31 +617,36 @@
             platformHost: r.platformHost,
             repoPath: r.repoPath,
           }}
-          <PRListView
-            {selectedPR}
-            detailTab={r.tab === "files" ? "files" : "conversation"}
-            onDetailTabChange={(tab) => navigateFocusPRDetailTab(selectedPR, tab)}
-            isSidebarCollapsed={true}
-            hideSidebar={true}
-            showStackSidebar={false}
-          />
-        {:else}
-          <IssueListView
-            selectedIssue={{
-              owner: r.owner,
-              name: r.name,
-              number: r.number,
-              provider: r.provider,
-              platformHost: r.platformHost,
-              repoPath: r.repoPath,
-            }}
-            isSidebarCollapsed={true}
-            hideSidebar={true}
-          />
-        {/if}
-      </main>
-    {/if}
-  {:else if isMobilePage(getPage())}
+          isSidebarCollapsed={true}
+          hideSidebar={true}
+        />
+      {:else if r.page === "pulls" && r.selected}
+        <PRListView
+          selectedPR={r.selected}
+          detailTab={r.tab === "files" ? "files" : "conversation"}
+          isSidebarCollapsed={true}
+          hideSidebar={true}
+          showStackSidebar={false}
+        />
+      {:else if r.page === "pulls"}
+        <FocusListView
+          listType="mrs"
+          routeFamily="canonical"
+        />
+      {:else if r.page === "issues" && r.selected}
+        <IssueListView
+          selectedIssue={r.selected}
+          isSidebarCollapsed={true}
+          hideSidebar={true}
+        />
+      {:else if r.page === "issues"}
+        <FocusListView
+          listType="issues"
+          routeFamily="canonical"
+        />
+      {/if}
+    </main>
+  {:else if isMobilePage(getPage()) || shouldUseResponsiveMobileActivityPresentation()}
     <section class="mobile-shell" aria-label="Phone view">
       <header class="mobile-topbar">
         <span class="mobile-brand">
@@ -635,7 +656,7 @@
 
         <nav class="mobile-tabs" aria-label="Phone navigation">
           <a
-            class:mobile-tab--active={getPage() === "mobile-activity"}
+            class:mobile-tab--active={getPage() === "mobile-activity" || getPage() === "activity"}
             href="/m"
             onclick={(e) => {
               e.preventDefault();
@@ -741,7 +762,7 @@
             {detailTab}
             isSidebarCollapsed={isSidebarCollapsed()}
             sidebarWidth={getSidebarWidth()}
-            showStackSidebar={!isPhoneViewport() && !shouldForceMobileRoutes()}
+            showStackSidebar={!isPhoneLikeViewport() && !shouldForceMobileRoutes()}
             onSidebarResize={handleSidebarResize}
           />
         {/if}

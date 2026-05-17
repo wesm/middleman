@@ -73,7 +73,7 @@ hooks = [
     entry = "make api-generate",
     files = "^(go\\.mod|go\\.sum|cmd/middleman-openapi/.*\\.go|internal/server/.*\\.go|internal/db/.*\\.go|internal/apiclient/.*|frontend/package\\.json|frontend/bun\\.lock)$",
     pass_filenames = false,
-    priority = 0,
+    priority = 25,
   },
   {
     id = "gofmt",
@@ -146,7 +146,7 @@ hooks = [
     files = "^(package\\.json|bun\\.lock|frontend/((src|tests)/.*\\.(svelte|ts)|package\\.json|tsconfig\\.json|vite\\.config\\.ts|playwright(-e2e)?\\.config\\.ts|eslint\\.config\\.(js|mjs|cjs))|packages/ui/(src/.*\\.(svelte|ts)|package\\.json|tsconfig\\.json|eslint\\.config\\.(js|mjs|cjs)))$",
     pass_filenames = false,
     require_serial = true,
-    priority = 5,
+    priority = 30,
   },
 ]
 

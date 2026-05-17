@@ -1171,21 +1171,19 @@
             class="pull-detail-content"
             class:pull-detail-content--has-compact-actions={pr.State !== "merged" && !stalePR}
           >
-            {#snippet labelActionButton()}
-              <div class="label-editor-anchor">
-                <ActionButton
-                  class="btn--labels"
-                  label="Labels"
-                  shortLabel="Labels"
-                  size="sm"
-                  surface="soft"
-                  tone="neutral"
-                  disabled={stalePR}
-                  onclick={openLabelPicker}
-                >
-                  <TagsIcon size="16" aria-hidden="true" />
-                </ActionButton>
-              </div>
+            {#snippet labelActionButton(iconSize = 16)}
+              <ActionButton
+                class="btn--labels"
+                label="Labels"
+                shortLabel="Labels"
+                size="sm"
+                surface="soft"
+                tone="neutral"
+                disabled={stalePR}
+                onclick={openLabelPicker}
+              >
+                <TagsIcon size={iconSize} aria-hidden="true" />
+              </ActionButton>
             {/snippet}
 
       {#if detailStore.isStaleRefreshing()}
@@ -1359,7 +1357,7 @@
           <GitHubLabels {labels} mode="full" />
         {/if}
         {#if capabilities.read_labels && capabilities.label_mutation}
-          <div class="label-editor-anchor--inline">
+          <div class="label-editor-anchor label-editor-anchor--inline">
             {@render labelActionButton()}
           </div>
         {/if}
@@ -1607,8 +1605,8 @@
               <div class="actions-menu-popover">
                 {@render primaryActionButtons()}
                 {#if capabilities.read_labels && capabilities.label_mutation}
-                  <div class="actions-menu-popover__item actions-menu-popover__item--labels">
-                    {@render labelActionButton()}
+                  <div class="actions-menu-popover__item actions-menu-popover__item--labels label-editor-anchor">
+                    {@render labelActionButton(14)}
                   </div>
                 {/if}
                 {#if !hideWorkspaceAction}
@@ -2335,7 +2333,7 @@
     position: relative;
   }
 
-  .actions-menu-popover__item .label-editor-anchor {
+  .actions-menu-popover__item--labels.label-editor-anchor {
     width: 100%;
   }
 

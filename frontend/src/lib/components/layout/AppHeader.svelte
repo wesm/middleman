@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getStores, KbdBadge } from "@middleman/ui";
+  import { getStores, KbdBadge, SelectDropdown } from "@middleman/ui";
   import {
     getBasePath,
     getPage,
@@ -16,11 +16,16 @@
     MoonIcon,
     SettingsIcon,
     SidebarToggleIcon,
+    SpinnerIcon,
     SunIcon,
+    SyncIcon,
   } from "../../icons.ts";
   import { getGlobalRepo, setGlobalRepo } from "../../stores/filter.svelte.js";
   import { isEmbedded, getUIConfig } from "../../stores/embed-config.svelte.js";
-  import { isNarrow } from "../../stores/container.svelte.js";
+  import {
+    getContainerSize,
+    isNarrow,
+  } from "../../stores/container.svelte.js";
   import {
     isDark, toggleTheme, isThemeToggleVisible,
   } from "../../stores/theme.svelte.js";
@@ -48,6 +53,35 @@
   }
 
   const syncing = $derived(sync.getSyncState()?.running ?? false);
+  const compactHeader = $derived(getContainerSize() !== "wide");
+  const compactNavOptions = $derived.by(() => {
+    const options = [
+      { value: "activity", label: "Activity" },
+      { value: "repos", label: "Repos" },
+      { value: "pulls", label: "PRs" },
+      { value: "issues", label: "Issues" },
+      { value: "board", label: "Board" },
+      { value: "reviews", label: "Reviews" },
+      { value: "workspaces", label: "Workspaces" },
+    ];
+
+    if (getPage() === "design-system") {
+      options.push({ value: "design-system", label: "Design system" });
+    }
+    if (getPage() === "terminal") {
+      options.push({ value: "terminal", label: "Workspaces" });
+    }
+    if (!isEmbedded() && getPage() === "settings") {
+      options.push({ value: "settings", label: "Settings" });
+    }
+
+    return options;
+  });
+  const compactNavValue = $derived(
+    getPage() === "pulls" && getView() === "board"
+      ? "board"
+      : getPage(),
+  );
 
   function routeForTab(
     destination: "pulls" | "issues",
@@ -81,6 +115,19 @@
     else if (destination === "settings") navigate("/settings");
     else if (destination === "design-system") navigate("/design-system");
   }
+
+  function navigateCompactNav(value: string): void {
+    if (value === "activity") navigate("/");
+    else if (value === "repos") navigateTab("repos");
+    else if (value === "pulls") navigateTab("pulls");
+    else if (value === "issues") navigateTab("issues");
+    else if (value === "board") navigateTab("board");
+    else if (value === "reviews") navigateTab("reviews");
+    else if (value === "workspaces" || value === "terminal") {
+      navigateTab("workspaces");
+    } else if (value === "settings") navigateTab("settings");
+    else if (value === "design-system") navigateTab("design-system");
+  }
 </script>
 
 <header class="app-header">
@@ -108,43 +155,28 @@
         onchange={setGlobalRepo}
       />
     {/if}
+    {#if compactHeader && !isNarrow()}
+      <SelectDropdown
+        class="nav-select"
+        value={compactNavValue}
+        options={compactNavOptions}
+        onchange={navigateCompactNav}
+        title="Page"
+      />
+    {/if}
   </div>
 
   <nav class="header-center">
-    {#if isNarrow()}
-      <select
-        class="nav-select"
-        value={getPage() === "pulls" && getView() === "board" ? "board" : getPage()}
-        onchange={(e) => {
-          const v = (e.target as HTMLSelectElement).value;
-          if (v === "activity") navigate("/");
-          else if (v === "repos") navigateTab("repos");
-          else if (v === "pulls") navigateTab("pulls");
-          else if (v === "issues") navigateTab("issues");
-          else if (v === "board") navigateTab("board");
-          else if (v === "reviews") navigateTab("reviews");
-          else if (v === "workspaces" || v === "terminal") navigateTab("workspaces");
-          else if (v === "settings") navigateTab("settings");
-          else if (v === "design-system") navigateTab("design-system");
-        }}
-      >
-        <option value="activity">Activity</option>
-        <option value="repos">Repos</option>
-        <option value="pulls">PRs</option>
-        <option value="issues">Issues</option>
-        <option value="board">Board</option>
-        <option value="reviews">Reviews</option>
-        <option value="workspaces">Workspaces</option>
-        {#if getPage() === "design-system"}
-          <option value="design-system">Design system</option>
-        {/if}
-        {#if getPage() === "terminal"}
-          <option value="terminal">Workspaces</option>
-        {/if}
-        {#if !isEmbedded() && getPage() === "settings"}
-          <option value="settings">Settings</option>
-        {/if}
-      </select>
+    {#if compactHeader}
+      {#if isNarrow()}
+        <SelectDropdown
+          class="nav-select"
+          value={compactNavValue}
+          options={compactNavOptions}
+          onchange={navigateCompactNav}
+          title="Page"
+        />
+      {/if}
     {:else}
       <div class="tab-group">
         <button class="view-tab" class:active={getPage() === "activity"} onclick={() => { if (getPage() !== "activity") navigateTab("activity"); }}>
@@ -181,8 +213,29 @@
 
   <div class="header-right">
     {#if !getUIConfig().hideSync}
-      <button class="action-btn" onclick={handleSync} disabled={syncing}>
-        {syncing ? "Syncing..." : "Sync"}
+      <button
+        class="action-btn sync-btn"
+        aria-label={syncing ? "Syncing" : "Sync"}
+        title={syncing ? "Syncing" : "Sync"}
+        onclick={handleSync}
+        disabled={syncing}
+      >
+        {#if syncing}
+          <span class="sync-icon sync-icon--spinning" aria-hidden="true">
+            <SpinnerIcon
+              size="14"
+              strokeWidth="2"
+            />
+          </span>
+        {:else}
+          <span class="sync-icon" aria-hidden="true">
+            <SyncIcon
+              size="14"
+              strokeWidth="1.75"
+            />
+          </span>
+        {/if}
+        <span class="sync-label">{syncing ? "Syncing..." : "Sync"}</span>
       </button>
     {/if}
     {#if isThemeToggleVisible()}
@@ -253,6 +306,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    min-width: 0;
   }
 
   .tab-group {
@@ -293,6 +347,8 @@
   }
 
   .action-btn {
+    box-sizing: border-box;
+    height: 28px;
     padding: 5px 12px;
     border-radius: var(--radius-sm);
     font-size: var(--font-size-md);
@@ -301,6 +357,34 @@
     border: 1px solid var(--border-default);
     background: var(--bg-surface);
     transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+
+  .sync-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-width: 34px;
+    min-height: 28px;
+    line-height: 0;
+  }
+
+  .sync-icon {
+    display: inline-flex;
+    flex-shrink: 0;
+  }
+
+  .sync-icon--spinning {
+    animation: header-spin 0.9s linear infinite;
+  }
+
+  .sync-label {
+    line-height: 1;
+  }
+
+  @keyframes header-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
   }
 
   .action-btn:hover:not(:disabled) {
@@ -312,15 +396,6 @@
   .action-btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
-  }
-
-  .nav-select {
-    font-size: var(--font-size-sm);
-    padding: 4px 8px;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
-    background: var(--bg-surface);
-    color: var(--text-primary);
   }
 
   .daemon-indicator {
@@ -337,6 +412,55 @@
   [data-filled-icon="moon"] :global(svg path) {
     fill: currentColor;
     stroke: none;
+  }
+
+  :global(#app.container-medium) .app-header {
+    gap: 8px;
+    padding-inline: 10px;
+  }
+
+  :global(#app.container-medium) .header-left {
+    flex: 1 1 auto;
+    gap: 8px;
+  }
+
+  :global(#app.container-medium) .header-left :global(.typeahead) {
+    flex: 1 1 150px;
+    min-width: 128px;
+    max-width: 220px;
+  }
+
+  :global(#app.container-medium) .header-center {
+    display: none;
+  }
+
+  :global(#app.container-medium) .header-left :global(.nav-select) {
+    flex: 0 0 164px;
+    min-width: 132px;
+  }
+
+  :global(#app.container-medium .nav-select) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  :global(#app.container-medium .nav-select .select-dropdown-trigger) {
+    border-color: var(--border-muted);
+    background: var(--bg-inset);
+  }
+
+  :global(#app.container-medium) .header-right {
+    flex: 0 0 auto;
+    gap: 6px;
+  }
+
+  :global(#app.container-medium) .sync-btn {
+    min-height: 28px;
+    padding: 5px 10px;
+  }
+
+  :global(#app.container-medium) .sync-label {
+    display: none;
   }
 
   :global(#app.container-narrow) .app-header {
@@ -384,8 +508,12 @@
     order: 2;
   }
 
-  :global(#app.container-narrow) .nav-select {
+  :global(#app.container-narrow .nav-select) {
     width: 100%;
+    min-width: 0;
+  }
+
+  :global(#app.container-narrow .nav-select .select-dropdown-trigger) {
     min-height: 32px;
     font-size: var(--font-size-md);
   }
@@ -397,7 +525,11 @@
   }
 
   :global(#app.container-narrow) .action-btn {
-    min-height: 32px;
+    height: 32px;
     padding-inline: 10px;
+  }
+
+  :global(#app.container-narrow) .sync-label {
+    display: none;
   }
 </style>

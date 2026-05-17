@@ -38,7 +38,7 @@
   },
   "scripts": {
     "lint": "node ./node_modules/eslint/bin/eslint.js .",
-    "typecheck": "node ./node_modules/svelte-check/bin/svelte-check --tsconfig ./tsconfig.json --fail-on-warnings && node ./node_modules/typescript/bin/tsc --noEmit -p ./tsconfig.json"
+    "typecheck": "node -e \"process.argv.splice(1, 0, 'svelte-check'); require(require.resolve('svelte-check/bin/svelte-check'))\" -- --tsconfig ./tsconfig.json --fail-on-warnings && node ./node_modules/typescript/bin/tsc --noEmit -p ./tsconfig.json"
   },
   "dependencies": {
     "@lucide/svelte": "1.3.0",

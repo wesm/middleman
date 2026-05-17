@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getStores, getNavigate, getActions, getHostState } from "../context.js";
+  import { getStores, getNavigate, getActions } from "../context.js";
   import { groupByWorkflow } from "../stores/workflow.svelte.js";
   import PullItem from "../components/sidebar/PullItem.svelte";
   import IssueItem from "../components/sidebar/IssueItem.svelte";
@@ -7,6 +7,8 @@
   import {
     buildFocusIssueRoute,
     buildFocusPullRequestRoute,
+    buildIssueRoute,
+    buildPullRequestRoute,
     type IssueRouteRef,
     type PullRequestRouteRef,
   } from "../routes.js";
@@ -14,29 +16,26 @@
   const { pulls, issues, sync, settings, grouping } = getStores();
   const navigate = getNavigate();
   const actions = getActions();
-  const hostState = getHostState();
 
   const importAction = $derived(
     (actions.pull ?? []).find(
       (a) => a.id === "import-worktree",
     ),
   );
-  const activeWorktreeKey = $derived(
-    hostState.getActiveWorktreeKey?.(),
-  );
   const groupingMode = $derived(
     grouping.getGroupingMode(),
   );
   const workflowGroups = $derived(
-    groupByWorkflow(pulls.getPulls(), activeWorktreeKey),
+    groupByWorkflow(pulls.getPulls()),
   );
 
   interface Props {
     listType: "mrs" | "issues";
     repo?: string;
+    routeFamily?: "focus" | "canonical";
   }
 
-  const { listType, repo }: Props = $props();
+  const { listType, repo, routeFamily = "focus" }: Props = $props();
 
   let searchInput = $state("");
   let debounceHandle: ReturnType<typeof setTimeout> | null =
@@ -121,11 +120,19 @@
   }
 
   function handlePRSelect(ref: PullRequestRouteRef): void {
-    navigate(buildFocusPullRequestRoute(ref));
+    navigate(
+      routeFamily === "canonical"
+        ? buildPullRequestRoute(ref)
+        : buildFocusPullRequestRoute(ref),
+    );
   }
 
   function handleIssueSelect(ref: IssueRouteRef): void {
-    navigate(buildFocusIssueRoute(ref));
+    navigate(
+      routeFamily === "canonical"
+        ? buildIssueRoute(ref)
+        : buildFocusIssueRoute(ref),
+    );
   }
 
   // Filter state accessors for PRs.
