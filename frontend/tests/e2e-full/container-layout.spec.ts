@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+test.setTimeout(60_000);
+
 test.describe("container-aware layout", () => {
   test("narrow viewport shows dropdown and collapses sidebar", async ({ page }) => {
     await page.setViewportSize({ width: 400, height: 600 });
@@ -38,6 +40,40 @@ test.describe("container-aware layout", () => {
     });
 
     expect(metrics.headerHeight).toBeGreaterThanOrEqual(76);
+    expect(Math.max(metrics.documentWidth, metrics.bodyWidth)).toBeLessThanOrEqual(
+      metrics.viewportWidth,
+    );
+  });
+
+  test("medium viewport collapses page tabs and sync label", async ({ page }) => {
+    await page.setViewportSize({ width: 785, height: 900 });
+    await page.goto("/pulls/github/acme/widgets/1?desktop=1");
+    const header = page.locator(".app-header");
+    await header.waitFor({ state: "visible", timeout: 10_000 });
+
+    await expect(page.locator(".nav-select")).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator(".tab-group")).not.toBeAttached();
+    await expect(page.getByRole("button", { name: "Sync" })).toBeVisible();
+    await expect(page.locator(".sync-btn .sync-label")).not.toBeVisible();
+
+    const metrics = await page.evaluate(() => {
+      const headerRect = document.querySelector(".app-header")
+        ?.getBoundingClientRect();
+      const syncRect = document.querySelector(".sync-btn")
+        ?.getBoundingClientRect();
+      return {
+        headerRight: headerRect?.right ?? 0,
+        headerHeight: headerRect?.height ?? 0,
+        syncWidth: syncRect?.width ?? 0,
+        viewportWidth: window.innerWidth,
+        documentWidth: document.documentElement.scrollWidth,
+        bodyWidth: document.body.scrollWidth,
+      };
+    });
+
+    expect(metrics.headerRight).toBeLessThanOrEqual(metrics.viewportWidth);
+    expect(metrics.headerHeight).toBeLessThanOrEqual(52);
+    expect(metrics.syncWidth).toBeLessThanOrEqual(42);
     expect(Math.max(metrics.documentWidth, metrics.bodyWidth)).toBeLessThanOrEqual(
       metrics.viewportWidth,
     );

@@ -16,11 +16,16 @@
     MoonIcon,
     SettingsIcon,
     SidebarToggleIcon,
+    SpinnerIcon,
     SunIcon,
+    SyncIcon,
   } from "../../icons.ts";
   import { getGlobalRepo, setGlobalRepo } from "../../stores/filter.svelte.js";
   import { isEmbedded, getUIConfig } from "../../stores/embed-config.svelte.js";
-  import { isNarrow } from "../../stores/container.svelte.js";
+  import {
+    getContainerSize,
+    isNarrow,
+  } from "../../stores/container.svelte.js";
   import {
     isDark, toggleTheme, isThemeToggleVisible,
   } from "../../stores/theme.svelte.js";
@@ -48,6 +53,7 @@
   }
 
   const syncing = $derived(sync.getSyncState()?.running ?? false);
+  const compactHeader = $derived(getContainerSize() !== "wide");
 
   function routeForTab(
     destination: "pulls" | "issues",
@@ -111,7 +117,7 @@
   </div>
 
   <nav class="header-center">
-    {#if isNarrow()}
+    {#if compactHeader}
       <select
         class="nav-select"
         value={getPage() === "pulls" && getView() === "board" ? "board" : getPage()}
@@ -181,8 +187,29 @@
 
   <div class="header-right">
     {#if !getUIConfig().hideSync}
-      <button class="action-btn" onclick={handleSync} disabled={syncing}>
-        {syncing ? "Syncing..." : "Sync"}
+      <button
+        class="action-btn sync-btn"
+        aria-label={syncing ? "Syncing" : "Sync"}
+        title={syncing ? "Syncing" : "Sync"}
+        onclick={handleSync}
+        disabled={syncing}
+      >
+        {#if syncing}
+          <span class="sync-icon sync-icon--spinning" aria-hidden="true">
+            <SpinnerIcon
+              size="14"
+              strokeWidth="2"
+            />
+          </span>
+        {:else}
+          <span class="sync-icon" aria-hidden="true">
+            <SyncIcon
+              size="14"
+              strokeWidth="1.75"
+            />
+          </span>
+        {/if}
+        <span class="sync-label">{syncing ? "Syncing..." : "Sync"}</span>
       </button>
     {/if}
     {#if isThemeToggleVisible()}
@@ -253,6 +280,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    min-width: 0;
   }
 
   .tab-group {
@@ -303,6 +331,28 @@
     transition: background 0.15s, color 0.15s, border-color 0.15s;
   }
 
+  .sync-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-width: 34px;
+    min-height: 28px;
+  }
+
+  .sync-icon {
+    flex-shrink: 0;
+  }
+
+  .sync-icon--spinning {
+    animation: header-spin 0.9s linear infinite;
+  }
+
+  @keyframes header-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
   .action-btn:hover:not(:disabled) {
     background: var(--bg-surface-hover);
     color: var(--text-primary);
@@ -337,6 +387,43 @@
   [data-filled-icon="moon"] :global(svg path) {
     fill: currentColor;
     stroke: none;
+  }
+
+  :global(#app.container-medium) .app-header {
+    gap: 8px;
+    padding-inline: 10px;
+  }
+
+  :global(#app.container-medium) .header-left {
+    flex: 1 1 auto;
+    gap: 8px;
+  }
+
+  :global(#app.container-medium) .header-left :global(.typeahead) {
+    flex: 1 1 150px;
+    min-width: 128px;
+    max-width: 220px;
+  }
+
+  :global(#app.container-medium) .header-center {
+    flex: 0 0 132px;
+  }
+
+  :global(#app.container-medium) .nav-select {
+    width: 100%;
+  }
+
+  :global(#app.container-medium) .header-right {
+    flex: 0 0 auto;
+    gap: 6px;
+  }
+
+  :global(#app.container-medium) .sync-btn {
+    padding-inline: 9px;
+  }
+
+  :global(#app.container-medium) .sync-label {
+    display: none;
   }
 
   :global(#app.container-narrow) .app-header {
@@ -399,5 +486,9 @@
   :global(#app.container-narrow) .action-btn {
     min-height: 32px;
     padding-inline: 10px;
+  }
+
+  :global(#app.container-narrow) .sync-label {
+    display: none;
   }
 </style>
