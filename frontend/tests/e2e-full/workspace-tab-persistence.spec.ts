@@ -218,7 +218,8 @@ test.describe("workspace tab persistence", () => {
       expect(workspaceDetail.worktree_path).toBeTruthy();
       await writeFile(
         join(workspaceDetail.worktree_path!, "alpha.ts"),
-        "alpha\n",
+        Array.from({ length: 120 }, (_, index) => `alpha ${index + 1}`)
+          .join("\n") + "\n",
       );
       await writeFile(
         join(workspaceDetail.worktree_path!, "beta_test.go"),
@@ -316,7 +317,7 @@ test.describe("workspace tab persistence", () => {
         '.right-sidebar .diff-file[data-file-path="beta_test.go"]',
       );
       await expect(alphaDiffFile).toBeVisible();
-      await expect(betaDiffFile).toBeVisible();
+      await expect(betaDiffFile).toHaveCount(1);
       const firstDiffLineGutterCount = await page
         .locator(".right-sidebar .diff-line")
         .first()
@@ -327,7 +328,7 @@ test.describe("workspace tab persistence", () => {
         .locator(".right-sidebar .diff-line .gutter")
         .first()
         .evaluate((gutter) => gutter.getBoundingClientRect().width);
-      expect(lineGutterWidth).toBeLessThanOrEqual(32);
+      expect(lineGutterWidth).toBeLessThanOrEqual(40);
       const diffToolbar = page.locator(".right-sidebar .diff-toolbar");
       await expect(diffToolbar.locator(".compact-more-btn")).toBeVisible();
       await expect(
@@ -350,17 +351,6 @@ test.describe("workspace tab persistence", () => {
         toolbarMetrics.clientWidth,
       );
       await page.setViewportSize({ width: 1100, height: 720 });
-      await diffToolbar.locator(".compact-more-btn").click();
-      const compactMenu = page.locator(".right-sidebar .compact-menu");
-      await expect(compactMenu).toBeVisible();
-      await expect(
-        compactMenu.getByRole("switch", { name: "File list" }),
-      ).toHaveCount(0);
-      await compactMenu.getByRole("button", { name: "Code (1)" }).click();
-      await expect(diffToolbar).toContainText("Code");
-      await expect(alphaDiffFile).toBeVisible();
-      await expect(betaDiffFile).toHaveCount(0);
-      await page.keyboard.press("Escape");
       await diffToolbar.getByRole("button", { name: "Jump to file" }).click();
       const fileJump = page.locator(".right-sidebar .file-jump-menu");
       await expect(fileJump).toBeVisible();
@@ -382,6 +372,38 @@ test.describe("workspace tab persistence", () => {
       });
       expect(jumpGeometry.position).toBe("fixed");
       expect(jumpGeometry.extendsLeftOfSidebar).toBe(true);
+      await fileJump.getByRole("option", { name: /beta_test\.go/ }).click();
+      await expect(fileJump).toBeHidden();
+      const betaJumpMetrics = await page
+        .locator(".right-sidebar .diff-area")
+        .evaluate((area) => {
+          const beta = area.querySelector<HTMLElement>(
+            '[data-file-path="beta_test.go"]',
+          );
+          const areaRect = area.getBoundingClientRect();
+          const betaRect = beta?.getBoundingClientRect();
+          return {
+            hasBeta: Boolean(beta),
+            scrollTop: area.scrollTop,
+            betaInViewport: betaRect
+              ? betaRect.top >= areaRect.top && betaRect.top < areaRect.bottom
+              : false,
+          };
+        });
+      expect(betaJumpMetrics.hasBeta).toBe(true);
+      expect(betaJumpMetrics.scrollTop).toBeGreaterThan(0);
+      expect(betaJumpMetrics.betaInViewport).toBe(true);
+      await diffToolbar.locator(".compact-more-btn").click();
+      const compactMenu = page.locator(".right-sidebar .compact-menu");
+      await expect(compactMenu).toBeVisible();
+      await expect(
+        compactMenu.getByRole("switch", { name: "File list" }),
+      ).toHaveCount(0);
+      await compactMenu.getByRole("button", { name: "Code (1)" }).click();
+      await expect(diffToolbar).toContainText("Code");
+      await expect(alphaDiffFile).toBeVisible();
+      await expect(betaDiffFile).toHaveCount(0);
+      await page.keyboard.press("Escape");
       await expect(alphaDiffFile).toBeVisible();
       await expect(panes).toHaveCount(1);
       await expect(homeTab).toHaveAttribute("aria-selected", "true");
