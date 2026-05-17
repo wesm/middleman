@@ -6,6 +6,7 @@
     type DiffFileCategoryFilter,
   } from "../../utils/diff-categories.js";
   import DiffScopePicker from "./DiffScopePicker.svelte";
+  import FileJumpPicker from "./FileJumpPicker.svelte";
 
   interface Props {
     compact?: boolean;
@@ -13,6 +14,7 @@
     onToggleFileList?: (() => void) | undefined;
     showRichPreview?: boolean;
     showScopePicker?: boolean;
+    showFileJump?: boolean;
   }
 
   let {
@@ -21,6 +23,7 @@
     onToggleFileList,
     showRichPreview = true,
     showScopePicker = true,
+    showFileJump = false,
   }: Props = $props();
 
   const { diff } = getStores();
@@ -31,6 +34,10 @@
     diffFileCategoryOptions.find((option) => option.value === activeCategory)?.label ??
       "All",
   );
+  const visibleFileCount = $derived(
+    diff.getVisibleFileList()?.files.length ?? diff.getVisibleDiffFiles().length,
+  );
+  const shouldShowFileJump = $derived(showFileJump || visibleFileCount >= 10);
   let menuOpen = $state(false);
   let compactMenuRef = $state<HTMLDivElement>();
 
@@ -197,6 +204,9 @@
     <DiffScopePicker />
   {/if}
   <div class="toolbar-actions">
+    {#if shouldShowFileJump}
+      <FileJumpPicker />
+    {/if}
     <div class="compact-menu-wrap" bind:this={compactMenuRef}>
       <button
         class="compact-more-btn"

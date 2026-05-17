@@ -1139,6 +1139,9 @@ test.describe("diff view performance", () => {
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
 
+    await expect(page.getByRole("button", { name: "Jump to file" }))
+      .toBeVisible();
+
     // All 50 file headers should be in the DOM.
     await expect(page.locator(".diff-file .file-header")).toHaveCount(50, { timeout: 15_000 });
 
