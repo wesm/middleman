@@ -2089,27 +2089,7 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		return fmt.Errorf("upsert repo %s/%s by provider id: %w", repo.Owner, repo.Name, err)
 	}
 
-	if resolvedRepo != nil {
-		s.updateRepoSettingsFromProviderRepo(ctx, repoID, *resolvedRepo)
-	} else if client, ok := s.optionalGitHubClientFor(repo); ok {
-		ghRepo, err := client.GetRepository(ctx, repo.Owner, repo.Name)
-		if err != nil {
-			slog.Warn("get repo settings failed",
-				"repo", repo.Owner+"/"+repo.Name, "err", err,
-			)
-		} else {
-			viewerCanMerge := true
-			if canMerge := gitHubViewerCanMerge(ghRepo); canMerge != nil {
-				viewerCanMerge = *canMerge
-			}
-			_ = s.db.UpdateRepoSettings(ctx, repoID,
-				ghRepo.GetAllowSquashMerge(),
-				ghRepo.GetAllowMergeCommit(),
-				ghRepo.GetAllowRebaseMerge(),
-				viewerCanMerge,
-			)
-		}
-	}
+	s.refreshRepoSettings(ctx, repo, repoID, resolvedRepo)
 
 	if err := s.db.UpdateRepoSyncStarted(ctx, repoID, time.Now().UTC()); err != nil {
 		return fmt.Errorf("mark sync started for %s/%s: %w", repo.Owner, repo.Name, err)
@@ -2147,6 +2127,58 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 	}
 
 	return syncErr
+}
+
+func (s *Syncer) refreshRepoSettings(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	resolvedRepo *platform.Repository,
+) {
+	if resolvedRepo != nil {
+		s.updateRepoSettingsFromProviderRepo(ctx, repoID, *resolvedRepo)
+		return
+	}
+
+	if client, ok := s.optionalGitHubClientFor(repo); ok {
+		ghRepo, err := client.GetRepository(ctx, repo.Owner, repo.Name)
+		if err != nil {
+			slog.Warn("get repo settings failed",
+				"repo", repo.Owner+"/"+repo.Name, "err", err,
+			)
+			return
+		}
+		viewerCanMerge := true
+		if canMerge := gitHubViewerCanMerge(ghRepo); canMerge != nil {
+			viewerCanMerge = *canMerge
+		}
+		_ = s.db.UpdateRepoSettings(ctx, repoID,
+			ghRepo.GetAllowSquashMerge(),
+			ghRepo.GetAllowMergeCommit(),
+			ghRepo.GetAllowRebaseMerge(),
+			viewerCanMerge,
+		)
+		return
+	}
+
+	reader, err := s.clients.RepositoryReader(repoPlatform(repo), repoHost(repo))
+	if err != nil {
+		if errors.Is(err, platform.ErrUnsupportedCapability) || errors.Is(err, platform.ErrProviderNotConfigured) {
+			return
+		}
+		slog.Warn("get repo settings reader failed",
+			"repo", repo.Owner+"/"+repo.Name, "err", err,
+		)
+		return
+	}
+	providerRepo, err := reader.GetRepository(ctx, platformRepoRef(repo))
+	if err != nil {
+		slog.Warn("get repo settings failed",
+			"repo", repo.Owner+"/"+repo.Name, "err", err,
+		)
+		return
+	}
+	s.updateRepoSettingsFromProviderRepo(ctx, repoID, providerRepo)
 }
 
 func (s *Syncer) updateRepoSettingsFromProviderRepo(
