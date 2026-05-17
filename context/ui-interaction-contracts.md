@@ -26,6 +26,23 @@ Interactive surfaces must agree on which item is selected.
 - When a view changes from item A to item B, reset transient action state that
   could otherwise submit or render against the wrong item.
 
+Responsive layout changes must not change route identity.
+
+- Resizing a canonical PR or issue route must not rewrite `/pulls/...`,
+  `/pulls/.../files`, `/issues/...`, or `/host/{platform_host}/...` into
+  `/focus/...` or `/m/...`.
+- Responsive presentation decisions belong in the shell/rendering layer. Route
+  builders still follow the active route family: canonical builders for
+  canonical routes, focus builders for explicit `/focus` routes, and mobile
+  builders for explicit `/m` flows.
+- If a canonical list route renders with the focus presentation because the
+  viewport is compact, selecting an item should still navigate to a canonical
+  detail route.
+- Distinguish compact desktop presentation from phone-like presentation in
+  state names and tests. Compact desktop may hide sidebars or use the focus
+  presentation; phone-like contexts may additionally use mobile typography,
+  touch hit targets, and phone-specific action layouts.
+
 Examples of transient state that should usually reset on identity change:
 
 - inline edit drafts

@@ -150,6 +150,13 @@ When editing Svelte components, use the Svelte skills `skills/svelte-core-bestpr
 
 For TypeScript/Svelte state and routing contracts, avoid anonymous object type literals when the shape represents a domain concept that is reused or exposed across modules. Name shared item identity shapes, route payloads, embed callbacks, and API view models near the module that owns the concept, then import those types at call sites. PR/issue/file/focus route identity and URL construction belongs in the shared route item module at `packages/ui/src/routes.ts`; the frontend router remains the browser-location adapter over those builders. New routed item callers should use those named refs and builders instead of repeating `{ owner; name; number; platformHost }` shapes or hand-building `/pulls`, `/issues`, or `/focus` URLs.
 
+Responsive layout work should separate presentation mode from sizing mode.
+
+- Use compact/focus presentation to remove sidebars, split panes, or dense chrome when the available width is too small.
+- Use phone/mobile sizing only for phone-like contexts, such as coarse pointer, mobile user agent, or explicit force-mobile test paths.
+- Do not use one broad "phone viewport" predicate for both decisions. That makes desktop-narrow windows inherit oversized mobile typography, action grids, and touch-only geometry.
+- When a compact canonical route reuses focus presentation, keep desktop-scale tokens unless the environment is phone-like.
+
 Before adding UI styling:
 
 1. Check whether an existing shared primitive already expresses the pattern.
