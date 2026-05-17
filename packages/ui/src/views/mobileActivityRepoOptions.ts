@@ -16,13 +16,30 @@ function concreteRepoSelectorValue(repo: ConfigRepo): string | null {
 export function buildMobileActivityRepoOptions(
   repos: ConfigRepo[],
 ): MobileActivityRepoOption[] {
+  const valuesByRepoPath = new Map<string, Set<string>>();
+  for (const repo of repos) {
+    const value = concreteRepoSelectorValue(repo);
+    if (!value) continue;
+    const repoPath = repo.repo_path.trim();
+    let values = valuesByRepoPath.get(repoPath);
+    if (!values) {
+      values = new Set<string>();
+      valuesByRepoPath.set(repoPath, values);
+    }
+    values.add(value);
+  }
+
   const seen = new Set<string>();
   const options: MobileActivityRepoOption[] = [];
   for (const repo of repos) {
     const value = concreteRepoSelectorValue(repo);
     if (!value || seen.has(value)) continue;
     seen.add(value);
-    options.push({ value, label: value, triggerLabel: repo.repo_path.trim() });
+    const repoPath = repo.repo_path.trim();
+    const triggerLabel = (valuesByRepoPath.get(repoPath)?.size ?? 0) > 1
+      ? value
+      : repoPath;
+    options.push({ value, label: value, triggerLabel });
   }
   return options.sort((left, right) =>
     left.label.localeCompare(right.label, undefined, {

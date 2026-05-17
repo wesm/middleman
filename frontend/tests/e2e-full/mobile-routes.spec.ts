@@ -389,6 +389,19 @@ test.describe("phone routes", () => {
     await expect(page.locator(".mobile-shell")).toHaveCount(0);
   });
 
+  test("phone canonical PR files tab stays on the canonical detail route", async ({ page }) => {
+    await page.goto("/pulls/github/acme/widgets/1");
+    await expectPathname(page, "/pulls/github/acme/widgets/1");
+    await expect(page.locator(".focus-layout .pull-detail .detail-title")).toBeVisible();
+
+    await page.locator(".focus-layout .detail-tab", { hasText: "Files changed" }).click();
+
+    await expectPathname(page, "/pulls/github/acme/widgets/1/files");
+    await expect(page.locator(".focus-layout .files-layout")).toBeVisible();
+    await expect(page.locator(".focus-layout .diff-view")).toBeVisible();
+    await expect(page.locator(".mobile-shell")).toHaveCount(0);
+  });
+
   test("phone canonical PR files deep link renders focus presentation without changing URL", async ({ page }) => {
     await page.goto("/pulls/github/acme/widgets/1/files");
 

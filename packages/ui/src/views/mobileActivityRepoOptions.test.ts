@@ -14,7 +14,7 @@ const baseRepo = {
 };
 
 describe("buildMobileActivityRepoOptions", () => {
-  it("uses host-qualified values and labels when duplicate repo paths exist", () => {
+  it("uses host-qualified trigger labels when duplicate repo paths exist", () => {
     const options = buildMobileActivityRepoOptions([
       { ...baseRepo, platform_host: "github.com" },
       { ...baseRepo, platform_host: "ghe.example.com" },
@@ -24,7 +24,27 @@ describe("buildMobileActivityRepoOptions", () => {
       {
         value: "ghe.example.com/acme/widgets",
         label: "ghe.example.com/acme/widgets",
-        triggerLabel: "acme/widgets",
+        triggerLabel: "ghe.example.com/acme/widgets",
+      },
+      {
+        value: "github.com/acme/widgets",
+        label: "github.com/acme/widgets",
+        triggerLabel: "github.com/acme/widgets",
+      },
+    ]);
+  });
+
+  it("shortens trigger labels when repo paths are unique", () => {
+    const options = buildMobileActivityRepoOptions([
+      { ...baseRepo, platform_host: "github.com", repo_path: "acme/widgets" },
+      { ...baseRepo, platform_host: "ghe.example.com", repo_path: "acme/api" },
+    ]);
+
+    expect(options).toEqual([
+      {
+        value: "ghe.example.com/acme/api",
+        label: "ghe.example.com/acme/api",
+        triggerLabel: "acme/api",
       },
       {
         value: "github.com/acme/widgets",
