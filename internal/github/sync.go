@@ -3691,6 +3691,17 @@ func (s *Syncer) syncOpenMRFromBulk(
 				"number", number, "err", err,
 			)
 		}
+		// Refresh workflow approval state so the DB-only detail GET
+		// can render the Approve workflows button without a foreground
+		// sync. GraphQL doesn't return action_required runs, so this
+		// stays a one-extra REST call per fully-synced PR, gated by
+		// the same per-host budget as the REST detail drain.
+		if s.canSpendWorkflowApprovalRefresh(repo) {
+			s.refreshWorkflowApproval(
+				ctx, repo, repoID, number,
+				normalized.PlatformHeadSHA, bulk.PR, normalized,
+			)
+		}
 	}
 
 	// Fire onMRSynced hook.
@@ -3886,6 +3897,15 @@ func (s *Syncer) fetchMRDetail(
 		return calls, err
 	}
 	calls += 2
+
+	// Refresh workflow approval state so the DB-only detail GET
+	// can render the Approve workflows button without a foreground
+	// sync. Same path as syncMRForRepo, but the budgeted detail
+	// drain needs to count this call too.
+	s.refreshWorkflowApproval(
+		ctx, repo, repoID, number, ciHeadSHA, fullPR, normalized,
+	)
+	calls++
 
 	// Determine whether CI had pending checks for scoring by
 	// reading the DB row that refreshCIStatus just wrote. Use
@@ -4405,6 +4425,90 @@ func (s *Syncer) fetchGitHubCIStatus(
 		ChecksJSON: NormalizeCIChecks(checkRuns, combined),
 		Updated:    true,
 	}, nil
+}
+
+// refreshWorkflowApproval fetches action_required workflow runs at the
+// given head SHA and persists the result on the merge request row.
+//
+// The persisted snapshot is keyed by head SHA so that a later DB-only
+// read can ignore the snapshot once the PR's head moves (force-push),
+// preventing a stale "Approve workflows" button on a fresh commit.
+//
+// Failures (no client, network errors, closed PR) are intentionally
+// silent: this is a refresh, not a precondition. The previous
+// persisted state stays in place rather than being clobbered.
+func (s *Syncer) refreshWorkflowApproval(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	number int,
+	headSHA string,
+	ghPR *gh.PullRequest,
+	normalized *db.MergeRequest,
+) {
+	if headSHA == "" {
+		return
+	}
+	state := ""
+	switch {
+	case ghPR != nil:
+		state = ghPR.GetState()
+	case normalized != nil:
+		state = normalized.State
+	}
+	if state != "open" {
+		return
+	}
+
+	client, err := s.clientFor(repo)
+	if err != nil {
+		return
+	}
+	runs, err := client.ListWorkflowRunsForHeadSHA(ctx, repo.Owner, repo.Name, headSHA)
+	if err != nil {
+		slog.Warn("list workflow runs for approval refresh failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", number,
+			"err", err,
+		)
+		return
+	}
+
+	headRepoFullName := ""
+	headRef := ""
+	if ghPR != nil && ghPR.GetHead() != nil {
+		headRepoFullName = ghPR.GetHead().GetRepo().GetFullName()
+		headRef = ghPR.GetHead().GetRef()
+	}
+	// GraphQL bulk fetch populates clone URL but not full name on the
+	// head repo struct, so fall back to parsing the persisted clone
+	// URL. Without this, fork PRs synced via bulk would lose the head
+	// repo identity needed to match fork-triggered workflow runs whose
+	// pull_requests array is empty.
+	if headRepoFullName == "" && normalized != nil {
+		headRepoFullName = ParseHeadRepoFullName(normalized.HeadRepoCloneURL)
+	}
+	if headRef == "" && normalized != nil {
+		headRef = normalized.HeadBranch
+	}
+
+	approval := WorkflowApprovalStateFromRuns(
+		FilterWorkflowRunsAwaitingApproval(runs, PRSource{
+			Number:           number,
+			HeadSHA:          headSHA,
+			HeadRepoFullName: headRepoFullName,
+			HeadRef:          headRef,
+		}),
+	)
+	if err := s.db.UpdateMRWorkflowApproval(
+		ctx, repoID, number, time.Now().UTC(), headSHA, approval.Required, approval.Count,
+	); err != nil {
+		slog.Warn("persist workflow approval state failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", number,
+			"err", err,
+		)
+	}
 }
 
 // ciHasPending parses the CI checks JSON and returns true if any
@@ -4938,6 +5042,11 @@ func (s *Syncer) refreshRepoIssueComments(
 }
 
 func (s *Syncer) canSpendCommentRefresh(repo RepoRef) bool {
+	budget := s.budgets[repoRateBucketKey(repo)]
+	return budget == nil || budget.CanSpend(1)
+}
+
+func (s *Syncer) canSpendWorkflowApprovalRefresh(repo RepoRef) bool {
 	budget := s.budgets[repoRateBucketKey(repo)]
 	return budget == nil || budget.CanSpend(1)
 }
@@ -5717,6 +5826,16 @@ func (s *Syncer) syncMRForRepo(
 		if err := s.refreshCIStatus(ctx, repo, repoID, number, syncMRHeadSHA); err != nil {
 			return err
 		}
+
+		// Refresh workflow approval state for the current head SHA.
+		// Persisting it here (instead of computing live on every GET)
+		// means the DB-only detail path the frontend uses by default
+		// can show the Approve Workflows button without a foreground
+		// sync round-trip. The result is tied to syncMRHeadSHA so a
+		// later read can detect a stale snapshot after force-push.
+		s.refreshWorkflowApproval(
+			ctx, repo, repoID, number, syncMRHeadSHA, ghPR, normalized,
+		)
 
 		// Update ci_had_pending after refreshing CI status.
 		fresh, freshErr := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)

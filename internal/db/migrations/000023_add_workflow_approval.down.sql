@@ -1,0 +1,4 @@
+ALTER TABLE middleman_merge_requests DROP COLUMN workflow_approval_checked_at;
+ALTER TABLE middleman_merge_requests DROP COLUMN workflow_approval_head_sha;
+ALTER TABLE middleman_merge_requests DROP COLUMN workflow_approval_required;
+ALTER TABLE middleman_merge_requests DROP COLUMN workflow_approval_count;

@@ -1264,6 +1264,158 @@ func TestAPISyncPRPreservesMergeableStateWhenRefreshHasNoAnswer(t *testing.T) {
 	}
 }
 
+// TestAPIEnqueuePRSyncPersistsWorkflowApproval verifies that the
+// background sync path (POST /sync/async) computes and persists
+// workflow approval state so a subsequent DB-only GET sees it. The
+// frontend's default detail-load flow uses this path, so without
+// persistence the Approve Workflows button never appears.
+func TestAPIEnqueuePRSyncPersistsWorkflowApproval(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			id := int64(2001)
+			sha := "abc123"
+			state := "open"
+			title := "Async synced PR"
+			url := "https://github.com/acme/widget/pull/1"
+			updatedAt := gh.Timestamp{Time: time.Now().UTC()}
+			createdAt := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.PullRequest{
+				ID:        &id,
+				Number:    &number,
+				State:     &state,
+				Title:     &title,
+				HTMLURL:   &url,
+				UpdatedAt: &updatedAt,
+				CreatedAt: &createdAt,
+				Head:      &gh.PullRequestBranch{SHA: &sha, Ref: new("feature")},
+				Base:      &gh.PullRequestBranch{Ref: new("main")},
+			}, nil
+		},
+		listWorkflowRunsForHeadFn: func(_ context.Context, _, _, headSHA string) ([]*gh.WorkflowRun, error) {
+			require.Equal("abc123", headSHA)
+			return []*gh.WorkflowRun{
+				{
+					ID:           new(int64(77)),
+					HeadSHA:      new("abc123"),
+					Event:        new("pull_request"),
+					PullRequests: []*gh.PullRequest{{Number: new(1)}},
+				},
+			}, nil
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.EnqueuePrSyncWithResponse(
+		t.Context(), "gh", "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, resp.StatusCode())
+
+	require.Eventually(func() bool {
+		detail, dErr := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+			t.Context(), "gh", "acme", "widget", 1,
+		)
+		if dErr != nil || detail.JSON200 == nil {
+			return false
+		}
+		wa := detail.JSON200.WorkflowApproval
+		return wa.Checked && wa.Required && wa.Count == 1
+	}, 3*time.Second, 25*time.Millisecond,
+		"GET should return persisted workflow_approval after async sync")
+
+	detail, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+		t.Context(), "gh", "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.NotNil(detail.JSON200)
+	assert.True(detail.JSON200.WorkflowApproval.Checked)
+	assert.True(detail.JSON200.WorkflowApproval.Required)
+	assert.Equal(int64(1), detail.JSON200.WorkflowApproval.Count)
+}
+
+// TestAPIGetPullClearsWorkflowApprovalWhenHeadMoves verifies that a
+// persisted "required" approval from a prior head SHA does not bleed
+// onto the new head. After a sync that moves the head forward (and
+// finds no pending runs), GET must report checked=true, required=false.
+func TestAPIGetPullClearsWorkflowApprovalWhenHeadMoves(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	var headSHA atomic.Value
+	headSHA.Store("abc123")
+
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			id := int64(2002)
+			sha := headSHA.Load().(string)
+			state := "open"
+			title := "Force-pushed PR"
+			url := "https://github.com/acme/widget/pull/1"
+			updatedAt := gh.Timestamp{Time: time.Now().UTC()}
+			createdAt := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.PullRequest{
+				ID:        &id,
+				Number:    &number,
+				State:     &state,
+				Title:     &title,
+				HTMLURL:   &url,
+				UpdatedAt: &updatedAt,
+				CreatedAt: &createdAt,
+				Head:      &gh.PullRequestBranch{SHA: &sha, Ref: new("feature")},
+				Base:      &gh.PullRequestBranch{Ref: new("main")},
+			}, nil
+		},
+		listWorkflowRunsForHeadFn: func(_ context.Context, _, _, sha string) ([]*gh.WorkflowRun, error) {
+			if sha == "abc123" {
+				return []*gh.WorkflowRun{
+					{
+						ID:           new(int64(77)),
+						HeadSHA:      new("abc123"),
+						Event:        new("pull_request"),
+						PullRequests: []*gh.PullRequest{{Number: new(1)}},
+					},
+				}, nil
+			}
+			return nil, nil
+		},
+	}
+
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	// First sync: persists required=true for abc123.
+	syncResp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(
+		t.Context(), "gh", "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, syncResp.StatusCode())
+	require.True(syncResp.JSON200.WorkflowApproval.Required)
+
+	// Head moves forward (force-push); new SHA has no action_required runs.
+	headSHA.Store("def456")
+	syncResp2, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(
+		t.Context(), "gh", "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, syncResp2.StatusCode())
+
+	detail, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+		t.Context(), "gh", "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.NotNil(detail.JSON200)
+	wa := detail.JSON200.WorkflowApproval
+	assert.True(wa.Checked, "head re-synced: approval state was rechecked")
+	assert.False(wa.Required, "new head has no pending runs")
+	assert.Equal(int64(0), wa.Count)
+}
+
 func TestAPIApproveWorkflows(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -1322,6 +1474,12 @@ func TestAPIApproveWorkflows(t *testing.T) {
 
 	srv, database := setupTestServerWithMock(t, mock)
 	seedPR(t, database, "acme", "widget", 1)
+	repo, err := database.GetRepoByHostOwnerName(t.Context(), "github.com", "acme", "widget")
+	require.NoError(err)
+	require.NotNil(repo)
+	require.NoError(database.UpdateMRWorkflowApproval(
+		t.Context(), repo.ID, 1, time.Now().UTC(), "abc123", true, 2,
+	))
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse(
@@ -1339,6 +1497,10 @@ func TestAPIApproveWorkflows(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(pr)
 	assert.Equal("abc123", pr.PlatformHeadSHA)
+	require.NotNil(pr.WorkflowApprovalCheckedAt)
+	assert.Equal("abc123", pr.WorkflowApprovalHeadSHA)
+	assert.False(pr.WorkflowApprovalRequired)
+	assert.Equal(0, pr.WorkflowApprovalCount)
 }
 
 func TestAPIApproveWorkflowsZeroMatchesStillSyncsPR(t *testing.T) {
@@ -7463,6 +7625,245 @@ func TestE2EPRDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 	require.Empty(*secondResp.JSON200.Events)
 }
 
+// TestE2EGraphQLBulkSyncPersistsWorkflowApproval drives the periodic
+// sync through the GraphQL bulk path and verifies the persisted
+// workflow approval snapshot reaches the HTTP API. Regression test
+// for the gap where fully-synced bulk PRs would mark detail_fetched_at
+// without ever populating workflow_approval_checked_at, leaving the
+// DB-only GET unable to surface the Approve workflows button.
+func TestE2EGraphQLBulkSyncPersistsWorkflowApproval(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+
+	now := time.Date(2026, 4, 14, 10, 0, 0, 0, time.UTC)
+	nowRFC3339 := now.Format(time.RFC3339)
+	const prNumber = 173
+	const prID int64 = 173000
+	const headSHA = "abc123"
+
+	gqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if bytes.Contains(body, []byte("pullRequests")) {
+			resp := `{"data":{"repository":{"pullRequests":{"nodes":[{
+				"databaseId":173000,
+				"number":173,
+				"title":"PR awaiting workflow approval",
+				"state":"OPEN",
+				"isDraft":false,
+				"body":"",
+				"url":"https://github.com/acme/widget/pull/173",
+				"author":{"login":"ericdill"},
+				"createdAt":"` + nowRFC3339 + `",
+				"updatedAt":"` + nowRFC3339 + `",
+				"mergedAt":null,
+				"closedAt":null,
+				"additions":1,
+				"deletions":0,
+				"mergeable":"MERGEABLE",
+				"reviewDecision":"",
+				"headRefName":"feature/fork-pr",
+				"baseRefName":"main",
+				"headRefOid":"` + headSHA + `",
+				"baseRefOid":"def456",
+				"headRepository":{"url":"https://github.com/ericdill/widget"},
+				"labels":{"nodes":[]},
+				"comments":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
+				"reviews":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
+				"allCommits":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
+				"lastCommit":{"nodes":[]},
+				"timelineItems":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}
+			}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`
+			_, _ = w.Write([]byte(resp))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"repository":{"issues":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
+	}))
+	defer gqlSrv.Close()
+
+	prTime := gh.Timestamp{Time: now}
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+			return []*gh.PullRequest{{
+				ID:        new(prID),
+				Number:    new(prNumber),
+				Title:     new("PR awaiting workflow approval"),
+				State:     new("open"),
+				HTMLURL:   new("https://github.com/acme/widget/pull/173"),
+				User:      &gh.User{Login: new("ericdill")},
+				CreatedAt: &prTime,
+				UpdatedAt: &prTime,
+				Head:      &gh.PullRequestBranch{Ref: new("feature/fork-pr"), SHA: new(headSHA)},
+				Base:      &gh.PullRequestBranch{Ref: new("main")},
+			}}, nil
+		},
+		listOpenIssuesFn: func(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: http.StatusNotModified},
+			}
+		},
+		listWorkflowRunsForHeadFn: func(_ context.Context, _, _, sha string) ([]*gh.WorkflowRun, error) {
+			require.Equal(headSHA, sha)
+			return []*gh.WorkflowRun{{
+				ID:           new(int64(7777)),
+				HeadSHA:      new(headSHA),
+				Event:        new("pull_request"),
+				PullRequests: []*gh.PullRequest{{Number: new(prNumber)}},
+			}}, nil
+		},
+	}
+
+	srv, _ := setupTestServerWithMock(t, mock)
+	gqlClient := githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client())
+	srv.syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+		"github.com": ghclient.NewGraphQLFetcherWithClient(gqlClient, nil),
+	})
+	client := setupTestClient(t, srv)
+
+	srv.syncer.RunOnce(ctx)
+
+	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+		ctx, "gh", "acme", "widget", int64(prNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.WorkflowApproval)
+	assert.True(resp.JSON200.WorkflowApproval.Checked,
+		"GraphQL bulk path should persist a workflow approval snapshot")
+	assert.True(resp.JSON200.WorkflowApproval.Required,
+		"head SHA has a pending workflow run; button must be live")
+	assert.Equal(int64(1), resp.JSON200.WorkflowApproval.Count)
+}
+
+// TestE2EGraphQLBulkSyncPersistsWorkflowApprovalForForkPR pins the
+// fork-fallback matching path through the GraphQL bulk sync. The
+// workflow run mock returns an empty PullRequests array (mirroring
+// what GitHub returns for fork-triggered runs) and identifies the PR
+// only by head repository full name and head branch. The GraphQL
+// adapter never populates Head.Repo.FullName, so this exercises
+// ParseHeadRepoFullName against the persisted clone URL; a regression
+// removing that fallback would leave the Approve workflows button
+// hidden for every fork PR synced through bulk.
+func TestE2EGraphQLBulkSyncPersistsWorkflowApprovalForForkPR(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+
+	now := time.Date(2026, 4, 14, 10, 0, 0, 0, time.UTC)
+	nowRFC3339 := now.Format(time.RFC3339)
+	const prNumber = 174
+	const prID int64 = 174000
+	const headSHA = "abc123"
+	const forkFullName = "ericdill/widget"
+	const headRef = "feature/fork-pr"
+
+	gqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if bytes.Contains(body, []byte("pullRequests")) {
+			resp := `{"data":{"repository":{"pullRequests":{"nodes":[{
+				"databaseId":174000,
+				"number":174,
+				"title":"Fork PR awaiting workflow approval",
+				"state":"OPEN",
+				"isDraft":false,
+				"body":"",
+				"url":"https://github.com/acme/widget/pull/174",
+				"author":{"login":"ericdill"},
+				"createdAt":"` + nowRFC3339 + `",
+				"updatedAt":"` + nowRFC3339 + `",
+				"mergedAt":null,
+				"closedAt":null,
+				"additions":1,
+				"deletions":0,
+				"mergeable":"MERGEABLE",
+				"reviewDecision":"",
+				"headRefName":"` + headRef + `",
+				"baseRefName":"main",
+				"headRefOid":"` + headSHA + `",
+				"baseRefOid":"def456",
+				"headRepository":{"url":"https://github.com/` + forkFullName + `"},
+				"labels":{"nodes":[]},
+				"comments":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
+				"reviews":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
+				"allCommits":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
+				"lastCommit":{"nodes":[]},
+				"timelineItems":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}
+			}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`
+			_, _ = w.Write([]byte(resp))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"repository":{"issues":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
+	}))
+	defer gqlSrv.Close()
+
+	prTime := gh.Timestamp{Time: now}
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+			return []*gh.PullRequest{{
+				ID:        new(prID),
+				Number:    new(prNumber),
+				Title:     new("Fork PR awaiting workflow approval"),
+				State:     new("open"),
+				HTMLURL:   new("https://github.com/acme/widget/pull/174"),
+				User:      &gh.User{Login: new("ericdill")},
+				CreatedAt: &prTime,
+				UpdatedAt: &prTime,
+				Head:      &gh.PullRequestBranch{Ref: new(headRef), SHA: new(headSHA)},
+				Base:      &gh.PullRequestBranch{Ref: new("main")},
+			}}, nil
+		},
+		listOpenIssuesFn: func(_ context.Context, _, _ string) ([]*gh.Issue, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: http.StatusNotModified},
+			}
+		},
+		listWorkflowRunsForHeadFn: func(_ context.Context, _, _, sha string) ([]*gh.WorkflowRun, error) {
+			require.Equal(headSHA, sha)
+			// Fork-triggered runs return an empty PullRequests array.
+			// The matcher must fall back to HeadRepository.FullName +
+			// HeadBranch, identifying the PR via its persisted clone
+			// URL.
+			fullName := forkFullName
+			branch := headRef
+			return []*gh.WorkflowRun{{
+				ID:             new(int64(7778)),
+				HeadSHA:        new(headSHA),
+				Event:          new("pull_request"),
+				PullRequests:   nil,
+				HeadRepository: &gh.Repository{FullName: &fullName},
+				HeadBranch:     &branch,
+			}}, nil
+		},
+	}
+
+	srv, _ := setupTestServerWithMock(t, mock)
+	gqlClient := githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client())
+	srv.syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+		"github.com": ghclient.NewGraphQLFetcherWithClient(gqlClient, nil),
+	})
+	client := setupTestClient(t, srv)
+
+	srv.syncer.RunOnce(ctx)
+
+	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+		ctx, "gh", "acme", "widget", int64(prNumber),
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.WorkflowApproval)
+	assert.True(resp.JSON200.WorkflowApproval.Checked,
+		"GraphQL bulk path should persist a workflow approval snapshot")
+	assert.True(resp.JSON200.WorkflowApproval.Required,
+		"fork PR must match via HeadRepository.FullName + HeadBranch fallback")
+	assert.Equal(int64(1), resp.JSON200.WorkflowApproval.Count)
+}
+
 func TestE2EGraphQLBulkSyncKeepsNewestCICheckBySuiteCreatedAt(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -11004,6 +11405,10 @@ func TestAPIActivityStartupRepairsLegacyTimestampStorage(t *testing.T) {
 			ALTER TABLE middleman_labels DROP COLUMN platform_external_id;
 			ALTER TABLE middleman_issues DROP COLUMN platform_external_id;
 			ALTER TABLE middleman_merge_requests DROP COLUMN platform_external_id;
+			ALTER TABLE middleman_merge_requests DROP COLUMN workflow_approval_checked_at;
+			ALTER TABLE middleman_merge_requests DROP COLUMN workflow_approval_head_sha;
+			ALTER TABLE middleman_merge_requests DROP COLUMN workflow_approval_required;
+			ALTER TABLE middleman_merge_requests DROP COLUMN workflow_approval_count;
 			ALTER TABLE middleman_repos DROP COLUMN default_branch;
 			ALTER TABLE middleman_repos DROP COLUMN clone_url;
 			ALTER TABLE middleman_repos DROP COLUMN web_url;

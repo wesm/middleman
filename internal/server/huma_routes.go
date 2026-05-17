@@ -757,7 +757,7 @@ func (s *Server) getPull(ctx context.Context, input *repoNumberInput) (*getPullO
 		return nil, huma.Error404NotFound("pull request not found")
 	}
 
-	body, err := s.buildPullDetailResponse(ctx, mr, workflowDBOnly)
+	body, err := s.buildPullDetailResponse(ctx, mr)
 	if err != nil {
 		return nil, err
 	}
@@ -768,7 +768,6 @@ func (s *Server) getPull(ctx context.Context, input *repoNumberInput) (*getPullO
 func (s *Server) buildPullDetailResponse(
 	ctx context.Context,
 	mr *db.MergeRequest,
-	wfMode workflowMode,
 ) (mergeRequestDetailResponse, error) {
 	events, err := s.db.ListMREvents(ctx, mr.ID)
 	if err != nil {
@@ -803,7 +802,7 @@ func (s *Server) buildPullDetailResponse(
 		DiffHeadSHA:      mr.DiffHeadSHA,
 		MergeBaseSHA:     mr.MergeBaseSHA,
 		WorktreeLinks:    toWorktreeLinkResponses(dbLinks),
-		WorkflowApproval: s.workflowApprovalState(ctx, repo.Owner, repo.Name, mr, wfMode),
+		WorkflowApproval: s.workflowApprovalState(ctx, repo.Owner, repo.Name, mr),
 		Warnings:         s.diffWarnings(mr),
 		DetailLoaded:     mr.DetailFetchedAt != nil,
 	}
@@ -860,74 +859,37 @@ func (s *Server) diffWarnings(mr *db.MergeRequest) []string {
 	return nil
 }
 
-// workflowMode controls which live GitHub calls workflowApprovalState makes.
-type workflowMode int
-
-const (
-	// workflowDBOnly makes no live calls. Used by GET detail.
-	workflowDBOnly workflowMode = iota
-	// workflowCheckRuns reads PR state from DB but fetches
-	// workflow runs live. Used by POST sync (PR just synced,
-	// no need to re-fetch it).
-	workflowCheckRuns
-	// workflowFull fetches the PR live and then workflow runs.
-	// Used by the approve-workflows action.
-	workflowFull
-)
-
+// workflowApprovalState reads the persisted workflow-approval
+// snapshot from the merge request row. Sync (SyncMROnProvider) is
+// the only writer; this read path makes no live calls so detail
+// GETs stay cheap. The snapshot is keyed by head SHA: if the head
+// has moved since the snapshot was taken, treat it as unchecked so
+// the UI doesn't render an approve-workflows button against a SHA
+// that no longer has pending runs.
 func (s *Server) workflowApprovalState(
-	ctx context.Context,
-	owner, name string,
+	_ context.Context,
+	_, _ string,
 	mr *db.MergeRequest,
-	mode workflowMode,
 ) workflowApprovalResponse {
-	if mode == workflowDBOnly {
+	if mr == nil {
 		return workflowApprovalResponse{}
 	}
-
-	client, err := s.syncer.ClientForRepo(owner, name)
-	if err != nil {
-		return workflowApprovalResponse{}
-	}
-
-	var currentState, headSHA, headRepoFullName, headRef string
-	if mode == workflowFull {
-		pr, prErr := client.GetPullRequest(ctx, owner, name, mr.Number)
-		if prErr != nil || pr == nil {
-			return workflowApprovalResponse{}
-		}
-		currentState = pr.GetState()
-		headSHA = pr.GetHead().GetSHA()
-		headRepoFullName = pr.GetHead().GetRepo().GetFullName()
-		headRef = pr.GetHead().GetRef()
-	} else {
-		currentState = mr.State
-		headSHA = mr.PlatformHeadSHA
-		headRepoFullName = ghclient.ParseHeadRepoFullName(mr.HeadRepoCloneURL)
-		headRef = mr.HeadBranch
-	}
-
-	if currentState != "open" || headSHA == "" {
+	// Closed or merged PRs cannot have pending workflow approvals,
+	// regardless of what the persisted snapshot says.
+	if mr.State != "open" {
 		return workflowApprovalResponse{Checked: true}
 	}
-
-	runs, err := client.ListWorkflowRunsForHeadSHA(ctx, owner, name, headSHA)
-	if err != nil {
+	if mr.PlatformHeadSHA == "" {
 		return workflowApprovalResponse{}
 	}
-
-	state := ghclient.WorkflowApprovalStateFromRuns(
-		ghclient.FilterWorkflowRunsAwaitingApproval(runs, ghclient.PRSource{
-			Number:           mr.Number,
-			HeadSHA:          headSHA,
-			HeadRepoFullName: headRepoFullName,
-			HeadRef:          headRef,
-		}),
-	)
+	if mr.WorkflowApprovalCheckedAt == nil ||
+		mr.WorkflowApprovalHeadSHA != mr.PlatformHeadSHA {
+		return workflowApprovalResponse{}
+	}
 	return workflowApprovalResponse{
-		Checked:  state.Checked,
-		Required: state.Required,
-		Count:    state.Count,
+		Checked:  true,
+		Required: mr.WorkflowApprovalRequired,
+		Count:    mr.WorkflowApprovalCount,
 	}
 }
 
@@ -1068,9 +1030,7 @@ func (s *Server) editPRContent(
 		)
 	}
 
-	body, err := s.buildPullDetailResponse(
-		ctx, mr, workflowDBOnly,
-	)
+	body, err := s.buildPullDetailResponse(ctx, mr)
 	if err != nil {
 		return nil, err
 	}
@@ -1765,6 +1725,15 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 	); syncErr != nil {
 		slog.Warn("sync after workflow approval", "err", syncErr)
 	}
+	if err := s.db.UpdateMRWorkflowApproval(
+		ctx, repo.ID, input.Number, s.now().UTC(), headSHA, false, 0,
+	); err != nil {
+		slog.Warn("clear workflow approval state after approval",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", input.Number,
+			"err", err,
+		)
+	}
 
 	return &actionStatusOutput{Body: actionStatusBody{
 		Status:        "approved_workflows",
@@ -2311,7 +2280,7 @@ func (s *Server) syncPRCI(ctx context.Context, input *repoNumberInput) (*syncPRC
 	if mr == nil {
 		return nil, huma.Error404NotFound("pull request not found after CI refresh")
 	}
-	body, err := s.buildPullDetailResponse(ctx, mr, workflowDBOnly)
+	body, err := s.buildPullDetailResponse(ctx, mr)
 	if err != nil {
 		return nil, err
 	}
@@ -2351,7 +2320,7 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 		return nil, huma.Error404NotFound("pull request not found after sync")
 	}
 
-	body, err := s.buildPullDetailResponse(ctx, mr, workflowCheckRuns)
+	body, err := s.buildPullDetailResponse(ctx, mr)
 	if err != nil {
 		return nil, err
 	}

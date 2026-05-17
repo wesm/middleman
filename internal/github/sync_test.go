@@ -2983,6 +2983,65 @@ func TestFetchMRDetailUsesRepoIDForPendingAndCallback(t *testing.T) {
 	assert.Nil(gitlabMR.DetailFetchedAt)
 }
 
+// TestFetchMRDetailPersistsWorkflowApproval verifies the budgeted
+// detail drain (the path the periodic sync uses) also persists the
+// workflow approval snapshot. Without this, the Approve workflows
+// button would stay hidden for any PR whose detail came in through
+// the queue rather than an explicit POST /sync.
+func TestFetchMRDetailPersistsWorkflowApproval(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)
+
+	repo := RepoRef{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+	}
+	repoID, err := d.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(err)
+
+	pr := buildOpenPR(7, now)
+	headSHA := pr.GetHead().GetSHA()
+	require.NotEmpty(headSHA)
+	mc := &mockClient{
+		singlePR: pr,
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+		ciStatus: &gh.CombinedStatus{State: new("success")},
+		workflowRuns: []*gh.WorkflowRun{{
+			ID:           new(int64(4242)),
+			HeadSHA:      &headSHA,
+			Event:        new("pull_request"),
+			PullRequests: []*gh.PullRequest{{Number: new(7)}},
+		}},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil,
+		[]RepoRef{repo},
+		time.Minute,
+		nil,
+		nil,
+	)
+
+	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 7, true)
+	require.NoError(err)
+
+	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(got)
+	require.NotNil(got.WorkflowApprovalCheckedAt,
+		"detail drain must populate workflow_approval_checked_at")
+	assert.Equal(headSHA, got.WorkflowApprovalHeadSHA)
+	assert.True(got.WorkflowApprovalRequired)
+	assert.Equal(1, got.WorkflowApprovalCount)
+}
+
 func TestSyncOpenIssueReadsExistingByRepoID(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -4432,8 +4491,8 @@ func TestDetailDrainRespectsBudget(t *testing.T) {
 
 	// Index overhead: GetRepo(1) + ListPRs(1) + ListIssues(1) +
 	// GetUser(1, deduplicated by singleflight) = 4 calls. One PR
-	// detail = 8 calls. Budget of 15 covers index + 1 detail (12)
-	// with 3 remaining, which is below the 8 needed for a 2nd.
+	// detail = 9 calls. Budget of 15 covers index + 1 detail (13)
+	// with 2 remaining, which is below the 9 needed for a 2nd.
 	budget := testBudget(15)
 	mc := &detailTrackingClient{}
 	mc.budget = budget["github.com"]
@@ -6457,6 +6516,170 @@ func TestSyncOpenMRFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *test
 	_ = commentTotal
 }
 
+// TestSyncOpenMRFromBulkPersistsWorkflowApproval verifies the GraphQL
+// bulk path persists the workflow approval snapshot on fully-synced
+// PRs. Without this, the periodic GraphQL sync would mark a PR as
+// detail-fetched while leaving workflow_approval_checked_at nil, so
+// the DB-only GET would hide the Approve workflows button.
+func TestSyncOpenMRFromBulkPersistsWorkflowApproval(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
+	require.NoError(err)
+
+	now := time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC)
+	pr := buildOpenPR(1, now)
+	headSHA := pr.GetHead().GetSHA()
+	require.NotEmpty(headSHA)
+
+	mc := &mockClient{
+		workflowRuns: []*gh.WorkflowRun{{
+			ID:           new(int64(9001)),
+			HeadSHA:      &headSHA,
+			Event:        new("pull_request"),
+			PullRequests: []*gh.PullRequest{{Number: new(1)}},
+		}},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
+		PR:               pr,
+		Comments:         []*gh.IssueComment{},
+		CommentsComplete: true,
+		ReviewsComplete:  true,
+		CommitsComplete:  true,
+		TimelineComplete: true,
+		CIComplete:       true,
+	}, false)
+	require.NoError(err)
+
+	got, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(got)
+	require.NotNil(got.WorkflowApprovalCheckedAt,
+		"bulk allComplete must populate workflow_approval_checked_at")
+	assert.Equal(headSHA, got.WorkflowApprovalHeadSHA)
+	assert.True(got.WorkflowApprovalRequired)
+	assert.Equal(1, got.WorkflowApprovalCount)
+}
+
+func TestSyncOpenMRFromBulkSkipsWorkflowApprovalWhenBudgetExhausted(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
+	require.NoError(err)
+
+	now := time.Date(2026, 4, 21, 12, 30, 0, 0, time.UTC)
+	pr := buildOpenPR(1, now)
+	headSHA := pr.GetHead().GetSHA()
+	require.NotEmpty(headSHA)
+
+	budgets := testBudget(1)
+	budgets["github.com"].Spend(1)
+	mc := &mockClient{
+		budget: budgets["github.com"],
+		workflowRuns: []*gh.WorkflowRun{{
+			ID:           new(int64(9001)),
+			HeadSHA:      &headSHA,
+			Event:        new("pull_request"),
+			PullRequests: []*gh.PullRequest{{Number: new(1)}},
+		}},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, budgets,
+	)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
+		PR:               pr,
+		Comments:         []*gh.IssueComment{},
+		CommentsComplete: true,
+		ReviewsComplete:  true,
+		CommitsComplete:  true,
+		TimelineComplete: true,
+		CIComplete:       true,
+	}, false)
+	require.NoError(err)
+
+	got, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Nil(got.WorkflowApprovalCheckedAt)
+	assert.Equal(1, budgets["github.com"].Spent())
+}
+
+// TestSyncOpenMRFromBulkSkipsWorkflowApprovalWhenIncomplete verifies
+// that a partial bulk sync (CI not complete) does not advance the
+// workflow approval snapshot. Such PRs stay eligible for REST detail
+// drain, which is the path that refreshes the snapshot.
+func TestSyncOpenMRFromBulkSkipsWorkflowApprovalWhenIncomplete(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
+	require.NoError(err)
+
+	now := time.Date(2026, 4, 21, 13, 0, 0, 0, time.UTC)
+	pr := buildOpenPR(1, now)
+	headSHA := pr.GetHead().GetSHA()
+	require.NotEmpty(headSHA)
+
+	// workflowRuns is populated so that, if the refresh were
+	// triggered, the snapshot would land with required=true. The
+	// allComplete gate must prevent that.
+	mc := &mockClient{
+		workflowRuns: []*gh.WorkflowRun{{
+			ID:           new(int64(9001)),
+			HeadSHA:      &headSHA,
+			Event:        new("pull_request"),
+			PullRequests: []*gh.PullRequest{{Number: new(1)}},
+		}},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc},
+		d, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, &BulkPR{
+		PR:               pr,
+		Comments:         []*gh.IssueComment{},
+		CommentsComplete: true,
+		ReviewsComplete:  true,
+		CommitsComplete:  true,
+		TimelineComplete: true,
+		CIComplete:       false, // partial — skip workflow approval
+	}, false)
+	require.NoError(err)
+
+	got, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Nil(got.WorkflowApprovalCheckedAt,
+		"partial bulk sync must not advance workflow_approval_checked_at")
+	assert.False(got.WorkflowApprovalRequired)
+	assert.Equal(0, got.WorkflowApprovalCount)
+}
+
 func TestSyncOpenMRFromBulkUpdatesCommentFieldsWhenOnlyCommentsAreComplete(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -7904,7 +8127,7 @@ func TestDeferredCommentRefreshYieldsBudgetToDetailDrain(t *testing.T) {
 	d := openTestDB(t)
 
 	now := time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)
-	budget := testBudget(11)
+	budget := testBudget(12)
 	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
