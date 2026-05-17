@@ -284,7 +284,7 @@ test.describe("workspace tab persistence", () => {
       await expect(
         page.locator(".right-sidebar .workspace-diff-scope .file-list-toggle"),
       ).toHaveCount(0);
-      await expect(diffToolbar.locator(".file-list-toggle")).toBeVisible();
+      await expect(diffToolbar.locator(".file-list-toggle")).toHaveCount(0);
       await expect(diffToolbar.locator(".category-toggle")).toHaveCount(0);
       const toolbarMetrics = await diffToolbar.evaluate((element) => ({
         clientWidth: element.clientWidth,
@@ -319,18 +319,38 @@ test.describe("workspace tab persistence", () => {
       await diffToolbar.locator(".compact-more-btn").click();
       const compactMenu = page.locator(".right-sidebar .compact-menu");
       await expect(compactMenu).toBeVisible();
+      await expect(
+        compactMenu.getByRole("switch", { name: "File list" }),
+      ).toHaveAttribute("aria-checked", "true");
       await compactMenu.getByRole("button", { name: "Code (1)" }).click();
       await expect(diffToolbar).toContainText("Code");
       await expect(activeDiffFile).toHaveAttribute("title", "alpha.ts");
       await expect(page.locator('.right-sidebar .diff-file-row[title="beta_test.go"]'))
         .toHaveCount(0);
-      await page.locator(".right-sidebar .file-list-toggle").click();
+      let workspaceDiffRequestsAfterToggle = 0;
+      const trackWorkspaceDiffRequest = (request: { url: () => string }) => {
+        const url = request.url();
+        if (
+          url.includes(`/api/v1/workspaces/${workspace.id}/files`) ||
+          url.includes(`/api/v1/workspaces/${workspace.id}/diff`)
+        ) {
+          workspaceDiffRequestsAfterToggle += 1;
+        }
+      };
+      page.on("request", trackWorkspaceDiffRequest);
+      await compactMenu.getByRole("switch", { name: "File list" }).click();
       await expect(page.locator(".right-sidebar .workspace-diff-sidebar"))
         .toHaveCount(0);
       await expect(page.locator(".right-sidebar .diff-file")).toHaveCount(1);
-      await page.locator(".right-sidebar .file-list-toggle").click();
+      await expect(
+        compactMenu.getByRole("switch", { name: "File list" }),
+      ).toHaveAttribute("aria-checked", "false");
+      await compactMenu.getByRole("switch", { name: "File list" }).click();
       await expect(page.locator(".right-sidebar .workspace-diff-sidebar"))
         .toBeVisible();
+      await page.waitForTimeout(250);
+      page.off("request", trackWorkspaceDiffRequest);
+      expect(workspaceDiffRequestsAfterToggle).toBe(0);
       await expect(activeDiffFile).toHaveAttribute("title", "alpha.ts");
       await expect(panes).toHaveCount(1);
       await expect(homeTab).toHaveAttribute("aria-selected", "true");

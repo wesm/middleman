@@ -109,10 +109,10 @@
 
   $effect(() => {
     if (!active) return;
-    const key = `${workspaceID}:${base}:${fileListHidden ? "stacked" : "single"}`;
+    const key = `${workspaceID}:${base}`;
     if (loadedKey === key) return;
     loadedKey = key;
-    void diff.loadWorkspaceDiff(workspaceID, base, fileListHidden);
+    void diff.loadWorkspaceDiff(workspaceID, base);
   });
 
   $effect(() => {

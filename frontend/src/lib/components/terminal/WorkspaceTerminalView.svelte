@@ -1648,6 +1648,8 @@
   }
 
   .right-sidebar {
+    position: relative;
+    z-index: 2;
     flex-shrink: 0;
     overflow: hidden;
   }

@@ -1,7 +1,5 @@
 <script lang="ts">
   import MoreHorizontalIcon from "@lucide/svelte/icons/more-horizontal";
-  import PanelLeftCloseIcon from "@lucide/svelte/icons/panel-left-close";
-  import PanelLeftOpenIcon from "@lucide/svelte/icons/panel-left-open";
   import { getStores } from "../../context.js";
   import {
     diffFileCategoryOptions,
@@ -93,6 +91,25 @@
     </div>
   </div>
   <div class="compact-menu-section">
+    {#if onToggleFileList}
+      <button
+        class="compact-switch-row"
+        type="button"
+        role="switch"
+        aria-label="File list"
+        aria-checked={!fileListHidden}
+        onclick={onToggleFileList}
+      >
+        <span>File list</span>
+        <span
+          class="toggle-switch"
+          class:toggle-switch--on={!fileListHidden}
+          aria-hidden="true"
+        >
+          <span class="toggle-knob"></span>
+        </span>
+      </button>
+    {/if}
     <button
       class="compact-switch-row"
       type="button"
@@ -180,21 +197,6 @@
     <DiffScopePicker />
   {/if}
   <div class="toolbar-actions">
-    {#if onToggleFileList}
-      <button
-        class="file-list-toggle"
-        type="button"
-        aria-label={fileListHidden ? "Show changed files" : "Hide changed files"}
-        title={fileListHidden ? "Show changed files" : "Hide changed files"}
-        onclick={onToggleFileList}
-      >
-        {#if fileListHidden}
-          <PanelLeftOpenIcon size={16} strokeWidth={1.8} aria-hidden="true" />
-        {:else}
-          <PanelLeftCloseIcon size={16} strokeWidth={1.8} aria-hidden="true" />
-        {/if}
-      </button>
-    {/if}
     <div class="compact-menu-wrap" bind:this={compactMenuRef}>
       <button
         class="compact-more-btn"
@@ -221,6 +223,7 @@
 <style>
   .diff-toolbar {
     position: relative;
+    z-index: 60;
     display: flex;
     align-items: center;
     gap: 16px;
@@ -286,8 +289,7 @@
     flex-shrink: 0;
   }
 
-  .compact-more-btn,
-  .file-list-toggle {
+  .compact-more-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -300,18 +302,17 @@
   }
 
   .compact-more-btn:hover,
-  .compact-more-btn--active,
-  .file-list-toggle:hover {
+  .compact-more-btn--active {
     color: var(--accent-blue);
     border-color: var(--accent-blue);
   }
 
   .compact-menu {
     position: absolute;
-    z-index: 50;
+    z-index: 1000;
     top: calc(100% + 4px);
     right: 0;
-    width: 224px;
+    width: min(224px, calc(100cqw - 20px));
     padding: 6px;
     border: 1px solid var(--border-default);
     border-radius: var(--radius-sm);
