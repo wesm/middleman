@@ -36,6 +36,7 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
   let submitting = $state(false);
   let storeError = $state<string | null>(null);
   let wasEnabled = false;
+  let draftVersion = 0;
 
   function isEnabled(): boolean {
     return enabled;
@@ -115,6 +116,7 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
   }
 
   function clear(): void {
+    draftVersion += 1;
     enabled = false;
     wasEnabled = false;
     ref = null;
@@ -130,6 +132,8 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     const params = currentParams();
     if (!params) return;
     const key = requestKey();
+    const version = ++draftVersion;
+    const isCurrent = () => requestKey() === key && draftVersion === version;
     loading = true;
     storeError = null;
     try {
@@ -140,17 +144,17 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
       if (!data) {
         throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
       }
-      if (requestKey() !== key) return;
+      if (!isCurrent()) return;
       draft = {
         ...data,
         comments: data.comments ?? [],
         supported_actions: data.supported_actions ?? [],
       };
     } catch (err) {
-      if (requestKey() !== key) return;
+      if (!isCurrent()) return;
       storeError = err instanceof Error ? err.message : String(err);
     } finally {
-      if (requestKey() === key) {
+      if (isCurrent()) {
         loading = false;
       }
     }
@@ -163,6 +167,7 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     if (!enabled || !ref) return false;
     const params = currentParams();
     if (!params) return false;
+    draftVersion += 1;
     submitting = true;
     storeError = null;
     try {
@@ -190,6 +195,7 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     if (!enabled || !ref) return false;
     const params = currentParams();
     if (!params) return false;
+    draftVersion += 1;
     submitting = true;
     storeError = null;
     try {
@@ -224,6 +230,7 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     const publishedRef = ref;
     const publishedNumber = number;
     const key = requestKey();
+    draftVersion += 1;
     submitting = true;
     storeError = null;
     try {
@@ -256,6 +263,7 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     if (!enabled || !ref) return false;
     const params = currentParams();
     if (!params) return false;
+    draftVersion += 1;
     submitting = true;
     storeError = null;
     try {
