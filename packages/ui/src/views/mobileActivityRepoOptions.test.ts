@@ -21,8 +21,16 @@ describe("buildMobileActivityRepoOptions", () => {
     ]);
 
     expect(options).toEqual([
-      { value: "ghe.example.com/acme/widgets", label: "ghe.example.com/acme/widgets" },
-      { value: "github.com/acme/widgets", label: "github.com/acme/widgets" },
+      {
+        value: "ghe.example.com/acme/widgets",
+        label: "ghe.example.com/acme/widgets",
+        triggerLabel: "acme/widgets",
+      },
+      {
+        value: "github.com/acme/widgets",
+        label: "github.com/acme/widgets",
+        triggerLabel: "acme/widgets",
+      },
     ]);
   });
 
@@ -47,7 +55,11 @@ describe("buildMobileActivityRepoOptions", () => {
     ]);
 
     expect(options).toEqual([
-      { value: "ghe.example.com/acme/widgets", label: "ghe.example.com/acme/widgets" },
+      {
+        value: "ghe.example.com/acme/widgets",
+        label: "ghe.example.com/acme/widgets",
+        triggerLabel: "acme/widgets",
+      },
     ]);
   });
 });

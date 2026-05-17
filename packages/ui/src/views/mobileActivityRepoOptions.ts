@@ -3,6 +3,7 @@ import type { ConfigRepo } from "../api/types.js";
 export interface MobileActivityRepoOption {
   value: string;
   label: string;
+  triggerLabel?: string;
 }
 
 function concreteRepoSelectorValue(repo: ConfigRepo): string | null {
@@ -21,7 +22,7 @@ export function buildMobileActivityRepoOptions(
     const value = concreteRepoSelectorValue(repo);
     if (!value || seen.has(value)) continue;
     seen.add(value);
-    options.push({ value, label: value });
+    options.push({ value, label: value, triggerLabel: repo.repo_path.trim() });
   }
   return options.sort((left, right) =>
     left.label.localeCompare(right.label, undefined, {

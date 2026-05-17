@@ -75,6 +75,25 @@ describe("SelectDropdown", () => {
     }
   });
 
+  it("can use a shorter label for the selected trigger", () => {
+    renderDropdown({
+      value: "github.com/acme/very-long-service",
+      options: [
+        {
+          value: "github.com/acme/very-long-service",
+          label: "github.com/acme/very-long-service",
+          triggerLabel: "acme/very-long-service",
+        },
+      ],
+      title: "Repository",
+    });
+
+    expect(
+      screen.getByRole("combobox", { name: "Repository: acme/very-long-service" })
+        .textContent?.trim(),
+    ).toBe("acme/very-long-service");
+  });
+
   it("closes when focus moves outside the dropdown", async () => {
     const { container } = renderDropdown();
     const outside = document.createElement("button");

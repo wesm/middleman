@@ -14,6 +14,7 @@
   export interface SelectDropdownOption {
     value: string;
     label: string;
+    triggerLabel?: string;
     disabled?: boolean;
   }
 
@@ -48,8 +49,8 @@
   );
   const triggerLabel = $derived(
     title
-      ? `${title}: ${selectedOption?.label ?? value}`
-      : (selectedOption?.label ?? value),
+      ? `${title}: ${selectedOption?.triggerLabel ?? selectedOption?.label ?? value}`
+      : (selectedOption?.triggerLabel ?? selectedOption?.label ?? value),
   );
 
   $effect(() => {
@@ -161,7 +162,7 @@
     {title}
     {disabled}
   >
-    <span class="select-dropdown-value">{selectedOption?.label ?? value}</span>
+    <span class="select-dropdown-value">{selectedOption?.triggerLabel ?? selectedOption?.label ?? value}</span>
     <ChevronDownIcon
       class="select-dropdown-chevron"
       size="12"

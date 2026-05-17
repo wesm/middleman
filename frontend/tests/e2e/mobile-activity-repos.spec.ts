@@ -72,19 +72,21 @@ test.describe("mobile activity repository selector", () => {
     const activityRepos = await mockMobileRepoSettings(page);
 
     await page.goto("/m?range=30d&view=threaded");
-    const repoSelect = page.getByLabel("Repository");
+    const repoSelect = page.getByRole("combobox", { name: /Repository/ });
     await expect(repoSelect).toBeVisible();
 
-    await expect(repoSelect.locator("option")).toHaveText([
-      "All repos",
-      "github.com/acme/widgets",
-      "ghe.example.com/acme/widgets",
-    ]);
-    await expect(repoSelect.locator("option", { hasText: "acme/*" }))
+    await repoSelect.click();
+    await expect(page.getByRole("option", { name: "All repos" })).toBeVisible();
+    await expect(page.getByRole("option", { name: "github.com/acme/widgets" }))
+      .toBeVisible();
+    await expect(page.getByRole("option", { name: "ghe.example.com/acme/widgets" }))
+      .toBeVisible();
+    await expect(page.getByRole("option", { name: "acme/*" }))
       .toHaveCount(0);
 
-    await repoSelect.selectOption("ghe.example.com/acme/widgets");
-    await expect(repoSelect).toHaveValue("ghe.example.com/acme/widgets");
+    await page.getByRole("option", { name: "ghe.example.com/acme/widgets" }).click();
+    await expect(page.getByRole("combobox", { name: "Repository: acme/widgets" }))
+      .toHaveText("acme/widgets");
     await expect.poll(() => activityRepos)
       .toContain("ghe.example.com/acme/widgets");
   });

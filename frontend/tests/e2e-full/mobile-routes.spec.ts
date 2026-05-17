@@ -170,6 +170,9 @@ test.describe("phone routes", () => {
       const firstButton = document.querySelector(".mobile-activity-card button");
       const title = document.querySelector(".mobile-activity-card__title");
       const meta = document.querySelector(".mobile-activity-card__meta");
+      const metaItems = meta?.querySelectorAll("span") ?? [];
+      const metaRect = meta?.getBoundingClientRect();
+      const metaCountRect = metaItems[1]?.getBoundingClientRect();
       const eventLabel = document.querySelector(".mobile-activity-event__body strong");
       const eventAuthor = document.querySelector(".mobile-activity-event__body span");
       const eventTime = document.querySelector(".mobile-activity-event time");
@@ -237,6 +240,9 @@ test.describe("phone routes", () => {
         touchTargetHeight: buttonRect?.height ?? 0,
         titleFontSize: fontSize(title),
         metaFontSize: fontSize(meta),
+        metaItemCount: metaItems.length,
+        metaRight: metaRect?.right ?? 0,
+        metaCountRight: metaCountRect?.right ?? 0,
         eventLabelFontSize: fontSize(eventLabel),
         eventAuthorFontSize: fontSize(eventAuthor),
         eventTimeFontSize: fontSize(eventTime),
@@ -277,6 +283,8 @@ test.describe("phone routes", () => {
     expect(metrics.touchTargetHeight).toBeGreaterThanOrEqual(44);
     expect(metrics.titleFontSize).toBeGreaterThanOrEqual(19);
     expect(metrics.metaFontSize).toBeGreaterThanOrEqual(15);
+    expect(metrics.metaItemCount).toBe(2);
+    expect(Math.abs(metrics.metaRight - metrics.metaCountRight)).toBeLessThanOrEqual(1);
     expect(metrics.eventLabelFontSize).toBeGreaterThanOrEqual(15);
     expect(metrics.eventAuthorFontSize).toBeGreaterThanOrEqual(14);
     expect(metrics.eventTimeFontSize).toBeGreaterThanOrEqual(14);
@@ -327,16 +335,17 @@ test.describe("phone routes", () => {
     });
     await page.getByRole("combobox", { name: /Repository/ }).click();
     await page.getByRole("option", { name: "github.com/acme/widgets" }).click();
-    await expect(page.getByRole("combobox", { name: "Repository: github.com/acme/widgets" }))
+    await expect(page.getByRole("combobox", { name: "Repository: acme/widgets" }))
       .toBeVisible();
     await activityForRepo;
   });
 
-  test("mobile activity Open thread routes to a focused thread detail", async ({ page }) => {
+  test("mobile activity card routes to a focused thread detail", async ({ page }) => {
     await page.goto("/m?range=30d&view=threaded");
-    await expect(page.locator(".mobile-activity-open").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open thread" })).toHaveCount(0);
+    await expect(page.locator(".mobile-activity-card__button").first()).toBeVisible();
 
-    await page.locator(".mobile-activity-open").first().click();
+    await page.locator(".mobile-activity-card__button").first().click();
 
     await expect(page).toHaveURL(/\/focus\/(?:host\/[^/]+\/)?(?:pulls|issues)\//);
     await expect(page.locator(".focus-layout")).toBeVisible();
@@ -353,9 +362,10 @@ test.describe("phone routes", () => {
     await page.goto("/");
     await expectPathname(page, "/");
     await expect(page.locator(".mobile-shell")).toBeVisible();
-    await expect(page.locator(".mobile-activity-open").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open thread" })).toHaveCount(0);
+    await expect(page.locator(".mobile-activity-card__button").first()).toBeVisible();
 
-    await page.locator(".mobile-activity-open").first().click();
+    await page.locator(".mobile-activity-card__button").first().click();
 
     await expect(page).toHaveURL(/\/focus\/(?:host\/[^/]+\/)?(?:pulls|issues)\//);
     await expect(page.locator(".focus-layout")).toBeVisible();

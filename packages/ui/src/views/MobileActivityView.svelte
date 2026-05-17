@@ -4,7 +4,6 @@
   import { getStores } from "../context.js";
   import type { ItemFilter, TimeRange } from "../stores/activity.svelte.js";
   import { parseAPITimestamp } from "../utils/time.js";
-  import ActionButton from "../components/shared/ActionButton.svelte";
   import ItemKindChip from "../components/shared/ItemKindChip.svelte";
   import ItemStateChip from "../components/shared/ItemStateChip.svelte";
   import SelectDropdown from "../components/shared/SelectDropdown.svelte";
@@ -343,7 +342,6 @@
               <span class="mobile-activity-card__meta">
                 <span>{repoLabel(item)}</span>
                 <span>{group.eventCount} {group.eventCount === 1 ? "event" : "events"}</span>
-                <span>{item.author}</span>
               </span>
             </button>
 
@@ -367,14 +365,6 @@
                 </button>
               {/each}
             </div>
-
-            <ActionButton
-              class="mobile-activity-open"
-              tone="info"
-              surface="soft"
-              label="Open thread"
-              onclick={() => handleCardClick(group)}
-            />
           </article>
         {/each}
       </div>
@@ -576,7 +566,7 @@
     flex-direction: column;
     gap: var(--mobile-space-sm);
     width: 100%;
-    min-height: calc(var(--mobile-hit-target) * 3);
+    min-height: var(--mobile-hit-target);
     padding: var(--mobile-space-md);
     border: 0;
     color: inherit;
@@ -632,16 +622,29 @@
   }
 
   .mobile-activity-card__meta {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
     gap: var(--mobile-space-xs) var(--mobile-space-sm);
     color: var(--text-muted);
     font-size: var(--font-size-mobile-sm);
     line-height: 1.25;
   }
 
-  .mobile-activity-card__meta span:not(:last-child)::after {
-    content: "";
+  .mobile-activity-card__meta span {
+    min-width: 0;
+  }
+
+  .mobile-activity-card__meta span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-activity-card__meta span:last-child {
+    justify-self: end;
+    text-align: right;
+    white-space: nowrap;
   }
 
   .mobile-activity-events {
@@ -707,14 +710,6 @@
   .mobile-activity-event time {
     color: var(--text-muted);
     font-size: var(--font-size-mobile-xs);
-    font-weight: 750;
-  }
-
-  :global(.mobile-activity-open) {
-    width: calc(100% - (var(--mobile-space-sm) * 2));
-    margin: 0 var(--mobile-space-sm) var(--mobile-space-sm);
-    min-height: var(--mobile-hit-target);
-    font-size: var(--font-size-mobile-sm);
     font-weight: 750;
   }
 
