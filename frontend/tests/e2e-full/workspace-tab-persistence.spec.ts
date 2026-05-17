@@ -199,7 +199,7 @@ test.describe("workspace tab persistence", () => {
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
     );
-    await page.setViewportSize({ width: 1100, height: 720 });
+    await page.setViewportSize({ width: 1033, height: 720 });
 
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;
@@ -218,7 +218,8 @@ test.describe("workspace tab persistence", () => {
       expect(workspaceDetail.worktree_path).toBeTruthy();
       await writeFile(
         join(workspaceDetail.worktree_path!, "alpha.ts"),
-        "alpha\n",
+        Array.from({ length: 120 }, (_, index) => `alpha ${index + 1}`)
+          .join("\n") + "\n",
       );
       await writeFile(
         join(workspaceDetail.worktree_path!, "beta_test.go"),
@@ -249,14 +250,99 @@ test.describe("workspace tab persistence", () => {
       );
       await page.locator(".seg-control .seg-btn", { hasText: "Diff" }).click();
       await expect(page.locator(".right-sidebar .workspace-diff")).toBeVisible();
-      expect((await diffResponse).ok()).toBe(true);
-      const activeDiffFile = page.locator(
-        ".right-sidebar .diff-file-row--active",
+      await expect(page.locator(
+        ".right-sidebar .workspace-diff-scope .diff-scope-picker__label",
+      )).toBeHidden();
+      const workspaceScopePicker = page.locator(
+        ".right-sidebar .workspace-diff-scope .diff-scope-picker",
       );
-      await expect(activeDiffFile).toHaveAttribute("title", "alpha.ts");
+      await expect(workspaceScopePicker.locator(".scope-pill")).toHaveCount(0);
+      await expect(
+        workspaceScopePicker.locator(".diff-scope-label"),
+      ).toHaveText("HEAD");
+      const scopeToggleMetrics = await page
+        .locator(".right-sidebar .workspace-diff-scope .scope-toggle")
+        .evaluate((toggle) => {
+          const buttonRects = Array.from(
+            toggle.querySelectorAll<HTMLElement>(".scope-btn"),
+          ).map((button) => button.getBoundingClientRect());
+          return {
+            clientWidth: toggle.clientWidth,
+            height: toggle.getBoundingClientRect().height,
+            maxButtonTopDelta: Math.max(
+              ...buttonRects.map((rect) =>
+                Math.abs(rect.top - (buttonRects[0]?.top ?? rect.top)),
+              ),
+            ),
+            scrollWidth: toggle.scrollWidth,
+          };
+        });
+      expect(scopeToggleMetrics.height).toBeLessThanOrEqual(28);
+      expect(scopeToggleMetrics.maxButtonTopDelta).toBeLessThanOrEqual(1);
+      expect(scopeToggleMetrics.scrollWidth).toBeLessThanOrEqual(
+        scopeToggleMetrics.clientWidth,
+      );
+      await page
+        .locator(".right-sidebar .workspace-diff-scope")
+        .getByRole("button", { name: "Select commit range" })
+        .click();
+      const commitMenu = page.locator(
+        ".right-sidebar .diff-scope-picker__menu",
+      );
+      await expect(commitMenu).toBeVisible();
+      const commitMenuTopElement = await commitMenu.evaluate((menu) => {
+        const rect = menu.getBoundingClientRect();
+        const topElement = document.elementFromPoint(
+          rect.left + rect.width / 2,
+          rect.top + 12,
+        );
+        return {
+          className:
+            typeof topElement?.className === "string"
+              ? topElement.className
+              : String(topElement?.className ?? ""),
+          insideCommitMenu: Boolean(
+            topElement?.closest(".diff-scope-picker__menu"),
+          ),
+        };
+      });
+      expect(commitMenuTopElement.insideCommitMenu).toBe(true);
+      await page.keyboard.press("Escape");
+      await expect(commitMenu).toBeHidden();
+      expect((await diffResponse).ok()).toBe(true);
+      const alphaDiffFile = page.locator(
+        '.right-sidebar .diff-file[data-file-path="alpha.ts"]',
+      );
+      const betaDiffFile = page.locator(
+        '.right-sidebar .diff-file[data-file-path="beta_test.go"]',
+      );
+      await expect(alphaDiffFile).toBeVisible();
+      await expect(betaDiffFile).toHaveCount(1);
+      const firstDiffLineGutterCount = await page
+        .locator(".right-sidebar .diff-line")
+        .first()
+        .locator(".gutter")
+        .count();
+      expect(firstDiffLineGutterCount).toBe(1);
+      const lineGutterWidth = await page
+        .locator(".right-sidebar .diff-line .gutter")
+        .first()
+        .evaluate((gutter) => gutter.getBoundingClientRect().width);
+      expect(lineGutterWidth).toBeLessThanOrEqual(40);
       const diffToolbar = page.locator(".right-sidebar .diff-toolbar");
       await expect(diffToolbar.locator(".compact-more-btn")).toBeVisible();
+      await expect(
+        diffToolbar.getByRole("button", { name: "Jump to file" }),
+      ).toBeVisible();
+      await expect(
+        page.locator(".right-sidebar .workspace-diff-scope .file-list-toggle"),
+      ).toHaveCount(0);
+      await expect(diffToolbar.locator(".file-list-toggle")).toHaveCount(0);
       await expect(diffToolbar.locator(".category-toggle")).toHaveCount(0);
+      await expect(page.locator(".right-sidebar .workspace-diff-sidebar"))
+        .toHaveCount(0);
+      await expect(page.locator(".right-sidebar .workspace-diff-resize-handle"))
+        .toHaveCount(0);
       const toolbarMetrics = await diffToolbar.evaluate((element) => ({
         clientWidth: element.clientWidth,
         scrollWidth: element.scrollWidth,
@@ -264,45 +350,61 @@ test.describe("workspace tab persistence", () => {
       expect(toolbarMetrics.scrollWidth).toBeLessThanOrEqual(
         toolbarMetrics.clientWidth,
       );
-      await page.setViewportSize({ width: 760, height: 720 });
-      const compactDiffMetrics = await page
-        .locator(".right-sidebar .workspace-diff-layout")
-        .evaluate((layout) => {
-          const sidebar = layout.querySelector<HTMLElement>(
-            ".workspace-diff-sidebar",
+      await page.setViewportSize({ width: 1100, height: 720 });
+      await diffToolbar.getByRole("button", { name: "Jump to file" }).click();
+      const fileJump = page.locator(".right-sidebar .file-jump-menu");
+      await expect(fileJump).toBeVisible();
+      await expect(fileJump.getByRole("searchbox", { name: "Jump to file" }))
+        .toBeFocused();
+      await expect(fileJump.getByRole("option", { name: /alpha\.ts/ }))
+        .toBeVisible();
+      const jumpGeometry = await fileJump.evaluate((menu) => {
+        const menuRect = menu.getBoundingClientRect();
+        const sidebarRect = menu
+          .closest(".right-sidebar")
+          ?.getBoundingClientRect();
+        return {
+          position: getComputedStyle(menu).position,
+          extendsLeftOfSidebar: sidebarRect
+            ? menuRect.left < sidebarRect.left
+            : false,
+        };
+      });
+      expect(jumpGeometry.position).toBe("fixed");
+      expect(jumpGeometry.extendsLeftOfSidebar).toBe(true);
+      await fileJump.getByRole("option", { name: /beta_test\.go/ }).click();
+      await expect(fileJump).toBeHidden();
+      const betaJumpMetrics = await page
+        .locator(".right-sidebar .diff-area")
+        .evaluate((area) => {
+          const beta = area.querySelector<HTMLElement>(
+            '[data-file-path="beta_test.go"]',
           );
-          const handle = layout.querySelector<HTMLElement>(
-            ".workspace-diff-resize-handle",
-          );
+          const areaRect = area.getBoundingClientRect();
+          const betaRect = beta?.getBoundingClientRect();
           return {
-            direction: getComputedStyle(layout).flexDirection,
-            handleDisplay: handle ? getComputedStyle(handle).display : "",
-            layoutWidth: layout.getBoundingClientRect().width,
-            sidebarWidth: sidebar?.getBoundingClientRect().width ?? 0,
+            hasBeta: Boolean(beta),
+            scrollTop: area.scrollTop,
+            betaInViewport: betaRect
+              ? betaRect.top >= areaRect.top && betaRect.top < areaRect.bottom
+              : false,
           };
         });
-      expect(compactDiffMetrics.direction).toBe("column");
-      expect(compactDiffMetrics.handleDisplay).toBe("none");
-      expect(compactDiffMetrics.sidebarWidth).toBeGreaterThanOrEqual(
-        compactDiffMetrics.layoutWidth - 1,
-      );
-      await page.setViewportSize({ width: 1100, height: 720 });
+      expect(betaJumpMetrics.hasBeta).toBe(true);
+      expect(betaJumpMetrics.scrollTop).toBeGreaterThan(0);
+      expect(betaJumpMetrics.betaInViewport).toBe(true);
       await diffToolbar.locator(".compact-more-btn").click();
       const compactMenu = page.locator(".right-sidebar .compact-menu");
       await expect(compactMenu).toBeVisible();
+      await expect(
+        compactMenu.getByRole("switch", { name: "File list" }),
+      ).toHaveCount(0);
       await compactMenu.getByRole("button", { name: "Code (1)" }).click();
       await expect(diffToolbar).toContainText("Code");
-      await expect(activeDiffFile).toHaveAttribute("title", "alpha.ts");
-      await expect(page.locator('.right-sidebar .diff-file-row[title="beta_test.go"]'))
-        .toHaveCount(0);
-      await page.locator(".right-sidebar .file-list-toggle").click();
-      await expect(page.locator(".right-sidebar .workspace-diff-sidebar"))
-        .toHaveCount(0);
-      await expect(page.locator(".right-sidebar .diff-file")).toHaveCount(1);
-      await page.locator(".right-sidebar .file-list-toggle").click();
-      await expect(page.locator(".right-sidebar .workspace-diff-sidebar"))
-        .toBeVisible();
-      await expect(activeDiffFile).toHaveAttribute("title", "alpha.ts");
+      await expect(alphaDiffFile).toBeVisible();
+      await expect(betaDiffFile).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await expect(alphaDiffFile).toBeVisible();
       await expect(panes).toHaveCount(1);
       await expect(homeTab).toHaveAttribute("aria-selected", "true");
 
@@ -324,7 +426,7 @@ test.describe("workspace tab persistence", () => {
       await expect(page.locator('.workspace-tabs [role="tab"]', {
         hasText: "tmux",
       })).toHaveAttribute("aria-selected", "true");
-      await expect(activeDiffFile).toHaveAttribute("title", "alpha.ts");
+      await expect(alphaDiffFile).toBeVisible();
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();

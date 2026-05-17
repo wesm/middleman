@@ -13,6 +13,7 @@
   const { type, oldNum, newNum, noNewline, tokens }: Props = $props();
 
   const marker = $derived(type === "add" ? "+" : type === "delete" ? "-" : " ");
+  const lineNum = $derived(newNum ?? oldNum ?? "");
 </script>
 
 <div
@@ -21,15 +22,10 @@
   class:diff-line--del={type === "delete"}
 >
   <span
-    class="gutter gutter-old"
+    class="gutter"
     class:gutter--add={type === "add"}
     class:gutter--del={type === "delete"}
-  >{oldNum ?? ""}</span>
-  <span
-    class="gutter gutter-new"
-    class:gutter--add={type === "add"}
-    class:gutter--del={type === "delete"}
-  >{newNum ?? ""}</span>
+  >{lineNum}</span>
   <span
     class="marker"
     class:marker--add={type === "add"}
@@ -56,10 +52,10 @@
   }
 
   .gutter {
-    width: 50px;
+    width: var(--diff-line-number-gutter-width, 50px);
     flex-shrink: 0;
     text-align: right;
-    padding: 0 8px 0 0;
+    padding: 0 8px 0 1ch;
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
     color: var(--diff-line-num);

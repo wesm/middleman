@@ -1010,14 +1010,16 @@ test.describe("diff view", () => {
     await page.getByRole("button", { name: "Select commit range" }).click();
     await expect(page.locator(".commit-item").first()).toBeVisible();
     await page.locator(".commit-item").first().click();
-    await expect(page.locator(".scope-pill__label")).toHaveText("abc1234");
+    await expect(page.locator(".diff-scope-picker .diff-scope-label"))
+      .toHaveText("abc1234");
 
     // Switch to PR 2.
     await page.goto("/pulls/github/acme/widgets/2/files");
     await waitForSidebarFilesLoaded(page);
 
     // The selected commit scope should reset on the new PR.
-    await expect(page.locator(".scope-pill__label")).toHaveText("HEAD");
+    await expect(page.locator(".diff-scope-picker .diff-scope-label"))
+      .toHaveText("HEAD");
   });
 
   test("commit range picker scopes single commits and ranges", async ({ page }) => {
@@ -1097,14 +1099,18 @@ test.describe("diff view", () => {
     const commitItems = page.locator(".commit-item");
     await commitItems.first().click();
 
-    await expect(page.locator(".scope-pill__label")).toHaveText("abc1234");
+    await expect(page.locator(".diff-scope-picker .diff-scope-label"))
+      .toHaveText("abc1234");
+    await expect(page.locator(".diff-scope-picker__control .scope-pill"))
+      .toHaveCount(0);
     await expect(page.locator(".diff-file")).toHaveCount(1);
     await expect(page.locator(".diff-file").first())
       .toHaveAttribute("data-file-path", "frontend/src/scoped.ts");
 
     await commitItems.nth(1).click({ modifiers: ["Shift"] });
 
-    await expect(page.locator(".scope-pill__label")).toHaveText("def1234..abc1234");
+    await expect(page.locator(".diff-scope-picker .diff-scope-label"))
+      .toHaveText("def1234..abc1234");
     await expect(page.locator(".diff-file")).toHaveCount(2);
     await expect(page.locator('[data-file-path="frontend/src/ranged.ts"]'))
       .toBeVisible();
@@ -1132,6 +1138,9 @@ test.describe("diff view performance", () => {
     await mockDiffApi(page, largeDiff);
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
+
+    await expect(page.getByRole("button", { name: "Jump to file" }))
+      .toBeVisible();
 
     // All 50 file headers should be in the DOM.
     await expect(page.locator(".diff-file .file-header")).toHaveCount(50, { timeout: 15_000 });

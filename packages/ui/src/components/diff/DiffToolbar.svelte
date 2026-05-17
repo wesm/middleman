@@ -6,17 +6,24 @@
     type DiffFileCategoryFilter,
   } from "../../utils/diff-categories.js";
   import DiffScopePicker from "./DiffScopePicker.svelte";
+  import FileJumpPicker from "./FileJumpPicker.svelte";
 
   interface Props {
     compact?: boolean;
+    fileListHidden?: boolean;
+    onToggleFileList?: (() => void) | undefined;
     showRichPreview?: boolean;
     showScopePicker?: boolean;
+    showFileJump?: boolean;
   }
 
   let {
     compact = false,
+    fileListHidden = false,
+    onToggleFileList,
     showRichPreview = true,
     showScopePicker = true,
+    showFileJump = false,
   }: Props = $props();
 
   const { diff } = getStores();
@@ -27,6 +34,10 @@
     diffFileCategoryOptions.find((option) => option.value === activeCategory)?.label ??
       "All",
   );
+  const visibleFileCount = $derived(
+    diff.getVisibleFileList()?.files.length ?? diff.getVisibleDiffFiles().length,
+  );
+  const shouldShowFileJump = $derived(showFileJump || visibleFileCount >= 10);
   let menuOpen = $state(false);
   let compactMenuRef = $state<HTMLDivElement>();
 
@@ -87,6 +98,25 @@
     </div>
   </div>
   <div class="compact-menu-section">
+    {#if onToggleFileList}
+      <button
+        class="compact-switch-row"
+        type="button"
+        role="switch"
+        aria-label="File list"
+        aria-checked={!fileListHidden}
+        onclick={onToggleFileList}
+      >
+        <span>File list</span>
+        <span
+          class="toggle-switch"
+          class:toggle-switch--on={!fileListHidden}
+          aria-hidden="true"
+        >
+          <span class="toggle-knob"></span>
+        </span>
+      </button>
+    {/if}
     <button
       class="compact-switch-row"
       type="button"
@@ -173,31 +203,37 @@
   {#if showScopePicker}
     <DiffScopePicker />
   {/if}
-  <div class="compact-menu-wrap" bind:this={compactMenuRef}>
-    <button
-      class="compact-more-btn"
-      class:compact-more-btn--active={menuOpen}
-      type="button"
-      aria-label="More diff filters"
-      aria-expanded={menuOpen}
-      title="More diff filters"
-      onclick={() => {
-        menuOpen = !menuOpen;
-      }}
-    >
-      <MoreHorizontalIcon size={16} strokeWidth={2} aria-hidden="true" />
-    </button>
-    {#if menuOpen}
-      <div class="compact-menu">
-        {@render menuContent(compact)}
-      </div>
+  <div class="toolbar-actions">
+    {#if shouldShowFileJump}
+      <FileJumpPicker />
     {/if}
+    <div class="compact-menu-wrap" bind:this={compactMenuRef}>
+      <button
+        class="compact-more-btn"
+        class:compact-more-btn--active={menuOpen}
+        type="button"
+        aria-label="More diff filters"
+        aria-expanded={menuOpen}
+        title="More diff filters"
+        onclick={() => {
+          menuOpen = !menuOpen;
+        }}
+      >
+        <MoreHorizontalIcon size={16} strokeWidth={2} aria-hidden="true" />
+      </button>
+      {#if menuOpen}
+        <div class="compact-menu">
+          {@render menuContent(compact)}
+        </div>
+      {/if}
+    </div>
   </div>
 </div>
 
 <style>
   .diff-toolbar {
     position: relative;
+    z-index: 60;
     display: flex;
     align-items: center;
     gap: 16px;
@@ -250,9 +286,16 @@
     color: var(--text-muted);
   }
 
+  .toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
   .compact-menu-wrap {
     position: relative;
-    margin-left: auto;
     flex-shrink: 0;
   }
 
@@ -276,10 +319,10 @@
 
   .compact-menu {
     position: absolute;
-    z-index: 50;
+    z-index: 1000;
     top: calc(100% + 4px);
     right: 0;
-    width: 224px;
+    width: min(224px, calc(100cqw - 20px));
     padding: 6px;
     border: 1px solid var(--border-default);
     border-radius: var(--radius-sm);
@@ -418,7 +461,7 @@
       flex-direction: column;
     }
 
-    .compact-menu-wrap {
+    .toolbar-actions {
       margin-left: 0;
     }
   }

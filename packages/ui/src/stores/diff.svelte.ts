@@ -170,7 +170,6 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   let currentWorkspaceID = $state("");
   let currentWorkspaceBase = $state<WorkspaceDiffBase>("head");
   let currentWorkspaceStacked = $state(false);
-  let workspaceWhitespaceOnlyCount = $state(0);
   let currentProvider = $state("");
   let currentPlatformHost = $state<string | undefined>(undefined);
   let currentRepoPath = $state("");
@@ -277,9 +276,6 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     fileCategoryFilter = nextFilter;
     const visibleFiles = getVisibleFileList()?.files ?? getVisibleDiffFiles();
     setActiveIfNeeded(visibleFiles);
-    if (currentWorkspaceID && activeFile) {
-      void loadWorkspaceFileDiff(activeFile);
-    }
   }
 
   function clearScrolling(): void {
@@ -289,10 +285,6 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   function requestScrollToFile(path: string): void {
     activeFile = path;
     scrolling = true;
-    if (currentWorkspaceID) {
-      void loadWorkspaceFileDiff(path, undefined, true);
-      return;
-    }
     scrollTarget = path;
   }
 
@@ -491,20 +483,6 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     };
   }
 
-  function workspaceFileDiffQuery(base: WorkspaceDiffBase, path: string): {
-    base: WorkspaceDiffBase;
-    whitespace?: string;
-    commit?: string;
-    from?: string;
-    to?: string;
-    path: string;
-  } {
-    return {
-      ...workspaceDiffQuery(base),
-      path,
-    };
-  }
-
   function setActiveIfNeeded(
     files: { path: string }[] | undefined,
   ): void {
@@ -565,26 +543,12 @@ export function createDiffStore(opts?: DiffStoreOptions) {
 
   function applyFilesResult(data: FilesResponse): void {
     fileList = normalizeFilesResult(data);
-    if (currentWorkspaceID) {
-      workspaceWhitespaceOnlyCount = data.whitespace_only_count ?? 0;
-    }
     setActiveIfNeeded(getVisibleFileList()?.files);
   }
 
   function applyDiffResult(data: DiffResponse): void {
     diff = normalizeDiffResult(data);
     setActiveIfNeeded(getVisibleDiffFiles());
-  }
-
-  function applyWorkspaceFileDiffResult(path: string, data: DiffResponse): void {
-    const result = normalizeDiffResult(data);
-    const file = result.files.find((candidate) => candidate.path === path);
-    const files = file ? [file] : result.files.slice(0, 1);
-    diff = {
-      stale: result.stale,
-      whitespace_only_count: workspaceWhitespaceOnlyCount,
-      files,
-    };
   }
 
   function failDiffLoad(
@@ -720,95 +684,26 @@ export function createDiffStore(opts?: DiffStoreOptions) {
       finishFilesLoad(filesAc);
     }
 
-    if (stacked) {
-      try {
-        const { data, error, response } = await apiClient.GET(
-          "/workspaces/{id}/diff",
-          {
-            params: {
-              path: { id: workspaceID },
-              query: workspaceDiffQuery(base),
-            },
-            signal: diffAc.signal,
-          },
-        );
-        if (!diffLoadIsCurrent(diffAc)) return;
-        if (!data) {
-          throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
-        }
-        applyDiffResult(data);
-      } catch (_err) {
-        failDiffLoad(_err, diffAc, filesAc);
-      } finally {
-        finishDiffLoad(diffAc);
-      }
-      return;
-    }
-
-    const visibleFiles = getVisibleFileList()?.files ?? [];
-    const selectedPath =
-      visibleFiles.find((file) => file.path === activeFile)?.path ??
-      visibleFiles[0]?.path;
-    if (!selectedPath) {
-      diff = {
-        stale: fileList?.stale ?? false,
-        whitespace_only_count: workspaceWhitespaceOnlyCount,
-        files: [],
-      };
-      finishDiffLoad(diffAc);
-      return;
-    }
-
-    await loadWorkspaceFileDiff(selectedPath, diffAc);
-  }
-
-  async function loadWorkspaceFileDiff(
-    path: string,
-    existingAc?: AbortController,
-    scrollAfterLoad = false,
-  ): Promise<void> {
-    if (!currentWorkspaceID) return;
-    const ac = existingAc ?? new AbortController();
-    if (!existingAc) {
-      abortController?.abort();
-      abortController = ac;
-      loading = true;
-      storeError = null;
-      diff = null;
-    }
-    const workspaceID = currentWorkspaceID;
-    const base = currentWorkspaceBase;
     try {
       const { data, error, response } = await apiClient.GET(
         "/workspaces/{id}/diff",
         {
           params: {
             path: { id: workspaceID },
-            query: workspaceFileDiffQuery(base, path),
+            query: workspaceDiffQuery(base),
           },
-          signal: ac.signal,
+          signal: diffAc.signal,
         },
       );
-      if (!diffLoadIsCurrent(ac)) return;
+      if (!diffLoadIsCurrent(diffAc)) return;
       if (!data) {
         throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
       }
-      if (
-        currentWorkspaceID !== workspaceID ||
-        currentWorkspaceBase !== base
-      ) {
-        return;
-      }
-      applyWorkspaceFileDiffResult(path, data);
-      if (scrollAfterLoad) {
-        scrollTarget = path;
-      }
+      applyDiffResult(data);
     } catch (_err) {
-      if (ac.signal.aborted || !diffLoadIsCurrent(ac)) return;
-      storeError = _err instanceof Error ? _err.message : String(_err);
-      diff = null;
+      failDiffLoad(_err, diffAc, filesAc);
     } finally {
-      finishDiffLoad(ac);
+      finishDiffLoad(diffAc);
     }
   }
 
@@ -837,7 +732,6 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     currentWorkspaceID = "";
     currentWorkspaceBase = "head";
     currentWorkspaceStacked = false;
-    workspaceWhitespaceOnlyCount = 0;
     currentProvider = "";
     currentPlatformHost = undefined;
     currentRepoPath = "";

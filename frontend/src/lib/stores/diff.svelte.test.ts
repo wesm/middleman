@@ -102,14 +102,18 @@ afterEach(() => {
 });
 
 describe("createDiffStore loadDiff", () => {
-  it("loads workspace files and only the active workspace patch", async () => {
+  it("loads workspace files and the full workspace diff", async () => {
     const calls: string[] = [];
     const files = makeFilesResult([
       "src/app.go",
       "src/app_test.go",
       "docs/plan.md",
     ]);
-    const diff = makeDiffResult(["src/app.go"]);
+    const diff = makeDiffResult([
+      "src/app.go",
+      "src/app_test.go",
+      "docs/plan.md",
+    ]);
 
     vi.spyOn(globalThis, "fetch").mockImplementation(
       async (input: RequestInfo | URL) => {
@@ -135,12 +139,11 @@ describe("createDiffStore loadDiff", () => {
     await store.loadWorkspaceDiff("ws-1", "pushed");
 
     expect(calls).toContain("/api/v1/workspaces/ws-1/files?base=pushed");
-    expect(calls).toContain(
-      "/api/v1/workspaces/ws-1/diff?base=pushed&path=src%2Fapp.go",
-    );
-    expect(calls).not.toContain("/api/v1/workspaces/ws-1/diff?base=pushed");
+    expect(calls).toContain("/api/v1/workspaces/ws-1/diff?base=pushed");
     expect(store.getVisibleDiffFiles().map((file) => file.path)).toEqual([
       "src/app.go",
+      "src/app_test.go",
+      "docs/plan.md",
     ]);
     expect(store.getFileCategoryCounts()).toEqual({
       all: 3,
@@ -184,9 +187,6 @@ describe("createDiffStore loadDiff", () => {
       "/api/v1/workspaces/ws-1/files?base=merge-target",
     );
     expect(calls).toContain(
-      "/api/v1/workspaces/ws-1/diff?base=merge-target&path=src%2Fapp.go",
-    );
-    expect(calls).not.toContain(
       "/api/v1/workspaces/ws-1/diff?base=merge-target",
     );
   });
@@ -297,7 +297,7 @@ describe("createDiffStore loadDiff", () => {
         "/api/v1/workspaces/ws-1/files?base=merge-target&commit=sha2",
       );
       expect(calls).toContain(
-        "/api/v1/workspaces/ws-1/diff?base=merge-target&commit=sha2&path=src%2Fapp.go",
+        "/api/v1/workspaces/ws-1/diff?base=merge-target&commit=sha2",
       );
     });
   });
@@ -361,7 +361,7 @@ describe("createDiffStore loadDiff", () => {
         "/api/v1/workspaces/ws-1/files?base=merge-target&from=sha2&to=sha3",
       );
       expect(calls).toContain(
-        "/api/v1/workspaces/ws-1/diff?base=merge-target&from=sha2&to=sha3&path=src%2Fapp.go",
+        "/api/v1/workspaces/ws-1/diff?base=merge-target&from=sha2&to=sha3",
       );
     });
   });
@@ -485,13 +485,14 @@ describe("createDiffStore loadDiff", () => {
       "/api/v1/workspaces/ws-1/files?base=head&whitespace=hide",
     );
     expect(calls).toContain(
-      "/api/v1/workspaces/ws-1/diff?base=head&whitespace=hide&path=a.ts",
+      "/api/v1/workspaces/ws-1/diff?base=head&whitespace=hide",
     );
   });
 
-  it("loads the selected workspace file patch on demand", async () => {
+  it("scrolls to workspace files without reloading the diff", async () => {
     const calls: string[] = [];
     const files = makeFilesResult(["a.ts", "b.ts"]);
+    const diff = makeDiffResult(["a.ts", "b.ts"]);
 
     vi.spyOn(globalThis, "fetch").mockImplementation(
       async (input: RequestInfo | URL) => {
@@ -506,11 +507,8 @@ describe("createDiffStore loadDiff", () => {
         if (url.includes("/workspaces/ws-1/files")) {
           return Response.json(files);
         }
-        if (url.includes("path=a.ts")) {
-          return Response.json(makeDiffResult(["a.ts"]));
-        }
-        if (url.includes("path=b.ts")) {
-          return Response.json(makeDiffResult(["b.ts"]));
+        if (url.includes("/workspaces/ws-1/diff")) {
+          return Response.json(diff);
         }
         return Response.json({}, { status: 404 });
       },
@@ -520,23 +518,20 @@ describe("createDiffStore loadDiff", () => {
     await store.loadWorkspaceDiff("ws-1", "head");
 
     store.requestScrollToFile("b.ts");
-    await vi.waitFor(() => {
-      expect(store.getVisibleDiffFiles().map((file) => file.path)).toEqual([
-        "b.ts",
-      ]);
-    });
 
-    expect(calls).toContain(
-      "/api/v1/workspaces/ws-1/diff?base=head&path=b.ts",
-    );
+    expect(store.getActiveFile()).toBe("b.ts");
+    expect(store.getScrollTarget()).toBe("b.ts");
+    expect(calls.filter((url) =>
+      url.includes("/api/v1/workspaces/ws-1/diff"),
+    )).toEqual(["/api/v1/workspaces/ws-1/diff?base=head"]);
   });
 
-  it("keeps the workspace-wide whitespace count while loading scoped patches", async () => {
+  it("uses the workspace diff whitespace count", async () => {
     const files = makeFilesResult(["a.ts", "whitespace.ts"], {
       whitespace_only_count: 7,
     });
-    const scopedDiff = makeDiffResult(["a.ts"]);
-    scopedDiff.whitespace_only_count = 0;
+    const diff = makeDiffResult(["a.ts", "whitespace.ts"]);
+    diff.whitespace_only_count = 7;
 
     vi.spyOn(globalThis, "fetch").mockImplementation(
       async (input: RequestInfo | URL) => {
@@ -551,7 +546,7 @@ describe("createDiffStore loadDiff", () => {
           return Response.json(files);
         }
         if (url.includes("/workspaces/ws-1/diff")) {
-          return Response.json(scopedDiff);
+          return Response.json(diff);
         }
         return Response.json({}, { status: 404 });
       },

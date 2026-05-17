@@ -1,8 +1,15 @@
 <script lang="ts">
+  import GitCommitHorizontalIcon from "@lucide/svelte/icons/git-commit-horizontal";
   import { getStores } from "../../context.js";
   import CommitListItem from "./CommitListItem.svelte";
-  import ScopePill from "./ScopePill.svelte";
+  import DiffScopeLabel from "./DiffScopeLabel.svelte";
+  import { formatDiffScopeLabel } from "./scope-label.js";
 
+  interface Props {
+    compact?: boolean;
+  }
+
+  const { compact = false }: Props = $props();
   const { diff: diffStore } = getStores();
 
   let open = $state(false);
@@ -12,6 +19,7 @@
   const commitsLoading = $derived(diffStore.isCommitsLoading());
   const commitsError = $derived(diffStore.getCommitsError());
   const scope = $derived(diffStore.getScope());
+  const scopeLabel = $derived(formatDiffScopeLabel(scope));
 
   function toggle(): void {
     open = !open;
@@ -56,18 +64,27 @@
 
 <svelte:document onclick={handleDocumentClick} onkeydown={handleDocumentKeydown} />
 
-<div class="diff-scope-picker" bind:this={pickerRef}>
+<div
+  class={["diff-scope-picker", compact && "diff-scope-picker--compact"]}
+  bind:this={pickerRef}
+>
   <div class="diff-scope-picker__control">
     <button
       class="diff-scope-picker__trigger"
       type="button"
-      aria-label="Select commit range"
+      aria-label={`Select commit range: ${scopeLabel}`}
       aria-expanded={open}
+      title="Commits"
       onclick={toggle}
     >
-      <span class="diff-scope-picker__label">Commits</span>
+      {#if compact}
+        <GitCommitHorizontalIcon size={16} strokeWidth={1.8} aria-hidden="true" />
+        <DiffScopeLabel {scope} />
+      {:else}
+        <span class="diff-scope-picker__label">Commits</span>
+        <DiffScopeLabel {scope} />
+      {/if}
     </button>
-    <ScopePill {scope} onreset={diffStore.resetToHead} />
   </div>
 
   {#if open}
@@ -133,10 +150,29 @@
   }
 
   .diff-scope-picker__trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 0;
     border: 0;
     background: transparent;
     color: inherit;
     font: inherit;
+  }
+
+  .diff-scope-picker--compact .diff-scope-picker__control {
+    gap: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .diff-scope-picker--compact .diff-scope-picker__trigger {
+    gap: 6px;
+    min-width: 78px;
+    max-width: 128px;
+    height: 24px;
+    padding: 0 8px;
   }
 
   .diff-scope-picker__label {
@@ -147,10 +183,10 @@
 
   .diff-scope-picker__menu {
     position: absolute;
-    z-index: 55;
+    z-index: 1000;
     top: calc(100% + 4px);
     right: 0;
-    width: min(420px, 72vw);
+    width: min(420px, calc(100cqw - 20px));
     max-height: min(460px, 70vh);
     overflow: hidden;
     border: 1px solid var(--border-default);
