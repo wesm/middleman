@@ -1,29 +1,22 @@
-import type { PullRequest } from "../api/types.js";
+import type { KanbanStatus, PullRequest } from "../api/types.js";
 
-export type WorkflowGroup =
-  | "needsWorktree"
-  | "blocked"
-  | "readyToMerge"
-  | "inProgress"
-  | "needsReview";
+export type WorkflowGroup = KanbanStatus;
 
 export const workflowGroupOrder: WorkflowGroup[] = [
-  "needsWorktree",
-  "blocked",
-  "readyToMerge",
-  "inProgress",
-  "needsReview",
+  "new",
+  "reviewing",
+  "waiting",
+  "awaiting_merge",
 ];
 
 export const workflowGroupLabels: Record<
   WorkflowGroup,
   string
 > = {
-  needsWorktree: "Needs Worktree",
-  blocked: "Blocked",
-  readyToMerge: "Ready to Merge",
-  inProgress: "In Progress",
-  needsReview: "Needs Review",
+  new: "New",
+  reviewing: "Reviewing",
+  waiting: "Waiting",
+  awaiting_merge: "Awaiting Merge",
 };
 
 export interface WorkflowGroupEntry {
@@ -32,81 +25,32 @@ export interface WorkflowGroupEntry {
   items: PullRequest[];
 }
 
-/**
- * Classify a PR into a workflow group.
- *
- * Precedence:
- * 1. Closed/merged -> fallback "needsReview"
- * 2. No worktree + open -> "needsWorktree"
- * 3. Linked to active worktree -> "inProgress"
- * 4. Failing CI -> "blocked"
- * 5. Changes requested -> "blocked"
- * 6. Merge conflicts or blocked merge state -> "blocked"
- * 7. Approved + not draft + CI not failing -> "readyToMerge"
- * 8. Review required -> "needsReview"
- * 9. Draft -> "needsReview"
- * 10. Fallback -> "needsReview"
- */
-export function classifyPR(
-  pr: PullRequest,
-  activeWorktreeKey?: string,
+function normalizeKanbanStatus(
+  status: string | undefined,
 ): WorkflowGroup {
-  if (pr.State === "merged" || pr.State === "closed") {
-    return "needsReview";
-  }
-
-  const hasWorktree =
-    (pr.worktree_links?.length ?? 0) > 0;
-
-  if (!hasWorktree && pr.State === "open") {
-    return "needsWorktree";
-  }
-
   if (
-    activeWorktreeKey &&
-    pr.worktree_links?.some(
-      (l) => l.worktree_key === activeWorktreeKey,
-    )
+    status === "new" ||
+    status === "reviewing" ||
+    status === "waiting" ||
+    status === "awaiting_merge"
   ) {
-    return "inProgress";
+    return status;
   }
-
-  if (pr.CIStatus === "failure") {
-    return "blocked";
-  }
-
-  if (pr.ReviewDecision === "CHANGES_REQUESTED") {
-    return "blocked";
-  }
-
-  if (
-    pr.MergeableState === "dirty" ||
-    pr.MergeableState === "blocked"
-  ) {
-    return "blocked";
-  }
-
-  if (
-    pr.ReviewDecision === "APPROVED" &&
-    !pr.IsDraft &&
-    pr.CIStatus !== "failure"
-  ) {
-    return "readyToMerge";
-  }
-
-  if (pr.ReviewDecision === "REVIEW_REQUIRED") {
-    return "needsReview";
-  }
-
-  if (pr.IsDraft) {
-    return "needsReview";
-  }
-
-  return "needsReview";
+  return "new";
 }
 
 /**
- * Group PRs by workflow classification.
+ * Classify a PR into the Status grouping used by PR lists.
+ *
+ * Status grouping mirrors the kanban board, so worktree linkage stays item
+ * metadata/actions and does not override the user's review status.
+ */
+export function classifyPR(pr: PullRequest): WorkflowGroup {
+  return normalizeKanbanStatus(pr.KanbanStatus);
+}
+
+/**
+ * Group PRs by kanban status.
  *
  * Returns groups in display order, omitting empty groups.
  * Items within each group are sorted by LastActivityAt
@@ -114,7 +58,6 @@ export function classifyPR(
  */
 export function groupByWorkflow(
   prs: PullRequest[],
-  activeWorktreeKey?: string,
 ): WorkflowGroupEntry[] {
   const buckets = new Map<WorkflowGroup, PullRequest[]>();
   for (const g of workflowGroupOrder) {
@@ -122,7 +65,7 @@ export function groupByWorkflow(
   }
 
   for (const pr of prs) {
-    const group = classifyPR(pr, activeWorktreeKey);
+    const group = classifyPR(pr);
     buckets.get(group)!.push(pr);
   }
 

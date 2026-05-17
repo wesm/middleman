@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getStores, getNavigate, getActions, getHostState } from "../context.js";
+  import { getStores, getNavigate, getActions } from "../context.js";
   import { groupByWorkflow } from "../stores/workflow.svelte.js";
   import PullItem from "../components/sidebar/PullItem.svelte";
   import IssueItem from "../components/sidebar/IssueItem.svelte";
@@ -16,21 +16,17 @@
   const { pulls, issues, sync, settings, grouping } = getStores();
   const navigate = getNavigate();
   const actions = getActions();
-  const hostState = getHostState();
 
   const importAction = $derived(
     (actions.pull ?? []).find(
       (a) => a.id === "import-worktree",
     ),
   );
-  const activeWorktreeKey = $derived(
-    hostState.getActiveWorktreeKey?.(),
-  );
   const groupingMode = $derived(
     grouping.getGroupingMode(),
   );
   const workflowGroups = $derived(
-    groupByWorkflow(pulls.getPulls(), activeWorktreeKey),
+    groupByWorkflow(pulls.getPulls()),
   );
 
   interface Props {
