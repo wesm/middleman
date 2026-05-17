@@ -13,7 +13,7 @@
     "lint:fix": "node ./node_modules/eslint/bin/eslint.js . --fix",
     "typecheck": "bun run check && node ./node_modules/typescript/bin/tsc --noEmit -p ./tsconfig.json",
     "test": "vitest run",
-    "test:e2e": "playwright test --config=playwright-e2e.config.ts",
+    "test:e2e": "scripts/run-e2e-to-file.sh",
     "test:e2e:mock": "playwright test --config=playwright.config.ts",
     "demo-workspace": "playwright test --config tests/demo/playwright-demo.config.ts"
   },

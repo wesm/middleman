@@ -2,6 +2,7 @@
   "private": true,
   "workspaces": ["frontend", "packages/*"],
   "scripts": {
-    "demo-workspace": "bun run --cwd frontend demo-workspace"
+    "demo-workspace": "bun run --cwd frontend demo-workspace",
+    "test:e2e": "bun run --cwd frontend test:e2e"
   }
 }
