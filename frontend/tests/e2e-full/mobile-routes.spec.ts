@@ -293,6 +293,24 @@ test.describe("phone routes", () => {
     await expect(page.locator(".mobile-shell")).toHaveCount(0);
   });
 
+  test("canonical activity phone presentation opens thread detail", async ({ page }) => {
+    await page.goto("/");
+    await expectPathname(page, "/");
+    await expect(page.locator(".mobile-shell")).toBeVisible();
+    await expect(page.locator(".mobile-activity-open").first()).toBeVisible();
+
+    await page.locator(".mobile-activity-open").first().click();
+
+    await expect(page).toHaveURL(/\/focus\/(?:host\/[^/]+\/)?(?:pulls|issues)\//);
+    await expect(page.locator(".focus-layout")).toBeVisible();
+    await expect(
+      page.locator(
+        ".focus-layout .pull-detail .detail-title, .focus-layout .issue-detail .detail-title",
+      ),
+    ).toBeVisible();
+    await expect(page.locator(".mobile-shell")).toHaveCount(0);
+  });
+
   test("focused PR files tab stays on the phone detail route", async ({ page }) => {
     await page.goto("/focus/pulls/github/acme/widgets/1");
     await expect(page.locator(".focus-layout .pull-detail .detail-title")).toBeVisible();

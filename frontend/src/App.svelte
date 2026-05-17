@@ -387,7 +387,7 @@
       number: item.item_number,
     } satisfies RoutedItemRef;
 
-    if (isMobilePage(getPage())) {
+    if (isMobilePage(getPage()) || shouldUseResponsiveMobileActivityPresentation()) {
       navigate(buildRoutedItemRoute(selectedItem, { focus: true }));
       return;
     }

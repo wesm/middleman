@@ -37,8 +37,8 @@
     "./api/csrf": { "default": "./src/api/csrf.ts" }
   },
   "scripts": {
-    "lint": "node ./node_modules/eslint/bin/eslint.js .",
-    "typecheck": "node ./node_modules/svelte-check/bin/svelte-check --tsconfig ./tsconfig.json --fail-on-warnings && node ./node_modules/typescript/bin/tsc --noEmit -p ./tsconfig.json"
+    "lint": "eslint .",
+    "typecheck": "node -e \"require(require.resolve('svelte-check/bin/svelte-check'))\" -- --tsconfig ./tsconfig.json --fail-on-warnings && tsc --noEmit -p ./tsconfig.json"
   },
   "dependencies": {
     "@lucide/svelte": "1.3.0",
