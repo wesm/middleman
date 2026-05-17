@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import {
-    getNavigate, getSidebar,
+    getNavigate, getSidebar, getStores,
   } from "../context.js";
   import CollapsibleResizableSidebar from "../components/shared/CollapsibleResizableSidebar.svelte";
   import PullList from "../components/sidebar/PullList.svelte";
@@ -9,6 +10,7 @@
   import DiffFilesLayout from "../components/diff/DiffFilesLayout.svelte";
   import StackSidebar
     from "../components/detail/StackSidebar.svelte";
+  import type { ProviderCapabilities, PullDetail as PullDetailResponse } from "../api/types.js";
   import type { DetailSyncMode } from "../stores/detail.svelte.js";
   import {
     buildPullRequestFilesRoute,
@@ -18,6 +20,30 @@
 
   const { isSidebarToggleEnabled, toggleSidebar } = getSidebar();
   const navigate = getNavigate();
+  const { detail: detailStore } = getStores();
+
+  const defaultProviderCapabilities: ProviderCapabilities = {
+    read_repositories: true,
+    read_merge_requests: true,
+    read_issues: true,
+    read_comments: true,
+    read_releases: true,
+    read_labels: true,
+    read_ci: true,
+    comment_mutation: true,
+    label_mutation: true,
+    state_mutation: true,
+    merge_mutation: true,
+    review_mutation: true,
+    workflow_approval: true,
+    ready_for_review: true,
+    issue_mutation: true,
+    review_draft_mutation: false,
+    review_thread_resolution: false,
+    read_review_threads: false,
+    native_multiline_ranges: false,
+    supported_review_actions: [],
+  };
 
   interface Props {
     selectedPR?: PullRequestRouteRef | null;
@@ -59,6 +85,43 @@
         : buildPullRequestRoute(selectedPR),
     );
   }
+
+  function detailMatchesSelected(
+    detail: PullDetailResponse | null,
+    ref: PullRequestRouteRef | null,
+  ): boolean {
+    return !!detail && !!ref
+      && detail.repo_owner === ref.owner
+      && detail.repo_name === ref.name
+      && detail.merge_request.Number === ref.number
+      && detail.repo?.provider === ref.provider
+      && detail.repo?.platform_host === ref.platformHost
+      && detail.repo?.repo_path === ref.repoPath;
+  }
+
+  const selectedDetail = $derived.by(() => {
+    const detail = detailStore.getDetail();
+    return detailMatchesSelected(detail, selectedPR) ? detail : null;
+  });
+
+  $effect(() => {
+    if (selectedPR === null || detailTab !== "files") return;
+    const ref = selectedPR;
+    untrack(() => {
+      if (detailMatchesSelected(detailStore.getDetail(), ref)) return;
+      void detailStore.loadDetail(
+        ref.owner,
+        ref.name,
+        ref.number,
+        {
+          sync: false,
+          provider: ref.provider,
+          platformHost: ref.platformHost,
+          repoPath: ref.repoPath,
+        },
+      );
+    });
+  });
 </script>
 
 <CollapsibleResizableSidebar
@@ -104,6 +167,8 @@
           provider={selectedPR.provider}
           platformHost={selectedPR.platformHost}
           repoPath={selectedPR.repoPath}
+          diffHeadSHA={selectedDetail?.diff_head_sha}
+          capabilities={selectedDetail?.repo?.capabilities ?? defaultProviderCapabilities}
         />
       {/key}
     {:else}

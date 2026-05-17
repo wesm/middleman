@@ -109,6 +109,28 @@ type ReviewMutator interface {
 	ApproveMergeRequest(ctx context.Context, ref RepoRef, number int, body string) (MergeRequestEvent, error)
 }
 
+type DiffReviewDraftMutator interface {
+	PublishDiffReviewDraft(
+		ctx context.Context,
+		ref RepoRef,
+		number int,
+		input PublishDiffReviewDraftInput,
+	) (*PublishedDiffReview, error)
+}
+
+type DiffReviewThreadResolver interface {
+	ResolveDiffReviewThread(ctx context.Context, ref RepoRef, number int, providerThreadID string) error
+	UnresolveDiffReviewThread(ctx context.Context, ref RepoRef, number int, providerThreadID string) error
+}
+
+type MergeRequestReviewThreadReader interface {
+	ListMergeRequestReviewThreads(
+		ctx context.Context,
+		ref RepoRef,
+		number int,
+	) ([]MergeRequestReviewThread, error)
+}
+
 type MergeRequestContentMutator interface {
 	EditMergeRequestContent(
 		ctx context.Context,

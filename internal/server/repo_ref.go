@@ -151,22 +151,31 @@ func (s *Server) repoRefFromParts(
 }
 
 func providerCapabilitiesFromPlatform(caps platform.Capabilities) providerCapabilitiesResponse {
+	reviewActions := make([]string, 0, len(caps.SupportedReviewActions))
+	for _, action := range caps.SupportedReviewActions {
+		reviewActions = append(reviewActions, string(action))
+	}
 	return providerCapabilitiesResponse{
-		ReadRepositories:  caps.ReadRepositories,
-		ReadMergeRequests: caps.ReadMergeRequests,
-		ReadIssues:        caps.ReadIssues,
-		ReadComments:      caps.ReadComments,
-		ReadReleases:      caps.ReadReleases,
-		ReadCI:            caps.ReadCI,
-		ReadLabels:        caps.ReadLabels,
-		CommentMutation:   caps.CommentMutation,
-		StateMutation:     caps.StateMutation,
-		MergeMutation:     caps.MergeMutation,
-		ReviewMutation:    caps.ReviewMutation,
-		WorkflowApproval:  caps.WorkflowApproval,
-		ReadyForReview:    caps.ReadyForReview,
-		IssueMutation:     caps.IssueMutation,
-		LabelMutation:     caps.LabelMutation,
+		ReadRepositories:       caps.ReadRepositories,
+		ReadMergeRequests:      caps.ReadMergeRequests,
+		ReadIssues:             caps.ReadIssues,
+		ReadComments:           caps.ReadComments,
+		ReadReleases:           caps.ReadReleases,
+		ReadCI:                 caps.ReadCI,
+		ReadLabels:             caps.ReadLabels,
+		CommentMutation:        caps.CommentMutation,
+		StateMutation:          caps.StateMutation,
+		MergeMutation:          caps.MergeMutation,
+		ReviewMutation:         caps.ReviewMutation,
+		WorkflowApproval:       caps.WorkflowApproval,
+		ReadyForReview:         caps.ReadyForReview,
+		IssueMutation:          caps.IssueMutation,
+		LabelMutation:          caps.LabelMutation,
+		ReviewDraftMutation:    caps.ReviewDraftMutation,
+		ReviewThreadResolution: caps.ReviewThreadResolution,
+		ReadReviewThreads:      caps.ReadReviewThreads,
+		NativeMultilineRanges:  caps.NativeMultilineRanges,
+		SupportedReviewActions: reviewActions,
 	}
 }
 

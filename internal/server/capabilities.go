@@ -9,15 +9,18 @@ import (
 )
 
 const (
-	capabilityCommentMutation  = "comment_mutation"
-	capabilityStateMutation    = "state_mutation"
-	capabilityMergeMutation    = "merge_mutation"
-	capabilityReviewMutation   = "review_mutation"
-	capabilityWorkflowApproval = "workflow_approval"
-	capabilityReadyForReview   = "ready_for_review"
-	capabilityIssueMutation    = "issue_mutation"
-	capabilityReadLabels       = "read_labels"
-	capabilityLabelMutation    = "label_mutation"
+	capabilityCommentMutation        = "comment_mutation"
+	capabilityStateMutation          = "state_mutation"
+	capabilityMergeMutation          = "merge_mutation"
+	capabilityReviewMutation         = "review_mutation"
+	capabilityWorkflowApproval       = "workflow_approval"
+	capabilityReadyForReview         = "ready_for_review"
+	capabilityIssueMutation          = "issue_mutation"
+	capabilityReadLabels             = "read_labels"
+	capabilityLabelMutation          = "label_mutation"
+	capabilityReviewDraftMutation    = "review_draft_mutation"
+	capabilityReviewThreadResolution = "review_thread_resolution"
+	capabilityReadReviewThreads      = "read_review_threads"
 )
 
 type unsupportedCapabilityDetail struct {
@@ -83,6 +86,12 @@ func capabilityEnabled(
 		return caps.ReadLabels
 	case capabilityLabelMutation:
 		return caps.LabelMutation
+	case capabilityReviewDraftMutation:
+		return caps.ReviewDraftMutation
+	case capabilityReviewThreadResolution:
+		return caps.ReviewThreadResolution
+	case capabilityReadReviewThreads:
+		return caps.ReadReviewThreads
 	default:
 		return false
 	}
