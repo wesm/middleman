@@ -2188,15 +2188,19 @@ func (s *Syncer) updateRepoSettingsFromProviderRepo(
 ) {
 	if repo.MergeSettings != nil {
 		settings := repo.MergeSettings
-		viewerCanMerge := true
-		if repo.ViewerCanMerge != nil {
-			viewerCanMerge = *repo.ViewerCanMerge
+		if repo.ViewerCanMerge == nil {
+			_ = s.db.UpdateRepoMergeSettings(ctx, repoID,
+				settings.AllowSquashMerge,
+				settings.AllowMergeCommit,
+				settings.AllowRebaseMerge,
+			)
+			return
 		}
 		_ = s.db.UpdateRepoSettings(ctx, repoID,
 			settings.AllowSquashMerge,
 			settings.AllowMergeCommit,
 			settings.AllowRebaseMerge,
-			viewerCanMerge,
+			*repo.ViewerCanMerge,
 		)
 		return
 	}

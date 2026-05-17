@@ -2021,6 +2021,19 @@ func (d *DB) UpdateRepoSettings(
 	return err
 }
 
+// UpdateRepoMergeSettings updates the merge method settings for a repo without changing viewer permissions.
+func (d *DB) UpdateRepoMergeSettings(
+	ctx context.Context,
+	id int64,
+	allowSquash, allowMerge, allowRebase bool,
+) error {
+	_, err := d.rw.ExecContext(ctx,
+		`UPDATE middleman_repos SET allow_squash_merge = ?, allow_merge_commit = ?, allow_rebase_merge = ? WHERE id = ?`,
+		allowSquash, allowMerge, allowRebase, id,
+	)
+	return err
+}
+
 // UpdateRepoViewerCanMerge updates the current user's merge permission for a repo without changing merge method settings.
 func (d *DB) UpdateRepoViewerCanMerge(ctx context.Context, id int64, viewerCanMerge bool) error {
 	_, err := d.rw.ExecContext(ctx,
