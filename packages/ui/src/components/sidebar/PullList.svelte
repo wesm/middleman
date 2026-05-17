@@ -347,7 +347,7 @@
                 />
                 {#if showSelectedDiffSidebar && prSelected && _getDetailTab() === "files"}
                   <div class="diff-files-wrap">
-                    <DiffSidebar />
+                    <DiffSidebar showCommits={false} />
                   </div>
                 {/if}
               {/each}
@@ -370,7 +370,7 @@
               />
               {#if showSelectedDiffSidebar && prSelected && _getDetailTab() === "files"}
                 <div class="diff-files-wrap">
-                  <DiffSidebar />
+                  <DiffSidebar showCommits={false} />
                 </div>
               {/if}
             {/each}
@@ -389,7 +389,7 @@
           />
           {#if showSelectedDiffSidebar && prSelected && _getDetailTab() === "files"}
             <div class="diff-files-wrap">
-              <DiffSidebar />
+              <DiffSidebar showCommits={false} />
             </div>
           {/if}
         {/each}
@@ -398,7 +398,7 @@
   </div>
   {#if needsFallbackFileList}
     <div class="diff-files-wrap">
-                  <DiffSidebar />
+                  <DiffSidebar showCommits={false} />
                 </div>
   {/if}
   <div class="sidebar-footer">

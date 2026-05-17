@@ -14192,6 +14192,108 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 	assert.Equal(int64(1), pushedDiff.WhitespaceOnlyCount)
 }
 
+func TestWorkspaceCommitsEndpointListsBranchCommitsE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
+	runGit(t, ws.WorktreePath, "config", "user.name", "Test")
+
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "local-one.go"),
+		[]byte("package one\n"), 0o644,
+	))
+	runGit(t, ws.WorktreePath, "add", ".")
+	runGit(t, ws.WorktreePath, "commit", "-m", "local one")
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "local-two.go"),
+		[]byte("package two\n"), 0o644,
+	))
+	runGit(t, ws.WorktreePath, "add", ".")
+	runGit(t, ws.WorktreePath, "commit", "-m", "local two")
+
+	commits := requestWorkspaceCommits(t, srv, ws.Id)
+	require.Len(commits.Commits, 3)
+	assert.Equal("local two", commits.Commits[0].Message)
+	assert.Equal("local one", commits.Commits[1].Message)
+	assert.Equal("feature commit", commits.Commits[2].Message)
+}
+
+func TestWorkspaceDiffEndpointsAcceptCommitAndRangeScopesE2E(t *testing.T) {
+	require := require.New(t)
+
+	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, client)
+
+	runGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
+	runGit(t, ws.WorktreePath, "config", "user.name", "Test")
+
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "local-one.go"),
+		[]byte("package one\n"), 0o644,
+	))
+	runGit(t, ws.WorktreePath, "add", ".")
+	runGit(t, ws.WorktreePath, "commit", "-m", "local one")
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "local-two.go"),
+		[]byte("package two\n"), 0o644,
+	))
+	runGit(t, ws.WorktreePath, "add", ".")
+	runGit(t, ws.WorktreePath, "commit", "-m", "local two")
+	require.NoError(os.WriteFile(
+		filepath.Join(ws.WorktreePath, "dirty.go"),
+		[]byte("package dirty\n"), 0o644,
+	))
+
+	commits := requestWorkspaceCommits(t, srv, ws.Id)
+	require.Len(commits.Commits, 3)
+	newest := commits.Commits[0].SHA
+	older := commits.Commits[1].SHA
+
+	singleFiles := requestWorkspaceFilesQuery(
+		t, srv, ws.Id, "base=head&commit="+url.QueryEscape(newest),
+	)
+	require.NotNil(singleFiles.Files)
+	assertWorkspaceDiffPaths(t, *singleFiles.Files, []string{"local-two.go"})
+
+	singleDiff := requestWorkspaceDiffQuery(
+		t, srv, ws.Id, "base=head&commit="+url.QueryEscape(newest),
+	)
+	require.NotNil(singleDiff.Files)
+	assertWorkspaceDiffPaths(t, *singleDiff.Files, []string{"local-two.go"})
+
+	rangeFiles := requestWorkspaceFilesQuery(
+		t,
+		srv,
+		ws.Id,
+		"base=head&from="+url.QueryEscape(older)+"&to="+url.QueryEscape(newest),
+	)
+	require.NotNil(rangeFiles.Files)
+	assertWorkspaceDiffPaths(
+		t,
+		*rangeFiles.Files,
+		[]string{"local-one.go", "local-two.go"},
+	)
+
+	rangeDiff := requestWorkspaceDiffQuery(
+		t,
+		srv,
+		ws.Id,
+		"base=head&from="+url.QueryEscape(older)+"&to="+url.QueryEscape(newest),
+	)
+	require.NotNil(rangeDiff.Files)
+	assertWorkspaceDiffPaths(
+		t,
+		*rangeDiff.Files,
+		[]string{"local-one.go", "local-two.go"},
+	)
+}
+
 func TestWorkspaceDiffEndpointReportsMergeTargetE2E(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -14392,6 +14494,29 @@ func requestWorkspaceFiles(
 	if len(whitespace) > 0 {
 		query += "&whitespace=" + whitespace[0]
 	}
+	return requestWorkspaceFilesPath(t, srv, query)
+}
+
+func requestWorkspaceFilesQuery(
+	t *testing.T,
+	srv *Server,
+	workspaceID string,
+	query string,
+) generated.FilesResponse {
+	t.Helper()
+
+	return requestWorkspaceFilesPath(
+		t, srv, "/api/v1/workspaces/"+workspaceID+"/files?"+query,
+	)
+}
+
+func requestWorkspaceFilesPath(
+	t *testing.T,
+	srv *Server,
+	query string,
+) generated.FilesResponse {
+	t.Helper()
+
 	req := httptest.NewRequest(
 		http.MethodGet,
 		query,
@@ -14404,6 +14529,29 @@ func requestWorkspaceFiles(
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var body generated.FilesResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	return body
+}
+
+func requestWorkspaceCommits(
+	t *testing.T,
+	srv *Server,
+	workspaceID string,
+) commitsResponse {
+	t.Helper()
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/workspaces/"+workspaceID+"/commits",
+		nil,
+	)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	resp := rr.Result()
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var body commitsResponse
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 	return body
 }
@@ -14421,6 +14569,29 @@ func requestWorkspaceDiff(
 	if len(whitespace) > 0 {
 		query += "&whitespace=" + whitespace[0]
 	}
+	return requestWorkspaceDiffPath(t, srv, query)
+}
+
+func requestWorkspaceDiffQuery(
+	t *testing.T,
+	srv *Server,
+	workspaceID string,
+	query string,
+) generated.DiffResponse {
+	t.Helper()
+
+	return requestWorkspaceDiffPath(
+		t, srv, "/api/v1/workspaces/"+workspaceID+"/diff?"+query,
+	)
+}
+
+func requestWorkspaceDiffPath(
+	t *testing.T,
+	srv *Server,
+	query string,
+) generated.DiffResponse {
+	t.Helper()
+
 	req := httptest.NewRequest(
 		http.MethodGet,
 		query,

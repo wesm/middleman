@@ -973,8 +973,8 @@ test.describe("diff view", () => {
     await expect(detailFiles.locator(".diff-file-row")).toHaveCount(4);
   });
 
-  test("commit list resets expand state when switching PRs", async ({ page }) => {
-    // Mock diff for PR 1 and PR 2 (same fixture is fine — we care about expand state).
+  test("commit scope resets when switching PRs", async ({ page }) => {
+    // Mock diff for PR 1 and PR 2 (same fixture is fine — we care about scope state).
     await mockDiffApi(page, smallDiff);
     await page.route("**/api/v1/pulls/github/acme/widgets/2/files", async (route) => {
       await route.fulfill({
@@ -1006,18 +1006,113 @@ test.describe("diff view", () => {
     await waitForDiffLoaded(page);
     await waitForSidebarFilesLoaded(page);
 
-    // Expand commit section under PR 1 and verify a commit row renders.
-    const toggle = page.locator(".commit-section__toggle").first();
-    await toggle.click();
-    await expect(page.locator(".commit-section__body").first()).toBeVisible();
+    // Open the shared commit picker under PR 1 and select a scoped commit.
+    await page.getByRole("button", { name: "Select commit range" }).click();
     await expect(page.locator(".commit-item").first()).toBeVisible();
+    await page.locator(".commit-item").first().click();
+    await expect(page.locator(".scope-pill__label")).toHaveText("abc1234");
 
     // Switch to PR 2.
     await page.goto("/pulls/github/acme/widgets/2/files");
     await waitForSidebarFilesLoaded(page);
 
-    // Commit section should be collapsed on new PR (body hidden).
-    await expect(page.locator(".commit-section__body")).toHaveCount(0);
+    // The selected commit scope should reset on the new PR.
+    await expect(page.locator(".scope-pill__label")).toHaveText("HEAD");
+  });
+
+  test("commit range picker scopes single commits and ranges", async ({ page }) => {
+    const commitSHA = "abc1234567890123456789012345678901234567";
+    const olderSHA = "def1234567890123456789012345678901234567";
+    const scopedDiff: DiffResult = {
+      ...smallDiff,
+      files: [
+        {
+          ...smallDiff.files[1]!,
+          path: "frontend/src/scoped.ts",
+          old_path: "frontend/src/scoped.ts",
+        },
+      ],
+    };
+    const rangedDiff: DiffResult = {
+      ...smallDiff,
+      files: [
+        {
+          ...smallDiff.files[1]!,
+          path: "frontend/src/scoped.ts",
+          old_path: "frontend/src/scoped.ts",
+        },
+        {
+          ...smallDiff.files[2]!,
+          path: "frontend/src/ranged.ts",
+          old_path: "frontend/src/ranged.ts",
+        },
+      ],
+    };
+    const scopedDiffRequests: string[] = [];
+    const fixtureFor = (url: URL): DiffResult => {
+      if (url.searchParams.has("from") && url.searchParams.has("to")) {
+        return rangedDiff;
+      }
+      if (url.searchParams.has("commit")) {
+        return scopedDiff;
+      }
+      return smallDiff;
+    };
+
+    await page.route("**/api/v1/pulls/github/acme/widgets/1/files**", async (route) => {
+      const url = new URL(route.request().url());
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(filesFromDiff(fixtureFor(url))),
+      });
+    });
+    await page.route("**/api/v1/pulls/github/acme/widgets/1/diff*", async (route) => {
+      const url = new URL(route.request().url());
+      scopedDiffRequests.push(url.toString());
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(fixtureFor(url)),
+      });
+    });
+    await page.route("**/api/v1/pulls/github/acme/widgets/1/commits", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          commits: [
+            { sha: commitSHA, message: "scoped commit", authored_at: "2026-04-01T00:00:00Z", author_name: "alice" },
+            { sha: olderSHA, message: "base commit", authored_at: "2026-03-31T00:00:00Z", author_name: "alice" },
+          ],
+        }),
+      });
+    });
+
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await expect(page.locator(".diff-file")).toHaveCount(4);
+
+    await page.getByRole("button", { name: "Select commit range" }).click();
+    const commitItems = page.locator(".commit-item");
+    await commitItems.first().click();
+
+    await expect(page.locator(".scope-pill__label")).toHaveText("abc1234");
+    await expect(page.locator(".diff-file")).toHaveCount(1);
+    await expect(page.locator(".diff-file").first())
+      .toHaveAttribute("data-file-path", "frontend/src/scoped.ts");
+
+    await commitItems.nth(1).click({ modifiers: ["Shift"] });
+
+    await expect(page.locator(".scope-pill__label")).toHaveText("def1234..abc1234");
+    await expect(page.locator(".diff-file")).toHaveCount(2);
+    await expect(page.locator('[data-file-path="frontend/src/ranged.ts"]'))
+      .toBeVisible();
+    expect(scopedDiffRequests.some((requestURL) => {
+      const url = new URL(requestURL);
+      return url.searchParams.get("from") === olderSHA &&
+        url.searchParams.get("to") === commitSHA;
+    })).toBe(true);
   });
 });
 
@@ -1384,7 +1479,7 @@ test.describe("diff view (git-backed)", () => {
     }, 20 * 24 * 60 * 60 * 1000);
 
     await page.goto("/pulls/github/acme/widgets/1/files");
-    await page.locator(".commit-section__toggle").click();
+    await page.getByRole("button", { name: "Select commit range" }).click();
     await page.locator(".commit-item").first()
       .waitFor({ state: "visible", timeout: 10_000 });
 

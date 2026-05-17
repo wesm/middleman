@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	Assert "github.com/stretchr/testify/assert"
@@ -172,6 +173,35 @@ func TestWorktreeDiffAgainstPushedBranchIncludesLocalCommitsAndDirtyChanges(t *t
 	assert.Contains(paths, "committed.go")
 	assert.Contains(paths, "dirty.go")
 	assert.Equal(0, diff.WhitespaceOnlyCount)
+}
+
+func TestWorktreeDiffWhitespaceOnlyCountBetweenUsesRangeRefs(t *testing.T) {
+	require := require.New(t)
+	work := setupDivergenceWorktree(t)
+	baseSHA := strings.TrimSpace(
+		string(runWorkspaceTestGit(t, work, "rev-parse", "HEAD")),
+	)
+
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "f.txt"), []byte("f1  \n"), 0o644,
+	))
+	runWorkspaceTestGit(t, work, "add", ".")
+	runWorkspaceTestGit(t, work, "commit", "-m", "whitespace change")
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "base.txt"), []byte("base changed\n"), 0o644,
+	))
+	runWorkspaceTestGit(t, work, "add", ".")
+	runWorkspaceTestGit(t, work, "commit", "-m", "content change")
+	headSHA := strings.TrimSpace(
+		string(runWorkspaceTestGit(t, work, "rev-parse", "HEAD")),
+	)
+
+	count, ok, err := WorktreeDiffWhitespaceOnlyCountBetween(
+		t.Context(), work, baseSHA, headSHA,
+	)
+	require.NoError(err)
+	require.True(ok)
+	Assert.New(t).Equal(1, count)
 }
 
 func TestWorktreeDiffAgainstMergeTargetUsesMergeBase(t *testing.T) {

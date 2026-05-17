@@ -1457,6 +1457,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{id}/commits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get workspaces by ID commits */
+        get: operations["get-workspaces-by-id-commits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{id}/diff": {
         parameters: {
             query?: never;
@@ -6460,6 +6477,37 @@ export interface operations {
             };
         };
     };
+    "get-workspaces-by-id-commits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommitsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "get-workspaces-by-id-diff": {
         parameters: {
             query?: {
@@ -6469,6 +6517,12 @@ export interface operations {
                 whitespace?: string;
                 /** @description Optional file path to limit the returned patch */
                 path?: string;
+                /** @description Scope to a single commit SHA */
+                commit?: string;
+                /** @description Start SHA for range diff (inclusive) */
+                from?: string;
+                /** @description End SHA for range diff (inclusive) */
+                to?: string;
             };
             header?: never;
             path: {
@@ -6505,6 +6559,12 @@ export interface operations {
                 base?: string;
                 /** @description Set to hide to ignore whitespace-only changes */
                 whitespace?: string;
+                /** @description Scope to a single commit SHA */
+                commit?: string;
+                /** @description Start SHA for range diff (inclusive) */
+                from?: string;
+                /** @description End SHA for range diff (inclusive) */
+                to?: string;
             };
             header?: never;
             path: {
