@@ -46,6 +46,28 @@ test.describe("label editing", () => {
     }
   });
 
+  test("pull detail toggles the label picker from the Labels button", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    try {
+      isolatedServer = await startIsolatedE2EServer();
+      const baseURL = isolatedServer.info.base_url;
+
+      await page.goto(`${baseURL}/pulls/github/acme/widgets/1`);
+      await expect(page.locator(".pull-detail")).toBeVisible();
+
+      const labelsButton = page
+        .locator(".pull-detail .chips-row")
+        .getByRole("button", { name: "Labels", exact: true });
+      await labelsButton.click();
+      await expect(page.getByRole("dialog", { name: "Edit labels" })).toBeVisible();
+
+      await labelsButton.click();
+      await expect(page.getByRole("dialog", { name: "Edit labels" })).toBeHidden();
+    } finally {
+      await isolatedServer?.stop();
+    }
+  });
+
   test("keeps label editing in the header when no labels are assigned", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     try {
@@ -97,6 +119,28 @@ test.describe("label editing", () => {
       await expect(page.locator(".issue-detail .meta-row").getByRole("button", { name: "Labels", exact: true })).toBeVisible();
       await page.reload();
       await expect(page.locator(".issue-detail .meta-row .label-pill")).toHaveCount(0);
+    } finally {
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("issue detail toggles the label picker from the Labels button", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    try {
+      isolatedServer = await startIsolatedE2EServer();
+      const baseURL = isolatedServer.info.base_url;
+
+      await page.goto(`${baseURL}/issues/github/acme/widgets/10`);
+      await expect(page.locator(".issue-detail")).toBeVisible();
+
+      const labelsButton = page
+        .locator(".issue-detail .meta-row")
+        .getByRole("button", { name: "Labels", exact: true });
+      await labelsButton.click();
+      await expect(page.getByRole("dialog", { name: "Edit labels" })).toBeVisible();
+
+      await labelsButton.click();
+      await expect(page.getByRole("dialog", { name: "Edit labels" })).toBeHidden();
     } finally {
       await isolatedServer?.stop();
     }

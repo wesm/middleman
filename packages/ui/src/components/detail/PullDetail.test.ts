@@ -17,6 +17,7 @@ const capabilities = {
   read_comments: true,
   read_releases: true,
   read_ci: true,
+  read_labels: false,
   comment_mutation: false,
   state_mutation: true,
   merge_mutation: false,
@@ -24,6 +25,7 @@ const capabilities = {
   workflow_approval: false,
   ready_for_review: false,
   issue_mutation: false,
+  label_mutation: false,
 };
 
 function reviewEvent(author: string, summary = "APPROVED", createdAt = "2026-05-01T12:00:00Z") {
@@ -180,6 +182,14 @@ function renderPullDetail(detail: PullDetail) {
   return { ...rendered, detailStore };
 }
 
+function getActionMenuLabelsButton(): HTMLButtonElement {
+  const button = document.querySelector<HTMLButtonElement>(".actions-menu-popover .btn--labels");
+  if (button === null) {
+    throw new Error("actions menu Labels button not found");
+  }
+  return button;
+}
+
 describe("PullDetail approvals", () => {
   afterEach(() => {
     cleanup();
@@ -253,6 +263,55 @@ describe("PullDetail approvals", () => {
         workflowApprovalSync: true,
       },
     );
+  });
+
+  it("closes the label picker when the labels action is clicked twice", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities = {
+      ...capabilities,
+      read_labels: true,
+      label_mutation: true,
+    };
+
+    renderPullDetail(detail);
+
+    const labelsAction = screen.getByRole("button", { name: "Labels" });
+    await fireEvent.click(labelsAction);
+
+    expect(await screen.findByRole("dialog", { name: "Edit labels" })).toBeTruthy();
+
+    await fireEvent.click(labelsAction);
+
+    expect(screen.queryByRole("dialog", { name: "Edit labels" })).toBeNull();
+  });
+
+  it("closes the label picker when the actions menu Labels action is clicked after reopening the menu", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities = {
+      ...capabilities,
+      read_labels: true,
+      label_mutation: true,
+    };
+
+    renderPullDetail(detail);
+
+    const actionsTrigger = screen.getByRole("button", { name: "Actions" });
+    await fireEvent.click(actionsTrigger);
+    await fireEvent.click(getActionMenuLabelsButton());
+
+    expect(await screen.findByRole("dialog", { name: "Edit labels" })).toBeTruthy();
+    expect(document.querySelector(".actions-menu-popover")).toBeNull();
+
+    await fireEvent.mouseDown(actionsTrigger);
+    await fireEvent.click(actionsTrigger);
+    expect(document.querySelector(".actions-menu-popover")).not.toBeNull();
+
+    const labelsAction = getActionMenuLabelsButton();
+    await fireEvent.mouseDown(labelsAction);
+    await fireEvent.click(labelsAction);
+
+    expect(screen.queryByRole("dialog", { name: "Edit labels" })).toBeNull();
+    expect(document.querySelector(".actions-menu-popover")).toBeNull();
   });
 
   const warningCases = [

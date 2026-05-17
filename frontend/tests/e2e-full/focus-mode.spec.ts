@@ -60,6 +60,24 @@ test.describe("focus mode", () => {
     await expect(page.locator(".label-picker")).toBeHidden();
   });
 
+  test("narrow PR focus route closes actions menu when Labels toggles an open picker", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 720 });
+    await page.goto("/focus/pulls/github/acme/widgets/1");
+    await page.locator(".focus-layout .pull-detail").waitFor({ state: "visible", timeout: 10_000 });
+
+    await page.locator(".actions-menu-trigger").click();
+    await page.locator(".actions-menu-popover").getByRole("button", { name: "Labels" }).click();
+    await expect(page.locator(".label-picker")).toBeVisible();
+    await expect(page.locator(".actions-menu-popover")).toBeHidden();
+
+    await page.locator(".actions-menu-trigger").click();
+    await expect(page.locator(".actions-menu-popover")).toBeVisible();
+
+    await page.locator(".actions-menu-popover").getByRole("button", { name: "Labels" }).click();
+    await expect(page.locator(".label-picker")).toBeHidden();
+    await expect(page.locator(".actions-menu-popover")).toBeHidden();
+  });
+
   test("PR focus route dismisses the inline label picker on outside click", async ({ page }) => {
     await page.setViewportSize({ width: 560, height: 720 });
     await page.goto("/focus/pulls/github/acme/widgets/1");

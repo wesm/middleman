@@ -721,8 +721,16 @@
   async function openLabelPicker(event?: MouseEvent): Promise<void> {
     labelPickerAnchor = (event?.currentTarget as HTMLElement | null)?.closest<HTMLDivElement>(".label-editor-anchor")
       ?? visibleLabelPickerAnchor();
-    labelPickerLaunchedFromActionMenu = Boolean(labelPickerAnchor?.closest(".actions-menu-popover"));
-    labelPickerAutofocusFilter = event !== undefined && !window.matchMedia("(pointer: coarse)").matches;
+    const launchedFromActionMenu = Boolean(labelPickerAnchor?.closest(".actions-menu-popover"));
+    if (event !== undefined && labelPickerOpen) {
+      if (launchedFromActionMenu) {
+        closeActionMenu();
+      }
+      closeLabelPicker();
+      return;
+    }
+    labelPickerLaunchedFromActionMenu = launchedFromActionMenu;
+    labelPickerAutofocusFilter = event !== undefined && !(window.matchMedia?.("(pointer: coarse)").matches ?? false);
     if (labelPickerLaunchedFromActionMenu) {
       closeActionMenu();
     }
@@ -811,13 +819,25 @@
     }
   }
 
+  function isLabelPickerControlTarget(target: Node): boolean {
+    if (!(target instanceof Element)) return false;
+    return Boolean(
+      target.closest(".label-editor-anchor")
+      || target.closest(".actions-menu-trigger"),
+    );
+  }
+
   function onDocumentMousedown(e: MouseEvent): void {
     const target = e.target as Node;
     if (actionMenuOpen && !actionMenuWrapEl?.contains(target)) {
       closeActionMenu();
     }
     if (labelPickerOpen) {
-      if (!labelPickerPopover?.contains(target) && !labelPickerAnchor?.contains(target)) {
+      if (
+        !labelPickerPopover?.contains(target)
+        && !labelPickerAnchor?.contains(target)
+        && !isLabelPickerControlTarget(target)
+      ) {
         closeLabelPicker();
       }
     }
@@ -1152,6 +1172,7 @@
             {#snippet labelActionButton()}
               <div class="label-editor-anchor">
                 <ActionButton
+                  class="btn--labels"
                   label="Labels"
                   shortLabel="Labels"
                   size="sm"
@@ -2155,6 +2176,19 @@
     min-width: 0;
   }
 
+  .chips-row :global(.btn--labels) {
+    min-height: 22px;
+    padding: 0 8px;
+    border-radius: 8px;
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+  }
+
+  .chips-row :global(.btn--labels svg) {
+    width: 13px;
+    height: 13px;
+  }
+
   :global(.kanban-select) {
     min-width: 150px;
   }
@@ -2245,6 +2279,7 @@
   .actions-menu-wrap {
     display: none;
     position: relative;
+    z-index: 65;
   }
 
   .actions-menu-trigger {

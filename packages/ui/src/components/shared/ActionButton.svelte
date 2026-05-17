@@ -117,6 +117,18 @@
     color: var(--text-primary);
   }
 
+  /* Neutral soft — low-emphasis secondary actions */
+  .action-button--soft.action-button--neutral {
+    background: color-mix(in srgb, var(--text-muted) 8%, var(--bg-inset));
+    color: var(--text-secondary);
+    border: 1px solid color-mix(in srgb, var(--border-default) 80%, transparent);
+  }
+  .action-button--soft.action-button--neutral:hover:not(:disabled) {
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
+    border-color: var(--border-default);
+  }
+
   /* Danger outline — close (neutral at rest, red on hover) */
   .action-button--outline.action-button--danger {
     background: var(--bg-surface);

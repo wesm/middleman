@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import LoaderCircleIcon from "@lucide/svelte/icons/loader-circle";
   import type { CICheck } from "../../api/types.js";
   import Chip from "../shared/Chip.svelte";
@@ -151,7 +152,12 @@
         {#if checks.length > 0}
           ({checks.length})
         {/if}
-        <span class="chip-chevron" class:chip-chevron--open={expanded}>▾</span>
+        <ChevronDownIcon
+          class={["chip-chevron", expanded && "chip-chevron--open"].filter(Boolean).join(" ")}
+          size={12}
+          strokeWidth={2.4}
+          aria-hidden="true"
+        />
       </Chip>
     {/if}
 
@@ -191,13 +197,14 @@
     display: contents;
   }
 
-  .chip-chevron {
-    font-size: var(--font-size-2xs);
+  :global(.chip-chevron) {
+    flex-shrink: 0;
+    transform: translateY(1px);
     transition: transform 0.15s;
   }
 
-  .chip-chevron--open {
-    transform: rotate(180deg);
+  :global(.chip-chevron--open) {
+    transform: translateY(1px) rotate(180deg);
   }
 
   .ci-collapse {
