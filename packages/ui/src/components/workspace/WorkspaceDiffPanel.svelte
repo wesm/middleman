@@ -251,6 +251,8 @@
   }
 
   .workspace-diff-scope {
+    position: relative;
+    z-index: 70;
     display: flex;
     align-items: center;
     gap: 8px;

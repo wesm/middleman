@@ -175,10 +175,10 @@
 
   .diff-scope-picker__menu {
     position: absolute;
-    z-index: 55;
+    z-index: 1000;
     top: calc(100% + 4px);
     right: 0;
-    width: min(420px, 72vw);
+    width: min(420px, calc(100cqw - 20px));
     max-height: min(460px, 70vh);
     overflow: hidden;
     border: 1px solid var(--border-default);

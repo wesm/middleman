@@ -274,6 +274,33 @@ test.describe("workspace tab persistence", () => {
       expect(scopeToggleMetrics.scrollWidth).toBeLessThanOrEqual(
         scopeToggleMetrics.clientWidth,
       );
+      await page
+        .locator(".right-sidebar .workspace-diff-scope")
+        .getByRole("button", { name: "Select commit range" })
+        .click();
+      const commitMenu = page.locator(
+        ".right-sidebar .diff-scope-picker__menu",
+      );
+      await expect(commitMenu).toBeVisible();
+      const commitMenuTopElement = await commitMenu.evaluate((menu) => {
+        const rect = menu.getBoundingClientRect();
+        const topElement = document.elementFromPoint(
+          rect.left + rect.width / 2,
+          rect.top + 12,
+        );
+        return {
+          className:
+            typeof topElement?.className === "string"
+              ? topElement.className
+              : String(topElement?.className ?? ""),
+          insideCommitMenu: Boolean(
+            topElement?.closest(".diff-scope-picker__menu"),
+          ),
+        };
+      });
+      expect(commitMenuTopElement.insideCommitMenu).toBe(true);
+      await page.keyboard.press("Escape");
+      await expect(commitMenu).toBeHidden();
       expect((await diffResponse).ok()).toBe(true);
       const activeDiffFile = page.locator(
         ".right-sidebar .diff-file-row--active",
