@@ -4,8 +4,10 @@
   import { getStores } from "../context.js";
   import type { ItemFilter, TimeRange } from "../stores/activity.svelte.js";
   import { parseAPITimestamp } from "../utils/time.js";
+  import ActionButton from "../components/shared/ActionButton.svelte";
   import ItemKindChip from "../components/shared/ItemKindChip.svelte";
   import ItemStateChip from "../components/shared/ItemStateChip.svelte";
+  import SelectDropdown from "../components/shared/SelectDropdown.svelte";
   import {
     buildMobileActivityRepoOptions,
   } from "./mobileActivityRepoOptions.js";
@@ -35,12 +37,19 @@
     { value: "prs", label: "PRs" },
     { value: "issues", label: "Issues" },
   ];
+  const timeRangeOptions = timeRanges.map((range) => ({
+    value: range,
+    label: range,
+  }));
   let searchInput = $state("");
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let unsubSync: (() => void) | undefined;
 
   const repoOptions = $derived.by(() =>
-    buildMobileActivityRepoOptions(settings.getConfiguredRepos()),
+    [
+      { value: "", label: "All repos" },
+      ...buildMobileActivityRepoOptions(settings.getConfiguredRepos()),
+    ],
   );
 
   onMount(() => {
@@ -146,8 +155,8 @@
     applyFilters();
   }
 
-  function handleItemFilterChange(event: Event): void {
-    setItemFilter((event.target as HTMLSelectElement).value as ItemFilter);
+  function handleItemFilterChange(value: string): void {
+    setItemFilter(value as ItemFilter);
   }
 
   function setTimeRange(range: TimeRange): void {
@@ -156,12 +165,11 @@
     void activity.loadActivity();
   }
 
-  function handleTimeRangeChange(event: Event): void {
-    setTimeRange((event.target as HTMLSelectElement).value as TimeRange);
+  function handleTimeRangeChange(value: string): void {
+    setTimeRange(value as TimeRange);
   }
 
-  function handleRepoChange(event: Event): void {
-    const value = (event.target as HTMLSelectElement).value;
+  function handleRepoChange(value: string): void {
     onRepoChange?.(value || undefined);
     void activity.loadActivity();
   }
@@ -257,45 +265,38 @@
     </label>
 
     <div class="mobile-activity-filter-grid" aria-label="Activity filters">
-      <label class="mobile-filter-select">
+      <div class="mobile-filter-select">
         <span>Type</span>
-        <select
-          aria-label="Activity type"
+        <SelectDropdown
+          class="mobile-filter-dropdown"
+          title="Activity type"
           value={activity.getItemFilter()}
+          options={itemFilters}
           onchange={handleItemFilterChange}
-        >
-          {#each itemFilters as option}
-            <option value={option.value}>{option.label}</option>
-          {/each}
-        </select>
-      </label>
+        />
+      </div>
 
-      <label class="mobile-filter-select">
+      <div class="mobile-filter-select">
         <span>Range</span>
-        <select
-          aria-label="Time range"
+        <SelectDropdown
+          class="mobile-filter-dropdown"
+          title="Time range"
           value={activity.getTimeRange()}
+          options={timeRangeOptions}
           onchange={handleTimeRangeChange}
-        >
-          {#each timeRanges as range}
-            <option value={range}>{range}</option>
-          {/each}
-        </select>
-      </label>
+        />
+      </div>
 
-      <label class="mobile-filter-select mobile-filter-select--repo">
+      <div class="mobile-filter-select mobile-filter-select--repo">
         <span>Repo</span>
-        <select
-          aria-label="Repository"
+        <SelectDropdown
+          class="mobile-filter-dropdown"
+          title="Repository"
           value={selectedRepo ?? ""}
+          options={repoOptions}
           onchange={handleRepoChange}
-        >
-          <option value="">All repos</option>
-          {#each repoOptions as repo (repo.value)}
-            <option value={repo.value}>{repo.label}</option>
-          {/each}
-        </select>
-      </label>
+        />
+      </div>
 
       <button
         type="button"
@@ -367,11 +368,13 @@
               {/each}
             </div>
 
-            <button
-              type="button"
+            <ActionButton
               class="mobile-activity-open"
+              tone="info"
+              surface="soft"
+              label="Open thread"
               onclick={() => handleCardClick(group)}
-            >Open thread</button>
+            />
           </article>
         {/each}
       </div>
@@ -398,17 +401,15 @@
     --mobile-space-sm: 0.75rem;
     --mobile-space-md: 1rem;
     --mobile-space-lg: 1.35rem;
-    --mobile-radius-sm: 1rem;
-    --mobile-radius-md: 1.25rem;
+    --mobile-radius-sm: var(--radius-md);
+    --mobile-radius-md: var(--radius-lg);
     --mobile-hit-target: 3.5rem;
     container-type: inline-size;
     font-size: var(--font-size-mobile-body);
     flex: 1;
     min-height: 0;
     overflow: hidden;
-    background:
-      radial-gradient(circle at 50% -20%, color-mix(in srgb, var(--accent-blue) 22%, transparent), transparent 34%),
-      var(--bg-primary);
+    background: var(--bg-primary);
   }
 
   .mobile-activity-scroll {
@@ -422,12 +423,12 @@
   }
 
   .mobile-activity-hero {
-    margin: var(--mobile-space-2xs) var(--mobile-space-2xs) var(--mobile-space-md);
+    margin: var(--mobile-space-2xs) var(--mobile-space-2xs) var(--mobile-space-sm);
   }
 
   .mobile-activity-eyebrow {
     margin: 0 0 var(--mobile-space-2xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-size: var(--font-size-mobile-sm);
     font-weight: 700;
     letter-spacing: 0.02em;
@@ -436,9 +437,9 @@
   .mobile-activity-hero h1 {
     margin: 0;
     color: var(--text-primary);
-    font-size: var(--font-size-mobile-display);
-    line-height: 1;
-    letter-spacing: -0.045em;
+    font-size: var(--font-size-mobile-title);
+    line-height: 1.16;
+    letter-spacing: 0;
   }
 
   .mobile-activity-search {
@@ -448,8 +449,8 @@
     gap: var(--mobile-space-sm);
     padding: 0 var(--mobile-space-md);
     border: thin solid var(--border-default);
-    border-radius: var(--mobile-radius-sm);
-    background: color-mix(in srgb, var(--bg-surface) 82%, transparent);
+    border-radius: var(--radius-lg);
+    background: var(--bg-inset);
     color: var(--text-muted);
     margin-bottom: var(--mobile-space-sm);
   }
@@ -485,9 +486,9 @@
     gap: var(--mobile-space-xs);
     padding: 0 var(--mobile-space-sm);
     border: thin solid var(--border-default);
-    border-radius: var(--mobile-radius-sm);
+    border-radius: var(--radius-md);
     color: var(--text-secondary);
-    background: color-mix(in srgb, var(--bg-surface) 86%, transparent);
+    background: var(--bg-inset);
   }
 
   .mobile-filter-select--repo {
@@ -501,35 +502,59 @@
     letter-spacing: 0.01em;
   }
 
-  .mobile-filter-select select {
-    min-width: 0;
+  .mobile-filter-select :global(.mobile-filter-dropdown) {
     width: 100%;
+    min-width: 0;
+  }
+
+  .mobile-filter-select :global(.mobile-filter-dropdown .select-dropdown-trigger) {
+    height: auto;
+    min-height: calc(var(--mobile-hit-target) - var(--mobile-space-sm));
+    padding: 0;
     border: 0;
-    outline: 0;
-    color: var(--text-primary);
     background: transparent;
-    font: inherit;
+    color: var(--text-primary);
     font-size: var(--font-size-mobile-sm);
     font-weight: 750;
   }
 
-  .mobile-filter-toggle,
-  .mobile-activity-open {
+  .mobile-filter-select :global(.mobile-filter-dropdown .select-dropdown-list) {
+    left: 0;
+    right: auto;
+    width: min(20rem, calc(100vw - (var(--mobile-space-sm) * 2)));
+    max-width: calc(100vw - (var(--mobile-space-sm) * 2));
+    padding: var(--mobile-space-2xs);
+    border-radius: var(--radius-md);
+  }
+
+  .mobile-filter-select :global(.mobile-filter-dropdown .select-dropdown-option) {
+    min-height: var(--mobile-hit-target);
+    padding: var(--mobile-space-xs) var(--mobile-space-sm);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-mobile-sm);
+    line-height: 1.2;
+  }
+
+  .mobile-filter-select :global(.mobile-filter-dropdown .select-dropdown-check) {
+    width: 1rem;
+  }
+
+  .mobile-filter-toggle {
     min-height: var(--mobile-hit-target);
     flex: 0 0 auto;
     padding: var(--mobile-space-sm) var(--mobile-space-md);
     border: thin solid var(--border-default);
-    border-radius: 999rem;
+    border-radius: var(--radius-md);
     color: var(--text-secondary);
-    background: color-mix(in srgb, var(--bg-surface) 86%, transparent);
+    background: var(--bg-inset);
     font-size: var(--font-size-mobile-sm);
     font-weight: 750;
   }
 
   .mobile-filter-toggle.active {
-    color: var(--bg-primary);
-    background: var(--text-primary);
-    border-color: transparent;
+    color: var(--accent-blue);
+    background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+    border-color: color-mix(in srgb, var(--accent-blue) 34%, transparent);
   }
 
 
@@ -541,13 +566,9 @@
   .mobile-activity-card {
     overflow: hidden;
     border: thin solid var(--border-default);
-    border-radius: var(--mobile-radius-md);
-    background: linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--bg-surface) 96%, white 4%),
-      color-mix(in srgb, var(--bg-surface) 88%, black 12%)
-    );
-    box-shadow: 0 0.65rem 2rem color-mix(in srgb, black 28%, transparent);
+    border-radius: var(--radius-lg);
+    background: var(--bg-surface);
+    box-shadow: var(--shadow-sm);
   }
 
   .mobile-activity-card__button {
@@ -580,7 +601,6 @@
   .mobile-activity-card__chips :global(.chip--md) {
     min-height: calc(var(--mobile-hit-target) * 0.55);
     padding: 0 var(--mobile-space-xs);
-    border-radius: 999rem;
     font-size: var(--font-size-mobile-xs);
   }
 
@@ -637,35 +657,31 @@
     align-items: center;
     gap: var(--mobile-space-sm);
     padding: var(--mobile-space-sm);
-    border: thin solid transparent;
-    border-radius: var(--mobile-radius-sm);
+    border: thin solid var(--border-muted);
+    border-radius: var(--radius-md);
     color: inherit;
-    background: color-mix(in srgb, var(--bg-inset) 72%, transparent);
+    background: var(--bg-inset);
     text-align: left;
   }
 
   .mobile-activity-event__dot {
     width: 0.62rem;
     height: 0.62rem;
-    border-radius: 999rem;
+    border-radius: 50%;
     background: var(--accent-blue);
-    box-shadow: 0 0 0 0.32rem color-mix(in srgb, var(--accent-blue) 12%, transparent);
   }
 
   .mobile-activity-event.event-comment .mobile-activity-event__dot {
     background: var(--accent-amber);
-    box-shadow: 0 0 0 0.32rem color-mix(in srgb, var(--accent-amber) 12%, transparent);
   }
 
   .mobile-activity-event.event-review .mobile-activity-event__dot,
   .mobile-activity-event.event-commit .mobile-activity-event__dot {
     background: var(--accent-green);
-    box-shadow: 0 0 0 0.32rem color-mix(in srgb, var(--accent-green) 12%, transparent);
   }
 
   .mobile-activity-event.event-force-push .mobile-activity-event__dot {
     background: var(--accent-red);
-    box-shadow: 0 0 0 0.32rem color-mix(in srgb, var(--accent-red) 12%, transparent);
   }
 
   .mobile-activity-event__body {
@@ -694,13 +710,12 @@
     font-weight: 750;
   }
 
-  .mobile-activity-open {
-    display: block;
+  :global(.mobile-activity-open) {
     width: calc(100% - (var(--mobile-space-sm) * 2));
     margin: 0 var(--mobile-space-sm) var(--mobile-space-sm);
-    color: var(--text-primary);
-    text-align: center;
-    background: color-mix(in srgb, var(--accent-blue) 13%, transparent);
+    min-height: var(--mobile-hit-target);
+    font-size: var(--font-size-mobile-sm);
+    font-weight: 750;
   }
 
   .mobile-activity-empty,
@@ -708,9 +723,9 @@
   .mobile-activity-capped {
     padding: var(--mobile-space-lg);
     border: thin solid var(--border-default);
-    border-radius: var(--mobile-radius-md);
+    border-radius: var(--radius-lg);
     color: var(--text-muted);
-    background: color-mix(in srgb, var(--bg-surface) 84%, transparent);
+    background: var(--bg-surface);
     font-size: var(--font-size-mobile-sm);
     text-align: center;
   }

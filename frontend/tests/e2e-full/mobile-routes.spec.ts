@@ -178,13 +178,48 @@ test.describe("phone routes", () => {
       const desktopButton = document.querySelector(".mobile-desktop-link");
       const desktopIcon = document.querySelector(".mobile-desktop-link svg");
       const appIcon = document.querySelector(".mobile-app-icon");
-      const typeSelect = document.querySelector("select[aria-label='Activity type']");
-      const rangeSelect = document.querySelector("select[aria-label='Time range']");
-      const repoSelect = document.querySelector("select[aria-label='Repository']");
+      const typeSelect = document.querySelector(".mobile-filter-dropdown button[aria-label^='Activity type']");
+      const rangeSelect = document.querySelector(".mobile-filter-dropdown button[aria-label^='Time range']");
+      const repoSelect = document.querySelector(".mobile-filter-dropdown button[aria-label^='Repository']");
       const search = document.querySelector(".search-input");
       const cardRect = firstCard?.getBoundingClientRect();
       const buttonRect = firstButton?.getBoundingClientRect();
       const searchRect = search?.getBoundingClientRect();
+      const styleFor = (node: Element | null) => node
+        ? getComputedStyle(node)
+        : null;
+      const themeSample = document.createElement("div");
+      themeSample.style.cssText = [
+        "position:absolute",
+        "left:-9999px",
+        "top:0",
+        "width:1px",
+        "height:1px",
+        "background:var(--bg-primary)",
+        "border-color:var(--border-default)",
+      ].join(";");
+      document.body.append(themeSample);
+      const surfaceSample = document.createElement("div");
+      surfaceSample.style.cssText = [
+        "position:absolute",
+        "left:-9999px",
+        "top:0",
+        "width:1px",
+        "height:1px",
+        "background:var(--bg-surface)",
+        "border-radius:var(--radius-lg)",
+      ].join(";");
+      document.body.append(surfaceSample);
+      const insetSample = document.createElement("div");
+      insetSample.style.cssText = [
+        "position:absolute",
+        "left:-9999px",
+        "top:0",
+        "width:1px",
+        "height:1px",
+        "background:var(--bg-inset)",
+      ].join(";");
+      document.body.append(insetSample);
       const compactRect = (node: Element | null) => {
         const r = node?.getBoundingClientRect();
         return r ? { left: r.left, right: r.right, height: r.height } : null;
@@ -211,6 +246,16 @@ test.describe("phone routes", () => {
         desktopButtonRect: compactRect(desktopButton),
         desktopIconPresent: Boolean(desktopIcon),
         appIconPresent: Boolean(appIcon),
+        inboxBackground: styleFor(document.querySelector(".mobile-activity-inbox"))?.backgroundColor ?? "",
+        cardBackground: styleFor(firstCard)?.backgroundColor ?? "",
+        cardBorderColor: styleFor(firstCard)?.borderColor ?? "",
+        cardRadius: styleFor(firstCard)?.borderRadius ?? "",
+        searchBackground: styleFor(document.querySelector(".mobile-activity-search"))?.backgroundColor ?? "",
+        themeBgPrimary: getComputedStyle(themeSample).backgroundColor,
+        themeBgSurface: getComputedStyle(surfaceSample).backgroundColor,
+        themeBgInset: getComputedStyle(insetSample).backgroundColor,
+        themeBorder: getComputedStyle(themeSample).borderColor,
+        themeRadiusLg: getComputedStyle(surfaceSample).borderRadius,
         typeSelectFontSize: fontSize(typeSelect),
         rangeSelectFontSize: fontSize(rangeSelect),
         repoSelectFontSize: fontSize(repoSelect),
@@ -241,6 +286,11 @@ test.describe("phone routes", () => {
     expect(metrics.desktopButtonRect?.height ?? 0).toBeGreaterThanOrEqual(44);
     expect(metrics.desktopIconPresent).toBe(true);
     expect(metrics.appIconPresent).toBe(true);
+    expect(metrics.inboxBackground).toBe(metrics.themeBgPrimary);
+    expect(metrics.cardBackground).toBe(metrics.themeBgSurface);
+    expect(metrics.cardBorderColor).toBe(metrics.themeBorder);
+    expect(metrics.cardRadius).toBe(metrics.themeRadiusLg);
+    expect(metrics.searchBackground).toBe(metrics.themeBgInset);
     expect(metrics.typeSelectFontSize).toBeGreaterThanOrEqual(15);
     expect(metrics.rangeSelectFontSize).toBeGreaterThanOrEqual(15);
     expect(metrics.repoSelectFontSize).toBeGreaterThanOrEqual(15);
@@ -258,12 +308,16 @@ test.describe("phone routes", () => {
     await page.goto("/m?range=30d&view=threaded");
     await expect(page.locator(".mobile-activity-inbox")).toBeVisible();
 
-    await page.getByLabel("Activity type").selectOption("prs");
-    await expect(page.getByLabel("Activity type")).toHaveValue("prs");
+    await page.getByRole("combobox", { name: /Activity type/ }).click();
+    await page.getByRole("option", { name: "PRs" }).click();
+    await expect(page.getByRole("combobox", { name: "Activity type: PRs" }))
+      .toBeVisible();
     await expect(page).toHaveURL(/types=new_pr/);
 
-    await page.getByLabel("Time range").selectOption("24h");
-    await expect(page.getByLabel("Time range")).toHaveValue("24h");
+    await page.getByRole("combobox", { name: /Time range/ }).click();
+    await page.getByRole("option", { name: "24h" }).click();
+    await expect(page.getByRole("combobox", { name: "Time range: 24h" }))
+      .toBeVisible();
     await expect(page).toHaveURL(/range=24h/);
 
     const activityForRepo = page.waitForResponse((response) => {
@@ -271,8 +325,10 @@ test.describe("phone routes", () => {
       return url.includes("/api/v1/activity")
         && url.includes("repo=github.com%2Facme%2Fwidgets");
     });
-    await page.getByLabel("Repository").selectOption("github.com/acme/widgets");
-    await expect(page.getByLabel("Repository")).toHaveValue("github.com/acme/widgets");
+    await page.getByRole("combobox", { name: /Repository/ }).click();
+    await page.getByRole("option", { name: "github.com/acme/widgets" }).click();
+    await expect(page.getByRole("combobox", { name: "Repository: github.com/acme/widgets" }))
+      .toBeVisible();
     await activityForRepo;
   });
 
@@ -376,6 +432,8 @@ test.describe("high-density phone routes", () => {
 
     await expect(page.locator(".mobile-shell")).toBeVisible();
     await expect(page.locator(".mobile-activity-inbox")).toBeVisible();
+    await page.getByRole("combobox", { name: /Activity type/ }).click();
+    await expect(page.getByRole("option", { name: "All" })).toBeVisible();
 
     const metrics = await page.evaluate(() => {
       const fontSize = (selector: string): number => {
@@ -388,11 +446,13 @@ test.describe("high-density phone routes", () => {
         ? getComputedStyle(node).getPropertyValue(name).trim()
         : "";
       const filterControls = [
-        ...document.querySelectorAll(".mobile-activity-filter-grid select, .mobile-filter-toggle"),
+        ...document.querySelectorAll(".mobile-activity-filter-grid .select-dropdown-trigger, .mobile-filter-toggle"),
       ]
         .map((control) => control.getBoundingClientRect())
         .map((rect) => ({ left: rect.left, right: rect.right }));
       const search = document.querySelector(".search-input")?.getBoundingClientRect();
+      const firstOption = document.querySelector(".mobile-filter-dropdown .select-dropdown-option")
+        ?.getBoundingClientRect();
       return {
         dpr: window.devicePixelRatio,
         viewportWidth: window.innerWidth,
@@ -401,7 +461,9 @@ test.describe("high-density phone routes", () => {
         activityTypeToken: tokenValue(inbox, "--mobile-type-body"),
         densityScale: tokenValue(inbox, "--mobile-device-density-scale"),
         bodyFontSize: fontSize(".mobile-activity-inbox"),
-        filterFontSize: fontSize(".mobile-activity-filter-grid select"),
+        filterFontSize: fontSize(".mobile-activity-filter-grid .select-dropdown-trigger"),
+        filterOptionFontSize: fontSize(".mobile-filter-dropdown .select-dropdown-option"),
+        filterOptionHeight: firstOption?.height ?? 0,
         tabFontSize: fontSize(".mobile-tabs a"),
         searchHeight: search?.height ?? 0,
         searchLeft: search?.left ?? 0,
@@ -417,6 +479,8 @@ test.describe("high-density phone routes", () => {
     expect(metrics.documentWidth).toBeLessThanOrEqual(metrics.viewportWidth);
     expect(metrics.bodyFontSize).toBeGreaterThanOrEqual(16);
     expect(metrics.filterFontSize).toBeGreaterThanOrEqual(15);
+    expect(metrics.filterOptionFontSize).toBeGreaterThanOrEqual(15);
+    expect(metrics.filterOptionHeight).toBeGreaterThanOrEqual(44);
     expect(metrics.tabFontSize).toBeGreaterThanOrEqual(16);
     expect(metrics.searchHeight).toBeGreaterThanOrEqual(44);
     expect(metrics.searchLeft).toBeGreaterThanOrEqual(0);
