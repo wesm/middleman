@@ -91,9 +91,16 @@ test.describe("container-aware layout", () => {
         ?.getBoundingClientRect();
       const themeRect = document.querySelector("button[title='Toggle theme']")
         ?.getBoundingClientRect();
+      const repoRect = document.querySelector(".header-left .typeahead")
+        ?.getBoundingClientRect();
+      const navRect = document.querySelector(".header-left .nav-select")
+        ?.getBoundingClientRect();
       return {
         headerRight: headerRect?.right ?? 0,
         headerHeight: headerRect?.height ?? 0,
+        navInLeftHeader: Boolean(document.querySelector(".header-left .nav-select")),
+        navLeft: navRect?.left ?? 0,
+        repoRight: repoRect?.right ?? 0,
         syncHeight: syncRect?.height ?? 0,
         syncWidth: syncRect?.width ?? 0,
         themeHeight: themeRect?.height ?? 0,
@@ -105,6 +112,8 @@ test.describe("container-aware layout", () => {
 
     expect(metrics.headerRight).toBeLessThanOrEqual(metrics.viewportWidth);
     expect(metrics.headerHeight).toBeLessThanOrEqual(52);
+    expect(metrics.navInLeftHeader).toBe(true);
+    expect(metrics.navLeft - metrics.repoRight).toBeLessThanOrEqual(10);
     expect(Math.abs(metrics.syncHeight - metrics.themeHeight)).toBeLessThanOrEqual(1);
     expect(metrics.syncWidth).toBeLessThanOrEqual(42);
     expect(Math.max(metrics.documentWidth, metrics.bodyWidth)).toBeLessThanOrEqual(

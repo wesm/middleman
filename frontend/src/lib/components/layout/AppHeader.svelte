@@ -155,10 +155,7 @@
         onchange={setGlobalRepo}
       />
     {/if}
-  </div>
-
-  <nav class="header-center">
-    {#if compactHeader}
+    {#if compactHeader && !isNarrow()}
       <SelectDropdown
         class="nav-select"
         value={compactNavValue}
@@ -166,6 +163,20 @@
         onchange={navigateCompactNav}
         title="Page"
       />
+    {/if}
+  </div>
+
+  <nav class="header-center">
+    {#if compactHeader}
+      {#if isNarrow()}
+        <SelectDropdown
+          class="nav-select"
+          value={compactNavValue}
+          options={compactNavOptions}
+          onchange={navigateCompactNav}
+          title="Page"
+        />
+      {/if}
     {:else}
       <div class="tab-group">
         <button class="view-tab" class:active={getPage() === "activity"} onclick={() => { if (getPage() !== "activity") navigateTab("activity"); }}>
@@ -420,7 +431,12 @@
   }
 
   :global(#app.container-medium) .header-center {
-    flex: 0 0 132px;
+    display: none;
+  }
+
+  :global(#app.container-medium) .header-left :global(.nav-select) {
+    flex: 0 0 164px;
+    min-width: 132px;
   }
 
   :global(#app.container-medium .nav-select) {
