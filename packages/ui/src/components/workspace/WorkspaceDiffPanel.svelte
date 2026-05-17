@@ -170,6 +170,8 @@
         class="scope-btn"
         class:scope-btn--active={base === "head"}
         aria-pressed={base === "head"}
+        aria-label="Compare with HEAD"
+        title="HEAD"
         onclick={() => selectBase("head")}
       >
         HEAD
@@ -178,17 +180,21 @@
         class="scope-btn scope-btn--wide"
         class:scope-btn--active={base === "pushed"}
         aria-pressed={base === "pushed"}
+        aria-label="Compare with pushed branch"
+        title="Pushed branch"
         onclick={() => selectBase("pushed")}
       >
-        Pushed branch
+        Branch
       </button>
       <button
         class="scope-btn scope-btn--wide"
         class:scope-btn--active={base === "merge-target"}
         aria-pressed={base === "merge-target"}
+        aria-label="Compare with merge target"
+        title="Merge target"
         onclick={() => selectBase("merge-target")}
       >
-        Merge target
+        Target
       </button>
     </div>
     <DiffScopePicker compact />
@@ -268,8 +274,11 @@
   }
 
   .scope-toggle {
-    display: inline-flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 184px;
+    flex: 0 1 184px;
+    min-width: 164px;
     padding: 2px;
     border: 1px solid var(--border-muted);
     border-radius: 4px;
@@ -277,9 +286,9 @@
   }
 
   .scope-btn {
-    min-width: 58px;
-    height: 20px;
-    padding: 0 8px;
+    min-width: 0;
+    height: 22px;
+    padding: 0 6px;
     border: 0;
     border-radius: 3px;
     background: transparent;
@@ -287,10 +296,9 @@
     font-size: var(--font-size-xs);
     font-weight: 600;
     cursor: pointer;
-  }
-
-  .scope-btn--wide {
-    min-width: 92px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .scope-btn:hover {

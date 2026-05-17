@@ -199,7 +199,7 @@ test.describe("workspace tab persistence", () => {
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
     );
-    await page.setViewportSize({ width: 1100, height: 720 });
+    await page.setViewportSize({ width: 1033, height: 720 });
 
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;
@@ -252,6 +252,28 @@ test.describe("workspace tab persistence", () => {
       await expect(page.locator(
         ".right-sidebar .workspace-diff-scope .diff-scope-picker__label",
       )).toBeHidden();
+      const scopeToggleMetrics = await page
+        .locator(".right-sidebar .workspace-diff-scope .scope-toggle")
+        .evaluate((toggle) => {
+          const buttonRects = Array.from(
+            toggle.querySelectorAll<HTMLElement>(".scope-btn"),
+          ).map((button) => button.getBoundingClientRect());
+          return {
+            clientWidth: toggle.clientWidth,
+            height: toggle.getBoundingClientRect().height,
+            maxButtonTopDelta: Math.max(
+              ...buttonRects.map((rect) =>
+                Math.abs(rect.top - (buttonRects[0]?.top ?? rect.top)),
+              ),
+            ),
+            scrollWidth: toggle.scrollWidth,
+          };
+        });
+      expect(scopeToggleMetrics.height).toBeLessThanOrEqual(28);
+      expect(scopeToggleMetrics.maxButtonTopDelta).toBeLessThanOrEqual(1);
+      expect(scopeToggleMetrics.scrollWidth).toBeLessThanOrEqual(
+        scopeToggleMetrics.clientWidth,
+      );
       expect((await diffResponse).ok()).toBe(true);
       const activeDiffFile = page.locator(
         ".right-sidebar .diff-file-row--active",
