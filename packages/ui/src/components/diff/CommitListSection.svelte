@@ -1,7 +1,7 @@
 <script lang="ts">
   import { getStores } from "../../context.js";
-  import ScopePill from "./ScopePill.svelte";
   import CommitListItem from "./CommitListItem.svelte";
+  import DiffScopeLabel from "./DiffScopeLabel.svelte";
 
   const { diff: diffStore } = getStores();
 
@@ -57,7 +57,16 @@
         <span class="commit-section__count">{commits.length}</span>
       {/if}
     </button>
-    <ScopePill {scope} onreset={diffStore.resetToHead} />
+    <DiffScopeLabel {scope} />
+    {#if scope.kind !== "head"}
+      <button
+        class="commit-section__clear"
+        type="button"
+        onclick={diffStore.resetToHead}
+      >
+        Clear
+      </button>
+    {/if}
   </div>
 
   {#if expanded}
@@ -143,6 +152,15 @@
     border: 1px solid var(--diff-border);
     border-radius: 999px;
     padding: 1px 6px;
+  }
+
+  .commit-section__clear {
+    flex-shrink: 0;
+    border: 0;
+    background: transparent;
+    color: var(--accent-blue);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
   }
 
   .commit-section__body {

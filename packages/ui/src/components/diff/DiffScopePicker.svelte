@@ -2,7 +2,8 @@
   import GitCommitHorizontalIcon from "@lucide/svelte/icons/git-commit-horizontal";
   import { getStores } from "../../context.js";
   import CommitListItem from "./CommitListItem.svelte";
-  import ScopePill from "./ScopePill.svelte";
+  import DiffScopeLabel from "./DiffScopeLabel.svelte";
+  import { formatDiffScopeLabel } from "./scope-label.js";
 
   interface Props {
     compact?: boolean;
@@ -18,6 +19,7 @@
   const commitsLoading = $derived(diffStore.isCommitsLoading());
   const commitsError = $derived(diffStore.getCommitsError());
   const scope = $derived(diffStore.getScope());
+  const scopeLabel = $derived(formatDiffScopeLabel(scope));
 
   function toggle(): void {
     open = !open;
@@ -70,18 +72,19 @@
     <button
       class="diff-scope-picker__trigger"
       type="button"
-      aria-label="Select commit range"
+      aria-label={`Select commit range: ${scopeLabel}`}
       aria-expanded={open}
       title="Commits"
       onclick={toggle}
     >
       {#if compact}
         <GitCommitHorizontalIcon size={16} strokeWidth={1.8} aria-hidden="true" />
+        <DiffScopeLabel {scope} />
       {:else}
         <span class="diff-scope-picker__label">Commits</span>
+        <DiffScopeLabel {scope} />
       {/if}
     </button>
-    <ScopePill {scope} onreset={diffStore.resetToHead} />
   </div>
 
   {#if open}
@@ -150,6 +153,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: 8px;
     padding: 0;
     border: 0;
     background: transparent;
@@ -158,13 +162,17 @@
   }
 
   .diff-scope-picker--compact .diff-scope-picker__control {
-    gap: 5px;
-    padding: 2px 5px;
+    gap: 0;
+    padding: 0;
+    overflow: hidden;
   }
 
   .diff-scope-picker--compact .diff-scope-picker__trigger {
-    width: 16px;
-    height: 18px;
+    gap: 6px;
+    min-width: 78px;
+    max-width: 128px;
+    height: 24px;
+    padding: 0 8px;
   }
 
   .diff-scope-picker__label {

@@ -8,7 +8,6 @@
 
 <div class="collapsed-region">
   <span class="collapsed-gutter"></span>
-  <span class="collapsed-gutter"></span>
   <span class="collapsed-label">
     {lineCount} unchanged {lineCount === 1 ? "line" : "lines"}
   </span>
@@ -28,7 +27,7 @@
   }
 
   .collapsed-gutter {
-    width: 50px;
+    width: var(--diff-line-number-gutter-width, 50px);
     flex-shrink: 0;
     background: var(--diff-collapsed-bg);
   }

@@ -54,6 +54,9 @@
   // content no one can see.
   // svelte-ignore state_referenced_locally — synced from file prop via $effect
   let renderedFile = $state(file);
+  const lineNumberGutterWidth = $derived(
+    `calc(${lineNumberDigitCount(renderedFile.hunks) + 1}ch + 10px)`,
+  );
 
   $effect(() => {
     if (!collapsed && inViewport) {
@@ -182,6 +185,25 @@
     return Math.max(gapOld, 0);
   }
 
+  function lineNumberDigitCount(hunks: DiffHunk[]): number {
+    let maxLine = 1;
+
+    for (const hunk of hunks) {
+      if (hunk.old_count > 0) {
+        maxLine = Math.max(maxLine, hunk.old_start + hunk.old_count - 1);
+      }
+      if (hunk.new_count > 0) {
+        maxLine = Math.max(maxLine, hunk.new_start + hunk.new_count - 1);
+      }
+      for (const line of hunk.lines) {
+        if (line.old_num != null) maxLine = Math.max(maxLine, line.old_num);
+        if (line.new_num != null) maxLine = Math.max(maxLine, line.new_num);
+      }
+    }
+
+    return String(maxLine).length;
+  }
+
   function toggle(): void {
     diffStore.toggleFileCollapsed(owner, name, number, file.path);
   }
@@ -244,7 +266,10 @@
       {:else if renderedFile.is_binary}
         <div class="binary-notice">Binary file changed</div>
       {:else}
-        <div class="file-rows">
+        <div
+          class="file-rows"
+          style:--diff-line-number-gutter-width={lineNumberGutterWidth}
+        >
           {#each renderedFile.hunks as hunk, hunkIdx (`${hunk.old_start}:${hunk.new_start}:${hunkIdx}`)}
             {#if hunkIdx > 0}
               {@const gap = computeCollapsedLines(renderedFile.hunks, hunkIdx)}
@@ -253,7 +278,6 @@
               {/if}
             {/if}
             <div class="hunk-header">
-              <span class="hunk-gutter"></span>
               <span class="hunk-gutter"></span>
               <span class="hunk-text">@@ -{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count} @@{hunk.section ? ` ${hunk.section}` : ""}</span>
             </div>
@@ -386,7 +410,7 @@
   }
 
   .hunk-gutter {
-    width: 50px;
+    width: var(--diff-line-number-gutter-width, 50px);
     flex-shrink: 0;
     background: var(--diff-hunk-bg);
   }

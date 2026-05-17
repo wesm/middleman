@@ -252,6 +252,13 @@ test.describe("workspace tab persistence", () => {
       await expect(page.locator(
         ".right-sidebar .workspace-diff-scope .diff-scope-picker__label",
       )).toBeHidden();
+      const workspaceScopePicker = page.locator(
+        ".right-sidebar .workspace-diff-scope .diff-scope-picker",
+      );
+      await expect(workspaceScopePicker.locator(".scope-pill")).toHaveCount(0);
+      await expect(
+        workspaceScopePicker.locator(".diff-scope-label"),
+      ).toHaveText("HEAD");
       const scopeToggleMetrics = await page
         .locator(".right-sidebar .workspace-diff-scope .scope-toggle")
         .evaluate((toggle) => {
@@ -306,6 +313,17 @@ test.describe("workspace tab persistence", () => {
         ".right-sidebar .diff-file-row--active",
       );
       await expect(activeDiffFile).toHaveAttribute("title", "alpha.ts");
+      const firstDiffLineGutterCount = await page
+        .locator(".right-sidebar .diff-line")
+        .first()
+        .locator(".gutter")
+        .count();
+      expect(firstDiffLineGutterCount).toBe(1);
+      const lineGutterWidth = await page
+        .locator(".right-sidebar .diff-line .gutter")
+        .first()
+        .evaluate((gutter) => gutter.getBoundingClientRect().width);
+      expect(lineGutterWidth).toBeLessThanOrEqual(32);
       const diffToolbar = page.locator(".right-sidebar .diff-toolbar");
       await expect(diffToolbar.locator(".compact-more-btn")).toBeVisible();
       await expect(
