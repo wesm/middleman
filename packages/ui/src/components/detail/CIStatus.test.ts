@@ -38,6 +38,34 @@ describe("CIStatus", () => {
     expect(screen.getByText("✓")).toBeTruthy();
   });
 
+  it("keeps spinners for pending checks after refresh settles", () => {
+    render(CIStatus, {
+      props: {
+        status: "pending",
+        checksJSON: JSON.stringify([
+          {
+            name: "build",
+            status: "in_progress",
+            conclusion: "",
+            url: "",
+            app: "GitHub Actions",
+          },
+        ]),
+        detailLoaded: true,
+        detailSyncing: false,
+        expanded: true,
+      },
+    });
+
+    expect(document.querySelectorAll(".ci-check .sync-spinner")).toHaveLength(1);
+    expect(
+      document
+        .querySelector(".ci-check .sync-spinner svg")
+        ?.getAttribute("width"),
+    ).toBe("12");
+    expect(screen.queryByText("◦")).toBeNull();
+  });
+
   it("renders expanded CI checks when chip is clicked", async () => {
     render(CIStatus, {
       props: {

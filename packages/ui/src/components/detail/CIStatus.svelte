@@ -59,8 +59,8 @@
     return "var(--text-muted)";
   }
 
-  function isRefreshingCheck(check: CICheck): boolean {
-    return detailSyncing && check.status !== "completed";
+  function isPendingCheck(check: CICheck): boolean {
+    return check.status !== "completed";
   }
 
   function chipColor(chipStatus: string): string {
@@ -99,9 +99,9 @@
       rel="noopener noreferrer"
     >
       <span class="ci-icon" style="color: {checkColor(check)}">
-        {#if isRefreshingCheck(check)}
+        {#if isPendingCheck(check)}
           <span class="sync-spinner" aria-hidden="true">
-            <LoaderCircleIcon size={14} strokeWidth={2} />
+            <LoaderCircleIcon size={12} strokeWidth={2} />
           </span>
         {:else}
           {checkIcon(check)}
@@ -119,9 +119,9 @@
   {:else}
     <div class="ci-check ci-check--static">
       <span class="ci-icon" style="color: {checkColor(check)}">
-        {#if isRefreshingCheck(check)}
+        {#if isPendingCheck(check)}
           <span class="sync-spinner" aria-hidden="true">
-            <LoaderCircleIcon size={14} strokeWidth={2} />
+            <LoaderCircleIcon size={12} strokeWidth={2} />
           </span>
         {:else}
           {checkIcon(check)}
@@ -223,7 +223,7 @@
     border-radius: var(--radius-md);
     overflow: auto;
     flex-shrink: 0;
-    max-height: min(320px, 50vh);
+    max-height: min(340px, 50vh);
   }
 
   .ci-section-label {

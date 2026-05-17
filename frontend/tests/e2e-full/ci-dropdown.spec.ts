@@ -64,8 +64,8 @@ test.describe("CI dropdown", () => {
 
       await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
 
-      const pendingChip = page
-        .locator(".pull-detail")
+      const detail = page.locator(".pull-detail");
+      const pendingChip = detail
         .getByRole("button", { name: /CI:\s*pending \(1\)/i });
       await expect(pendingChip).toBeVisible();
       await backgroundSync;
@@ -77,6 +77,12 @@ test.describe("CI dropdown", () => {
       });
       await pendingChip.click();
       await firstRefresh;
+      expect(
+        await detail.locator(".ci-check .sync-spinner").count(),
+      ).toBeGreaterThan(0);
+      await expect(
+        detail.locator(".ci-check .sync-spinner svg").first(),
+      ).toHaveAttribute("width", "12");
 
       const successResponse = await page.request.post(
         `${server.info.base_url}/__e2e/pr-ci-state/success`,
@@ -138,6 +144,7 @@ test.describe("CI dropdown", () => {
     const diffStatsChip = detail.locator(".chip--muted", {
       hasText: /^\+\d+\/-\d+$/,
     });
+    const labelsButton = detail.getByRole("button", { name: /^Labels$/ });
     const actionRow = detail.locator(".primary-actions-wrap");
     await chip.waitFor({ state: "visible", timeout: 10_000 });
     const chipStylesBefore = await chip.evaluate((node) => {
@@ -150,6 +157,7 @@ test.describe("CI dropdown", () => {
     });
     const chipBox = await chip.boundingBox();
     const diffStatsBox = await diffStatsChip.boundingBox();
+    const labelsBox = await labelsButton.boundingBox();
     const actionRowBox = await actionRow.boundingBox();
     await chip.click();
 
@@ -159,13 +167,16 @@ test.describe("CI dropdown", () => {
 
     const checksBox = await checks.boundingBox();
     const expandedDiffStatsBox = await diffStatsChip.boundingBox();
+    const expandedLabelsBox = await labelsButton.boundingBox();
     const expandedActionRowBox = await actionRow.boundingBox();
 
     expect(chipBox).not.toBeNull();
     expect(diffStatsBox).not.toBeNull();
+    expect(labelsBox).not.toBeNull();
     expect(actionRowBox).not.toBeNull();
     expect(checksBox).not.toBeNull();
     expect(expandedDiffStatsBox).not.toBeNull();
+    expect(expandedLabelsBox).not.toBeNull();
     expect(expandedActionRowBox).not.toBeNull();
     expect(chipStylesBefore.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
     expect(chipStylesBefore.paddingRight).not.toBe("0px");
@@ -175,6 +186,7 @@ test.describe("CI dropdown", () => {
     expect(ciGap).toBeLessThan(11);
     expect(expandedDiffStatsBox!.height).toBeLessThan(40);
     expect(expandedDiffStatsBox!.y).toBe(diffStatsBox!.y);
+    expect(expandedLabelsBox!.y).toBe(labelsBox!.y);
     expect(expandedActionRowBox!.y).toBeGreaterThan(actionRowBox!.y);
 
     await expect(detail.locator(".ci-name")).toHaveText([
